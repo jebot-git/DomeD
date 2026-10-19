@@ -105,6 +105,7 @@ pub struct Dome {
 
     // Smithay State
     pub compositor_state: CompositorState,
+    pub _viewporter_state: smithay::wayland::viewporter::ViewporterState,
     pub xdg_shell_state: XdgShellState,
     pub decoration_state: smithay::wayland::shell::xdg::decoration::XdgDecorationState,
     pub shm_state: ShmState,
@@ -287,6 +288,7 @@ impl Dome {
             mouse_last_absolute: None,
 
             compositor_state,
+            _viewporter_state: smithay::wayland::viewporter::ViewporterState::new::<Self>(&dh),
             xdg_shell_state,
             decoration_state: smithay::wayland::shell::xdg::decoration::XdgDecorationState::new::<
                 Self,

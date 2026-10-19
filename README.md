@@ -685,3 +685,21 @@ Python: `~/.local/opt/arc-sbs/current/venv/bin/python scripts/test-qimgvr.py`.
 It requires Xvfb, qimgvr, cv2/numpy and the local depth model. Results are written
 under ignored `artifacts/qimgvr/`. It tests real Wayland windows and pixel content
 using a simulated renderer heartbeat; it does not verify headset perception.
+
+## mpvr SBS video integration
+
+The private mpv fork `mpvr` uses the same XR-only stereo composition path with
+explicit app ID `org.mpvr.Sbs`. GET `/api/integrations/mpvr` exposes the same
+versioned session status as the qimgvr endpoint, with mpvr's app ID. Normal mpv
+windows remain mono. The compositor advertises Smithay's `wp_viewporter` protocol,
+including viewport validation and surface scaling through the existing renderer,
+because current mpv requires it to initialize its Wayland GPU output.
+
+Run `mpvr movie_SBS.mkv` for automatic routing, `mpvr --domed movie.mkv` to require
+DomeD, or `mpvr --xr-output=off movie.mkv` for normal desktop playback. The mpvr
+repository's `xr/install-domed.py` optionally sets Dome-only video defaults and
+can restore prior associations with `--disable`. Full/half SBS, eye order,
+subtitle duplication and GPU decoding are handled by mpvr. Its
+`tests/xr/test_domed.py` verifies actual Wayland video pixels, the stereo app ID,
+XR-only placement and cleanup in an isolated compositor with a simulated XR
+heartbeat; it does not claim through-headset verification.

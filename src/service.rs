@@ -59,11 +59,12 @@ pub fn serve_native(
                 );
                 continue;
             }
-            if request.method() == &Method::Get && request.url() == "/api/integrations/qimgvr" {
+            if request.method() == &Method::Get && matches!(request.url(), "/api/integrations/qimgvr" | "/api/integrations/mpvr") {
+                let app_id = if request.url().ends_with("/mpvr") { crate::stereo::MPVR_SBS_APP_ID } else { crate::stereo::QIMGVR_SBS_APP_ID };
                 let status = bridge.as_ref().map(|b| {
                     let b = b.lock().unwrap();
                     serde_json::json!({"version":1, "compositor_pid":std::process::id(),
-                        "xr_socket":b.xr_socket, "xr_active":b.visible(), "sbs_app_id":crate::stereo::QIMGVR_SBS_APP_ID})
+                        "xr_socket":b.xr_socket, "xr_active":b.visible(), "sbs_app_id":app_id})
                 }).unwrap_or_else(|| serde_json::json!({"version":1,"xr_active":false}));
                 let _ = request.respond(Response::from_string(status.to_string())
                     .with_header(Header::from_bytes("Content-Type", "application/json").unwrap())

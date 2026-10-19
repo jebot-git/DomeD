@@ -62,3 +62,5 @@ impl ShmHandler for Dome {
 
 delegate_compositor!(Dome);
 delegate_shm!(Dome);
+
+smithay::delegate_viewporter!(Dome);
