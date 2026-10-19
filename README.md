@@ -688,7 +688,7 @@ using a simulated renderer heartbeat; it does not verify headset perception.
 
 ## mpvr SBS video integration
 
-The private mpv fork `mpvr` uses the same XR-only stereo composition path with
+The mpv fork `mpvr` uses the same XR-only stereo composition path with
 explicit app ID `org.mpvr.Sbs`. GET `/api/integrations/mpvr` exposes the same
 versioned session status as the qimgvr endpoint, with mpvr's app ID. Normal mpv
 windows remain mono. The compositor advertises Smithay's `wp_viewporter` protocol,
