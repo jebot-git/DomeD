@@ -274,7 +274,7 @@ fn room_raycast_honors_rotated_and_translated_anchor() {
     assert!(s.hit_test([f32::NAN, 0., 0.], [1., 0., 0.]).is_none());
 }
 #[test]
-fn curved_mesh_stays_on_sphere_and_has_matching_seam() {
+fn curved_mesh_stays_on_open_cylinder() {
     let mut s = Scene::default();
     s.add("a", "x");
     let p = &s.panels()[0];
@@ -282,11 +282,7 @@ fn curved_mesh_stays_on_sphere_and_has_matching_seam() {
     assert_eq!(mesh.len(), 66);
     for v in mesh {
         near(
-            v.iter()
-                .zip(s.config.center_m)
-                .map(|(a, b)| (a - b).powi(2))
-                .sum::<f32>()
-                .sqrt(),
+            (v[0] - s.config.center_m[0]).hypot(v[2] - s.config.center_m[2]),
             s.config.radius_m,
         );
     }
@@ -348,4 +344,30 @@ fn swaps_and_maximize_do_not_leave_focus_on_a_hidden_desktop() {
     s.apply(Action::Maximize { id: a }).unwrap();
     assert_eq!(s.active_workspace, 1);
     assert_eq!(s.focused, Some(a));
+}
+
+#[test]
+fn display_profiles_migrate_and_reject_invalid_coordinates_without_mutation() {
+    let old: Config = serde_json::from_str("{}").unwrap();
+    assert!(old.displays.is_empty());
+    let mut scene = Scene::demo();
+    let before = scene.config.clone();
+    let mut config = before.clone();
+    config.displays.push(DisplayConfig {
+        name: "0000:03:00.0-DP-5".into(),
+        x: Some(i32::MIN),
+        ..Default::default()
+    });
+    assert!(scene
+        .apply(Action::Configure {
+            config: config.clone()
+        })
+        .is_err());
+    assert_eq!(scene.config, before);
+    config.displays[0].x = Some(-1920);
+    config.validate().unwrap();
+    let encoded = serde_json::to_string(&config).unwrap();
+    assert_eq!(serde_json::from_str::<Config>(&encoded).unwrap(), config);
+    config.displays.push(config.displays[0].clone());
+    assert!(config.validate().is_err());
 }

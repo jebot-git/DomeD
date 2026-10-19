@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=DomeD
+Comment=Standalone Wayland compositor with DRM display and native XR overlays
+Exec=/usr/local/bin/dome-session
+TryExec=/usr/local/bin/dome-session
+Type=Application

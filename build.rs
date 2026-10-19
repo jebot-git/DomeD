@@ -13,7 +13,14 @@ fn main() {
         .flag("-fPIC");
     if let Some(prefix) = std::env::var_os("DOME_QT6_PREFIX") {
         // Optional extracted development headers; runtime libraries remain on the host.
-        build.include(std::path::Path::new(&prefix).join("include/x86_64-linux-gnu/qt6"));
+        let prefix = std::path::Path::new(&prefix);
+        // Fedora RPMs and Debian packages use different Qt header layouts.
+        let fedora = prefix.join("include/qt6");
+        build.include(if fedora.is_dir() {
+            fedora
+        } else {
+            prefix.join("include/x86_64-linux-gnu/qt6")
+        });
         let libdir = std::env::var("DOME_QT6_LIBDIR").unwrap_or("/usr/lib/x86_64-linux-gnu".into());
         for lib in ["Qt6Widgets", "Qt6Gui", "Qt6Core"] {
             println!("cargo:rustc-link-arg={libdir}/lib{lib}.so.6");

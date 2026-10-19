@@ -91,6 +91,7 @@ impl XdgShellHandler for Dome {
     }
 
     fn new_popup(&mut self, surface: PopupSurface, _positioner: PositionerState) {
+        self.associate_context_menu(&surface);
         self.unconstrain_popup(&surface);
         let _ = self.popups.track_popup(PopupKind::Xdg(surface));
     }
@@ -180,8 +181,37 @@ impl XdgShellHandler for Dome {
         }
     }
 
-    fn grab(&mut self, _surface: PopupSurface, _seat: wl_seat::WlSeat, _serial: Serial) {
-        // TODO popup grabs
+    fn grab(&mut self, surface: PopupSurface, seat: wl_seat::WlSeat, serial: Serial) {
+        use smithay::desktop::{PopupKeyboardGrab, PopupPointerGrab};
+        let Some(seat) = Seat::<Dome>::from_resource(&seat) else {
+            return;
+        };
+        let popup = PopupKind::Xdg(surface);
+        let Ok(root) = find_popup_root_surface(&popup) else {
+            return;
+        };
+        let Some(pointer) = seat.get_pointer() else {
+            return;
+        };
+        let Some(keyboard) = seat.get_keyboard() else {
+            return;
+        };
+        // Initial activation and nested grabs must come from this client's seat.
+        let authorized = keyboard
+            .current_focus()
+            .is_some_and(|surface| surface.id().same_client_as(&root.id()));
+        if !authorized {
+            return;
+        }
+        if let Ok(grab) = self.popups.grab_popup(root, popup, &seat, serial) {
+            let previous = grab.previous_serial().unwrap_or(serial);
+            if keyboard.is_grabbed() && !keyboard.has_grab(previous) {
+                return;
+            }
+            keyboard.set_focus(self, grab.current_grab(), serial);
+            keyboard.set_grab(self, PopupKeyboardGrab::new(&grab), serial);
+            pointer.set_grab(self, PopupPointerGrab::new(&grab), serial, Focus::Keep);
+        }
     }
 }
 
@@ -264,9 +294,14 @@ impl Dome {
             return;
         };
 
-        let output = self.space.outputs().next().unwrap();
-        let output_geo = self.space.output_geometry(output).unwrap();
         let window_geo = self.space.element_geometry(window).unwrap();
+        let output_geo = self.output_geometry_at(
+            (
+                window_geo.loc.x as f64 + window_geo.size.w as f64 / 2.,
+                window_geo.loc.y as f64 + window_geo.size.h as f64 / 2.,
+            )
+                .into(),
+        );
 
         // The target geometry for the positioner should be relative to its parent's geometry, so
         // we will compute that here.

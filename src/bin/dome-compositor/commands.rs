@@ -51,7 +51,8 @@ impl Dome {
             0 => vec![
                 ("About Dome", "", About),
                 ("", "", Separator),
-                ("Launch Application…", "⌘Space", Launch),
+                ("Launch Application…", "⇧⌘Space", Launch),
+                ("Open Terminal", "⌘T", Terminal),
                 ("Virtual Desktops…", "", Desktops),
                 ("Appearance…", "", Appearance),
                 ("", "", Separator),
@@ -88,6 +89,7 @@ impl Dome {
                     "",
                     Session(dome::appearance::SessionAction::Shutdown),
                 ),
+                ("Keyboard Layouts…", "", KeyboardSettings),
             ],
             1 => vec![("Close Application Windows", "⌘Q", QuitApp)],
             2 => vec![("Close Window", "⌘W", Close)],
@@ -100,12 +102,14 @@ impl Dome {
                 ("Increase XR Window Size", "⌘+", Scale(1.1)),
                 ("Decrease XR Window Size", "⌘−", Scale(1. / 1.1)),
                 ("Return to Dome Layout", "⇧⌘R", ResetSpatial),
-                ("Toggle Room / In-View Projection", "", Projection),
+                ("Toggle Dome / Direct View", "⌘P", Projection),
                 ("", "", Separator),
                 ("Show / Hide XR Bars", "⇧⌘B", ToggleXrBars),
                 ("Show / Hide Upper XR Bar", "⌥⌘T", ToggleXrTop),
                 ("Show / Hide XR Taskbar", "⌥⌘B", ToggleXrBottom),
                 ("Show / Hide XR Desktop", "⇧⌘D", ToggleXrDesktop),
+                ("Displays & XR Configuration…", "⌘,", XrSettings),
+                ("Anchor Dome at Headset", "⌃⌘R", AnchorHere),
             ],
             5 => vec![
                 ("Minimize", "⌘M", Minimize),
@@ -183,7 +187,21 @@ impl Dome {
                     },
                 });
             }
-            Appearance => self.appearance_open = true,
+            Appearance => {
+                self.keyboard_draft = None;
+                self.appearance_open = true;
+            }
+            KeyboardSettings => self.keyboard_settings_open(),
+            XrSettings => {
+                self.xr_settings_open = true;
+                self.xr_settings_row = 0;
+                self.action(Action::XrPresentation {
+                    top: Some(true),
+                    bottom: None,
+                    desktop: None,
+                });
+            }
+            AnchorHere => self.anchor_here(),
             StartXr => self.start_xr(),
             StopXr => self.xr_bridge.lock().unwrap().exit_requested = true,
             Session(action) => self.session_command(action),
@@ -229,6 +247,11 @@ impl Dome {
                 }
                 if let Some(id) = id {
                     self.action(Action::Focus { id });
+                }
+            }
+            Terminal => {
+                if let Err(e) = dome::terminal::launch(&self.launch_socket()) {
+                    self.shell_error = format!("Cannot launch Ghostty XR: {e}");
                 }
             }
             Launch => {

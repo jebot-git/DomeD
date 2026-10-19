@@ -3,7 +3,7 @@
 import argparse,json,time
 from pathlib import Path
 from PySide6.QtCore import Qt,QTimer
-from PySide6.QtGui import QColor,QPainter
+from PySide6.QtGui import QColor,QPainter,QClipboard
 from PySide6.QtWidgets import QApplication,QWidget
 p=argparse.ArgumentParser();p.add_argument('--name',required=True);p.add_argument('--app-id');p.add_argument('--color',default='#bd3e4e');p.add_argument('--journal',required=True);a=p.parse_args()
 log=Path(a.journal).open('a',buffering=1)
@@ -21,11 +21,14 @@ class Client(QWidget):
     def keyPressEvent(self,event):
         record('key_press',text=event.text(),key=event.key(),modifiers=event.modifiers().value)
         if event.modifiers()&Qt.KeyboardModifier.ControlModifier:
-            if event.key()==Qt.Key.Key_C:app.clipboard().setText(a.name+'-clipboard');record('clipboard_set')
+            if event.key()==Qt.Key.Key_C:
+                if event.modifiers()&Qt.KeyboardModifier.ShiftModifier:app.clipboard().setText(a.name+'-primary',QClipboard.Mode.Selection);record('primary_set')
+                else:app.clipboard().setText(a.name+'-clipboard');record('clipboard_set')
             elif event.key()==Qt.Key.Key_V:record('clipboard_get',text=app.clipboard().text())
     def keyReleaseEvent(self,event):record('key_release',text=event.text(),key=event.key())
     def mousePressEvent(self,event):
         x,y=event.position().x(),event.position().y();record('press',x=x,y=y,button=event.button().value)
+        if event.button()==Qt.MouseButton.MiddleButton:record('primary_get',text=app.clipboard().text(QClipboard.Mode.Selection))
         if y<28:record('move_request',accepted=self.windowHandle().startSystemMove())
         elif x>self.width()-24 and y>self.height()-24:record('resize_request',accepted=self.windowHandle().startSystemResize(Qt.Edge.RightEdge|Qt.Edge.BottomEdge))
     def mouseReleaseEvent(self,event):record('release',x=event.position().x(),y=event.position().y(),button=event.button().value)

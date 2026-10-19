@@ -18,10 +18,16 @@ impl Dome {
         self.sync_input_route();
         match event {
             InputEvent::Keyboard { event, .. } => {
+                if self.native_ignored_keys.remove(&event.key_code())
+                    && event.state() == smithay::backend::input::KeyState::Released
+                {
+                    return;
+                }
                 if !self.launcher
                     && self.menu.is_none()
                     && !self.desktop_manager
                     && !self.appearance_open
+                    && !self.xr_settings_open
                     && self.session_confirm.is_none()
                 {
                     self.input_realm = if self.input_xr_active {
@@ -43,12 +49,36 @@ impl Dome {
                         let sym = key.modified_sym();
                         let code = event.key_code();
                         let pressed = event.state() == smithay::backend::input::KeyState::Pressed;
+                        if pressed {
+                            state.context_trigger = None;
+                        }
                         // Keep ownership until release, including confirmation keys that
                         // close the launcher. Forward releases of keys held before it opened.
                         if !pressed && state.shell_keys.remove(&code) {
                             return FilterResult::Intercept(());
                         }
                         if pressed && state.shell_keys.contains(&code) && !state.launcher {
+                            return FilterResult::Intercept(());
+                        }
+                        if pressed
+                            && sym.raw() == 0x20
+                            && state
+                                .keyboard_config
+                                .switch_shortcut
+                                .matches(mods.logo, mods.ctrl, mods.alt, mods.shift)
+                        {
+                            state.shell_keys.insert(code);
+                            if state.keyboard_config.ime {
+                                state.ime.toggle();
+                            } else {
+                                state.keyboard_switch += 1;
+                            }
+                            return FilterResult::Intercept(());
+                        }
+                        if pressed
+                            && state.keyboard_settings_key(sym.raw(), sym.key_char(), mods.ctrl)
+                        {
+                            state.shell_keys.insert(code);
                             return FilterResult::Intercept(());
                         }
                         // Visibility remains available from launchers and modal shell panels.
@@ -77,8 +107,20 @@ impl Dome {
                                 return FilterResult::Intercept(());
                             }
                         }
+                        if pressed && state.xr_settings_key(sym.raw()) {
+                            state.shell_keys.insert(code);
+                            return FilterResult::Intercept(());
+                        }
                         if pressed && sym.raw() == 0xff1b && state.tray.state().menu.is_some() {
                             state.tray.close();
+                            state.shell_keys.insert(code);
+                            return FilterResult::Intercept(());
+                        }
+                        if pressed && state.task_context_key(sym.raw()) {
+                            state.shell_keys.insert(code);
+                            return FilterResult::Intercept(());
+                        }
+                        if pressed && state.task_context && sym.raw() != 0xff1b {
                             state.shell_keys.insert(code);
                             return FilterResult::Intercept(());
                         }
@@ -178,7 +220,13 @@ impl Dome {
                             }
                             return FilterResult::Intercept(());
                         }
-                        if pressed && mods.logo && sym.key_char() == Some(' ') {
+                        if pressed
+                            && mods.logo
+                            && mods.shift
+                            && !mods.alt
+                            && !mods.ctrl
+                            && sym.key_char() == Some(' ')
+                        {
                             state.shell_keys.insert(code);
                             {
                                 state.launcher = true;
@@ -200,6 +248,7 @@ impl Dome {
                         FilterResult::Forward
                     },
                 );
+                self.update_keyboard();
             }
             InputEvent::PointerMotion { event, .. } => {
                 let delta = event.delta();
@@ -209,28 +258,17 @@ impl Dome {
                     } else {
                         let pointer = self.seat.get_pointer().unwrap();
                         let current = pointer.current_location();
-                        let size = self
-                            .space
-                            .outputs()
-                            .next()
-                            .and_then(|o| self.space.output_geometry(o))
-                            .map(|r| r.size)
-                            .unwrap_or((1280, 800).into());
                         self.desktop_mouse_motion(
-                            (
-                                (current.x + delta.x).clamp(0., (size.w - 1) as f64),
-                                (current.y + delta.y).clamp(0., (size.h - 1) as f64),
-                            )
-                                .into(),
+                            self.clamp_desktop_pointer(
+                                (current.x + delta.x, current.y + delta.y).into(),
+                            ),
                             event.time_msec(),
                         );
                     }
                 }
             }
             InputEvent::PointerMotionAbsolute { event, .. } => {
-                let output = self.space.outputs().next().unwrap();
-
-                let output_geo = self.space.output_geometry(output).unwrap();
+                let output_geo = self.primary_output_geometry();
 
                 let pos = event.position_transformed(output_geo.size) + output_geo.loc.to_f64();
                 let previous = self.mouse_last_absolute.replace([pos.x, pos.y]);
@@ -276,9 +314,47 @@ impl Dome {
                 let button_state = event.state();
 
                 let pos = pointer.current_location();
+                if button_state == ButtonState::Released
+                    && self.context_scroll_buttons.remove(&button)
+                {
+                    return;
+                }
+                if button_state == ButtonState::Pressed && !pointer.is_grabbed() {
+                    let geometry = self.output_geometry_at(pos);
+                    let local = pos - geometry.loc.to_f64();
+                    if let Some(toast) = self
+                        .notifications
+                        .layout(geometry.size.w, geometry.size.h)
+                        .into_iter()
+                        .find(|n| n.contains(local.x, local.y))
+                    {
+                        self.context_scroll_buttons.insert(button);
+                        if button == 0x110 {
+                            self.notifications.click(&toast, local.x, local.y);
+                        }
+                        return;
+                    }
+                }
+                if button_state == ButtonState::Pressed && button == 0x110 {
+                    if let Some((id, direction)) = self.desktop_context_control(pos) {
+                        self.context_scroll_buttons.insert(button);
+                        self.scroll_context(id, direction as f32 * 96.);
+                        return;
+                    }
+                }
+                if self.chrome_button.is_some() {
+                    if button_state == ButtonState::Released && button == 0x110 {
+                        self.chrome_button_release(pos.x, pos.y);
+                    }
+                    return;
+                }
                 if self.chrome_drag.is_some() {
                     if button_state == ButtonState::Released {
-                        self.chrome_drag = None;
+                        if let Some(drag) = self.chrome_drag.take() {
+                            if !drag.resize {
+                                self.finish_desktop_move(drag.id);
+                            }
+                        }
                     }
                     return;
                 }
@@ -286,6 +362,7 @@ impl Dome {
                     && !pointer.is_grabbed()
                     && !self.about
                     && !self.appearance_open
+                    && !self.xr_settings_open
                     && self.session_confirm.is_none()
                     && !self.task_context
                     && self.tray.state().menu.is_none()
@@ -298,18 +375,14 @@ impl Dome {
                 }
                 if !pointer.is_grabbed() && self.shell_at(pos.x, pos.y) {
                     if button_state == ButtonState::Pressed {
-                        let size = self
-                            .space
-                            .outputs()
-                            .next()
-                            .and_then(|o| self.space.output_geometry(o))
-                            .map(|r| r.size)
-                            .unwrap_or((1280, 800).into());
+                        let size = self.shell_geometry().size;
+                        let global_pos = pos;
+                        let pos = pos - self.shell_geometry().loc.to_f64();
                         let tray = self.visible_tray(size.w);
-                        let tray_start = size.w as f64 - 176. - tray.items.len() as f64 * 28.;
+                        let tray_start = size.w as f64 - 220. - tray.items.len() as f64 * 28.;
                         if pos.y < 36.
                             && pos.x >= tray_start
-                            && pos.x < size.w as f64 - 176.
+                            && pos.x < size.w as f64 - 220.
                             && tray.menu.is_none()
                         {
                             self.tray.activate(
@@ -326,13 +399,26 @@ impl Dome {
                         {
                             self.activate_task(((pos.x - 110.) / 130.) as usize, button);
                         } else {
-                            self.shell_click(pos.x, pos.y);
+                            self.shell_click(global_pos.x, global_pos.y);
                         }
                     }
                     return;
                 }
                 if ButtonState::Pressed == button_state && !pointer.is_grabbed() {
-                    if let Some((window, _loc)) = self
+                    if let Some((id, surface, _)) = self.popup_under(pos) {
+                        let focus_id = {
+                            let scene = self.scene.lock().unwrap();
+                            if scene.window(id).is_some() {
+                                id
+                            } else {
+                                scene.popup_owner(id)
+                            }
+                        };
+                        self.action(dome::Action::Focus { id: focus_id });
+                        if !self.ime_popups.iter().any(|p| p.wl_surface() == &surface) {
+                            keyboard.set_focus(self, Some(surface), serial);
+                        }
+                    } else if let Some((window, _loc)) = self
                         .space
                         .element_under(pointer.current_location())
                         .map(|(w, l)| (w.clone(), l))
@@ -364,6 +450,7 @@ impl Dome {
                 } else {
                     self.desktop_buttons.remove(&button);
                 }
+                self.context_button_origin(button, button_state == ButtonState::Pressed);
                 pointer.button(
                     self,
                     &ButtonEvent {
@@ -397,6 +484,20 @@ impl Dome {
                         }],
                     });
                     return;
+                }
+                if self.xr_settings_scroll(vertical_amount) {
+                    return;
+                }
+                let pos = self.seat.get_pointer().unwrap().current_location();
+                if let Some((id, _, _)) = self.popup_under(pos) {
+                    if self.scroll_context(id, vertical_amount as f32 * 3.) {
+                        return;
+                    }
+                }
+                if let Some((id, _)) = self.desktop_context_control(pos) {
+                    if self.scroll_context(id, vertical_amount as f32 * 3.) {
+                        return;
+                    }
                 }
                 if self.task_scroll(vertical_amount) {
                     return;
@@ -437,25 +538,31 @@ impl Dome {
         time: u32,
     ) {
         self.desktop_pointer = Some([pos.x, pos.y]);
-        let size = self
-            .space
-            .outputs()
-            .next()
-            .and_then(|o| self.space.output_geometry(o))
-            .map(|r| r.size)
-            .unwrap_or((1280, 800).into());
+        let size = self.output_geometry_at(pos).size;
         let serial = SERIAL_COUNTER.next_serial();
 
         let pointer = self.seat.get_pointer().unwrap();
 
-        self.task_motion(pos.x, pos.y, size.w, size.h);
-        if self.chrome_motion(pos.x, pos.y) {
+        let local = pos - self.output_geometry_at(pos).loc.to_f64();
+        self.task_motion(local.x, local.y, size.w, size.h);
+        if self.chrome_button_motion(pos.x, pos.y) || self.chrome_motion(pos.x, pos.y) {
+            // Relative libinput deltas must continue from the dragged pointer's new position.
+            pointer.motion(
+                self,
+                None,
+                &MotionEvent {
+                    location: pos,
+                    serial,
+                    time,
+                },
+            );
+            pointer.frame(self);
             return;
         }
         if let Some(menu) = self.menu {
             let x0 = [0., 46., 230., 280., 332., 390., 470.][menu];
-            self.menu_hover = if pos.x >= x0 && pos.x < x0 + 380. && pos.y >= 40. {
-                ((pos.y - 40.) / 28.) as i32
+            self.menu_hover = if local.x >= x0 && local.x < x0 + 380. && local.y >= 40. {
+                ((local.y - 40.) / 28.) as i32
             } else {
                 -1
             };

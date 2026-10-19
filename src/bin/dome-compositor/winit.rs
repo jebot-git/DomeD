@@ -2,15 +2,7 @@ use std::time::Duration;
 
 use smithay::{
     backend::{
-        renderer::{
-            damage::OutputDamageTracker,
-            element::{
-                memory::{MemoryRenderBuffer, MemoryRenderBufferRenderElement},
-                surface::WaylandSurfaceRenderElement,
-                AsRenderElements, Kind,
-            },
-            gles::GlesRenderer,
-        },
+        renderer::damage::OutputDamageTracker,
         winit::{self, WinitEvent},
     },
     output::{Mode, Output, PhysicalProperties, Subpixel},
@@ -19,12 +11,6 @@ use smithay::{
 };
 
 use crate::{CalloopData, Dome};
-
-smithay::backend::renderer::element::render_elements! {
-    DesktopElement<=GlesRenderer>;
-    Surface=WaylandSurfaceRenderElement<GlesRenderer>,
-    Chrome=MemoryRenderBufferRenderElement<GlesRenderer>,
-}
 
 pub fn init_winit(
     event_loop: &mut EventLoop<CalloopData>,
@@ -38,6 +24,12 @@ pub fn init_winit(
     backend
         .window()
         .set_title("Dome — experimental Wayland compositor");
+    if std::env::var("DOME_LOGIN_SESSION").as_deref() == Ok("1") {
+        backend.window().set_decorations(false);
+        backend.window().set_fullscreen(Some(
+            smithay::reexports::winit::window::Fullscreen::Borderless(None),
+        ));
+    }
     let mode = Mode {
         size: backend.window_size(),
         refresh: 60_000,
@@ -65,7 +57,7 @@ pub fn init_winit(
 
     let mut damage_tracker = OutputDamageTracker::from_output(&output);
 
-    std::env::set_var("WAYLAND_DISPLAY", &state.socket_name);
+    crate::activate_client_socket(state);
 
     let backend = std::rc::Rc::new(std::cell::RefCell::new(backend));
     let tick = backend.clone();
@@ -76,9 +68,7 @@ pub fn init_winit(
             smithay::reexports::calloop::timer::TimeoutAction::ToDuration(Duration::from_millis(16))
         },
     )?;
-    let mut decoration_buffers: std::collections::HashMap<u64, (String, MemoryRenderBuffer)> =
-        Default::default();
-    let mut shell_buffer: Option<(String, MemoryRenderBuffer)> = None;
+    let mut desktop = crate::desktop::DesktopRenderer::default();
     event_loop
         .handle()
         .insert_source(winit, move |event, _, data| {
@@ -101,77 +91,24 @@ pub fn init_winit(
                 }
                 WinitEvent::Input(event) => state.process_input_event(event),
                 WinitEvent::Redraw => {
-                    state.xr_input();
-                    state.sync_scene();
                     let size = backend.window_size();
-                    let damage = Rectangle::from_size(size);
-
-                    let key = format!(
-                        "{:?}:{}:{}:{}:{:?}:{:?}:{}:{}",
-
-                        (state.applied_revision,state.appearance_open,state.session_confirm,format!("{:?}:{:?}",state.appearance,state.session.state()),state.about,state.task_popup,state.task_context,state.pins.clone(),state.tray.state().revision,if state.task_popup.is_some(){state.start_time.elapsed().as_millis()/100}else{0}),
-                        state.launcher,
-                        state.desktop_manager,
-                        state.launch_query,
-                        size,state.menu,state.menu_hover,std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs()/60
-                    );
-                    if shell_buffer.as_ref().is_none_or(|(old, _)| old != &key) {
-                        let realm = state.input_realm;
-                        state.input_realm = dome::Realm::Xr;
-                        let xr_pixels = state.shell_pixels(size.w, size.h);
-                        state.export_xr_shell(&xr_pixels,size.w,size.h);
-                        state.input_realm = dome::Realm::Desktop;
-                        let pixels = state.shell_pixels(size.w, size.h);
-                        state.input_realm = realm;
-                        shell_buffer = Some((
-                            key,
-                            MemoryRenderBuffer::from_slice(
-                                &pixels,
-                                smithay::backend::allocator::Fourcc::Argb8888,
-                                (size.w, size.h),
-                                1,
-                                Transform::Normal,
-                                None,
-                            ),
-                        ));
-                    }
-                    {let mut bridge=state.xr_bridge.lock().unwrap();for (id,f)in &mut bridge.frames{if dome::xr_transport::is_shell(*id){f.stamp=std::time::Instant::now();}}}
+                    desktop.prepare(state, size);
                     {
                         let (renderer, mut framebuffer) = backend.bind().unwrap();
-                        state.export_xr_surface(renderer);
-                        let shell = MemoryRenderBufferRenderElement::from_buffer(renderer,(0.,0.),&shell_buffer.as_ref().unwrap().1,None,None,None,Kind::Unspecified).unwrap();
-                        let scene=state.scene.lock().unwrap().clone();
-                        decoration_buffers.retain(|id,_|scene.window(*id).is_some());
-                        let mut elements:Vec<DesktopElement>=vec![shell.into()];
-                        for window in state.space.elements().rev(){
-                            let Some(id)=state.id_for(window.toplevel().unwrap().wl_surface())else{continue;};
-                            let Some(w)=scene.window(id)else{continue;};let Some(pos)=state.space.element_location(window)else{continue;};let geo=window.geometry();
-                            elements.extend(window.render_elements::<DesktopElement>(renderer,(pos.x-geo.loc.x,pos.y-geo.loc.y).into(),1.0.into(),1.));
-                            if w.maximized{continue;}
-                            let dw=geo.size.w+8;let dh=geo.size.h+34;
-                            if dw<8||dh<34||dw>8192||dh>8192{continue;}
-                            let key=format!("{dw}:{dh}:{}:{}",w.title,scene.focused==Some(id));
-                            if decoration_buffers.get(&id).is_none_or(|(old,_)|old!=&key){let bytes=crate::qt::paint(serde_json::json!({"kind":"frame","width":dw,"height":dh,"title":w.title,"active":scene.focused==Some(id)}));decoration_buffers.insert(id,(key,MemoryRenderBuffer::from_slice(&bytes,smithay::backend::allocator::Fourcc::Argb8888,(dw,dh),1,Transform::Normal,None)));}
-                            let deco=MemoryRenderBufferRenderElement::from_buffer(renderer,((pos.x-4)as f64,(pos.y-30)as f64),&decoration_buffers[&id].1,None,None,None,Kind::Unspecified).unwrap();elements.push(deco.into());
-                        }
-                        damage_tracker.render_output(renderer,&mut framebuffer,0,&elements,[state.appearance.background[0],state.appearance.background[1],state.appearance.background[2],1.]).unwrap();
+                        let _sync = desktop
+                            .render(
+                                state,
+                                renderer,
+                                &mut framebuffer,
+                                &mut damage_tracker,
+                                0,
+                                false,
+                            )
+                            .unwrap();
                     }
-                    backend.submit(Some(&[damage])).unwrap();
-
-                    state.registry.iter().map(|(_, w)| w).for_each(|window| {
-                        window.send_frame(
-                            &output,
-                            state.start_time.elapsed(),
-                            Some(Duration::ZERO),
-                            |_, _| Some(output.clone()),
-                        )
-                    });
-
-                    state.space.refresh();
-                    state.popups.cleanup();
+                    backend.submit(Some(&[Rectangle::from_size(size)])).unwrap();
+                    crate::desktop::finish_frame(state, &output);
                     let _ = display.flush_clients();
-
-                    // The 60 Hz calloop timer schedules frames without a busy redraw loop.
                 }
                 WinitEvent::CloseRequested => {
                     state.loop_signal.stop();

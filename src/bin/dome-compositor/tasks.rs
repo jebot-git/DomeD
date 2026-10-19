@@ -38,7 +38,35 @@ impl Dome {
                 }
             })
             .unwrap_or(0);
-        let row = if self.task_context { 32. } else { 88. };
+        if self.task_context {
+            let work = dome::Rect {
+                x: 0.,
+                y: 36.,
+                w: width as f32,
+                h: (height - 96).max(1) as f32,
+            };
+            let view = dome::context_menu::Viewport::new(
+                count as f32 * 32. + 12.,
+                work.h,
+                self.task_context_offset,
+            );
+            let click = self
+                .task_context_at
+                .unwrap_or([110. + index as f32 * 130., height as f32 - 30.]);
+            let rect = dome::context_menu::rect(
+                dome::Rect {
+                    x: 0.,
+                    y: 0.,
+                    w: width as f32,
+                    h: height as f32,
+                },
+                click,
+                [320., view.height],
+                work,
+            );
+            return (rect.x as f64, rect.y as f64, rect.w as f64, rect.h as f64);
+        }
+        let row = 88.;
         let x = (105. + index as f64 * 130.)
             .min((width - 330) as f64)
             .max(4.);
@@ -55,6 +83,7 @@ impl Dome {
             || self.desktop_manager
             || self.about
             || self.appearance_open
+            || self.xr_settings_open
             || self.session_confirm.is_some()
         {
             return;
@@ -86,6 +115,14 @@ impl Dome {
         };
         self.task_context = button == 0x111;
         if self.task_context {
+            let pos = self.xr_shell_pos.unwrap_or_else(|| {
+                let p = self.seat.get_pointer().unwrap().current_location();
+                let p = p - self.shell_geometry().loc.to_f64();
+                [p.x, p.y]
+            });
+            self.task_context_at = Some([pos[0] as f32, pos[1] as f32]);
+            self.task_context_offset = 0.;
+            self.task_context_selected = 0;
             self.task_popup = Some(index);
             return;
         }
@@ -116,6 +153,14 @@ impl Dome {
         let rect = self.popup_rect(index, w, h);
         let inside = self.task_popup_contains(index, x, y, w, h);
         let context = self.task_context;
+        let viewport = self.task_context_viewport(h);
+        if inside && context {
+            if let Some(dir) = viewport.control((y - rect.1) as f32) {
+                self.task_context_offset =
+                    (self.task_context_offset + dir as f32 * 96.).clamp(0., viewport.max_offset());
+                return true;
+            }
+        }
         self.task_popup = None;
         self.task_context = false;
         if !inside {
@@ -124,7 +169,12 @@ impl Dome {
         let Some(task) = self.task_list().get(index).cloned() else {
             return true;
         };
-        let row = ((y - rect.1 - 6.) / if context { 32. } else { 88. }).max(0.) as usize;
+        let local_y = if context {
+            viewport.content_y((y - rect.1) as f32) as f64
+        } else {
+            y - rect.1
+        };
+        let row = ((local_y - 6.) / if context { 32. } else { 88. }).max(0.) as usize;
         if context {
             let app = task
                 .app
@@ -174,13 +224,14 @@ impl Dome {
             return false;
         }
         let pointer = self.seat.get_pointer().unwrap().current_location();
-        let size = self
-            .space
-            .outputs()
-            .next()
-            .and_then(|o| self.space.output_geometry(o))
-            .map(|r| r.size)
-            .unwrap_or((1280, 800).into());
+        if self.task_context {
+            let viewport = self.task_context_viewport(0);
+            self.task_context_offset =
+                (self.task_context_offset + delta as f32 * 3.).clamp(0., viewport.max_offset());
+            return true;
+        }
+        let size = self.shell_geometry().size;
+        let pointer = pointer - self.shell_geometry().loc.to_f64();
         if pointer.y < (size.h - 60) as f64
             || pointer.x < 110.
             || pointer.x >= (size.w - 160) as f64
@@ -234,11 +285,71 @@ impl Dome {
             rows.push(
                 serde_json::json!({"text":"Close All Windows","enabled":!task.windows.is_empty()}),
             );
-            return serde_json::json!({"x":x,"y":y,"w":width,"h":height,"context":true,"rows":rows});
+            let viewport = self.task_context_viewport(h);
+            return serde_json::json!({"x":x,"y":y,"w":width,"h":height,"context":true,"rows":rows,
+                "scroll_band":viewport.band(),"offset":viewport.offset,"can_up":viewport.offset>0.,"can_down":viewport.offset<viewport.max_offset(),"selected":self.task_context_selected});
         }
         let scene = self.scene.lock().unwrap();
         let mut bridge = self.xr_bridge.lock().unwrap();
         let rows:Vec<_>=task.windows.iter().take(4).filter_map(|id|{let window=scene.window(*id)?;bridge.requested.insert(*id,std::time::Instant::now());let frame=bridge.frames.get(id);Some(serde_json::json!({"text":window.title,"minimized":window.minimized,"active":scene.focused==Some(*id),"width":frame.map(|f|f.width),"height":frame.map(|f|f.height),"rgba":frame.map(|f|base64::engine::general_purpose::STANDARD.encode(&*f.rgba))}))}).collect();
         serde_json::json!({"x":x,"y":y,"w":width,"h":height,"context":false,"rows":rows})
+    }
+}
+
+impl Dome {
+    pub fn task_context_viewport(&self, _height: i32) -> dome::context_menu::Viewport {
+        let count = self
+            .task_popup
+            .and_then(|index| self.task_list().get(index).cloned())
+            .map(|t| {
+                t.app
+                    .and_then(|id| self.apps.iter().find(|a| a.id == id))
+                    .map_or(0, |a| a.actions.len())
+                    + 3
+            })
+            .unwrap_or(0);
+        dome::context_menu::Viewport::new(
+            count as f32 * 32. + 12.,
+            self.popup_work_area().h,
+            self.task_context_offset,
+        )
+    }
+    pub fn task_context_key(&mut self, key: u32) -> bool {
+        if !self.task_context || self.task_popup.is_none() {
+            return false;
+        }
+        let mut view = self.task_context_viewport(0);
+        let count = ((view.content_height - 12.) / 32.).max(0.) as usize;
+        match key {
+            0xff52 => self.task_context_selected = self.task_context_selected.saturating_sub(1),
+            0xff54 => {
+                self.task_context_selected =
+                    (self.task_context_selected + 1).min(count.saturating_sub(1))
+            }
+            0xff55 => view.scroll(-view.body()),
+            0xff56 => view.scroll(view.body()),
+            0xff50 => self.task_context_selected = 0,
+            0xff57 => self.task_context_selected = count.saturating_sub(1),
+            0xff0d => {
+                if let Some(index) = self.task_popup {
+                    let size = self.popup_work_area();
+                    let rect = self.popup_rect(index, size.w as i32, (size.h + 96.) as i32);
+                    let y = rect.1
+                        + view.band() as f64
+                        + 6.
+                        + self.task_context_selected as f64 * 32.
+                        + 16.
+                        - view.offset as f64;
+                    self.task_popup_click(rect.0 + 20., y, size.w as i32, (size.h + 96.) as i32);
+                }
+                return true;
+            }
+            _ => return false,
+        }
+        if !matches!(key, 0xff55 | 0xff56) {
+            view.reveal(6. + self.task_context_selected as f32 * 32., 32.);
+        }
+        self.task_context_offset = view.offset;
+        true
     }
 }

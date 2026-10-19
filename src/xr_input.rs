@@ -2,7 +2,8 @@
 use crate::{Action, Pose, Projection, Scene};
 use glam::{Quat, Vec3};
 use serde::{Deserialize, Serialize};
-/// A bounded spherical patch of the room dome, also used directly by OpenXR.
+/// Open cylinder strip. Vertical coordinates are height/radius, in radians of
+/// unwrapped arc length; horizontal radius never shrinks towards a pole.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DomePatch {
     pub frame: Pose,
@@ -18,15 +19,54 @@ pub struct Quad {
     pub size: [f32; 2],
     pub dome: Option<DomePatch>,
 }
+impl DomePatch {
+    pub fn layer_pose(&self) -> Pose {
+        Pose {
+            position_m: self
+                .frame
+                .transform([0., self.radius * (self.top + self.bottom) / 2., 0.]),
+            ..self.frame
+        }
+    }
+    pub fn aspect_ratio(&self) -> f32 {
+        self.horizontal / (self.top - self.bottom)
+    }
+    pub fn inward_normal(&self, point: Vec3) -> Vec3 {
+        let local = self
+            .frame
+            .inverse_rotate((point - Vec3::from_array(self.frame.position_m)).to_array());
+        Vec3::from_array(self.frame.rotate([-local[0], 0., -local[2]])).normalize_or_zero()
+    }
+}
+/// Lean a cylindrical screen about its lower centre edge, preserving texture
+/// dimensions and keeping the upper lane open rather than converging at a pole.
+pub fn upper_tilt_frame(
+    frame: Pose,
+    radius: f32,
+    bottom: f32,
+    tilt_deg: f32,
+    horizontal: f32,
+) -> Pose {
+    let lean = Quat::from_rotation_x(tilt_deg.to_radians());
+    let pivot = Vec3::new(0., radius * bottom, -radius);
+    // A tilted cylindrical strip's lower corners dip below its centre.
+    // Lift by that dip so the upper lane never intersects the lane below.
+    let clearance = radius * (1. - (horizontal / 2.).cos()) * tilt_deg.to_radians().sin();
+    let shift = pivot - lean * pivot + Vec3::Y * clearance;
+    Pose {
+        position_m: frame.transform(shift.to_array()),
+        orientation_xyzw: (Quat::from_array(frame.orientation_xyzw) * lean).to_array(),
+    }
+}
 impl Quad {
     pub fn point(&self, uv: [f32; 2]) -> Vec3 {
         if let Some(d) = &self.dome {
             let yaw = (uv[0] - 0.5) * d.horizontal;
             let pitch = d.top + (d.bottom - d.top) * uv[1];
             Vec3::from_array(d.frame.transform([
-                d.radius * pitch.cos() * yaw.sin(),
-                d.radius * pitch.sin(),
-                -d.radius * pitch.cos() * yaw.cos(),
+                d.radius * yaw.sin(),
+                d.radius * pitch,
+                -d.radius * yaw.cos(),
             ]))
         } else {
             Vec3::from_array(self.pose.transform([
@@ -41,22 +81,26 @@ impl Quad {
             let rotation = Quat::from_array(patch.frame.orientation_xyzw).conjugate();
             let o = rotation * (origin - Vec3::from_array(patch.frame.position_m));
             let d = rotation * direction.normalize_or_zero();
-            let b = o.dot(d);
-            let disc = b * b - o.length_squared() + patch.radius * patch.radius;
+            let a = d.x * d.x + d.z * d.z;
+            if a < 0.000001 {
+                return None;
+            } // No top/bottom caps.
+            let b = o.x * d.x + o.z * d.z;
+            let disc = b * b - a * (o.x * o.x + o.z * o.z - patch.radius * patch.radius);
             if disc < 0. {
                 return None;
             }
-            for t in [-b - disc.sqrt(), -b + disc.sqrt()] {
+            for t in [(-b - disc.sqrt()) / a, (-b + disc.sqrt()) / a] {
                 if t <= 0. {
                     continue;
                 }
                 let p = o + d * t;
                 // The window is visible from inside the dome, matching the compositor layer.
-                if p.dot(d) <= 0. {
+                if p.x * d.x + p.z * d.z <= 0. {
                     continue;
                 }
                 let yaw = p.x.atan2(-p.z);
-                let pitch = (p.y / patch.radius).clamp(-1., 1.).asin();
+                let pitch = p.y / patch.radius;
                 let uv = [
                     yaw / patch.horizontal + 0.5,
                     (patch.top - pitch) / (patch.top - patch.bottom),
@@ -64,7 +108,7 @@ impl Quad {
                 if clamp {
                     return Some(uv);
                 }
-                // Ray/sphere reconstruction can put an exact edge a few ulps outside.
+                // Ray/cylinder reconstruction can put an exact edge a few ulps outside.
                 if uv.iter().all(|v| (-0.000001..=1.000001).contains(v)) {
                     return Some(uv.map(|v| v.clamp(0., 1.)));
                 }
@@ -94,7 +138,9 @@ impl Quad {
 }
 pub fn quads(scene: &Scene, head: Pose) -> Vec<Quad> {
     let old = scene.frame_pose();
-    let frame = if scene.config.projection == Projection::InView {
+    let frame = if scene.config.projection == Projection::InView
+        || scene.config.anchor_mode == crate::AnchorMode::Head
+    {
         head
     } else {
         old
@@ -146,20 +192,45 @@ pub fn quads(scene: &Scene, head: Pose) -> Vec<Quad> {
                 [0., 0.]
             };
             let yaw = (p.yaw_deg + offset[0]).to_radians();
+            let scale = if scene.config.projection == Projection::RoomDome {
+                w.xr_scale.min(175. / p.width_deg)
+            } else {
+                w.xr_scale
+            };
             let mid = (p.top_deg + p.bottom_deg) / 2.;
-            let half = ((p.top_deg - p.bottom_deg) / 2. * w.xr_scale).min(84.);
-            let pitch = (mid + offset[1]).clamp(-89. + half, 89. - half);
+            let half = (p.top_deg - p.bottom_deg) / 2. * scale;
+            let pitch = if scene.config.projection == Projection::RoomDome {
+                mid + offset[1]
+            } else {
+                (mid + offset[1]).clamp(-89. + half.min(84.), 89. - half.min(84.))
+            };
             let q = fq * Quat::from_rotation_y(-yaw) * Quat::from_rotation_x(pitch.to_radians());
-            let height =
-                2. * p.radius_m * ((p.top_deg - p.bottom_deg) / 2.).to_radians().tan() * w.xr_scale;
+            let height = if scene.config.projection == Projection::RoomDome {
+                p.radius_m * (p.top_deg - p.bottom_deg).to_radians() * scale
+            } else {
+                2. * p.radius_m * ((p.top_deg - p.bottom_deg) / 2.).to_radians().tan() * scale
+            };
             let dome = if scene.config.projection == Projection::RoomDome {
                 Some(DomePatch {
-                    frame: Pose {
-                        position_m: frame.position_m,
-                        orientation_xyzw: (fq * Quat::from_rotation_y(-yaw)).to_array(),
+                    frame: {
+                        let frame = Pose {
+                            position_m: frame.position_m,
+                            orientation_xyzw: (fq * Quat::from_rotation_y(-yaw)).to_array(),
+                        };
+                        if w.lane == 0 {
+                            upper_tilt_frame(
+                                frame,
+                                p.radius_m,
+                                (pitch - half).to_radians(),
+                                scene.config.dome_upper_tilt_deg,
+                                (p.width_deg * scale).to_radians(),
+                            )
+                        } else {
+                            frame
+                        }
                     },
                     radius: p.radius_m,
-                    horizontal: (p.width_deg * w.xr_scale).min(175.).to_radians(),
+                    horizontal: (p.width_deg * scale).min(175.).to_radians(),
                     top: (pitch + half).to_radians(),
                     bottom: (pitch - half).to_radians(),
                 })
@@ -169,12 +240,8 @@ pub fn quads(scene: &Scene, head: Pose) -> Vec<Quad> {
             let pose = if let Some(d) = &dome {
                 let angle = pitch.to_radians();
                 Pose {
-                    position_m: d.frame.transform([
-                        0.,
-                        p.radius_m * angle.sin(),
-                        -p.radius_m * angle.cos(),
-                    ]),
-                    orientation_xyzw: q.to_array(),
+                    position_m: d.frame.transform([0., p.radius_m * angle, -p.radius_m]),
+                    orientation_xyzw: d.frame.orientation_xyzw,
                 }
             } else {
                 w.xr_pose.unwrap_or(Pose {
@@ -216,9 +283,8 @@ pub fn quads(scene: &Scene, head: Pose) -> Vec<Quad> {
                 d.bottom -= 4. * vertical_pixel;
                 d.radius -= 0.001;
                 let pitch = (d.top + d.bottom) / 2.;
-                panel.pose.position_m =
-                    d.frame
-                        .transform([0., d.radius * pitch.sin(), -d.radius * pitch.cos()]);
+                panel.pose.position_m = d.frame.transform([0., d.radius * pitch, -d.radius]);
+                panel.size = [d.radius * d.horizontal, d.radius * (d.top - d.bottom)];
             } else {
                 panel.size[0] += 8. * flat_pitch[0];
                 panel.size[1] += 8. * flat_pitch[1];
@@ -227,19 +293,125 @@ pub fn quads(scene: &Scene, head: Pose) -> Vec<Quad> {
             }
         }
     }
+    crate::spatial_popup::append_quads(scene, &mut panels, head);
     panels
 }
-/// View-relative shell bars retain independent angular widths and lens-safe insets.
-pub fn shell_quads(
-    scene: &Scene,
-    head: Pose,
-    shell: &crate::xr_transport::ShellLayout,
-) -> Vec<Quad> {
+/// Direct-view bars use lens-safe insets. Dome bars sit outside the lane
+/// latitudes and orbit the dome anchor with the headset's horizontal gaze.
+/// Head pitch stays independent so looking up/down can reach either bar.
+fn bar_quads(scene: &Scene, head: Pose, shell: &crate::xr_transport::ShellLayout) -> Vec<Quad> {
     if shell.width == 0 || shell.height == 0 {
         return vec![];
     }
     let c = &scene.config;
-    let depth = 0.6;
+    // Expanded configuration is a view pane, never a stretched upper bar.
+    if shell.top == shell.height {
+        let room = c.projection == Projection::RoomDome;
+        let frame = if room && c.anchor_mode == crate::AnchorMode::Room {
+            scene.frame_pose()
+        } else {
+            head
+        };
+        let depth = if room {
+            c.radius_m
+        } else {
+            c.pullout_distance_m
+        };
+        let aspect = shell.width as f32 / shell.height as f32;
+        let height = (2. * depth * (c.vertical_fov_deg.min(80.) * 0.35).to_radians().tan())
+            .min(2. * depth * 40f32.to_radians().tan() / aspect);
+        return vec![Quad {
+            id: crate::xr_transport::TOP_BAR,
+            pose: Pose {
+                position_m: frame.transform([0., 0., -depth]),
+                orientation_xyzw: frame.orientation_xyzw,
+            },
+            size: [height * aspect, height],
+            dome: None,
+        }];
+    }
+    if c.projection == Projection::RoomDome {
+        let anchor = if c.anchor_mode == crate::AnchorMode::Head {
+            head
+        } else {
+            scene.frame_pose()
+        };
+        let forward = Vec3::from_array(head.rotate([0., 0., -1.]));
+        let yaw = if forward.x.hypot(forward.z) > 0.0001 {
+            forward.x.atan2(-forward.z)
+        } else {
+            let right = Vec3::from_array(head.rotate([1., 0., 0.]));
+            right.z.atan2(right.x)
+        };
+        let rotation = Quat::from_rotation_y(-yaw);
+        let frame = Pose {
+            position_m: anchor.position_m,
+            orientation_xyzw: rotation.to_array(),
+        };
+        let inner = c.dome_vertical_span_deg / 2.;
+        return [
+            (
+                crate::xr_transport::TOP_BAR,
+                c.upper_bar_x_deg,
+                c.upper_bar_max_width_deg,
+                c.upper_bar_height_deg,
+                shell.top,
+                36.,
+                1.,
+            ),
+            (
+                crate::xr_transport::TASK_BAR,
+                c.taskbar_x_deg,
+                c.taskbar_max_width_deg,
+                c.taskbar_height_deg,
+                shell.bottom,
+                60.,
+                -1.,
+            ),
+        ]
+        .into_iter()
+        .map(|(id, x, width, height, pixels, nominal, sign)| {
+            let bar_height = c.radius_m * height.to_radians();
+            let h = bar_height * pixels as f32 / nominal;
+            let edge = c.radius_m * inner.to_radians();
+            let bar_frame = if sign > 0. {
+                let bottom = scene
+                    .panels()
+                    .iter()
+                    .filter(|p| p.workspace == scene.active_workspace && p.lane == 0)
+                    .map(|p| p.bottom_deg)
+                    .reduce(f32::min)
+                    .unwrap_or(c.lane_spans(scene.workspaces[scene.active_workspace].shares)[0][0]);
+                upper_tilt_frame(
+                    frame,
+                    c.radius_m,
+                    bottom.to_radians(),
+                    c.dome_upper_tilt_deg,
+                    width.min(160.).to_radians(),
+                )
+            } else {
+                frame
+            };
+            Quad {
+                id,
+                pose: Pose {
+                    position_m: bar_frame.transform([
+                        c.radius_m * x.to_radians().tan(),
+                        sign * (edge + bar_height - h / 2.),
+                        -c.radius_m,
+                    ]),
+                    orientation_xyzw: bar_frame.orientation_xyzw,
+                },
+                size: [
+                    2. * c.radius_m * (width.min(160.) / 2.).to_radians().tan(),
+                    h,
+                ],
+                dome: None,
+            }
+        })
+        .collect();
+    }
+    let depth = c.bar_distance_m;
     let top_edge = depth
         * (c.vertical_fov_deg / 2. - c.upper_inset_deg)
             .to_radians()
@@ -280,7 +452,18 @@ pub fn shell_quads(
         Quad {
             id,
             pose: Pose {
-                position_m: head.transform([0., edge + if top { -h / 2. } else { h / 2. }, -depth]),
+                position_m: head.transform([
+                    depth
+                        * (if top {
+                            c.upper_bar_x_deg
+                        } else {
+                            c.taskbar_x_deg
+                        })
+                        .to_radians()
+                        .tan(),
+                    edge + if top { -h / 2. } else { h / 2. },
+                    -depth,
+                ]),
                 orientation_xyzw: head.orientation_xyzw,
             },
             size: [2. * depth * (width.min(160.) / 2.).to_radians().tan(), h],
@@ -289,6 +472,41 @@ pub fn shell_quads(
     })
     .collect()
 }
+/// One angular pointer spans all depths and empty space without target snapping.
+pub fn mouse_ray(head: Pose, angles: [f32; 2]) -> Vec3 {
+    let [yaw, pitch] = angles;
+    Vec3::from_array(head.rotate([
+        yaw.sin() * pitch.cos(),
+        pitch.sin(),
+        -yaw.cos() * pitch.cos(),
+    ]))
+}
+
+pub fn move_mouse(angles: &mut [f32; 2], dx: f64, dy: f64) {
+    if !dx.is_finite() || !dy.is_finite() {
+        return;
+    }
+    angles[0] = (angles[0] + dx as f32 * 0.0025 + std::f32::consts::PI)
+        .rem_euclid(std::f32::consts::TAU)
+        - std::f32::consts::PI;
+    angles[1] = (angles[1] - dy as f32 * 0.0025).clamp(-1.5, 1.5);
+}
+
+/// The mouse is a view cursor: its apparent size and depth never depend on
+/// whether the ray is over a bar, a distant lane, or the space between them.
+pub fn mouse_reticle(head: Pose, angles: [f32; 2]) -> Quad {
+    let ray = mouse_ray(head, angles);
+    Quad {
+        id: u64::MAX,
+        pose: Pose {
+            position_m: (Vec3::from_array(head.position_m) + ray * 0.4).to_array(),
+            orientation_xyzw: Quat::from_rotation_arc(Vec3::Z, -ray).to_array(),
+        },
+        size: [0.006, 0.006],
+        dome: None,
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
 pub struct Hand {
     pub valid: bool,
@@ -303,6 +521,7 @@ pub enum SeatEvent {
     Scroll { horizontal: f64, vertical: f64 },
     Motion { id: u64, uv: [f32; 2] },
     Button { button: u32, pressed: bool },
+    Leave,
     Reset,
 }
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -450,7 +669,9 @@ impl Interaction {
             if !hands[i].grip {
                 self.grabs[i] = None;
             } else if self.armed[i] && self.grabs[i].is_none() {
-                if let Some((id, _)) = hit(i).filter(|(id, _)| scene.window(*id).is_some()) {
+                if let Some((id, _)) = hit(i)
+                    .filter(|(id, _)| scene.window(*id).is_some() && scene.popup(*id).is_none())
+                {
                     let q = quads.iter().find(|q| q.id == id).unwrap();
                     self.grabs[i] = Some(Grab {
                         id,
@@ -622,11 +843,15 @@ impl Interaction {
         let owner = self.owner.or_else(|| {
             [1usize, 0]
                 .into_iter()
-                .find(|i| self.armed[*i] && hands[*i].pinch.iter().any(|v| *v) && hit(*i).is_some())
+                .find(|i| {
+                    self.armed[*i]
+                        && hands[*i].pinch.iter().any(|v| *v)
+                        && (hit(*i).is_some() || !scene.popups.is_empty())
+                })
                 .or_else(|| {
                     [1usize, 0]
                         .into_iter()
-                        .find(|i| self.armed[*i] && hit(*i).is_some())
+                        .find(|i| self.armed[*i] && (hit(*i).is_some() || !scene.popups.is_empty()))
                 })
         });
         if let Some(i) = owner {
@@ -648,15 +873,24 @@ impl Interaction {
             };
             if let Some((id, uv)) = target {
                 out.events.push(SeatEvent::Motion { id, uv });
+            } else {
+                out.events.push(SeatEvent::Leave);
             }
             for b in 0..3 {
-                let pressed = hands[i].pinch[b] && (target.is_some() || self.buttons[b]);
+                let pressed = hands[i].pinch[b]
+                    && (target.is_some() || self.buttons[b] || !scene.popups.is_empty());
                 if pressed != self.buttons[b] {
                     if pressed {
                         if let Some((id, _)) = target {
                             self.target = Some(id);
-                            if scene.window(id).is_some() {
-                                out.actions.push(Action::Focus { id });
+                            if scene.window(scene.popup_owner(id)).is_some() {
+                                out.actions.push(Action::Focus {
+                                    id: if scene.window(id).is_some() {
+                                        id
+                                    } else {
+                                        scene.popup_owner(id)
+                                    },
+                                });
                             }
                         }
                     }
@@ -1014,4 +1248,46 @@ pub fn paint_border(rgba: &mut [u8], width: u32, height: u32, requested: u8) {
             }
         }
     }
+}
+
+/// Notifications occupy a separate, readable view pane instead of stretching a bar.
+pub fn shell_quads(
+    scene: &Scene,
+    head: Pose,
+    shell: &crate::xr_transport::ShellLayout,
+) -> Vec<Quad> {
+    let mut quads = bar_quads(scene, head, shell);
+    if let Some([x, y, w, h]) = shell
+        .notifications
+        .filter(|_| shell.width > 0 && shell.height > 0)
+    {
+        let depth = scene.config.bar_distance_m;
+        let scale = (2.
+            * depth
+            * (scene.config.upper_bar_max_width_deg.min(80.) / 2.)
+                .to_radians()
+                .tan()
+            / shell.width as f32)
+            .min(
+                2. * depth
+                    * (scene.config.vertical_fov_deg.min(80.) * 0.4)
+                        .to_radians()
+                        .tan()
+                    / shell.height as f32,
+            );
+        quads.push(Quad {
+            id: crate::xr_transport::NOTIFICATIONS,
+            pose: Pose {
+                position_m: head.transform([
+                    (x as f32 + w as f32 / 2. - shell.width as f32 / 2.) * scale,
+                    (shell.height as f32 / 2. - y as f32 - h as f32 / 2.) * scale,
+                    -depth,
+                ]),
+                orientation_xyzw: head.orientation_xyzw,
+            },
+            size: [w as f32 * scale, h as f32 * scale],
+            dome: None,
+        });
+    }
+    quads
 }

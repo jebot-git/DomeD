@@ -2,7 +2,6 @@
 // Qt is a paint/style adapter. Window management and input remain Rust-owned.
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QStyleFactory>
-#include <QtWidgets/QStyleOptionTitleBar>
 #include <QtWidgets/QStyleOptionMenuItem>
 #include <QtGui/QPainter>
 #include <QtGui/QIcon>
@@ -17,22 +16,22 @@ static QApplication *app() {
     static char *argv[]={name,platform,offscreen,nullptr};
     static QApplication *application=[](){auto *a=new QApplication(argc,argv);a->setStyle(QStyleFactory::create("Fusion"));a->setFont(QFont("Sans Serif",10));return a;}();return application;
 }
-static QStyleOptionTitleBar title(int width,bool active,const QString &text) {
-    QStyleOptionTitleBar s;s.rect=QRect(0,0,width,30);s.text=text;s.titleBarFlags=Qt::Window|Qt::WindowTitleHint|Qt::WindowSystemMenuHint|Qt::WindowMinimizeButtonHint|Qt::WindowMaximizeButtonHint|Qt::WindowCloseButtonHint;
-    s.state=QStyle::State_Enabled|(active?QStyle::State_Active:QStyle::State_None);s.titleBarState=active?Qt::WindowActive:Qt::WindowNoState;s.palette=app()->palette();
-    s.subControls=QStyle::SC_TitleBarLabel|QStyle::SC_TitleBarMinButton|QStyle::SC_TitleBarMaxButton|QStyle::SC_TitleBarCloseButton;return s;
+// Shared by painting and hit testing: close left, zoom then depth at right.
+static QRect workbenchGadget(int width,int hit) {
+    if(hit==1)return QRect(0,0,30,30);
+    if(hit==3)return QRect(width-60,0,30,30);
+    if(hit==6)return QRect(width-30,0,30,30);
+    return {};
 }
 extern "C" int dome_qt_hit(int width,int height,int x,int y) {
-    app();if(x<4||x>=width-4||y<4||y>=height-4)return 5;if(y<30){auto s=title(width,true,{});auto h=app()->style()->hitTestComplexControl(QStyle::CC_TitleBar,&s,QPoint(x,y));if(h==QStyle::SC_TitleBarCloseButton)return 1;if(h==QStyle::SC_TitleBarMinButton)return 2;if(h==QStyle::SC_TitleBarMaxButton)return 3;return 4;}
-    if(x<4||x>=width-4||y>=height-4)return 5;return 0;
+    if(x<0||y<0||x>=width||y>=height)return 0;
+    if(y<30){for(int hit:{1,3,6})if(workbenchGadget(width,hit).contains(x,y))return hit;return 4;}
+    if(x<4||x>=width-4||y>=height-4)return 5;
+    return 0;
 }
 extern "C" int dome_qt_paint(const char *json,unsigned char *pixels,int length) {
     app();auto o=QJsonDocument::fromJson(json).object();int w=o["width"].toInt(),h=o["height"].toInt();if(w<1||h<1||qint64(w)*h*4!=length)return 0;
     QImage image(pixels,w,h,QImage::Format_ARGB32_Premultiplied);image.fill(Qt::transparent);QPainter p(&image);p.setRenderHint(QPainter::Antialiasing);p.setFont(app()->font());
-    if(o["kind"].toString()=="frame") {
-        p.fillRect(image.rect(),QColor(92,98,104));p.setCompositionMode(QPainter::CompositionMode_Clear);p.fillRect(QRect(4,30,w-8,h-34),Qt::transparent);p.setCompositionMode(QPainter::CompositionMode_SourceOver);
-        auto s=title(w,o["active"].toBool(),o["title"].toString());app()->style()->drawComplexControl(QStyle::CC_TitleBar,&s,&p);return 1;
-    }
     // Classic global menu hierarchy: system, bold application, commands, right extras.
     // Both bars and their menus share one palette, including opacity and selection.
     auto appearance=o["appearance"].toObject();bool light=appearance["light"].toBool(false);
@@ -50,11 +49,47 @@ extern "C" int dome_qt_paint(const char *json,unsigned char *pixels,int length) 
         menuPalette.setColor(group,QPalette::Highlight,selection);menuPalette.setColor(group,QPalette::HighlightedText,foreground);
         menuPalette.setColor(group,QPalette::Mid,muted);
     }
+    if(o["kind"].toString()=="frame") {
+        bool active=o["active"].toBool();
+        QColor border=active?accent:muted;border.setAlpha(appearance["opacity"].toInt(248));
+        p.fillRect(QRect(0,30,4,h-30),border);p.fillRect(QRect(w-4,30,4,h-30),border);p.fillRect(QRect(0,h-4,w,4),border);
+        QColor caption=active?(light?accent.lighter(145):accent.darker(190)):background;
+        p.setOpacity(appearance["opacity"].toInt(248)/255.0);
+        p.fillRect(QRect(0,0,w,30),caption);
+        QRect label(38,0,w-106,30);
+        p.setPen(foreground);p.drawText(label,Qt::AlignLeft|Qt::AlignVCenter,p.fontMetrics().elidedText(o["title"].toString(),Qt::ElideRight,label.width()));
+        // Workbench relief, square close gadget, size toggle and overlapping depth planes.
+        p.setRenderHint(QPainter::Antialiasing,false);
+        for(int hit:{1,3,6}){
+            QRect button=workbenchGadget(w,hit).adjusted(1,1,-1,-1);
+            bool down=o["pressed"].toInt()==hit;
+            p.fillRect(button,down?selection:caption);
+            p.setPen(down?caption.darker(180):caption.lighter(160));
+            p.drawLine(button.topLeft(),button.topRight());p.drawLine(button.topLeft(),button.bottomLeft());
+            p.setPen(down?caption.lighter(160):caption.darker(180));
+            p.drawLine(button.bottomLeft(),button.bottomRight());p.drawLine(button.topRight(),button.bottomRight());
+            QPoint center=button.center()+QPoint(down?1:0,down?1:0);
+            p.setPen(QPen(active?foreground:muted,1));p.setBrush(Qt::NoBrush);
+            if(hit==1){p.fillRect(QRect(center.x()-4,center.y()-4,9,9),active?foreground:muted);}
+            else if(hit==3){
+                p.drawRect(QRect(center.x()-7,center.y()-5,14,10));
+                if(o["zoomed"].toBool())p.fillRect(QRect(center.x()-5,center.y()-3,5,4),active?foreground:muted);
+                else p.drawRect(QRect(center.x()-5,center.y()-3,5,4));
+            } else {
+                p.drawRect(QRect(center.x()-7,center.y()-5,10,8));
+                p.fillRect(QRect(center.x()-2,center.y()-1,10,8),down?selection:caption);
+                p.drawRect(QRect(center.x()-2,center.y()-1,10,8));
+            }
+        }
+        return 1;
+    }
+    if(o["kind"].toString()!="notifications") {
     p.fillRect(0,0,w,36,barBackground);p.setPen(muted);p.drawLine(0,35,w,35);
     QStringList labels={QString::fromUtf8("◉"),o["app"].toString(),"File","Edit","View","Window","Help"};int xs[]={0,46,230,280,332,390,470};int widths[]={46,184,50,52,58,80,58};int menu=o["menu"].toInt(-1);
     for(int i=0;i<labels.size();++i){QRect rect(xs[i],0,widths[i],35);QFont font=app()->font();font.setBold(i==1);p.setFont(font);if(i==menu)p.fillRect(rect,selection);p.setPen(foreground);p.drawText(rect,Qt::AlignCenter,p.fontMetrics().elidedText(labels[i],Qt::ElideRight,widths[i]-14));}
     p.setFont(app()->font());p.setPen(foreground);p.drawText(QRect(w-168,0,152,35),Qt::AlignRight|Qt::AlignVCenter,QDateTime::currentDateTime().toString("ddd HH:mm"));
-    auto tray=o["tray"].toObject();auto extras=tray["items"].toArray();int tx=w-176-extras.size()*28;
+    p.drawText(QRect(w-220,0,44,35),Qt::AlignCenter,o["keyboard"].toString());
+    auto tray=o["tray"].toObject();auto extras=tray["items"].toArray();int tx=w-220-extras.size()*28;
     for(int index=0;index<extras.size();++index){auto item=extras[index].toObject();QImage status(22,22,QImage::Format_ARGB32_Premultiplied);status.fill(Qt::transparent);QPainter iconPainter(&status);auto icon=QIcon::fromTheme(item["icon"].toString());if(!icon.isNull()){icon.paint(&iconPainter,QRect(0,0,22,22));}else{auto raw=QByteArray::fromBase64(item["pixmap"].toString().toLatin1());int iw=item["width"].toInt(),ih=item["height"].toInt();if(iw>0&&ih>0&&raw.size()==qint64(iw)*ih*4){QByteArray rgba=raw;for(int k=0;k<raw.size();k+=4){rgba[k]=raw[k+1];rgba[k+1]=raw[k+2];rgba[k+2]=raw[k+3];rgba[k+3]=raw[k];}QImage bitmap(reinterpret_cast<const unsigned char*>(rgba.constData()),iw,ih,QImage::Format_RGBA8888);iconPainter.drawImage(QRect(0,0,22,22),bitmap);}}
         iconPainter.setCompositionMode(QPainter::CompositionMode_SourceIn);iconPainter.fillRect(status.rect(),foreground);iconPainter.end();int x=tx+index*28;if(tray["menu"].toInt(-1)==index){p.fillRect(QRect(x,0,28,35),selection);}p.drawImage(x+3,7,status);if(item["attention"].toBool()){p.setPen(accent);p.drawLine(x+10,32,x+18,32);}}
     p.fillRect(0,h-60,w,60,barBackground);p.setPen(foreground);p.drawText(QRect(12,h-60,86,60),Qt::AlignVCenter,"⌕  Launch");p.drawText(QRect(w-150,h-60,140,60),Qt::AlignVCenter,"▦  Desktops");
@@ -66,20 +101,50 @@ extern "C" int dome_qt_paint(const char *json,unsigned char *pixels,int length) 
     }
     if(o["launcher"].toBool()){p.fillRect(QRect(20,56,600,400),QColor(26,35,45));p.setPen(QColor(232,238,245));p.drawText(36,88,"Applications  ·  "+o["query"].toString());i=0;for(auto value:o["apps"].toArray()){auto a=value.toObject();int y=106+i++*36;QIcon icon=QIcon::fromTheme(a["icon"].toString());icon.paint(&p,QRect(36,y,24,24));p.drawText(72,y+19,p.fontMetrics().elidedText(a["name"].toString(),Qt::ElideRight,280));auto categories=a["categories"].toArray();if(!categories.isEmpty()){p.setPen(QColor(155,172,187));p.drawText(QRect(370,y,230,26),Qt::AlignRight|Qt::AlignVCenter,categories[0].toString());p.setPen(QColor(232,238,245));}}}
     if(o["manager"].toBool()){p.fillRect(QRect(w-330,h-390,320,320),QColor(26,35,45));p.setPen(QColor(232,238,245));i=0;for(auto a:o["desktops"].toArray()){p.drawText(w-310,h-362+i*32,QString::number(i+1)+"  "+a.toString());++i;}p.drawText(w-310,h-362+i*32,"+ New desktop");}
-    auto popup=o["task_popup"].toObject();if(!popup.isEmpty()){int x=popup["x"].toInt(),y=popup["y"].toInt(),pw=popup["w"].toInt(),ph=popup["h"].toInt();p.fillRect(QRect(x,y,pw,ph),QColor(38,45,55,254));auto rows=popup["rows"].toArray();i=0;for(auto value:rows){auto a=value.toObject();bool context=popup["context"].toBool();int ry=y+6+i++*(context?32:88);if(context){p.setPen(a["enabled"].toBool()?QColor(238,242,247):QColor(129,137,149));p.drawText(QRect(x+14,ry,pw-28,32),Qt::AlignVCenter,a["text"].toString());}else{
+    auto popup=o["task_popup"].toObject();if(!popup.isEmpty()){int x=popup["x"].toInt(),y=popup["y"].toInt(),pw=popup["w"].toInt(),ph=popup["h"].toInt();p.fillRect(QRect(x,y,pw,ph),QColor(38,45,55,254));int band=popup["scroll_band"].toInt(),offset=popup["offset"].toInt();p.save();p.setClipRect(QRect(x,y+band,pw,ph-2*band));auto rows=popup["rows"].toArray();i=0;for(auto value:rows){auto a=value.toObject();bool context=popup["context"].toBool();int index=i;int ry=y+band+6+i++*(context?32:88)-offset;if(context){if(index==popup["selected"].toInt(-1))p.fillRect(QRect(x+4,ry,pw-8,32),selection);p.setPen(a["enabled"].toBool()?QColor(238,242,247):QColor(129,137,149));p.drawText(QRect(x+14,ry,pw-28,32),Qt::AlignVCenter,a["text"].toString());}else{
         if(a["active"].toBool())p.fillRect(QRect(x+4,ry,pw-8,84),QColor(64,80,102));int iw=a["width"].toInt(),ih=a["height"].toInt();auto bytes=QByteArray::fromBase64(a["rgba"].toString().toLatin1());if(iw>0&&ih>0&&bytes.size()==qint64(iw)*ih*4){QImage thumb(reinterpret_cast<const unsigned char*>(bytes.constData()),iw,ih,QImage::Format_RGBA8888);QSize size=thumb.size().scaled(126,76,Qt::KeepAspectRatio);p.drawImage(QRect(x+10,ry+4,size.width(),size.height()),thumb);}else{p.fillRect(QRect(x+10,ry+4,126,76),QColor(66,75,88));}
         p.setPen(QColor(238,242,247));p.drawText(QRect(x+146,ry+5,162,70),Qt::AlignVCenter|Qt::TextWordWrap,p.fontMetrics().elidedText(a["text"].toString(),Qt::ElideRight,155));
-    }}}
+    }}p.restore();if(band>0){for(bool up:{true,false}){QRect control(x,up?y:y+ph-band,pw,band);p.fillRect(control,background);p.setPen(popup[up?"can_up":"can_down"].toBool()?foreground:muted);p.drawText(control,Qt::AlignCenter,up?QString::fromUtf8("▲"):QString::fromUtf8("▼"));}}}
     if(menu>=0){auto items=o["items"].toArray();int x=xs[menu],height=items.size()*28+8;p.fillRect(QRect(x,36,380,height),background);for(i=0;i<items.size();++i){auto a=items[i].toObject();QStyleOptionMenuItem item;item.rect=QRect(x+3,40+i*28,374,28);item.text=a["text"].toString();item.state=a["enabled"].toBool(true)?QStyle::State_Enabled:QStyle::State_None;item.menuItemType=a["separator"].toBool()?QStyleOptionMenuItem::Separator:QStyleOptionMenuItem::Normal;if(i==o["hover"].toInt(-1))item.state|=QStyle::State_Selected;item.palette=menuPalette;app()->style()->drawControl(QStyle::CE_MenuItem,&item,&p);p.setPen(a["enabled"].toBool()?foreground:muted);if(i==o["hover"].toInt(-1)&&a["enabled"].toBool())p.setPen(foreground);p.drawText(QRect(x+240,40+i*28,128,28),Qt::AlignRight|Qt::AlignVCenter,a["shortcut"].toString());}}
-    if(!tray["menu"].isNull()&&!tray["menu"].isUndefined()){auto rows=tray["rows"].toArray();int index=tray["menu"].toInt();int x=qBound(4,w-176-(extras.size()-index)*28,w-284);p.fillRect(QRect(x,36,280,rows.size()*28+8),background);for(int n=0;n<rows.size();++n){auto row=rows[n].toObject();QStyleOptionMenuItem item;item.rect=QRect(x+3,40+n*28,274,28);item.text=row["text"].toString();item.state=row["enabled"].toBool()?QStyle::State_Enabled:QStyle::State_None;item.menuItemType=row["separator"].toBool()?QStyleOptionMenuItem::Separator:(row["submenu"].toBool()?QStyleOptionMenuItem::SubMenu:QStyleOptionMenuItem::Normal);item.checked=row["checked"].toBool();item.checkType=row["checkable"].toBool()?QStyleOptionMenuItem::NonExclusive:QStyleOptionMenuItem::NotCheckable;item.palette=menuPalette;if(!row["enabled"].toBool())item.palette.setCurrentColorGroup(QPalette::Disabled);app()->style()->drawControl(QStyle::CE_MenuItem,&item,&p);}}
+    if(!tray["menu"].isNull()&&!tray["menu"].isUndefined()){auto rows=tray["rows"].toArray();int index=tray["menu"].toInt();int x=qBound(4,w-220-(extras.size()-index)*28,w-284);p.fillRect(QRect(x,36,280,rows.size()*28+8),background);for(int n=0;n<rows.size();++n){auto row=rows[n].toObject();QStyleOptionMenuItem item;item.rect=QRect(x+3,40+n*28,274,28);item.text=row["text"].toString();item.state=row["enabled"].toBool()?QStyle::State_Enabled:QStyle::State_None;item.menuItemType=row["separator"].toBool()?QStyleOptionMenuItem::Separator:(row["submenu"].toBool()?QStyleOptionMenuItem::SubMenu:QStyleOptionMenuItem::Normal);item.checked=row["checked"].toBool();item.checkType=row["checkable"].toBool()?QStyleOptionMenuItem::NonExclusive:QStyleOptionMenuItem::NotCheckable;item.palette=menuPalette;if(!row["enabled"].toBool())item.palette.setCurrentColorGroup(QPalette::Disabled);app()->style()->drawControl(QStyle::CE_MenuItem,&item,&p);}}
+    auto xrSettings=o["xr_settings"].toObject();
+    if(!xrSettings.isEmpty()){
+        int x=xrSettings["x"].toInt(),y=xrSettings["y"].toInt(),sw=xrSettings["w"].toInt(),sh=xrSettings["h"].toInt();
+        double rowHeight=xrSettings["row_height"].toDouble();
+        p.fillRect(QRect(x,y,sw,sh),background);p.setPen(foreground);
+        p.drawText(QRect(x+20,y+4,sw-40,32),Qt::AlignVCenter,"Displays, XR Layout & Anchoring");
+        auto rows=xrSettings["rows"].toArray();
+        int first=xrSettings["first"].toInt(),visible=xrSettings["visible"].toInt();
+        p.save();p.setClipRect(QRect(x+12,y+40,sw-24,qRound(visible*rowHeight)));
+        for(int n=first;n<qMin(rows.size(),first+visible);++n){auto row=rows[n].toObject();int ry=qRound(y+40+(n-first)*rowHeight),rh=qRound(rowHeight);
+            if(n==xrSettings["selected"].toInt())p.fillRect(QRect(x+12,ry,sw-24,rh),selection);
+            p.setPen(foreground);p.drawText(QRect(x+20,ry,sw-310,rh),Qt::AlignVCenter,p.fontMetrics().elidedText(row["label"].toString(),Qt::ElideMiddle,sw-310));
+            p.drawText(QRect(x+sw-200,ry,140,rh),Qt::AlignCenter,row["value"].toString());
+            p.setPen(accent);p.drawText(QRect(x+sw-270,ry,70,rh),Qt::AlignCenter,"−");p.drawText(QRect(x+sw-60,ry,44,rh),Qt::AlignCenter,"+");
+        }
+        p.restore();
+        int sy=y+40+qRound(visible*rowHeight);
+        p.setPen(first>0?accent:muted);p.drawText(QRect(x+20,sy,sw/2-20,28),Qt::AlignCenter,first>0?"▲ Scroll up":"▲ Top");
+        p.setPen(first+visible<rows.size()?accent:muted);p.drawText(QRect(x+sw/2,sy,sw/2-20,28),Qt::AlignCenter,first+visible<rows.size()?"Scroll down ▼":"Bottom ▼");
+        for(auto button:{QRect(x+20,y+sh-66,240,36),QRect(x+280,y+sh-66,240,36),QRect(x+sw-140,y+sh-66,120,36)})p.fillRect(button,selection);
+        p.setPen(foreground);p.drawText(QRect(x+20,y+sh-66,240,36),Qt::AlignCenter,"Anchor at headset");p.drawText(QRect(x+280,y+sh-66,240,36),Qt::AlignCenter,"Restore defaults");p.drawText(QRect(x+sw-140,y+sh-66,120,36),Qt::AlignCenter,"Close");
+        p.setPen(muted);auto message=xrSettings["error"].toString();if(message.isEmpty())message="Changes save automatically · Arrows select/adjust · Esc closes";
+        p.drawText(QRect(x+20,y+sh-28,sw-40,24),Qt::AlignCenter,p.fontMetrics().elidedText(message,Qt::ElideRight,sw-40));
+    }
     if(o["about"].toBool()){QRect box((w-440)/2,(h-200)/2,440,200);p.fillRect(box,background);p.setPen(foreground);auto info=o["app_info"].toObject();QString text=o["about_is_app"].toBool()?info["name"].toString()+"\n"+info["comment"].toString()+"\n"+info["desktop_id"].toString():"Dome\nExperimental Rust / Smithay compositor\nQt6 desktop chrome · Native OpenXR";p.drawText(box.adjusted(24,24,-24,-24),Qt::AlignCenter|Qt::TextWordWrap,text+"\n\nClick or press a key to close");}
-    if(o["appearance_open"].toBool()){
+    if(o["appearance_open"].toBool()&&o["keyboard_settings"].isNull()){
         QRect box((w-600)/2,(h-400)/2,600,400);p.fillRect(box,background);p.setPen(foreground);
         p.drawText(box.adjusted(24,18,-24,-340),Qt::AlignLeft|Qt::AlignVCenter,"Appearance & Input");
-        QStringList names={"Colour scheme","Accent colour","Desktop background","Bar opacity","Resume hand cursor after","Reset settings"};
+        QStringList names={"Colour scheme","Accent colour","Desktop background","Chrome opacity","Resume hand cursor after","Reset settings"};
         QStringList values={light?"Light":"Dark",accent.name(),"Change",QString::number(barBackground.alpha()*100/255)+"%",QString::number(appearance["hand_resume_ms"].toInt(800))+" ms","Reset"};
         for(int n=0;n<names.size();++n){int y=box.y()+60+n*48;p.setPen(foreground);p.drawText(QRect(box.x()+24,y,270,40),Qt::AlignVCenter,names[n]);p.fillRect(QRect(box.x()+300,y,276,40),selection);p.drawText(QRect(box.x()+300,y,276,40),Qt::AlignCenter,values[n]);}
         p.setPen(muted);p.drawText(QRect(box.x()+24,box.y()+350,552,36),Qt::AlignCenter,"Changes save automatically · Click here or press Esc to close");
+    }
+    if(o["appearance_open"].toBool()&&o["keyboard_settings"].isObject()){
+        auto k=o["keyboard_settings"].toObject();QRect box((w-600)/2,(h-400)/2,600,400);p.fillRect(box,background);p.setPen(foreground);p.drawText(box.adjusted(24,18,-24,-340),Qt::AlignVCenter,"Keyboard Layouts · desktop and XR");
+        QStringList names={"Layouts","Variants","XKB options","Switch shortcut"};QStringList values={k["layout"].toString(),k["variant"].toString(),k["options"].toString(),o["keyboard_shortcut"].toString()};
+        for(int i=0;i<4;++i){int y=box.y()+60+i*48;p.setPen(foreground);p.drawText(QRect(box.x()+24,y,156,40),Qt::AlignVCenter,names[i]);QRect field(box.x()+180,y,396,40);p.fillRect(field,selection);if(i==o["keyboard_field"].toInt()){p.setPen(accent);p.drawRect(field.adjusted(0,0,-1,-1));}p.setPen(foreground);p.drawText(field.adjusted(8,0,-8,0),Qt::AlignVCenter,p.fontMetrics().elidedText(values[i],Qt::ElideLeft,380));}
+        p.setPen(foreground);p.drawText(QRect(box.x()+24,box.y()+252,552,36),Qt::AlignVCenter,k["ime"].toBool()?"Switch input methods: US English / Anthy (click to use XKB groups)":"Switch XKB groups (click to use US English / Anthy)");p.setPen(muted);p.drawText(QRect(box.x()+24,box.y()+290,552,28),Qt::AlignVCenter,"Click field to edit · Ctrl+A clears · Tab changes field");p.setPen(accent);p.drawText(QRect(box.x()+24,box.y()+316,552,28),Qt::AlignVCenter,p.fontMetrics().elidedText(o["keyboard_error"].toString(),Qt::ElideRight,552));p.setPen(foreground);p.drawText(QRect(box.x()+24,box.y()+344,252,40),Qt::AlignCenter,"Apply · Enter");p.drawText(QRect(box.x()+324,box.y()+344,252,40),Qt::AlignCenter,"Cancel · Esc");
     }
     if(!o["session_confirm"].isNull()&&!o["session_confirm"].isUndefined()){
         QRect box((w-440)/2,(h-200)/2,440,200);p.fillRect(box,background);p.setPen(foreground);
@@ -88,5 +153,17 @@ extern "C" int dome_qt_paint(const char *json,unsigned char *pixels,int length) 
         p.fillRect(QRect(box.x()+24,box.y()+140,180,40),selection);p.fillRect(QRect(box.x()+230,box.y()+140,186,40),selection);p.setPen(foreground);p.drawText(QRect(box.x()+24,box.y()+140,180,40),Qt::AlignCenter,"Cancel");p.drawText(QRect(box.x()+230,box.y()+140,186,40),Qt::AlignCenter,label);
     }
     auto error=o["session_error"].toString();if(!error.isEmpty()){p.fillRect(QRect(w/2-300,h-106,600,40),background);p.setPen(foreground);p.drawText(QRect(w/2-290,h-106,580,40),Qt::AlignVCenter,p.fontMetrics().elidedText(error,Qt::ElideRight,580));}
+    }
+    for(auto value:o["notifications"].toArray()){
+        auto n=value.toObject();int x=n["x"].toInt(),y=n["y"].toInt(),nw=n["w"].toInt(),nh=n["h"].toInt();
+        p.save();p.setClipRect(QRect(x,y,nw,nh));p.fillRect(QRect(x,y,nw,nh),barBackground);
+        p.fillRect(QRect(x,y,3,nh),n["critical"].toBool()?QColor(240,105,80):accent);
+        p.setPen(muted);p.drawText(QRect(x+12,y+4,nw-52,22),Qt::AlignVCenter,p.fontMetrics().elidedText(n["app"].toString(),Qt::ElideRight,nw-52));
+        p.setPen(foreground);p.drawText(QRect(x+nw-32,y,32,32),Qt::AlignCenter,"×");
+        auto bold=p.font();bold.setBold(true);p.setFont(bold);p.drawText(QRect(x+12,y+28,nw-24,24),Qt::AlignVCenter,p.fontMetrics().elidedText(n["summary"].toString(),Qt::ElideRight,nw-24));p.setFont(app()->font());
+        p.save();p.setClipRect(QRect(x+12,y+54,nw-24,42));p.drawText(QRect(x+12,y+54,nw-24,42),Qt::AlignLeft|Qt::AlignTop|Qt::TextWordWrap,n["body"].toString());p.restore();
+        int ai=0;for(auto action:n["actions"].toArray()) {auto a=action.toArray();if(a[0].toString()=="default")continue;QRect button(x+6+(ai%2)*(nw/2),y+100+(ai/2)*32,nw/2-12,28);p.fillRect(button,selection);p.drawText(button.adjusted(4,0,-4,0),Qt::AlignCenter,p.fontMetrics().elidedText(a[1].toString(),Qt::ElideRight,button.width()-8));++ai;}
+        p.restore();
+    }
     return 1;
 }

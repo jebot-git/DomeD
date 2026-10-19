@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Install only a prepared build. Never compile as root.
+set -euo pipefail
+[[ $(id -u) -eq 0 ]] || { echo "Run with pkexec /usr/bin/bash $0" >&2; exit 1; }
+root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+stage="$root/build/system-stage"
+files=(
+    usr/local/bin/dome-compositor
+    usr/local/bin/dome-xr
+    usr/local/bin/dome-preview
+    usr/local/bin/dome-session
+    usr/local/libexec/dome-session-client
+    usr/share/xdg-desktop-portal/dome-portals.conf
+    usr/share/wayland-sessions/dome.desktop
+    usr/local/share/applications/org.domed.Compositor.desktop
+    usr/local/share/doc/domed/README.md
+    usr/local/share/doc/domed/LICENSE
+    usr/local/share/doc/domed/THIRD-PARTY.md
+    usr/local/share/doc/domed/dome.example.json
+)
+for file in "${files[@]}"; do
+    [[ -f "$stage/$file" && ! -L "$stage/$file" ]] || { echo "Missing staged file: $file" >&2; exit 1; }
+done
+[[ -x /usr/local/bin/ghostty-xr-launch ]] || { echo 'Install Ghostty XR first.' >&2; exit 1; }
+/usr/bin/desktop-file-validate "$stage/usr/share/wayland-sessions/dome.desktop" "$stage/usr/local/share/applications/org.domed.Compositor.desktop"
+backup="/var/backups/domed/$(date +%Y%m%d-%H%M%S)"
+for file in "${files[@]}"; do
+    target="/$file"
+    if [[ -e "$target" || -L "$target" ]]; then
+        /usr/bin/install -d -m 0755 "$backup/$(dirname -- "$file")"
+        /usr/bin/cp -a -- "$target" "$backup/$file"
+    fi
+    mode=0644
+    [[ "$file" == usr/local/bin/* || "$file" == usr/local/libexec/* ]] && mode=0755
+    /usr/bin/install -D -o root -g root -m "$mode" -- "$stage/$file" "$target"
+done
+/usr/bin/install -d -m 0755 /usr/local/share/domed
+cd /
+sha256sum -- "${files[@]}" > /usr/local/share/domed/install.sha256
+chmod 0644 /usr/local/share/domed/install.sha256
+if command -v restorecon >/dev/null; then
+    restorecon /usr/share/wayland-sessions/dome.desktop /usr/local/bin/dome-* /usr/local/libexec/dome-session-client
+fi
+if command -v update-desktop-database >/dev/null; then update-desktop-database /usr/local/share/applications; fi
+echo 'Installed DomeD in /usr/local and registered the DomeD login session.'
+[[ ! -d "$backup" ]] || echo "Previous installation backup: $backup"

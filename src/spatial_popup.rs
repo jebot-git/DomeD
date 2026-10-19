@@ -1,0 +1,238 @@
+//! Placement shared by the Wayland desktop, XR renderer and XR hit testing.
+use crate::{xr_input::Quad, Pose, Projection, Rect, Scene};
+use glam::{Mat3, Quat, Vec3};
+use serde::{Deserialize, Serialize};
+
+// Reserved ranges remain exactly representable by JSON/JavaScript consumers.
+pub const POPUP_ID_BASE: u64 = 1 << 48;
+pub const BEAM_ID_BASE: u64 = 1 << 49;
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Popup {
+    pub id: u64,
+    /// Immediate parent panel, including another popup for nested menus.
+    pub parent: u64,
+    /// Owning application window. Popups inherit its visibility and workspace.
+    pub root: u64,
+    /// Requested rectangle in parent content coordinates; also identifies the origin.
+    pub anchor: Rect,
+    #[serde(default)]
+    pub context_at: Option<[f32; 2]>,
+    #[serde(default)]
+    pub viewport: Option<crate::context_menu::Viewport>,
+}
+
+impl Popup {
+    pub fn height(&self) -> f32 {
+        self.viewport.map_or(self.anchor.h, |v| v.height)
+    }
+    pub fn display_point(&self, point: [f32; 2]) -> [f32; 2] {
+        [
+            point[0],
+            self.viewport
+                .map_or(point[1], |v| point[1] - v.offset + v.band()),
+        ]
+    }
+}
+
+/// Keep the client size. If it exceeds the work area, clipping is unavoidable.
+pub fn desktop_rect(parent: Rect, size: [f32; 2], work: Rect) -> Rect {
+    let [w, h] = size;
+    let right = parent.x + parent.w + 8.;
+    let x = if right + w <= work.x + work.w {
+        right
+    } else {
+        parent.x + (parent.w - w) / 2.
+    };
+    Rect {
+        x: x.clamp(work.x, (work.x + work.w - w).max(work.x)),
+        y: parent.y.clamp(work.y, (work.y + work.h - h).max(work.y)),
+        w,
+        h,
+    }
+}
+
+impl Scene {
+    pub fn popup(&self, id: u64) -> Option<&Popup> {
+        self.popups.iter().find(|p| p.id == id)
+    }
+    pub fn popup_owner(&self, id: u64) -> u64 {
+        self.popup(id).map_or(id, |p| p.root)
+    }
+    pub fn popup_visible(&self, p: &Popup, desktop: bool) -> bool {
+        self.window(p.root).is_some_and(|w| {
+            !w.minimized && w.workspace == self.active_workspace && (!desktop || w.desktop_visible)
+        }) && self.window(p.id).is_none_or(|w| !w.minimized)
+    }
+    pub fn popup_desktop_rects(&self, work: Rect) -> Vec<(u64, Rect)> {
+        let mut result: Vec<(u64, Rect)> = Vec::new();
+        for _ in 0..self.popups.len() {
+            let before = result.len();
+            for popup in &self.popups {
+                if result.iter().any(|(id, _)| *id == popup.id) || !self.popup_visible(popup, true)
+                {
+                    continue;
+                }
+                let parent = if self.popup(popup.parent).is_some() {
+                    result
+                        .iter()
+                        .find(|(id, _)| *id == popup.parent)
+                        .map(|(_, r)| *r)
+                } else {
+                    self.window(popup.parent)
+                        .map(|w| if w.maximized { work } else { w.desktop })
+                };
+                if let Some(parent) = parent {
+                    result.push((
+                        popup.id,
+                        if let Some(click) = popup.context_at {
+                            crate::context_menu::rect(
+                                parent,
+                                click,
+                                [popup.anchor.w, popup.height()],
+                                work,
+                            )
+                        } else {
+                            desktop_rect(parent, [popup.anchor.w, popup.height()], work)
+                        },
+                    ));
+                }
+            }
+            if result.len() == before {
+                break;
+            }
+        }
+        result
+    }
+}
+
+/// Append children after parents so OpenXR composition order follows popup depth.
+pub fn append_quads(scene: &Scene, panels: &mut Vec<Quad>, head: Pose) {
+    for _ in 0..scene.popups.len() {
+        let before = panels.len();
+        for popup in &scene.popups {
+            if panels.iter().any(|q| q.id == popup.id) || !scene.popup_visible(popup, false) {
+                continue;
+            }
+            let Some(parent) = panels.iter().find(|q| q.id == popup.parent) else {
+                continue;
+            };
+            let parent_pixels = scene
+                .popup(popup.parent)
+                .map(|p| [p.anchor.w, p.height()])
+                .or_else(|| {
+                    scene
+                        .window(popup.parent)
+                        .map(|w| [w.desktop.w, w.desktop.h])
+                });
+            let Some([pw, ph]) = parent_pixels else {
+                continue;
+            };
+            let size = [
+                parent.size[0] * popup.anchor.w / pw,
+                parent.size[1] * popup.height() / ph,
+            ];
+            let q = Quat::from_array(parent.pose.orientation_xyzw);
+            let center = Vec3::from_array(parent.pose.position_m);
+            let depth = if scene.config.projection == Projection::RoomDome {
+                0.14
+            } else {
+                0.06
+            };
+            let click_center = popup.context_at.map(|point| {
+                let point = scene
+                    .popup(popup.parent)
+                    .map_or(point, |p| p.display_point(point));
+                parent.point([point[0] / pw, point[1] / ph])
+            });
+            let offset = if click_center.is_some() {
+                Vec3::new(
+                    0.,
+                    size[1] / 2. + crate::context_menu::GAP * parent.size[1] / ph,
+                    depth,
+                )
+            } else if scene.config.projection == Projection::RoomDome {
+                Vec3::new(0., parent.size[1] / 2. + size[1] / 2. + 0.04, 0.14)
+            } else {
+                // Retain the requested attachment point, clamped to the parent.
+                Vec3::new(
+                    ((popup.anchor.x + popup.anchor.w / 2.) / pw - 0.5).clamp(-0.5, 0.5)
+                        * parent.size[0],
+                    (0.5 - (popup.anchor.y + popup.anchor.h / 2.) / ph).clamp(-0.5, 0.5)
+                        * parent.size[1],
+                    0.06,
+                )
+            };
+            let mut panel = Quad {
+                id: popup.id,
+                pose: Pose {
+                    position_m: (click_center.unwrap_or(center) + q * offset).to_array(),
+                    ..parent.pose
+                },
+                size,
+                dome: None,
+            };
+            if popup.context_at.is_some() {
+                crate::context_menu::fit_xr(&mut panel, head, &scene.config);
+            }
+            panels.push(panel);
+        }
+        if panels.len() == before {
+            break;
+        }
+    }
+}
+
+/// Decorative beams never enter the list used for input targeting.
+pub fn beams(scene: &Scene, panels: &[Quad], head: Pose) -> Vec<Quad> {
+    if scene.config.projection != Projection::RoomDome {
+        return vec![];
+    }
+    scene
+        .popups
+        .iter()
+        .filter_map(|popup| {
+            let panel = panels.iter().find(|q| q.id == popup.id)?;
+            let parent = panels.iter().find(|q| q.id == popup.parent)?;
+            let pixels = scene
+                .popup(popup.parent)
+                .map(|p| [p.anchor.w, p.height()])
+                .or_else(|| {
+                    scene
+                        .window(popup.parent)
+                        .map(|w| [w.desktop.w, w.desktop.h])
+                })?;
+            let origin = popup.context_at.unwrap_or([popup.anchor.x, popup.anchor.y]);
+            let origin = scene
+                .popup(popup.parent)
+                .map_or(origin, |p| p.display_point(origin));
+            let uv = [
+                (origin[0] / pixels[0]).clamp(0., 1.),
+                (origin[1] / pixels[1]).clamp(0., 1.),
+            ];
+            let start = parent.point(uv);
+            let end = panel.point([0.5, 1.]);
+            let delta = end - start;
+            if delta.length() < 0.001 {
+                return None;
+            }
+            let along = delta.normalize();
+            let towards_head = Vec3::from_array(head.position_m) - (start + end) / 2.;
+            let normal = (towards_head - along * towards_head.dot(along)).normalize_or_zero();
+            if normal.length_squared() < 0.5 {
+                return None;
+            }
+            let right = along.cross(normal).normalize();
+            Some(Quad {
+                id: popup.id ^ BEAM_ID_BASE,
+                pose: Pose {
+                    position_m: ((start + end) / 2. + normal * 0.002).to_array(),
+                    orientation_xyzw: Quat::from_mat3(&Mat3::from_cols(right, along, normal))
+                        .to_array(),
+                },
+                size: [0.004, delta.length()],
+                dome: None,
+            })
+        })
+        .collect()
+}

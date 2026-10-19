@@ -51,6 +51,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut frames = u64::MAX;
     let mut capture = None;
     let mut report = None;
+    let mut standalone = false;
+    let mut placement = 10u32;
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
         match a.as_str() {
@@ -58,8 +60,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             "--frames" => frames = args.next().ok_or("missing frames")?.parse()?,
             "--capture" => capture = args.next(),
             "--report" => report = args.next(),
+            "--standalone" => standalone = true,
+            "--placement" => {
+                placement = args.next().ok_or("missing placement")?.parse()?;
+                if placement == 0 {
+                    return Err("overlay placement must be positive".into());
+                }
+            }
             "--help" => {
-                println!("dome-xr [--server http://127.0.0.1:PORT] [--frames N] [--capture DIR] [--report FILE]");
+                println!("dome-xr [--server http://127.0.0.1:PORT] [--frames N] [--capture DIR] [--report FILE] [--standalone] [--placement N]\nDefault: transparent overlay, or passthrough blending when overlay sessions are unavailable.");
                 return Ok(());
             }
             _ => return Err(format!("unknown argument {a}").into()),
@@ -143,9 +152,19 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             if let Ok(layout) =
                                 response.into_json::<dome::xr_transport::ShellLayout>()
                             {
+                                if layout.notifications.is_some() {
+                                    ids.push(dome::xr_transport::NOTIFICATIONS);
+                                }
                                 n.lock().unwrap().shell = layout;
                             }
                         }
+                        ids.extend(
+                            scene
+                                .popups
+                                .iter()
+                                .filter(|p| scene.popup_visible(p, false))
+                                .map(|p| p.id),
+                        );
                         ids.extend([dome::xr_transport::TOP_BAR, dome::xr_transport::TASK_BAR]);
                         {
                             let mut state = n.lock().unwrap();
@@ -227,9 +246,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         return Err("runtime lacks Vulkan enable2".into());
     }
     let mut extensions = xr::ExtensionSet::default();
+    extensions.extx_overlay = available.extx_overlay && !standalone;
     extensions.khr_vulkan_enable2 = true;
     extensions.ext_hand_tracking = available.ext_hand_tracking;
-    extensions.khr_composition_layer_equirect2 = available.khr_composition_layer_equirect2;
+    extensions.khr_composition_layer_cylinder = available.khr_composition_layer_cylinder;
     let xr_instance = entry.create_instance(
         &xr::ApplicationInfo {
             application_name: "Dome",
@@ -245,7 +265,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let system = xr_instance.system(xr::FormFactor::HEAD_MOUNTED_DISPLAY)?;
     let properties = xr_instance.system_properties(system)?;
     let max_layers = properties.graphics_properties.max_layer_count as usize;
-    let blend = xr_instance.enumerate_environment_blend_modes(system, VIEW_TYPE)?[0];
+    let modes = xr_instance.enumerate_environment_blend_modes(system, VIEW_TYPE)?;
+    let environment = dome::xr_environment::select(available.extx_overlay, &modes, standalone)?;
+    let blend = environment.blend;
+    eprintln!(
+        "Dome XR presentation: overlay={}, environment_blend={blend:?}, placement={placement}",
+        environment.overlay
+    );
     let req = xr_instance.graphics_requirements::<xr::Vulkan>(system)?;
     if req.min_api_version_supported > xr::Version::new(1, 1, 0) {
         return Err("Vulkan 1.1 unsupported by runtime".into());
@@ -320,7 +346,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
         let queue = vk_device.get_device_queue(queue_family_index, 0);
 
-        let (session, mut waiter, mut stream) = xr_instance.create_session::<xr::Vulkan>(
+        let (session, mut waiter, mut stream) = dome::xr_environment::create_session(
+            &xr_instance,
             system,
             &xr::vulkan::SessionCreateInfo {
                 instance: vk_instance.handle().as_raw() as _,
@@ -329,6 +356,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 queue_family_index,
                 queue_index: 0,
             },
+            environment.overlay,
+            placement,
         )?;
         let stage = session
             .create_reference_space(xr::ReferenceSpaceType::STAGE, xr::Posef::IDENTITY)
@@ -477,6 +506,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             let mut geometry = vec![];
+            let mut popup_beams = vec![];
+            let mut popup_ids = std::collections::HashSet::new();
             if let Some(scene) = scene {
                 presentation = scene.presentation;
                 if !presentation_initialized {
@@ -491,6 +522,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         || (transition.bottom > 0. && transition.bottom < 1.),
                 );
                 geometry = dome::xr_input::quads(&scene, head_pose);
+                popup_ids.extend(scene.popups.iter().map(|p| p.id));
+                popup_beams = dome::spatial_popup::beams(&scene, &geometry, head_pose);
                 let mut hud_scene = scene.clone();
                 let (_, views) =
                     session.locate_views(VIEW_TYPE, frame.predicted_display_time, &stage)?;
@@ -542,21 +575,18 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     state.out.push_back(p);
                 }
             }
-            // Small head-independent reticles give each tracked hand a visible ray target.
-            let cursor_hands = if control.mouse {
+            // Mouse is drawn on a stable view plane, including between surfaces.
+            // Tracked hands continue to use physical ray intersections.
+            let cursor_hands = if control.mouse && focused && head_valid && transition.opacity >= 1.
+            {
                 let mut cursor = [Hand::default(); 2];
-                if let Some(c) = &control.cursor {
-                    if let Some(q) = geometry.iter().find(|q| q.id == c.id) {
-                        cursor[0].valid = true;
-                        cursor[0].position = head_pose.position_m;
-                        cursor[0].ray = (q.point(c.uv)
-                            - glam::Vec3::from_array(head_pose.position_m))
-                        .normalize_or_zero()
-                        .to_array();
-                    }
+                if let Some(angles) = control.mouse_angles {
+                    cursor[0].valid = true;
+                    cursor[0].position = head_pose.position_m;
+                    cursor[0].ray = dome::xr_input::mouse_ray(head_pose, angles).to_array();
                 }
                 cursor
-            } else if focused && head_valid {
+            } else if !control.mouse && focused && head_valid {
                 hands
             } else {
                 [Hand::default(); 2]
@@ -581,26 +611,35 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                                     .distance_squared(glam::Vec3::from_array(hand.position)),
                             )
                     });
-                if let Some((q, uv)) = hit {
-                    let id = u64::MAX - i as u64;
-                    let point = q.point(uv);
-                    let normal = if let Some(d) = &q.dome {
-                        (glam::Vec3::from_array(d.frame.position_m) - point).normalize()
-                    } else {
-                        glam::Quat::from_array(q.pose.orientation_xyzw) * glam::Vec3::Z
-                    };
-                    let position = (point + normal * 0.002).to_array();
-                    let orientation =
-                        glam::Quat::from_rotation_arc(glam::Vec3::Z, normal).to_array();
-                    let reticle = dome::xr_input::Quad {
-                        id,
-                        pose: Pose {
-                            position_m: position,
-                            orientation_xyzw: orientation,
-                        },
-                        size: [0.02, 0.02],
-                        dome: None,
-                    };
+                let reticle = if control.mouse {
+                    control
+                        .mouse_angles
+                        .map(|angles| dome::xr_input::mouse_reticle(head_pose, angles))
+                } else {
+                    hit.map(|(q, uv)| {
+                        let point = q.point(uv);
+                        let normal = if let Some(d) = &q.dome {
+                            d.inward_normal(point)
+                        } else {
+                            glam::Quat::from_array(q.pose.orientation_xyzw) * glam::Vec3::Z
+                        };
+                        dome::xr_input::Quad {
+                            id: u64::MAX - i as u64,
+                            pose: Pose {
+                                position_m: (point + normal * 0.002).to_array(),
+                                orientation_xyzw: glam::Quat::from_rotation_arc(
+                                    glam::Vec3::Z,
+                                    normal,
+                                )
+                                .to_array(),
+                            },
+                            size: [0.02, 0.02],
+                            dome: None,
+                        }
+                    })
+                };
+                if let Some(reticle) = reticle {
+                    let id = reticle.id;
                     let pressed = hand.grip || hand.pinch.iter().any(|p| *p);
                     let mut rgba = vec![0; 16 * 16 * 4];
                     for y in 0..16 {
@@ -628,6 +667,18 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     );
                     geometry.push(reticle);
                 }
+            }
+            for beam in popup_beams.into_iter().filter(|_| transition.opacity > 0.) {
+                images.insert(
+                    beam.id,
+                    Image {
+                        width: 1,
+                        height: 1,
+                        rgba: vec![160, 205, 255, 180],
+                        serial: 1,
+                    },
+                );
+                geometry.push(beam);
             }
             chains.retain(|id, _| geometry.iter().any(|q| q.id == *id));
             if frame.should_render {
@@ -686,16 +737,27 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             if geometry.iter().any(|q| q.dome.is_some())
-                && !extensions.khr_composition_layer_equirect2
+                && !extensions.khr_composition_layer_cylinder
             {
-                return Err("Room dome requires XR_KHR_composition_layer_equirect2; use direct-view projection on this runtime".into());
+                return Err("Room dome requires XR_KHR_composition_layer_cylinder; use direct-view projection on this runtime".into());
             }
             let mut visible: Vec<_> = geometry
                 .iter()
                 .take(max_layers)
                 .filter_map(|q| chains.get(&q.id).map(|p| (q, p)))
                 .collect();
-            visible.sort_by_key(|(q, _)| q.dome.is_none());
+            visible.sort_by_key(|(q, _)| {
+                let group = if dome::xr_transport::is_shell(q.id) || q.id >= u64::MAX - 1 {
+                    3
+                } else if popup_ids.contains(&q.id) {
+                    2
+                } else if q.id & dome::spatial_popup::BEAM_ID_BASE != 0 {
+                    1
+                } else {
+                    0
+                };
+                (group, q.dome.is_none())
+            });
             let layers: Vec<_> = visible
                 .iter()
                 .map(|(q, p)| {
@@ -711,16 +773,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         });
                     if let Some(d) = &q.dome {
                         Layer::Dome(
-                            xr::CompositionLayerEquirect2KHR::new()
+                            xr::CompositionLayerCylinderKHR::new()
                                 .space(&stage)
                                 .eye_visibility(xr::EyeVisibility::BOTH)
                                 .layer_flags(xr::CompositionLayerFlags::BLEND_TEXTURE_SOURCE_ALPHA)
                                 .sub_image(sub)
-                                .pose(xr_pose(d.frame))
+                                .pose(xr_pose(d.layer_pose()))
                                 .radius(d.radius)
-                                .central_horizontal_angle(d.horizontal)
-                                .upper_vertical_angle(d.top)
-                                .lower_vertical_angle(d.bottom),
+                                .central_angle(d.horizontal)
+                                .aspect_ratio(d.aspect_ratio()),
                         )
                     } else {
                         Layer::Flat(
@@ -741,7 +802,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             peak = peak.max(
                 visible
                     .iter()
-                    .filter(|(q, _)| q.id > 0 && q.id < dome::xr_transport::TASK_BAR)
+                    .filter(|(q, _)| !dome::xr_transport::is_shell(q.id) && q.id < u64::MAX - 1)
                     .count(),
             );
             peak_shell = peak_shell.max(
@@ -772,7 +833,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         running.store(false, Ordering::Relaxed);
         let _ = worker.join();
-        let summary = serde_json::json!({"runtime":runtime,"system":properties.system_name,"frames":count,"peak_window_layers":peak,"peak_curved_layers":peak_curved,"peak_flat_layers":peak_flat,"peak_shell_layers":peak_shell,"uploads":uploaded,"hand_tracking_extension":extensions.ext_hand_tracking,"hand_trackers":trackers.iter().filter(|t|t.is_some()).count(),"presentation_hidden_frames":hidden_frames,"presentation_fade_frames":fade_frames,"presentation_slide_frames":slide_frames,"clean_exit":true});
+        let summary = serde_json::json!({"runtime":runtime,"system":properties.system_name,"overlay":environment.overlay,"environment_blend":format!("{blend:?}"),"overlay_placement":placement,"frames":count,"peak_window_layers":peak,"peak_curved_layers":peak_curved,"peak_flat_layers":peak_flat,"peak_shell_layers":peak_shell,"uploads":uploaded,"hand_tracking_extension":extensions.ext_hand_tracking,"hand_trackers":trackers.iter().filter(|t|t.is_some()).count(),"presentation_hidden_frames":hidden_frames,"presentation_fade_frames":fade_frames,"presentation_slide_frames":slide_frames,"clean_exit":true});
         println!("{summary}");
         if let Some(path) = report {
             std::fs::write(path, serde_json::to_vec_pretty(&summary)?)?;
@@ -968,5 +1029,5 @@ unsafe fn upload(
 
 enum Layer<'a> {
     Flat(xr::CompositionLayerQuad<'a, xr::Vulkan>),
-    Dome(xr::CompositionLayerEquirect2KHR<'a, xr::Vulkan>),
+    Dome(xr::CompositionLayerCylinderKHR<'a, xr::Vulkan>),
 }

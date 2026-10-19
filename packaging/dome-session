@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# SDDM entry point: Dome owns the seat, DRM output and native Wayland desktop.
+set -euo pipefail
+for program in /usr/bin/dbus-run-session /usr/bin/python3 /usr/local/bin/dome-compositor /usr/local/bin/dome-xr /usr/local/libexec/dome-session-client; do
+    [[ -x "$program" ]] || { echo "DomeD: required program missing: $program" >&2; exit 1; }
+done
+if [[ "${1:-}" == --check ]]; then
+    /usr/local/bin/dome-compositor --backend drm --check-backend
+    echo 'DomeD standalone login session and XR frontend are installed.'
+    if command -v kwalletd6 >/dev/null; then
+        echo 'KWallet D-Bus activation is available.'
+        [[ ! -x /usr/libexec/pam_kwallet_init ]] || echo 'KWallet PAM login handoff is available.'
+    else
+        echo 'KWallet is optional and is not installed.'
+    fi
+    if command -v fcitx5 >/dev/null && [[ -f /usr/share/fcitx5/inputmethod/anthy.conf ]]; then
+        echo 'US English / Anthy input switching is available through Fcitx5.'
+    else
+        echo 'Install fcitx5 and fcitx5-anthy for Japanese input.'
+    fi
+    exit 0
+fi
+[[ $# -eq 0 ]] || { echo 'Usage: dome-session [--check]' >&2; exit 2; }
+[[ -n "${XDG_RUNTIME_DIR:-}" && -d "$XDG_RUNTIME_DIR" ]] || { echo 'DomeD requires a logind runtime directory.' >&2; exit 1; }
+if [[ -z "${DOME_DRM_TEST_DEVICE:-}" && ( -n "${DISPLAY:-}" || -n "${WAYLAND_DISPLAY:-}" ) ]]; then
+    echo 'Select DomeD at the login screen, or start it from an unused TTY.' >&2
+    exit 1
+fi
+umask 077
+if [[ -z "${DOME_SESSION_LOG:-}" ]]; then
+    log_dir="${XDG_STATE_HOME:-$HOME/.local/state}/dome/logs"
+    mkdir -p -- "$log_dir"
+    export DOME_SESSION_LOG="$log_dir/login-$(date +%Y%m%d-%H%M%S)-$$.log"
+    ln -sfn -- "$(basename -- "$DOME_SESSION_LOG")" "$log_dir/latest.log"
+fi
+exec >> "$DOME_SESSION_LOG" 2>&1
+if [[ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]]; then
+    exec /usr/bin/dbus-run-session -- "$0"
+fi
+unset DISPLAY WAYLAND_DISPLAY WAYLAND_SOCKET
+export XDG_CURRENT_DESKTOP=Dome XDG_SESSION_DESKTOP=dome XDG_SESSION_TYPE=wayland
+export QT_QPA_PLATFORM=wayland
+export QT_IM_MODULE=wayland GTK_IM_MODULE=fcitx XMODIFIERS=@im=fcitx
+export DOME_LOGIN_SESSION=1 DOME_BACKEND=drm
+export LIBSEAT_BACKEND="${LIBSEAT_BACKEND:-logind}"
+export DOME_START_XR="${DOME_START_XR:-1}"
+export DOME_TERMINAL="${DOME_TERMINAL:-/usr/local/bin/ghostty-xr-launch}"
+export DOME_TERMINAL_MODE="${DOME_TERMINAL_MODE:-overlay}"
+export RUST_LOG="${RUST_LOG:-warn}"
+echo "Starting standalone DomeD (DRM/KMS, libseat and libinput); log: $DOME_SESSION_LOG"
+exec /usr/local/libexec/dome-session-client

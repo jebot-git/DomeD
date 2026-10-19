@@ -66,12 +66,53 @@ impl Pose {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum AnchorMode {
+    #[default]
+    Room,
+    Head,
+}
+
+/// Persistent connector preferences; names include the GPU's PCI address.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(default, deny_unknown_fields)]
+pub struct DisplayConfig {
+    pub name: String,
+    pub enabled: bool,
+    pub width: i32,
+    pub height: i32,
+    pub refresh: i32,
+    pub x: Option<i32>,
+    pub y: i32,
+    pub primary: bool,
+}
+impl Default for DisplayConfig {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            enabled: true,
+            width: 0,
+            height: 0,
+            refresh: 0,
+            x: None,
+            y: 0,
+            primary: false,
+        }
+    }
+}
 /// Degrees are used at the configuration boundary; spatial calculations use radians.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct Config {
+    pub displays: Vec<DisplayConfig>,
     pub projection: Projection,
+    pub anchor_mode: AnchorMode,
+    pub upper_bar_x_deg: f32,
+    pub taskbar_x_deg: f32,
+    pub bar_distance_m: f32,
     pub dome_vertical_span_deg: f32,
+    pub dome_upper_tilt_deg: f32,
     pub vertical_fov_deg: f32,
     pub upper_bar_height_deg: f32,
     pub taskbar_height_deg: f32,
@@ -92,8 +133,14 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
+            displays: Vec::new(),
             projection: Projection::RoomDome,
+            anchor_mode: AnchorMode::Room,
+            upper_bar_x_deg: 0.,
+            taskbar_x_deg: 0.,
+            bar_distance_m: 0.6,
             dome_vertical_span_deg: 110.,
+            dome_upper_tilt_deg: 8.,
             vertical_fov_deg: 100.,
             upper_bar_height_deg: 5.,
             taskbar_height_deg: 7.,
@@ -114,8 +161,27 @@ impl Default for Config {
 }
 impl Config {
     pub fn validate(&self) -> Result<(), String> {
+        let mut names = std::collections::HashSet::new();
+        for display in &self.displays {
+            if display.name.is_empty()
+                || !names.insert(&display.name)
+                || display.width < 0
+                || display.height < 0
+                || display.width > 16384
+                || display.height > 16384
+                || !(0..=1000000).contains(&display.refresh)
+                || display.x.is_some_and(|x| x.unsigned_abs() > 65536)
+                || display.y.unsigned_abs() > 65536
+            {
+                return Err("Invalid display configuration".into());
+            }
+        }
         let numbers = [
+            self.upper_bar_x_deg,
+            self.taskbar_x_deg,
+            self.bar_distance_m,
             self.dome_vertical_span_deg,
+            self.dome_upper_tilt_deg,
             self.vertical_fov_deg,
             self.upper_bar_height_deg,
             self.taskbar_height_deg,
@@ -130,6 +196,14 @@ impl Config {
             self.window_gap_deg,
             self.window_gap_px,
         ];
+        if self.upper_bar_x_deg.abs() > 40.
+            || self.taskbar_x_deg.abs() > 40.
+            || !(0.3..=2.).contains(&self.bar_distance_m)
+        {
+            return Err(
+                "Bar horizontal offsets must be within ±40°; distance must be 0.3–2 m".into(),
+            );
+        }
         if !(0. ..=8.).contains(&self.window_gap_px) || self.window_border_px > 2 {
             return Err("XR spacing must be 0–8 logical pixels; border must be 0–2 pixels".into());
         }
@@ -139,6 +213,9 @@ impl Config {
             .any(|x| !x.is_finite())
         {
             return Err("All geometry must be finite".into());
+        }
+        if !(0. ..=20.).contains(&self.dome_upper_tilt_deg) {
+            return Err("Upper dome lean must be 0–20 degrees".into());
         }
         if !(30. ..=170.).contains(&self.dome_vertical_span_deg) {
             return Err("Dome span must be 30–170 degrees".into());
@@ -306,6 +383,8 @@ pub struct Scene {
     pub view_pose: Pose,
     pub workspaces: Vec<Workspace>,
     pub windows: Vec<Window>,
+    #[serde(default)]
+    pub popups: Vec<crate::spatial_popup::Popup>,
     pub active_workspace: usize,
     pub focused: Option<WindowId>,
     pub revision: u64,
@@ -422,6 +501,7 @@ impl Scene {
                 Workspace::new("Quiet"),
             ],
             windows: vec![],
+            popups: vec![],
             active_workspace: 0,
             focused: None,
             revision: 0,
@@ -660,9 +740,20 @@ impl Scene {
             }
             Action::Close { id } => {
                 self.window(id).ok_or("Unknown window")?;
-                self.detach(id);
-                self.windows.retain(|w| w.id != id);
-                if self.focused == Some(id) {
+                let mut closing = vec![id];
+                for _ in 0..self.popups.len() {
+                    for popup in &self.popups {
+                        if closing.contains(&popup.parent) && !closing.contains(&popup.id) {
+                            closing.push(popup.id);
+                        }
+                    }
+                }
+                for id in &closing {
+                    self.detach(*id);
+                }
+                self.windows.retain(|w| !closing.contains(&w.id));
+                self.popups.retain(|p| !closing.contains(&p.id));
+                if self.focused.is_some_and(|id| closing.contains(&id)) {
                     self.choose_focus();
                 }
             }
@@ -845,8 +936,8 @@ impl Scene {
                     return Err("Invalid position".into());
                 }
                 let w = self.window_mut(id)?;
-                w.desktop.x = x.clamp(-10000., 10000.);
-                w.desktop.y = y.clamp(32., 10000.);
+                w.desktop.x = x.clamp(-65536., 65536.);
+                w.desktop.y = y.clamp(-65536., 65536.);
             }
             Action::DesktopResize { id, w, h } => {
                 if !w.is_finite() || !h.is_finite() {
@@ -872,6 +963,7 @@ impl Scene {
     pub fn frame_pose(&self) -> Pose {
         match self.config.projection {
             Projection::InView => self.view_pose,
+            Projection::RoomDome if self.config.anchor_mode == AnchorMode::Head => self.view_pose,
             Projection::RoomDome => {
                 let a = self.config.yaw_deg.to_radians() / 2.;
                 Pose {
@@ -884,6 +976,11 @@ impl Scene {
     pub fn point(&self, yaw: f32, elevation: f32, radius: f32) -> [f32; 3] {
         let y = yaw.to_radians();
         let e = elevation.to_radians();
+        if self.config.projection == Projection::RoomDome {
+            return self
+                .frame_pose()
+                .transform([radius * y.sin(), radius * e, -radius * y.cos()]);
+        }
         // In-view borders are constant screen pitch, keeping peripheral windows
         // inside the flat view-relative trays rather than bowing across them.
         let e = if self.config.projection == Projection::InView {
@@ -928,9 +1025,7 @@ impl Scene {
             let height_at = |bottom: f32, top: f32| {
                 let angular = top - bottom;
                 if self.config.projection == Projection::RoomDome {
-                    (2. * (2.2 / radius * (angular / 2.).to_radians().tan()).atan())
-                        .to_degrees()
-                        .min(angular)
+                    angular * (2.2 / radius).min(1.)
                 } else {
                     angular
                 }
@@ -942,7 +1037,7 @@ impl Scene {
                         .windows
                         .iter()
                         .filter_map(|id| self.window(*id))
-                        .filter(|w| !w.minimized)
+                        .filter(|w| !w.minimized && self.popup(w.id).is_none())
                         .map(move |w| heights[lane] / w.desktop.h)
                 })
                 .fold(f32::INFINITY, f32::min);
@@ -957,7 +1052,7 @@ impl Scene {
                 .min(self.config.window_gap_px * pixel_pitch);
             let mut mid = (raw_spans[1][0] + raw_spans[1][1]) / 2.;
             if self.config.projection == Projection::RoomDome && radius > 2.2 {
-                mid = (2.2 / radius * mid.to_radians().tan()).atan().to_degrees();
+                mid *= 2.2 / radius;
             }
             let middle = [mid - heights[1] / 2., mid + heights[1] / 2.];
             let spans = [
@@ -970,16 +1065,21 @@ impl Scene {
                     .windows
                     .iter()
                     .filter_map(|id| self.window(*id))
-                    .filter(|w| !w.minimized)
+                    .filter(|w| !w.minimized && self.popup(w.id).is_none())
                     .collect();
                 let [bottom, top] = spans[lane];
                 let height = top - bottom;
                 let mut widths: Vec<f32> = windows
                     .iter()
                     .map(|w| {
-                        (2. * ((height / 2.).to_radians().tan() * w.desktop.w / w.desktop.h).atan())
+                        if self.config.projection == Projection::RoomDome {
+                            height * w.desktop.w / w.desktop.h
+                        } else {
+                            (2. * ((height / 2.).to_radians().tan() * w.desktop.w / w.desktop.h)
+                                .atan())
                             .to_degrees()
                             .clamp(14., 100.)
+                        }
                     })
                     .collect();
                 let total: f32 = widths.iter().sum();
@@ -993,7 +1093,10 @@ impl Scene {
                             .map(|(width, w)| width / w.desktop.w)
                             .fold(f32::INFINITY, f32::min)
                 };
-                let scale = (360. / (total + gap * windows.len() as f32).max(1.)).min(1.);
+                let mut scale = (360. / (total + gap * windows.len() as f32).max(1.)).min(1.);
+                if self.config.projection == Projection::RoomDome {
+                    scale = scale.min(175. / widths.iter().copied().fold(1., f32::max));
+                }
                 let gap = gap * scale;
                 for width in &mut widths {
                     *width *= scale;
@@ -1010,12 +1113,25 @@ impl Scene {
                         let (b, t) = self.config.lane_extent();
                         let h = height_at(b, t);
                         let (b, t) = ((b + t - h) / 2., (b + t + h) / 2.);
-                        let width = (2.
-                            * (((t - b) / 2.).to_radians().tan() * w.desktop.w / w.desktop.h)
-                                .atan())
-                        .to_degrees()
-                        .min(170.);
-                        (b, t, width)
+                        if self.config.projection == Projection::RoomDome {
+                            let width = ((t - b) * w.desktop.w / w.desktop.h).min(175.);
+                            let height = width * w.desktop.h / w.desktop.w;
+                            ((b + t - height) / 2., (b + t + height) / 2., width)
+                        } else {
+                            let width = (2.
+                                * (((t - b) / 2.).to_radians().tan() * w.desktop.w / w.desktop.h)
+                                    .atan())
+                            .to_degrees()
+                            .min(170.);
+                            (b, t, width)
+                        }
+                    } else if self.config.projection == Projection::RoomDome {
+                        let mid = (bottom + top) / 2.;
+                        (
+                            mid - height * scale / 2.,
+                            mid + height * scale / 2.,
+                            widths[i],
+                        )
                     } else {
                         (bottom, top, widths[i])
                     };
@@ -1040,7 +1156,7 @@ impl Scene {
         }
         panels
     }
-    /// Intersect a room-space ray with active-workspace sphere patches. Hover never changes keyboard focus.
+    /// Intersect a room-space ray with the same surfaces submitted to OpenXR. Hover never changes keyboard focus.
     pub fn hit_test(&self, origin: [f32; 3], direction: [f32; 3]) -> Option<RayHit> {
         if origin
             .iter()
@@ -1052,6 +1168,20 @@ impl Scene {
         let len = direction.iter().map(|v| v * v).sum::<f32>().sqrt();
         if len < 1e-6 {
             return None;
+        }
+        if self.config.projection == Projection::RoomDome {
+            let origin = glam::Vec3::from_array(origin);
+            let direction = glam::Vec3::from_array(direction) / len;
+            return crate::xr_input::quads(self, self.view_pose)
+                .iter()
+                .filter_map(|q| {
+                    q.hit(origin, direction, false).map(|uv| RayHit {
+                        id: q.id,
+                        uv,
+                        distance_m: q.point(uv).distance(origin),
+                    })
+                })
+                .min_by(|a, b| a.distance_m.total_cmp(&b.distance_m));
         }
         let frame = self.frame_pose();
         let d = frame.inverse_rotate(direction.map(|v| v / len));
@@ -1107,10 +1237,26 @@ impl Scene {
         }
         None
     }
-    /// Curved mesh for an OpenXR renderer: u maps yaw, v maps elevation.
+    /// Mesh using the native cylinder and upper-lane lean; no pole convergence.
     pub fn mesh(&self, p: &Panel, segments: u32) -> Vec<[f32; 3]> {
         let count = segments.clamp(1, 256);
         let mut out = Vec::with_capacity((count as usize + 1) * 2);
+        if self.config.projection == Projection::RoomDome {
+            let mut nominal = self.clone();
+            nominal.focused = None;
+            nominal.active_workspace = p.workspace;
+            if let Some(q) = crate::xr_input::quads(&nominal, self.view_pose)
+                .iter()
+                .find(|q| q.id == p.id)
+            {
+                for i in 0..=count {
+                    for v in [0., 1.] {
+                        out.push(q.point([i as f32 / count as f32, v]).to_array());
+                    }
+                }
+                return out;
+            }
+        }
         for i in 0..=count {
             let yaw = p.yaw_deg - p.width_deg / 2. + p.width_deg * i as f32 / count as f32;
             for el in [p.top_deg, p.bottom_deg] {

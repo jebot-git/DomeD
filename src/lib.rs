@@ -23,7 +23,17 @@ pub mod desktop_entries;
 pub mod taskbar;
 
 pub mod appearance;
+pub mod keyboard;
 
 pub mod xr_presentation;
 
 pub mod input_routing;
+
+pub mod context_menu;
+pub mod geometry_settings;
+pub mod spatial_popup;
+pub mod terminal;
+#[cfg(feature = "xr")]
+pub mod xr_environment;
+
+pub mod desktop_snap;

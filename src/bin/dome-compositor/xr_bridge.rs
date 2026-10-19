@@ -6,7 +6,10 @@ use smithay::{
         allocator::Fourcc,
         renderer::{
             damage::OutputDamageTracker,
-            element::{surface::WaylandSurfaceRenderElement, AsRenderElements},
+            element::{
+                surface::{render_elements_from_surface_tree, WaylandSurfaceRenderElement},
+                Kind,
+            },
             gles::{GlesRenderer, GlesTexture},
             Bind, ExportMem, Offscreen,
         },
@@ -16,7 +19,7 @@ use smithay::{
 };
 impl Dome {
     pub fn export_xr_shell(&self, pixels: &[u8], width: i32, height: i32) {
-        use dome::xr_transport::{ShellLayout, Surface, TASK_BAR, TOP_BAR};
+        use dome::xr_transport::{ShellLayout, Surface, NOTIFICATIONS, TASK_BAR, TOP_BAR};
         let mut top = 36;
         let mut bottom = 60;
         if let Some(menu) = self.menu {
@@ -29,7 +32,11 @@ impl Dome {
         if self.launcher {
             top = 456.min(height);
         }
-        if self.about || self.appearance_open || self.session_confirm.is_some() {
+        if self.about
+            || self.appearance_open
+            || self.xr_settings_open
+            || self.session_confirm.is_some()
+        {
             top = height;
         }
         if self.desktop_manager {
@@ -38,12 +45,46 @@ impl Dome {
         if let Some(index) = self.task_popup {
             bottom = bottom.max((height as f64 - self.popup_rect(index, width, height).1) as i32);
         }
+        let toasts = self.notifications.layout(width, height);
+        let notification_rect = toasts.first().map(|first| {
+            [
+                first.x as u32,
+                first.y as u32,
+                first.w as u32,
+                (toasts.last().unwrap().y + toasts.last().unwrap().h - first.y) as u32,
+            ]
+        });
+        let notification_pixels = crate::qt::paint(
+            serde_json::json!({"kind":"notifications","width":width,"height":height,"appearance":self.appearance,"notifications":toasts}),
+        );
         let mut b = self.xr_bridge.lock().unwrap();
+        b.frames.remove(&NOTIFICATIONS);
+        if let Some([x, y, w, h]) = notification_rect {
+            let mut rgba = Vec::with_capacity((w * h * 4) as usize);
+            for row in y..y + h {
+                for pixel in notification_pixels[((row * width as u32 + x) * 4) as usize
+                    ..((row * width as u32 + x + w) * 4) as usize]
+                    .chunks_exact(4)
+                {
+                    rgba.extend_from_slice(&[pixel[2], pixel[1], pixel[0], pixel[3]]);
+                }
+            }
+            b.frames.insert(
+                NOTIFICATIONS,
+                Surface {
+                    width: w,
+                    height: h,
+                    rgba: std::sync::Arc::new(rgba),
+                    stamp: std::time::Instant::now(),
+                },
+            );
+        }
         b.shell = ShellLayout {
             width: width as u32,
             height: height as u32,
             top: top as u32,
             bottom: bottom as u32,
+            notifications: notification_rect,
         };
         for (id, start, rows) in [(TOP_BAR, 0, top), (TASK_BAR, height - bottom, bottom)] {
             let mut rgba = Vec::with_capacity((width * rows * 4) as usize);
@@ -64,6 +105,10 @@ impl Dome {
         }
     }
     pub fn xr_input(&mut self) {
+        if !self.native_session_active {
+            self.xr_bridge.lock().unwrap().packets.clear();
+            return;
+        }
         let presentation = self.scene.lock().unwrap().presentation;
         self.xr_animation = self
             .xr_animator
@@ -90,22 +135,35 @@ impl Dome {
             self.tray.close();
         }
         let visible = self.xr_bridge.lock().unwrap().visible();
+        if visible {
+            let head = self.xr_bridge.lock().unwrap().session.head;
+            self.scene.lock().unwrap().view_pose = head;
+        }
         if self.xr_was_visible && !visible {
-            let size = self
-                .space
-                .outputs()
-                .next()
-                .and_then(|o| self.space.output_geometry(o))
-                .map(|r| r.size)
-                .unwrap_or((1280, 800).into());
-            self.scene
+            let geo = self.primary_output_geometry();
+            let promoted: Vec<_> = self
+                .scene
                 .lock()
                 .unwrap()
-                .desktop_fallback(size.w as f32, size.h as f32);
+                .windows
+                .iter()
+                .filter(|w| !w.desktop_visible)
+                .map(|w| w.id)
+                .collect();
+            let mut scene = self.scene.lock().unwrap();
+            scene.desktop_fallback(geo.size.w as f32, geo.size.h as f32);
+            for w in &mut scene.windows {
+                if promoted.contains(&w.id) {
+                    w.desktop.x += geo.loc.x as f32;
+                    w.desktop.y += geo.loc.y as f32;
+                }
+            }
+            drop(scene);
             {
                 let mut b = self.xr_bridge.lock().unwrap();
                 b.mouse_buttons.clear();
                 b.last_mouse = None;
+                b.mouse_angles = None;
                 b.cursor = None;
                 b.packets.clear();
             }
@@ -136,6 +194,15 @@ impl Dome {
         for p in packets {
             self.dispatch_xr(p);
         }
+        // Head motion changes the projected target even without a new mouse
+        // delta. Re-hit without extending the physical mouse ownership lease.
+        let refresh_mouse = {
+            let b = self.xr_bridge.lock().unwrap();
+            visible && self.input_xr_active && b.mouse_owned() && b.mouse_angles.is_some()
+        };
+        if refresh_mouse {
+            self.xr_mouse_motion(0., 0.);
+        }
     }
     pub fn dispatch_xr(&mut self, mut p: Packet) {
         // Late renderer packets must not move or refocus the desktop-owned seat.
@@ -163,6 +230,7 @@ impl Dome {
             let time = self.start_time.elapsed().as_millis() as u32;
             match e {
                 SeatEvent::Motion { id, uv } => {
+                    self.context_scroll_hover = None;
                     if !self
                         .xr_animation
                         .interactive(self.scene.lock().unwrap().presentation, id)
@@ -174,8 +242,16 @@ impl Dome {
                     if dome::xr_transport::is_shell(id) {
                         shell_interaction = true;
                         let layout = self.xr_bridge.lock().unwrap().shell.clone();
-                        let x = uv[0] as f64 * layout.width as f64;
-                        let y = if id == dome::xr_transport::TOP_BAR {
+                        let x = if id == dome::xr_transport::NOTIFICATIONS {
+                            let r = layout.notifications.unwrap_or([0; 4]);
+                            r[0] as f64 + uv[0] as f64 * r[2] as f64
+                        } else {
+                            uv[0] as f64 * layout.width as f64
+                        };
+                        let y = if id == dome::xr_transport::NOTIFICATIONS {
+                            let r = layout.notifications.unwrap_or([0; 4]);
+                            r[1] as f64 + uv[1] as f64 * r[3] as f64
+                        } else if id == dome::xr_transport::TOP_BAR {
                             uv[1] as f64 * layout.top as f64
                         } else {
                             layout.height as f64 - layout.bottom as f64
@@ -205,26 +281,52 @@ impl Dome {
                         continue;
                     }
                     self.xr_shell_pos = None;
+                    self.context_scroll_hover =
+                        self.context_control_at(id, uv).map(|dir| (id, dir));
+                    if self.context_scroll_hover.is_some() {
+                        self.xr_target = Some(id);
+                        continue;
+                    }
 
-                    if let Some((_, w)) = self.registry.iter().find(|(i, _)| *i == id).cloned() {
-                        let pos = self.space.element_location(&w).or_else(|| {
-                            self.scene
+                    let active = {
+                        let scene = self.scene.lock().unwrap();
+                        scene.popup(id).map_or_else(
+                            || scene.window(id).is_some(),
+                            |p| scene.popup_visible(p, false),
+                        )
+                    };
+                    if active {
+                        if let Some((surface, geo)) = self.popup_surface(id) {
+                            let scene = self.scene.lock().unwrap();
+                            let pos = self
+                                .desktop_popup_rects(&scene)
+                                .iter()
+                                .find(|(i, _)| *i == id)
+                                .map(|(_, r)| (r.x as f64, r.y as f64))
+                                .or_else(|| {
+                                    scene
+                                        .window(id)
+                                        .map(|w| (w.desktop.x as f64, w.desktop.y as f64))
+                                })
+                                .unwrap_or((0., 0.));
+                            drop(scene);
+                            let origin =
+                                (pos.0 - geo.loc.x as f64, pos.1 - geo.loc.y as f64).into();
+                            let y = self
+                                .scene
                                 .lock()
                                 .unwrap()
-                                .window(id)
-                                .map(|w| (w.desktop.x as i32, w.desktop.y as i32).into())
-                        });
-                        if let Some(pos) = pos {
-                            let geo = w.geometry();
-                            let location = pos.to_f64()
-                                + smithay::utils::Point::<f64, smithay::utils::Logical>::from((
-                                    uv[0] as f64 * geo.size.w as f64,
-                                    uv[1] as f64 * geo.size.h as f64,
-                                ));
+                                .popup(id)
+                                .and_then(|p| p.viewport)
+                                .map_or(uv[1] * geo.size.h as f32, |v| {
+                                    v.content_y(uv[1] * v.height)
+                                });
+                            let location =
+                                (pos.0 + uv[0] as f64 * geo.size.w as f64, pos.1 + y as f64).into();
                             self.xr_target = Some(id);
                             pointer.motion(
                                 self,
-                                Some((w.toplevel().unwrap().wl_surface().clone(), pos.to_f64())),
+                                Some((surface, origin)),
                                 &MotionEvent {
                                     location,
                                     serial: SERIAL_COUNTER.next_serial(),
@@ -235,7 +337,18 @@ impl Dome {
                     }
                 }
                 SeatEvent::Button { button, pressed } => {
+                    if !pressed && self.context_scroll_buttons.remove(&button) {
+                        continue;
+                    }
+                    if pressed && button == 0x110 {
+                        if let Some((id, dir)) = self.context_scroll_hover {
+                            self.context_scroll_buttons.insert(button);
+                            self.scroll_context(id, dir as f32 * 96.);
+                            continue;
+                        }
+                    }
                     if pressed
+                        && !pointer.is_grabbed()
                         && self.xr_target.is_none_or(|id| {
                             !self
                                 .xr_animation
@@ -247,12 +360,17 @@ impl Dome {
                     if let Some([x, y]) = self.xr_shell_pos {
                         if pressed {
                             self.xr_buttons.insert(button);
+                            if self.xr_target == Some(dome::xr_transport::NOTIFICATIONS)
+                                && button != 0x110
+                            {
+                                continue;
+                            }
                             let layout = self.xr_bridge.lock().unwrap().shell.clone();
                             let tray = self.visible_tray(layout.width as i32);
-                            let tx = layout.width as f64 - 176. - tray.items.len() as f64 * 28.;
+                            let tx = layout.width as f64 - 220. - tray.items.len() as f64 * 28.;
                             if y < 36.
                                 && x >= tx
-                                && x < layout.width as f64 - 176.
+                                && x < layout.width as f64 - 220.
                                 && tray.menu.is_none()
                             {
                                 self.tray.activate(
@@ -275,7 +393,7 @@ impl Dome {
                         continue;
                     }
 
-                    if pressed && self.xr_target.is_none() {
+                    if pressed && self.xr_target.is_none() && !pointer.is_grabbed() {
                         continue;
                     }
                     if pressed {
@@ -283,6 +401,7 @@ impl Dome {
                     } else {
                         self.xr_buttons.remove(&button);
                     }
+                    self.context_button_origin(button, pressed);
                     pointer.button(
                         self,
                         &ButtonEvent {
@@ -301,6 +420,14 @@ impl Dome {
                     horizontal,
                     vertical,
                 } => {
+                    if self.xr_shell_pos.is_some() && self.xr_settings_scroll(vertical) {
+                        continue;
+                    }
+                    if let Some(id) = self.xr_target {
+                        if self.scroll_context(id, vertical as f32 * 3.) {
+                            continue;
+                        }
+                    }
                     if self.xr_target.is_none_or(|id| {
                         !self
                             .xr_animation
@@ -321,7 +448,23 @@ impl Dome {
                         );
                     }
                 }
+                SeatEvent::Leave => {
+                    self.context_scroll_hover = None;
+                    self.xr_target = None;
+                    self.xr_shell_pos = None;
+                    self.xr_bridge.lock().unwrap().cursor = None;
+                    pointer.motion(
+                        self,
+                        None,
+                        &MotionEvent {
+                            location: pointer.current_location(),
+                            serial: SERIAL_COUNTER.next_serial(),
+                            time,
+                        },
+                    );
+                }
                 SeatEvent::Reset => {
+                    self.context_scroll_hover = None;
                     if self.xr_shell_pos.take().is_some() {
                         self.xr_buttons.clear();
                         self.xr_target = None;
@@ -414,14 +557,9 @@ impl Dome {
                 })
                 .unwrap_or([0., 0.])
         });
-        angles[0] += dx as f32 * 0.0025;
-        angles[1] = (angles[1] - dy as f32 * 0.0025).clamp(-1.5, 1.5);
-        let [yaw, pitch] = *angles;
-        let ray = glam::Vec3::from_array(session.head.rotate([
-            yaw.sin() * pitch.cos(),
-            pitch.sin(),
-            -yaw.cos() * pitch.cos(),
-        ]));
+        dome::xr_input::move_mouse(angles, dx, dy);
+        let ray = dome::xr_input::mouse_ray(session.head, *angles);
+        self.xr_bridge.lock().unwrap().mouse_angles = Some(*angles);
         let target = surfaces
             .iter()
             .filter(|q| !captured || cursor.as_ref().is_some_and(|c| c.id == q.id))
@@ -437,7 +575,7 @@ impl Dome {
             });
         } else if !captured {
             self.dispatch_xr(Packet {
-                events: vec![SeatEvent::Reset],
+                events: vec![SeatEvent::Leave],
                 actions: vec![],
             });
             self.xr_bridge.lock().unwrap().cursor = None;
@@ -451,6 +589,12 @@ impl Dome {
                 .xr_target
                 .filter(|id| !dome::xr_transport::is_shell(*id))
             {
+                let scene = self.scene.lock().unwrap();
+                let id = if scene.window(id).is_some() {
+                    id
+                } else {
+                    scene.popup_owner(id)
+                };
                 actions.push(dome::Action::Focus { id });
             }
         }
@@ -470,7 +614,9 @@ impl Dome {
             let mut b = self.xr_bridge.lock().unwrap();
             b.requested.retain(|_, t| t.elapsed().as_secs_f32() < 0.5);
             b.frames.retain(|id, _| {
-                dome::xr_transport::is_shell(*id) || self.registry.iter().any(|(i, _)| i == id)
+                dome::xr_transport::is_shell(*id)
+                    || self.registry.iter().any(|(i, _)| i == id)
+                    || self.spatial_popups.iter().any(|(i, _)| i == id)
             });
             b.requested
                 .keys()
@@ -493,10 +639,9 @@ impl Dome {
         let Some(id) = request else {
             return;
         };
-        let Some((_, w)) = self.registry.iter().find(|(i, _)| *i == id).cloned() else {
+        let Some((surface, geo)) = self.popup_surface(id) else {
             return;
         };
-        let geo = w.geometry();
         let size = geo.size;
         if size.w < 1 || size.h < 1 || size.w > 4096 || size.h > 4096 {
             return;
@@ -505,11 +650,16 @@ impl Dome {
             let mut texture: GlesTexture =
                 renderer.create_buffer(Fourcc::Argb8888, (size.w, size.h).into())?;
             let mut target = renderer.bind(&mut texture)?;
-            let elements = w.render_elements::<WaylandSurfaceRenderElement<GlesRenderer>>(
+            let elements = render_elements_from_surface_tree::<
+                GlesRenderer,
+                WaylandSurfaceRenderElement<GlesRenderer>,
+            >(
                 renderer,
-                (-geo.loc.x, -geo.loc.y).into(),
-                1.0.into(),
+                &surface,
+                (-geo.loc.x, -geo.loc.y),
+                1.0,
                 1.,
+                Kind::Unspecified,
             );
             let mut tracker = OutputDamageTracker::new((size.w, size.h), 1., Transform::Normal);
             tracker.render_output(renderer, &mut target, 0, &elements, [0., 0., 0., 0.])?;
@@ -524,11 +674,24 @@ impl Dome {
         })();
         match capture {
             Ok(rgba) => {
+                let viewport = self
+                    .scene
+                    .lock()
+                    .unwrap()
+                    .popup(id)
+                    .and_then(|p| p.viewport)
+                    .filter(|v| v.band() > 0.);
+                let rgba = if let Some(v) = viewport {
+                    dome::context_menu::texture(&rgba, size.w as u32, v)
+                } else {
+                    rgba
+                };
+                let height = viewport.map_or(size.h as u32, |v| v.height.round() as u32);
                 self.xr_bridge.lock().unwrap().frames.insert(
                     id,
                     dome::xr_transport::Surface {
                         width: size.w as u32,
-                        height: size.h as u32,
+                        height,
                         rgba: std::sync::Arc::new(rgba),
                         stamp: std::time::Instant::now(),
                     },

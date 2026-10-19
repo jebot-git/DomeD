@@ -1,0 +1,159 @@
+//! Validated, persistent XR layout and room-anchor preferences.
+use crate::{AnchorMode, Config, Pose, Projection};
+use std::{
+    io::Write,
+    path::{Path, PathBuf},
+};
+
+pub fn path() -> PathBuf {
+    std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".config")
+        })
+        .join("dome/xr.json")
+}
+pub fn load(path: &Path) -> Result<Option<Config>, String> {
+    let data = match std::fs::read(path) {
+        Ok(data) => data,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e.to_string()),
+    };
+    let config: Config = serde_json::from_slice(&data).map_err(|e| e.to_string())?;
+    config.validate()?;
+    Ok(Some(config))
+}
+pub fn save(path: &Path, config: &Config) -> Result<(), String> {
+    use std::os::unix::fs::OpenOptionsExt;
+    config.validate()?;
+    let parent = path.parent().ok_or("Settings path has no parent")?;
+    std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    let temporary = path.with_extension(format!("{}.tmp", std::process::id()));
+    let result = (|| -> Result<(), Box<dyn std::error::Error>> {
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&temporary)?;
+        file.write_all(&serde_json::to_vec_pretty(config)?)?;
+        file.sync_all()?;
+        std::fs::rename(&temporary, path)?;
+        std::fs::File::open(parent)?.sync_all()?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temporary);
+    }
+    result.map_err(|e| e.to_string())
+}
+pub fn anchor_here(config: &Config, head: Pose) -> Result<Config, String> {
+    head.validate()?;
+    let forward = head.rotate([0., 0., -1.]);
+    let mut config = config.clone();
+    config.anchor_mode = AnchorMode::Room;
+    config.center_m = head.position_m;
+    config.yaw_deg = forward[0].atan2(-forward[2]).to_degrees();
+    config.validate()?;
+    Ok(config)
+}
+pub fn rows(c: &Config) -> Vec<(&'static str, String)> {
+    vec![
+        (
+            "Projection",
+            if c.projection == Projection::RoomDome {
+                "Room dome"
+            } else {
+                "Direct view / three lanes"
+            }
+            .into(),
+        ),
+        (
+            "Dome anchor",
+            if c.anchor_mode == AnchorMode::Room {
+                "Fixed in room"
+            } else {
+                "Follow headset"
+            }
+            .into(),
+        ),
+        ("Upper bar horizontal", format!("{:.0}°", c.upper_bar_x_deg)),
+        (
+            "Upper bar inset from view edge",
+            format!("{:.0}°", c.upper_inset_deg),
+        ),
+        (
+            "Upper bar width",
+            format!("{:.0}°", c.upper_bar_max_width_deg),
+        ),
+        (
+            "Upper bar height",
+            format!("{:.0}°", c.upper_bar_height_deg),
+        ),
+        ("Taskbar horizontal", format!("{:.0}°", c.taskbar_x_deg)),
+        (
+            "Taskbar inset from view edge",
+            format!("{:.0}°", c.lower_inset_deg),
+        ),
+        ("Taskbar width", format!("{:.0}°", c.taskbar_max_width_deg)),
+        ("Taskbar height", format!("{:.0}°", c.taskbar_height_deg)),
+        ("XR bar distance", format!("{:.2} m", c.bar_distance_m)),
+        ("Dome radius", format!("{:.1} m", c.radius_m)),
+        (
+            "Dome vertical span",
+            format!("{:.0}°", c.dome_vertical_span_deg),
+        ),
+        ("Room anchor X", format!("{:.2} m", c.center_m[0])),
+        ("Room anchor Y", format!("{:.2} m", c.center_m[1])),
+        ("Room anchor Z", format!("{:.2} m", c.center_m[2])),
+        ("Room anchor yaw", format!("{:.0}°", c.yaw_deg)),
+        ("Lane gap", format!("{:.1}°", c.lane_gap_deg)),
+        (
+            "Pulled-out panel distance",
+            format!("{:.2} m", c.pullout_distance_m),
+        ),
+        ("Vertical view field", format!("{:.0}°", c.vertical_fov_deg)),
+        (
+            "Upper dome inward lean",
+            format!("{:.0}°", c.dome_upper_tilt_deg),
+        ),
+    ]
+}
+pub fn adjust(config: &Config, row: usize, direction: f32) -> Result<Config, String> {
+    let mut c = config.clone();
+    match row {
+        0 => {
+            c.projection = if c.projection == Projection::RoomDome {
+                Projection::InView
+            } else {
+                Projection::RoomDome
+            }
+        }
+        1 => {
+            c.anchor_mode = if c.anchor_mode == AnchorMode::Room {
+                AnchorMode::Head
+            } else {
+                AnchorMode::Room
+            }
+        }
+        2 => c.upper_bar_x_deg += direction,
+        3 => c.upper_inset_deg += direction,
+        4 => c.upper_bar_max_width_deg += direction * 5.,
+        5 => c.upper_bar_height_deg += direction,
+        6 => c.taskbar_x_deg += direction,
+        7 => c.lower_inset_deg += direction,
+        8 => c.taskbar_max_width_deg += direction * 5.,
+        9 => c.taskbar_height_deg += direction,
+        10 => c.bar_distance_m += direction * 0.05,
+        11 => c.radius_m += direction * 0.1,
+        12 => c.dome_vertical_span_deg += direction * 5.,
+        13..=15 => c.center_m[row - 13] += direction * 0.05,
+        16 => c.yaw_deg += direction * 5.,
+        17 => c.lane_gap_deg += direction * 0.5,
+        18 => c.pullout_distance_m += direction * 0.05,
+        19 => c.vertical_fov_deg += direction * 5.,
+        20 => c.dome_upper_tilt_deg += direction,
+        _ => return Err("Unknown XR setting".into()),
+    }
+    c.validate()?;
+    Ok(c)
+}

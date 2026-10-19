@@ -12,9 +12,10 @@ pub struct Surface {
     pub stamp: Instant,
 }
 pub const TOP_BAR: u64 = 0;
+pub const NOTIFICATIONS: u64 = u64::MAX - 3;
 pub const TASK_BAR: u64 = u64::MAX - 2;
 pub fn is_shell(id: u64) -> bool {
-    id == TOP_BAR || id == TASK_BAR
+    id == TOP_BAR || id == TASK_BAR || id == NOTIFICATIONS
 }
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct ShellLayout {
@@ -22,6 +23,8 @@ pub struct ShellLayout {
     pub height: u32,
     pub top: u32,
     pub bottom: u32,
+    #[serde(default)]
+    pub notifications: Option<[u32; 4]>,
 }
 pub struct Bridge {
     pub shell: ShellLayout,
@@ -34,6 +37,7 @@ pub struct Bridge {
     pub exit_requested: bool,
     pub xr_socket: String,
     pub cursor: Option<Cursor>,
+    pub mouse_angles: Option<[f32; 2]>,
     pub last_mouse: Option<Instant>,
     pub mouse_buttons: std::collections::HashSet<u32>,
     pub hand_resume_ms: u64,
@@ -52,6 +56,7 @@ impl Default for Bridge {
             exit_requested: false,
             xr_socket: String::new(),
             cursor: None,
+            mouse_angles: None,
             last_mouse: None,
             mouse_buttons: Default::default(),
             hand_resume_ms: 800,
@@ -80,6 +85,8 @@ pub struct Control {
     pub visible: bool,
     pub mouse: bool,
     pub cursor: Option<Cursor>,
+    #[serde(default)]
+    pub mouse_angles: Option<[f32; 2]>,
     pub exit_requested: bool,
 }
 impl Bridge {
@@ -101,6 +108,7 @@ impl Bridge {
             visible: self.visible(),
             mouse: self.mouse_owned(),
             cursor: self.cursor.clone(),
+            mouse_angles: self.mouse_angles,
             exit_requested: self.exit_requested,
         }
     }

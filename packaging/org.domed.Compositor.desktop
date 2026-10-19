@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=DomeD
+Comment=Run the DomeD compositor inside the current desktop
+Exec=/usr/local/bin/dome-compositor --backend nested
+TryExec=/usr/local/bin/dome-compositor --backend nested
+Icon=utilities-terminal
+Type=Application
+Categories=System;
+Terminal=false

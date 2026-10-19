@@ -31,14 +31,16 @@ impl SeatHandler for Dome {
     fn cursor_image(
         &mut self,
         _seat: &Seat<Self>,
-        _image: smithay::input::pointer::CursorImageStatus,
+        image: smithay::input::pointer::CursorImageStatus,
     ) {
+        self.cursor_status = image;
     }
 
     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&WlSurface>) {
         let dh = &self.display_handle;
         let client = focused.and_then(|s| dh.get_client(s.id()).ok());
-        set_data_device_focus(dh, seat, client);
+        set_data_device_focus(dh, seat, client.clone());
+        smithay::wayland::selection::primary_selection::set_primary_focus(dh, seat, client);
     }
 }
 
@@ -69,3 +71,51 @@ delegate_data_device!(Dome);
 
 impl OutputHandler for Dome {}
 delegate_output!(Dome);
+
+impl smithay::wayland::dmabuf::DmabufHandler for Dome {
+    fn dmabuf_state(&mut self) -> &mut smithay::wayland::dmabuf::DmabufState {
+        &mut self.dmabuf_state
+    }
+    fn dmabuf_imported(
+        &mut self,
+        _global: &smithay::wayland::dmabuf::DmabufGlobal,
+        dmabuf: smithay::backend::allocator::dmabuf::Dmabuf,
+        notifier: smithay::wayland::dmabuf::ImportNotifier,
+    ) {
+        if self
+            .dmabuf_importer
+            .as_mut()
+            .is_some_and(|import| import(&dmabuf))
+        {
+            let _ = notifier.successful::<Self>();
+        } else {
+            notifier.failed();
+        }
+    }
+}
+smithay::delegate_dmabuf!(Dome);
+
+impl smithay::wayland::selection::primary_selection::PrimarySelectionHandler for Dome {
+    fn primary_selection_state(
+        &self,
+    ) -> &smithay::wayland::selection::primary_selection::PrimarySelectionState {
+        &self.primary_selection_state
+    }
+}
+impl smithay::wayland::selection::wlr_data_control::DataControlHandler for Dome {
+    fn data_control_state(
+        &self,
+    ) -> &smithay::wayland::selection::wlr_data_control::DataControlState {
+        &self.data_control_state
+    }
+}
+impl smithay::wayland::selection::ext_data_control::DataControlHandler for Dome {
+    fn data_control_state(
+        &self,
+    ) -> &smithay::wayland::selection::ext_data_control::DataControlState {
+        &self.ext_data_control_state
+    }
+}
+smithay::delegate_primary_selection!(Dome);
+smithay::delegate_data_control!(Dome);
+smithay::delegate_ext_data_control!(Dome);

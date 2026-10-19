@@ -1,0 +1,45 @@
+#!/usr/bin/python3
+"""Keep Dome's children in a private process group and stop them on logout."""
+import os
+import signal
+import subprocess
+import sys
+import time
+
+child = None
+
+
+def terminate(_signum, _frame):
+    if child is not None:
+        try:
+            os.killpg(child.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+
+
+for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+    signal.signal(sig, terminate)
+
+args = ["/usr/local/bin/dome-compositor", "--backend", "drm"]
+if os.environ.get("DOME_SESSION_TERMINAL", "1") != "0":
+    args.append("--terminal")
+try:
+    child = subprocess.Popen(args, start_new_session=True)
+    print(f"DomeD compositor PID: {child.pid}", flush=True)
+    result = child.wait()
+finally:
+    if child is not None:
+        terminate(None, None)
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            try:
+                os.killpg(child.pid, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(0.05)
+        else:
+            try:
+                os.killpg(child.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+sys.exit(result if result >= 0 else 128 - result)

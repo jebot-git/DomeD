@@ -3,18 +3,30 @@
 mod handlers;
 
 mod commands;
+mod context_menus;
 mod decorations;
+mod desktop;
+#[cfg(feature = "standalone")]
+mod drm;
 mod grabs;
+mod ime;
 mod input;
 mod input_routing;
+mod keyboard;
+mod notifications;
+mod outputs;
 mod qt;
 mod session;
+mod session_services;
 mod shell;
+mod snapping;
+mod spatial_popups;
 mod state;
 mod tasks;
 mod tray;
 mod winit;
 mod xr_bridge;
+mod xr_settings;
 
 use smithay::reexports::{
     calloop::EventLoop,
@@ -28,6 +40,39 @@ pub struct CalloopData {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    let mut backend = std::env::var("DOME_BACKEND").unwrap_or_else(|_| {
+        if std::env::var_os("WAYLAND_DISPLAY").is_some() || std::env::var_os("DISPLAY").is_some() {
+            "nested"
+        } else {
+            "drm"
+        }
+        .into()
+    });
+    if args.first().is_some_and(|a| a == "--backend") {
+        if args.len() < 2 {
+            return Err("--backend requires drm or nested".into());
+        }
+        backend = args[1].clone();
+        args.drain(..2);
+    }
+    if args.first().is_some_and(|a| a == "--help" || a == "-h") {
+        println!("dome-compositor [--backend drm|nested] [--terminal | --command PROGRAM ARGS...]\n  drm: native libseat/libinput/DRM compositor (login screen or unused TTY)\n  nested: development window in an existing Wayland/X11 desktop\n  --check-backend: report backend support without opening a seat or display");
+        return Ok(());
+    }
+    if !matches!(backend.as_str(), "drm" | "nested") {
+        return Err(format!("Unknown backend: {backend}").into());
+    }
+    if args.first().is_some_and(|a| a == "--check-backend") {
+        if backend == "drm" && !cfg!(feature = "standalone") {
+            return Err("Native DRM support is not compiled in".into());
+        }
+        println!(
+            "DomeD backend: {backend}; native DRM compiled: {}",
+            cfg!(feature = "standalone")
+        );
+        return Ok(());
+    }
     if let Ok(env_filter) = tracing_subscriber::EnvFilter::try_from_default_env() {
         tracing_subscriber::fmt().with_env_filter(env_filter).init();
     } else {
@@ -35,18 +80,44 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let mut event_loop: EventLoop<CalloopData> = EventLoop::try_new()?;
+    // Register before creating worker threads so they inherit the blocked mask.
+    #[cfg(feature = "standalone")]
+    {
+        use smithay::reexports::calloop::signals::{Signal, Signals};
+        event_loop.handle().insert_source(
+            Signals::new(&[Signal::SIGTERM, Signal::SIGINT, Signal::SIGHUP])?,
+            |_, _, data| {
+                data.state.loop_signal.stop();
+            },
+        )?;
+    }
 
     let display: Display<Dome> = Display::new()?;
     let display_handle = display.handle();
-    let state = Dome::new(&mut event_loop, display);
+    let mut state = Dome::new(&mut event_loop, display);
     dome::load_geometry(&mut state.scene.lock().unwrap())?;
+    if std::env::var_os("DOME_CONFIG").is_none() {
+        if let Some(config) = dome::geometry_settings::load(&dome::geometry_settings::path())? {
+            state.scene.lock().unwrap().config = config;
+        }
+    }
+    state.geometry_saved = state.scene.lock().unwrap().config.clone();
 
     let mut data = CalloopData {
         state,
         display_handle,
     };
 
-    crate::winit::init_winit(&mut event_loop, &mut data)?;
+    match backend.as_str() {
+        "nested" => crate::winit::init_winit(&mut event_loop, &mut data)?,
+        "drm" => {
+            #[cfg(feature = "standalone")]
+            crate::drm::init(&mut event_loop, &mut data)?;
+            #[cfg(not(feature = "standalone"))]
+            return Err("Rebuild with --features standalone for native DRM support".into());
+        }
+        _ => unreachable!(),
+    }
 
     data.state.xr_bridge.lock().unwrap().xr_socket =
         data.state.xr_socket_name.to_string_lossy().into_owned();
@@ -70,13 +141,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         data.state.socket_name.to_string_lossy()
     );
     eprintln!("Control and spatial preview: http://127.0.0.1:{port}");
-    let args: Vec<_> = std::env::args().skip(1).collect();
-    if args.first().is_some_and(|s| s == "--command" || s == "-c") {
+    if args.first().is_some_and(|s| s == "--terminal") {
+        dome::terminal::launch(&data.state.socket_name.to_string_lossy())?;
+    } else if args.first().is_some_and(|s| s == "--command" || s == "-c") {
         if let Some(program) = args.get(1) {
             std::process::Command::new(program)
                 .args(&args[2..])
                 .spawn()?;
         }
+    }
+    if std::env::var("DOME_START_XR").as_deref() == Ok("1") {
+        data.state.start_xr();
     }
 
     event_loop.run(None, &mut data, move |_| {
@@ -91,4 +166,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let _ = child.wait();
     }
     Ok(())
+}
+
+fn activate_client_socket(state: &Dome) {
+    std::env::set_var("WAYLAND_DISPLAY", &state.socket_name);
+    if std::env::var("DOME_LOGIN_SESSION").as_deref() == Ok("1") {
+        std::env::set_var("QT_IM_MODULE", "wayland");
+        std::env::set_var("GTK_IM_MODULE", "fcitx");
+        std::env::set_var("XMODIFIERS", "@im=fcitx");
+    }
+    state.ime.start(&state.display_handle);
+    if std::env::var("DOME_LOGIN_SESSION").as_deref() == Ok("1") {
+        let _ = std::process::Command::new("dbus-update-activation-environment")
+            .args([
+                "--systemd",
+                "WAYLAND_DISPLAY",
+                "XDG_CURRENT_DESKTOP",
+                "XDG_SESSION_DESKTOP",
+                "XDG_SESSION_TYPE",
+                "QT_QPA_PLATFORM",
+                "QT_IM_MODULE",
+                "GTK_IM_MODULE",
+                "XMODIFIERS",
+                "DISPLAY=",
+            ])
+            .status();
+        session_services::start();
+    }
 }

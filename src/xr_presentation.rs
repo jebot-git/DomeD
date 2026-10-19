@@ -19,7 +19,7 @@ impl Default for Presentation {
 impl Presentation {
     pub fn interactive(self, id: u64) -> bool {
         self.desktop
-            && if id == crate::xr_transport::TOP_BAR {
+            && if id == crate::xr_transport::TOP_BAR || id == crate::xr_transport::NOTIFICATIONS {
                 self.top
             } else if id == crate::xr_transport::TASK_BAR {
                 self.bottom
@@ -118,7 +118,7 @@ impl Frame {
     pub fn interactive(self, target: Presentation, id: u64) -> bool {
         target.interactive(id)
             && self.opacity >= 1.
-            && if id == crate::xr_transport::TOP_BAR {
+            && if id == crate::xr_transport::TOP_BAR || id == crate::xr_transport::NOTIFICATIONS {
                 self.top >= 1.
             } else if id == crate::xr_transport::TASK_BAR {
                 self.bottom >= 1.
@@ -138,7 +138,9 @@ impl Frame {
             if self.opacity <= 0. {
                 return false;
             }
-            let (amount, sign) = if q.id == crate::xr_transport::TOP_BAR {
+            let (amount, sign) = if q.id == crate::xr_transport::TOP_BAR
+                || q.id == crate::xr_transport::NOTIFICATIONS
+            {
                 (self.top, 1.)
             } else if q.id == crate::xr_transport::TASK_BAR {
                 (self.bottom, -1.)
@@ -152,7 +154,7 @@ impl Frame {
                 q.pose.position_m[i] - head.position_m[i]
             }));
             let edge = local[2].abs() * (config.vertical_fov_deg / 2.).to_radians().tan();
-            let travel = (edge + q.size[1] / 2. - sign * local[1] + 0.03).max(0.);
+            let travel = (edge + q.size[1] / 2. - sign * local[1] + 0.03).max(q.size[1] + 0.03);
             let delta = head.rotate([0., sign * (1. - amount) * travel, 0.]);
             for i in 0..3 {
                 q.pose.position_m[i] += delta[i];
@@ -266,6 +268,7 @@ mod tests {
             height: 800,
             top: 36,
             bottom: 60,
+            notifications: None,
         };
         let mut q = crate::xr_input::shell_quads(&s, head, &layout);
         let original = q.clone();

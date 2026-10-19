@@ -9,14 +9,15 @@ fn scene() -> Scene {
     s
 }
 #[test]
-fn dome_curvature_and_mouse_uv_use_identical_sphere() {
+fn dome_curvature_and_mouse_uv_use_identical_open_cylinder() {
     let s = scene();
     let q = xr_input::quads(&s, Pose::default()).remove(0);
     let d = q.dome.as_ref().unwrap();
     let center = Vec3::from_array(d.frame.position_m);
     for uv in [[0.1, 0.1], [0.5, 0.5], [0.9, 0.9], [0.1, 0.9]] {
         let p = q.point(uv);
-        assert!((p.distance(center) - d.radius).abs() < 0.0001);
+        let local = d.frame.inverse_rotate((p - center).to_array());
+        assert!((local[0].hypot(local[2]) - d.radius).abs() < 0.0001);
         let hit = q.hit(center, (p - center).normalize(), false).unwrap();
         assert!((uv[0] - hit[0]).abs() < 0.0001 && (uv[1] - hit[1]).abs() < 0.0001);
     }
@@ -162,12 +163,14 @@ fn switching_projection_hides_pullout_without_losing_dome_slot() {
 }
 #[test]
 fn shell_insets_and_popup_growth_keep_bar_edges_fixed() {
-    let s = scene();
+    let mut s = scene();
+    s.config.projection = Projection::InView;
     let layout = dome::xr_transport::ShellLayout {
         width: 1280,
         height: 800,
         top: 36,
         bottom: 60,
+        notifications: None,
     };
     let head = Pose::default();
     let bars = xr_input::shell_quads(&s, head, &layout);
@@ -193,6 +196,7 @@ fn shell_insets_and_popup_growth_keep_bar_edges_fixed() {
         &dome::xr_transport::ShellLayout {
             top: 300,
             bottom: 350,
+            notifications: None,
             ..layout
         },
     );
@@ -527,7 +531,7 @@ fn room_dome_render_surfaces_use_pixel_spacing_in_every_lane() {
                 }
             }
             s.focused = None;
-            // Check the actual spherical patches submitted to OpenXR, not only model bounds.
+            // Check the actual cylindrical patches submitted to OpenXR, not only model bounds.
             let rendered = xr_input::quads(&s, Pose::default());
             for lane in 0..3 {
                 let ids = &s.workspaces[0].lanes[lane].windows;
@@ -645,4 +649,379 @@ fn hiding_xr_desktop_releases_hand_buttons_and_preserves_window_routing() {
         .events
         .iter()
         .any(|e| matches!(e, xr_input::SeatEvent::Button { pressed: true, .. })));
+}
+
+#[test]
+fn dome_bars_border_lanes_and_orbit_with_horizontal_gaze() {
+    let mut s = scene();
+    let layout = dome::xr_transport::ShellLayout {
+        width: 1280,
+        height: 800,
+        top: 36,
+        bottom: 60,
+        notifications: None,
+    };
+    let head = Pose {
+        position_m: s.config.center_m,
+        ..Pose::default()
+    };
+    let center = Vec3::from_array(s.config.center_m);
+    s.config.dome_upper_tilt_deg = 0.;
+    let original = xr_input::shell_quads(&s, head, &layout);
+    let (bottom, top) = s.config.lane_extent();
+    for (i, uv, angle) in [(0, [0.5, 1.], top), (1, [0.5, 0.], bottom)] {
+        let p = original[i].point(uv) - center;
+        assert!((p.y / s.config.radius_m - angle.to_radians()).abs() < 0.001);
+        assert!((p.x.hypot(p.z) - s.config.radius_m).abs() < 0.001);
+    }
+    for yaw in [-170_f32, -90., 45., 170.] {
+        let rotation = Quat::from_rotation_y(yaw.to_radians());
+        let turned = Pose {
+            orientation_xyzw: (rotation * Quat::from_rotation_x(0.4)).to_array(),
+            ..head
+        };
+        let bars = xr_input::shell_quads(&s, turned, &layout);
+        for (a, b) in original.iter().zip(&bars) {
+            let expected = center + rotation * (Vec3::from_array(a.pose.position_m) - center);
+            assert!(expected.distance(Vec3::from_array(b.pose.position_m)) < 0.001);
+            // Pitch does not pull either bar over a room-anchored lane.
+            assert!((a.pose.position_m[1] - b.pose.position_m[1]).abs() < 0.001);
+        }
+        // The room lanes retain their own anchor while bars track the view.
+        assert!(
+            xr_input::quads(&s, head)[0]
+                .point([0.5, 0.5])
+                .distance(xr_input::quads(&s, turned)[0].point([0.5, 0.5]))
+                < 0.001
+        );
+    }
+    let grown = xr_input::shell_quads(
+        &s,
+        head,
+        &dome::xr_transport::ShellLayout {
+            top: 300,
+            bottom: 350,
+            notifications: None,
+            ..layout.clone()
+        },
+    );
+    assert!(
+        grown[0]
+            .point([0.5, 0.])
+            .distance(original[0].point([0.5, 0.]))
+            < 0.001
+    );
+    assert!(
+        grown[1]
+            .point([0.5, 1.])
+            .distance(original[1].point([0.5, 1.]))
+            < 0.001
+    );
+    s.config.anchor_mode = AnchorMode::Head;
+    let moved = Pose {
+        position_m: [3., 2., -4.],
+        ..head
+    };
+    let bars = xr_input::shell_quads(&s, moved, &layout);
+    for (a, b) in original.iter().zip(&bars) {
+        assert!(
+            (Vec3::from_array(a.pose.position_m) - center)
+                .distance(Vec3::from_array(b.pose.position_m) - Vec3::from_array(moved.position_m))
+                < 0.001
+        );
+    }
+}
+
+#[test]
+fn mouse_crosses_bars_empty_space_and_lanes_without_depth_or_size_jumps() {
+    for projection in [Projection::RoomDome, Projection::InView] {
+        let mut s = scene();
+        s.config.projection = projection;
+        let head = Pose {
+            position_m: s.config.center_m,
+            ..Pose::default()
+        };
+        let layout = dome::xr_transport::ShellLayout {
+            width: 1280,
+            height: 800,
+            top: 36,
+            bottom: 60,
+            notifications: None,
+        };
+        let mut surfaces = xr_input::quads(&s, head);
+        surfaces.extend(xr_input::shell_quads(&s, head, &layout));
+        let mut angles = [0., 1.25];
+        let mut seen = std::collections::HashSet::new();
+        let mut gaps = 0;
+        let mut previous: Option<Vec3> = None;
+        for _ in 0..1000 {
+            let ray = xr_input::mouse_ray(head, angles);
+            let reticle = xr_input::mouse_reticle(head, angles);
+            let offset =
+                Vec3::from_array(reticle.pose.position_m) - Vec3::from_array(head.position_m);
+            assert!((offset.length() - 0.4).abs() < 0.00001);
+            assert!(offset.normalize().distance(ray) < 0.00001);
+            assert_eq!(reticle.size, [0.006, 0.006]);
+            if let Some(p) = previous {
+                assert!(p.distance(offset) < 0.0011);
+            }
+            previous = Some(offset);
+            if let Some((q, _)) = surfaces
+                .iter()
+                .filter_map(|q| {
+                    q.hit(Vec3::from_array(head.position_m), ray, false)
+                        .map(|uv| (q, uv))
+                })
+                .min_by(|(a, ua), (b, ub)| {
+                    a.point(*ua)
+                        .distance(Vec3::from_array(head.position_m))
+                        .total_cmp(&b.point(*ub).distance(Vec3::from_array(head.position_m)))
+                })
+            {
+                seen.insert(q.id);
+            } else {
+                gaps += 1;
+            }
+            xr_input::move_mouse(&mut angles, 0., 1.);
+        }
+        assert!(seen.contains(&dome::xr_transport::TOP_BAR));
+        assert!(seen.contains(&dome::xr_transport::TASK_BAR));
+        assert!(seen.contains(&s.windows[0].id));
+        assert!(gaps > 0);
+    }
+}
+
+#[test]
+fn dome_bar_extreme_geometry_stays_finite_and_mouse_angles_wrap() {
+    let mut s = scene();
+    let layout = dome::xr_transport::ShellLayout {
+        width: 1280,
+        height: 800,
+        top: 800,
+        bottom: 800,
+        notifications: None,
+    };
+    for span in [30., 110., 170.] {
+        s.config.dome_vertical_span_deg = span;
+        s.config.upper_bar_height_deg = 20.;
+        s.config.taskbar_height_deg = 20.;
+        for q in xr_input::shell_quads(&s, Pose::default(), &layout) {
+            assert!(q.size.iter().all(|v| v.is_finite() && *v > 0.));
+            assert!(q.pose.position_m.iter().all(|v| v.is_finite()));
+        }
+    }
+    let mut angles = [3.14, 0.];
+    let before = xr_input::mouse_ray(Pose::default(), angles);
+    xr_input::move_mouse(&mut angles, 4., 0.);
+    assert!(angles[0] < 0.);
+    assert!(before.distance(xr_input::mouse_ray(Pose::default(), angles)) < 0.011);
+    let old = angles;
+    xr_input::move_mouse(&mut angles, f64::NAN, 1.);
+    assert_eq!(angles, old);
+}
+
+#[test]
+fn open_tube_keeps_width_and_vertical_pixel_spacing_at_every_height() {
+    let mut s = Scene::new("test");
+    for lane in 0..3 {
+        let id = s.add("Cylinder", "app");
+        s.apply(Action::Move {
+            id,
+            lane,
+            workspace: 0,
+        })
+        .unwrap();
+    }
+    s.focused = None;
+    for q in xr_input::quads(&s, Pose::default()) {
+        let d = q.dome.as_ref().unwrap();
+        let width = q.point([0., 0.5]).distance(q.point([1., 0.5]));
+        for v in [0., 0.25, 0.5, 0.75, 1.] {
+            assert!((q.point([0., v]).distance(q.point([1., v])) - width).abs() < 0.00001);
+            for u in [0., 0.3, 1.] {
+                let expected = q.point([u, 0.]) * (1. - v) + q.point([u, 1.]) * v;
+                assert!(q.point([u, v]).distance(expected) < 0.00001);
+                // Reconstruct exactly what the native cylinder layer submits.
+                let p = d.layer_pose().transform([
+                    d.radius * ((u - 0.5) * d.horizontal).sin(),
+                    d.radius * (d.top - d.bottom) * (0.5 - v),
+                    -d.radius * ((u - 0.5) * d.horizontal).cos(),
+                ]);
+                assert!(q.point([u, v]).distance(Vec3::from_array(p)) < 0.00001);
+            }
+        }
+        let w = s.window(q.id).unwrap();
+        assert!((d.aspect_ratio() - w.desktop.w / w.desktop.h).abs() < 0.00001);
+        let axis = Vec3::from_array(d.frame.rotate([0., 1., 0.]));
+        let origin = Vec3::from_array(d.frame.position_m);
+        assert!(q.hit(origin, axis, false).is_none());
+        assert!(q.hit(origin, -axis, false).is_none());
+    }
+}
+
+#[test]
+fn upper_lane_leans_inward_about_lower_edge_and_pointer_hits_follow_it() {
+    let mut s = Scene::new("test");
+    for lane in 0..3 {
+        let id = s.add("Lean", "app");
+        s.apply(Action::Move {
+            id,
+            lane,
+            workspace: 0,
+        })
+        .unwrap();
+    }
+    s.focused = None;
+    s.config.dome_upper_tilt_deg = 0.;
+    let upright = xr_input::quads(&s, Pose::default());
+    s.config.dome_upper_tilt_deg = 8.;
+    let leaned = xr_input::quads(&s, Pose::default());
+    for (a, b) in upright.iter().zip(&leaned) {
+        if s.window(a.id).unwrap().lane == 0 {
+            let low = a.point([0.5, 1.]).y;
+            for u in [0., 0.5, 1.] {
+                assert!(b.point([u, 1.]).y >= low - 0.00001);
+            }
+            assert!((a.point([0.5, 1.]).z - b.point([0.5, 1.]).z).abs() < 0.00001);
+            let delta = a
+                .pose
+                .inverse_rotate((b.point([0.5, 0.]) - a.point([0.5, 0.])).to_array());
+            assert!(delta[2] > 0.05); // Toward the viewer, without shrinking width.
+            assert_eq!(a.size, b.size);
+            let origin = Vec3::from_array(s.config.center_m) + Vec3::new(0.1, 0.15, -0.1);
+            for uv in [[0.1, 0.1], [0.5, 0.5], [0.9, 0.9], [0., 0.], [1., 1.]] {
+                let p = b.point(uv);
+                let hit = b.hit(origin, (p - origin).normalize(), false).unwrap();
+                assert!((uv[0] - hit[0]).abs() < 0.00001 && (uv[1] - hit[1]).abs() < 0.00001);
+                let actual = s
+                    .hit_test(origin.to_array(), (p - origin).normalize().to_array())
+                    .unwrap();
+                assert_eq!(actual.id, b.id);
+            }
+        } else {
+            for uv in [[0., 0.], [0.5, 0.5], [1., 1.]] {
+                assert!(a.point(uv).distance(b.point(uv)) < 0.00001);
+            }
+        }
+    }
+}
+
+#[test]
+fn cylinder_packing_preserves_texture_aspect_ratio_in_crowded_lanes() {
+    for count in [1, 3, 20] {
+        let mut s = Scene::new("test");
+        for n in 0..count {
+            let id = s.add("Aspect", "app");
+            s.apply(Action::DesktopResize {
+                id,
+                w: 480. + n as f32 * 70.,
+                h: 480.,
+            })
+            .unwrap();
+        }
+        s.focused = None;
+        for q in xr_input::quads(&s, Pose::default()) {
+            let w = s.window(q.id).unwrap();
+            assert!(
+                (q.dome.as_ref().unwrap().aspect_ratio() - w.desktop.w / w.desktop.h).abs()
+                    < 0.00001
+            );
+        }
+    }
+}
+
+#[test]
+fn upper_lean_configuration_is_compatible_and_bounded() {
+    let old: Config = serde_json::from_str("{}").unwrap();
+    assert_eq!(old.dome_upper_tilt_deg, 8.);
+    let adjusted = dome::geometry_settings::adjust(&old, 20, 1.).unwrap();
+    assert_eq!(adjusted.dome_upper_tilt_deg, 9.);
+    let mut c = old;
+    for invalid in [-1., 21., f32::NAN, f32::INFINITY] {
+        c.dome_upper_tilt_deg = invalid;
+        assert!(c.validate().is_err());
+    }
+    for valid in [0., 8., 20.] {
+        c.dome_upper_tilt_deg = valid;
+        c.validate().unwrap();
+    }
+}
+
+#[test]
+fn expanded_settings_fit_view_pane_and_follow_projection_preferences() {
+    use dome::{AnchorMode, Pose, Projection, Scene};
+    let mut scene = Scene::default();
+    let head = Pose {
+        position_m: [1., 1.7, 2.],
+        ..Pose::default()
+    };
+    let layout = dome::xr_transport::ShellLayout {
+        width: 1024,
+        height: 768,
+        top: 768,
+        bottom: 60,
+        notifications: None,
+    };
+    for projection in [Projection::InView, Projection::RoomDome] {
+        scene.config.projection = projection;
+        scene.config.anchor_mode = AnchorMode::Head;
+        let q = dome::xr_input::shell_quads(&scene, head, &layout);
+        assert_eq!(q.len(), 1);
+        assert!((q[0].size[0] / q[0].size[1] - 4. / 3.).abs() < 0.001);
+        let d = if projection == Projection::RoomDome {
+            scene.config.radius_m
+        } else {
+            scene.config.pullout_distance_m
+        };
+        assert!((q[0].pose.position_m[2] - (head.position_m[2] - d)).abs() < 0.001);
+        assert!(
+            2. * (q[0].size[1] / (2. * d)).atan().to_degrees() <= scene.config.vertical_fov_deg
+        );
+        assert!(2. * (q[0].size[0] / (2. * d)).atan().to_degrees() <= 80.01);
+    }
+}
+
+#[test]
+fn notification_pane_follows_head_and_maps_its_crop_without_bar_stretching() {
+    for projection in [Projection::InView, Projection::RoomDome] {
+        let mut s = scene();
+        s.config.projection = projection;
+        let head = Pose {
+            position_m: [1., 1.7, 2.],
+            orientation_xyzw: glam::Quat::from_rotation_y(0.7).to_array(),
+        };
+        let layout = dome::xr_transport::ShellLayout {
+            width: 1024,
+            height: 768,
+            top: 36,
+            bottom: 60,
+            notifications: Some([652, 48, 360, 274]),
+        };
+        let quads = xr_input::shell_quads(&s, head, &layout);
+        let n = quads
+            .iter()
+            .find(|q| q.id == dome::xr_transport::NOTIFICATIONS)
+            .unwrap();
+        assert!((n.size[0] / n.size[1] - 360. / 274.).abs() < 0.0001);
+        assert!(n.dome.is_none());
+        let local = head.inverse_rotate(std::array::from_fn(|i| {
+            n.pose.position_m[i] - head.position_m[i]
+        }));
+        assert!(local[0] > 0. && local[1] > 0. && local[2] < 0.);
+        assert!(n.size[0] < 2. && n.size[1] < 2.);
+        let mut hidden = dome::xr_presentation::Presentation::default();
+        hidden.top = false;
+        assert!(!hidden.interactive(n.id));
+        assert!(dome::xr_transport::is_shell(n.id));
+        let empty = dome::xr_transport::ShellLayout {
+            notifications: None,
+            ..layout
+        };
+        let bars = xr_input::shell_quads(&s, head, &empty);
+        assert_eq!(bars.len() + 1, quads.len());
+        for (a, b) in bars.iter().zip(&quads) {
+            assert_eq!(a.size, b.size);
+            assert_eq!(a.pose, b.pose);
+        }
+    }
 }

@@ -5,3 +5,6 @@ __pycache__/
 *.pyc
 
 /prototypes/godot-xr/.godot/
+
+/.local-deps/
+/build/

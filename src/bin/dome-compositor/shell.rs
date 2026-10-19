@@ -19,8 +19,11 @@ impl Dome {
             .and_then(|c| c.get_data::<crate::state::ClientState>().map(|s| s.origin))
             .unwrap_or_default();
         let visible = self.xr_bridge.lock().unwrap().visible();
+        let primary = self.primary_output_geometry();
         let mut scene = self.scene.lock().unwrap();
         let w = scene.windows.iter_mut().find(|w| w.id == id).unwrap();
+        w.desktop.x += primary.loc.x as f32;
+        w.desktop.y += primary.loc.y as f32;
         w.origin = origin;
         w.desktop_visible = origin == dome::Realm::Desktop || !visible;
         if origin == dome::Realm::Xr && visible && !self.input_xr_active {
@@ -37,6 +40,10 @@ impl Dome {
             .map(|(id, _)| *id)
     }
     pub fn action(&mut self, a: Action) {
+        if let Action::Focus { id } = &a {
+            self.pending_raise = Some(*id);
+            self.no_raise_focus = None;
+        }
         if let Err(e) = self.scene.lock().unwrap().apply(a) {
             self.shell_error = e;
         }
@@ -61,18 +68,13 @@ impl Dome {
         }
     }
     pub fn sync_scene(&mut self) {
+        self.persist_geometry();
         let scene = self.scene.lock().unwrap().clone();
         if scene.revision == self.applied_revision {
             return;
         }
         self.applied_revision = scene.revision;
-        let size = self
-            .space
-            .outputs()
-            .next()
-            .and_then(|o| self.space.output_geometry(o))
-            .map(|r| r.size)
-            .unwrap_or((1280, 800).into());
+        let popup_rects = self.desktop_popup_rects(&scene);
         let mut closed = vec![];
         for (id, window) in &self.registry {
             let Some(w) = scene.window(*id) else {
@@ -81,12 +83,27 @@ impl Dome {
                 closed.push(*id);
                 continue;
             };
-            let mapped = w.desktop_visible && !w.minimized && w.workspace == scene.active_workspace;
+            let mapped = w.desktop_visible
+                && !w.minimized
+                && w.workspace == scene.active_workspace
+                && scene
+                    .popup(*id)
+                    .is_none_or(|p| scene.popup_visible(p, true));
             if !mapped {
                 self.space.unmap_elem(window);
             }
-            let pos = if w.maximized {
-                (0, 36)
+            let output_geo = self.output_geometry_at(
+                (
+                    w.desktop.x as f64 + w.desktop.w as f64 / 2.,
+                    w.desktop.y as f64 + w.desktop.h as f64 / 2.,
+                )
+                    .into(),
+            );
+            let size = output_geo.size;
+            let pos = if let Some((_, rect)) = popup_rects.iter().find(|(i, _)| i == id) {
+                (rect.x.round() as i32, rect.y.round() as i32)
+            } else if w.maximized {
+                (output_geo.loc.x, output_geo.loc.y + 36)
             } else {
                 (w.desktop.x as i32, w.desktop.y as i32)
             };
@@ -97,6 +114,15 @@ impl Dome {
                 self.space.map_element(window.clone(), pos, false);
             }
             let toplevel = window.toplevel().unwrap();
+            let transient = with_states(toplevel.wl_surface(), |s| {
+                s.data_map
+                    .get::<XdgToplevelSurfaceData>()
+                    .unwrap()
+                    .lock()
+                    .unwrap()
+                    .parent
+                    .is_some()
+            });
             let ready = with_states(toplevel.wl_surface(), |s| {
                 s.data_map
                     .get::<XdgToplevelSurfaceData>()
@@ -113,6 +139,7 @@ impl Dome {
                     } else {
                         (w.desktop.w as i32,w.desktop.h as i32).into()
                     });
+                    if transient { s.size = None; }
                     if w.maximized { s.states.set(State::Maximized); }
                     else { s.states.unset(State::Maximized); }
                 });
@@ -120,13 +147,18 @@ impl Dome {
                 toplevel.send_pending_configure();
             }
         }
-        if let Some((_, window)) = self
-            .registry
-            .iter()
-            .find(|(id, _)| scene.focused == Some(*id))
-        {
+        let raise = self.pending_raise.take().or_else(|| {
+            (scene.focused != self.last_applied_focus && scene.focused != self.no_raise_focus)
+                .then_some(scene.focused)
+                .flatten()
+        });
+        self.no_raise_focus = None;
+        self.last_applied_focus = scene.focused;
+        if let Some((_, window)) = self.registry.iter().find(|(id, _)| Some(*id) == raise) {
             self.space.raise_element(window, true);
         }
+        self.workbench_zoom
+            .retain(|id, _| scene.window(*id).is_some());
         self.registry.retain(|(id, _)| !closed.contains(id));
         let focused = scene
             .focused
@@ -137,12 +169,18 @@ impl Dome {
                     .filter(|w| {
                         !w.minimized
                             && w.workspace == scene.active_workspace
+                            && scene
+                                .popup(w.id)
+                                .is_none_or(|p| scene.popup_visible(p, !self.input_xr_active))
                             && (self.input_xr_active || w.desktop_visible)
                     })
                     .map(|_| w.toplevel().unwrap().wl_surface().clone())
             });
         if let Some(keyboard) = self.seat.get_keyboard() {
-            keyboard.set_focus(self, focused, SERIAL_COUNTER.next_serial());
+            if !keyboard.is_grabbed() {
+                let focused = self.context_focus_surface().or(focused);
+                keyboard.set_focus(self, focused, SERIAL_COUNTER.next_serial());
+            }
         }
     }
     pub fn launch_socket(&self) -> String {
@@ -182,36 +220,79 @@ impl Dome {
             .collect()
     }
     pub fn shell_at(&self, x: f64, y: f64) -> bool {
-        let size = self
-            .space
-            .outputs()
-            .next()
-            .and_then(|o| self.space.output_geometry(o))
-            .map(|r| r.size)
-            .unwrap_or((1280, 800).into());
-        y < 36.
+        if self.decoration_at(x, y).is_some() {
+            return true;
+        }
+        let geometry = self.output_geometry_at((x, y).into());
+        let origin = if self.input_realm == dome::Realm::Xr {
+            (0, 0).into()
+        } else {
+            geometry.loc
+        };
+        let (x, y) = (x - origin.x as f64, y - origin.y as f64);
+        let size = if self.input_realm == dome::Realm::Xr {
+            self.shell_geometry().size
+        } else {
+            geometry.size
+        };
+        self.notifications
+            .layout(size.w, size.h)
+            .iter()
+            .any(|n| n.contains(x, y))
+            || y < 36.
             || y >= (size.h - 60) as f64
             || self.launcher
             || self.desktop_manager
             || self.menu.is_some()
             || self.about
+            || self.xr_settings_open
             || self.appearance_open
             || self.session_confirm.is_some()
             || self.tray.state().menu.is_some()
-            || self.decoration_at(x, y).is_some()
             || self
                 .task_popup
                 .is_some_and(|i| self.task_popup_contains(i, x, y, size.w, size.h))
     }
     pub fn shell_click(&mut self, x: f64, y: f64) {
+        let origin = if self.input_realm == dome::Realm::Xr {
+            (0, 0).into()
+        } else {
+            self.output_geometry_at((x, y).into()).loc
+        };
+        let (x, y) = (x - origin.x as f64, y - origin.y as f64);
+        let size = self.shell_geometry().size;
+        if let Some(toast) = self
+            .notifications
+            .layout(size.w, size.h)
+            .into_iter()
+            .find(|n| n.contains(x, y))
+        {
+            self.notifications.click(&toast, x, y);
+            return;
+        }
+        if self.appearance_open && self.keyboard_draft.is_some() {
+            let size = self.shell_geometry().size;
+            self.keyboard_settings_click(x, y, size.w, size.h);
+            return;
+        }
+        if y < 36.
+            && x >= (self.shell_geometry().size.w - 220) as f64
+            && x < (self.shell_geometry().size.w - 176) as f64
+        {
+            if self.keyboard_config.ime {
+                self.ime.toggle();
+            } else {
+                self.keyboard_switch += 1;
+            }
+            return;
+        }
+        if self.xr_settings_open {
+            let size = self.shell_geometry().size;
+            self.xr_settings_click(x, y, size.w, size.h);
+            return;
+        }
         if self.appearance_open || self.session_confirm.is_some() {
-            let size = self
-                .space
-                .outputs()
-                .next()
-                .and_then(|o| self.space.output_geometry(o))
-                .map(|r| r.size)
-                .unwrap_or((1280, 800).into());
+            let size = self.shell_geometry().size;
             if self.appearance_open {
                 self.appearance_click(x, y, size.w as f64, size.h as f64);
             } else {
@@ -229,13 +310,7 @@ impl Dome {
             return;
         }
         let scene = self.scene.lock().unwrap().clone();
-        let size = self
-            .space
-            .outputs()
-            .next()
-            .and_then(|o| self.space.output_geometry(o))
-            .map(|r| r.size)
-            .unwrap_or((1280, 800).into());
+        let size = self.shell_geometry().size;
         let (width, height) = (size.w as f64, size.h as f64);
         if self.task_popup.is_some() && self.task_popup_click(x, y, size.w, size.h) {
             return;
@@ -244,7 +319,7 @@ impl Dome {
         let tray = self.visible_tray(size.w);
         if let Some(index) = tray.menu {
             let x0 =
-                (width - 176. - (tray.items.len() - index) as f64 * 28.).clamp(4., width - 284.);
+                (width - 220. - (tray.items.len() - index) as f64 * 28.).clamp(4., width - 284.);
             if x >= x0 && x < x0 + 280. && y >= 40. && y < 40. + tray.rows.len() as f64 * 28. {
                 self.tray.select(((y - 40.) / 28.) as usize);
             } else {
@@ -253,8 +328,8 @@ impl Dome {
             return;
         }
         if y < 36. {
-            let x0 = width - 176. - tray.items.len() as f64 * 28.;
-            if x >= x0 && x < width - 176. {
+            let x0 = width - 220. - tray.items.len() as f64 * 28.;
+            if x >= x0 && x < width - 220. {
                 self.tray
                     .activate(((x - x0) / 28.) as usize, x as i32, y as i32, false);
                 return;
@@ -331,7 +406,7 @@ impl Dome {
         let items:Vec<_>=self.menu.map(|m|self.menu_items(m)).unwrap_or_default().iter().map(|(text,shortcut,command)|serde_json::json!({"text":text,"shortcut":shortcut,"enabled":self.command_enabled(*command),"separator":matches!(command,dome::shortcuts::Command::Separator)})).collect();
         let popup = self.task_popup_json(width, height);
         crate::qt::paint(
-            serde_json::json!({"kind":"shell","appearance":self.appearance,"appearance_open":self.appearance_open,"session_confirm":self.session_confirm.map(|s|s.label()),"session_error":self.session.state().error,"about":self.about,"about_is_app":self.shell_error=="@app-info","width":width,"height":height,"app":app,"app_info":entry,"menu":self.menu.map(|m|m as i32).unwrap_or(-1),"hover":self.menu_hover,"items":items,"tasks":tasks,"tray":self.visible_tray(width),"task_popup":popup,"launcher":self.launcher,"manager":self.desktop_manager,"query":self.launch_query,"apps":self.matching_apps(),"desktops":scene.workspaces.iter().map(|w|w.name.clone()).collect::<Vec<_>>()}),
+            serde_json::json!({"kind":"shell","keyboard":if self.keyboard_config.ime && self.ime.snapshot().method=="anthy" {"あ".to_owned()}else{self.keyboard_config.label()},"keyboard_settings":self.keyboard_draft,"keyboard_field":self.keyboard_field,"keyboard_error":if self.keyboard_error.is_empty(){self.ime.snapshot().error}else{self.keyboard_error.clone()},"keyboard_shortcut":self.keyboard_draft.as_ref().map(|d|d.switch_shortcut.label()),"notifications": if self.input_realm == dome::Realm::Desktop {self.notifications.layout(width,height)} else {vec![]},"xr_settings":self.xr_settings_json(width,height),"appearance":self.appearance,"appearance_open":self.appearance_open,"session_confirm":self.session_confirm.map(|s|s.label()),"session_error":self.session.state().error,"about":self.about,"about_is_app":self.shell_error=="@app-info","width":width,"height":height,"app":app,"app_info":entry,"menu":self.menu.map(|m|m as i32).unwrap_or(-1),"hover":self.menu_hover,"items":items,"tasks":tasks,"tray":self.visible_tray(width),"task_popup":popup,"launcher":self.launcher,"manager":self.desktop_manager,"query":self.launch_query,"apps":self.matching_apps(),"desktops":scene.workspaces.iter().map(|w|w.name.clone()).collect::<Vec<_>>()}),
         )
     }
 }

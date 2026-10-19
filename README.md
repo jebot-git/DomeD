@@ -8,9 +8,9 @@ independent repository; it does not modify or depend on WiVRn-Pro.
 `prototypes/` and is not a production compositor dependency. Both the desktop WM
 and the OpenXR frontend are Rust; a small C++ FFI adapter calls Qt6 painting/style APIs.
 
-**Current milestone:** a nested Wayland compositor with Qt6 decorations, a classic
+**Current milestone:** a standalone DRM/KMS Wayland compositor with Qt6 decorations, a classic
 Mac-style global menu and a native Rust/OpenXR frontend displaying live Wayland
-window textures, spherical dome surfaces, flat direct-view/pulled-out panels and
+window textures, open cylindrical dome surfaces, flat direct-view/pulled-out panels and
 shared XR shell bars. Application identity/actions use XDG desktop entries; the
 status area hosts StatusNotifier items and DBusMenu menus. WiVRn marker localization
 and arbitrary application-internal global-menu import remain future work.
@@ -51,6 +51,46 @@ loopback URL; the development API intentionally rejects foreign origins/hosts.
 
 ## Run real Wayland clients
 
+Ghostty XR is DomeD's default terminal and retains its independent native XR
+overlay, input focus and positioning controls. **Super+T** opens it or reveals
+its existing overlay. **F12** hides Ghostty and releases keyboard input back to
+Dome. The overlay uses placement 20, above Dome's placement 10.
+
+```sh
+./scripts/build-local.sh
+./scripts/run-local.sh
+```
+
+`DOME_TERMINAL` selects the executable (a path without arguments). The local
+runner prefers `/usr/local/bin/ghostty-xr-launch`, with the sibling build as a
+fallback. `DOME_TERMINAL_MODE=wayland` explicitly selects the separate Wayland
+terminal mode for compositor integration diagnostics.
+`dome-compositor --terminal` requests an initial terminal; launching without
+arguments leaves an empty desktop. `--command PROGRAM ARGS...` still launches a
+custom client. The local runner forwards explicit arguments unchanged.
+
+The local build includes `dome-compositor`, `dome-preview` and `dome-xr` and runs
+the Rust tests. On this Nobara/Fedora workstation the missing Qt6 development
+headers are extracted under `.local-deps/root`, and `build-local.sh` uses those
+headers with the installed `/usr/lib64` Qt runtime. No system installation is
+needed. To recreate this optional local dependency setup:
+
+```sh
+./scripts/prepare-local-deps.sh
+```
+
+For an isolated integration check, with python-xlib and Pillow available:
+
+```sh
+python3 scripts/test-terminal.py
+```
+
+The test uses a private Xvfb display and D-Bus session, types through DomeD's real
+Wayland seat into the shell, opens a second terminal with Super+T, captures a
+client texture through the XR bridge and checks window management and cleanup.
+Logs and `terminal.png` are saved in `artifacts/terminal/`. This verifies the XR
+texture transport without a headset; headset appearance still needs visual testing.
+
 Install a Rust toolchain, C linker, `pkg-config`, Wayland/EGL/GLES and xkbcommon
 development packages. On Ubuntu/Debian the development packages are typically
 `build-essential pkg-config libwayland-dev libegl1-mesa-dev libgles2-mesa-dev
@@ -58,24 +98,194 @@ libxkbcommon-dev qt6-base-dev`. Qt6 Widgets 6.4 or newer supplies shell fonts,
 menu styling and server-side window decorations. Then run from an existing Wayland or X11 desktop:
 
 ```sh
-cargo run --locked --features nested --bin dome-compositor -- --command weston-terminal
+cargo run --locked --features nested --bin dome-compositor -- --terminal
 ```
 
 The compositor opens a nested desktop window and prints its **own Wayland socket**.
-It does not replace your running desktop or install a login session. Additional
-clients can connect using that socket and the same `XDG_RUNTIME_DIR`:
+This invocation runs inside your current desktop. To use it from the login
+screen, install the session described below. Additional clients can connect using that socket and the same `XDG_RUNTIME_DIR`:
 
 ```sh
 WAYLAND_DISPLAY=wayland-N your-wayland-app
 ```
 
 The native shell supports click-to-focus, Qt6 title-bar controls/dragging, client-initiated move/resize,
-minimize/maximize/close, app launch (also Super+Space) and desktop switching/creation.
+minimize/maximize/close, app launch (also Super+Shift+Space) and desktop switching/creation.
 Its local web panel controls the same live window/workspace model; its geometry
 preview still uses sample surface content. App launching requires `gio`, installed
 `.desktop` files and apps with native Wayland support. No Xwayland is provided.
 Close the nested compositor window to end the experiment. The initial protocol
 handlers are adapted from Smithay's MIT-licensed Smallvil; see THIRD-PARTY.md.
+
+## Local installation and login session
+
+```sh
+./scripts/build-local.sh --release
+./scripts/stage-install.sh
+pkexec /usr/bin/bash "$PWD/scripts/install-system.sh"
+```
+
+The installer puts release binaries in `/usr/local/bin`, session helpers in
+`/usr/local/libexec`, documentation in `/usr/local/share/doc/domed`, and the
+**DomeD** login entry in `/usr/share/wayland-sessions/dome.desktop`. It leaves
+Plasma and the current login running. Log out, select **DomeD** in SDDM's session
+menu, then log in. Replaced files are backed up under `/var/backups/domed`;
+`/usr/local/share/domed/install.sha256` records installed file checksums.
+
+The login session launches **DomeD directly**. Its native backend owns DRM/KMS
+scanout, GBM/EGL rendering, a libseat/logind seat and libinput keyboard/pointer
+devices. No KWin, Weston or other host compositor is started. **Log Out** stops
+Dome and its terminal/XR children and returns to the login screen.
+
+Run `dome-compositor --backend drm` from an unused TTY, or select DomeD at login.
+Use `--backend nested` for a development window in an existing desktop. Without
+an explicit backend, a host DISPLAY/WAYLAND_DISPLAY selects nested mode; otherwise
+DRM is selected. `--check-backend` reports compiled support without opening a seat.
+
+The native backend enumerates the seat's GPUs and drives every connected output,
+with independent CRTC assignment, scanout buffers, damage and page-flip scheduling.
+Displays form a horizontal extended desktop by default. Each monitor has its own
+bars; windows, cursors and popups use global desktop coordinates, and maximization
+reserves the containing monitor's bars. Unplugging a monitor recovers stranded
+windows; reconnecting it restores scanout without restarting the session. GPUs can
+also be added or removed while other outputs remain active. Each GPU has its own
+GBM/EGL renderer; advertised DMA-BUF formats are supported by every initial GPU.
+
+Open **Displays & XR Configuration** (**Super+,**) to select each connector's
+resolution/refresh, enable it, choose a primary display, or position it explicitly
+(including negative coordinates). Automatic arrangement restores horizontal layout.
+Hold **Shift** while dragging either a client titlebar or a DomeD titlebar to tile
+a window into halves at monitor edges or quarters at corners. A translucent preview
+shows the destination; drop while holding Shift to apply it, or release Shift to
+cancel tiling. Tiling reserves the target monitor's bars and decoration borders.
+New windows open on the primary display. Connector preferences are saved with the
+XR configuration in `$XDG_CONFIG_HOME/dome/xr.json`; PCI addresses distinguish ports
+on different GPUs. `DOME_DRM_DEVICE=/dev/dri/cardN` restricts diagnostics to one GPU;
+`DOME_DRM_CONNECTOR=DP-1` restricts connectors by their kernel connector name.
+With no connected monitor, a virtual 1280×800 desktop keeps XR clients rendering.
+
+XR configuration uses a fixed 1024×768 canvas, independent of monitor resolution.
+Expanded configuration follows the selected projection, anchor, pane distance and
+vertical view field rather than stretching into a bar. Rows retain readable height;
+wheel/hand scrolling, the scroll buttons, arrows, Page Up/Down and Home/End navigate
+all options. The selected row stays visible and hit testing follows the viewport.
+
+**Ctrl+Alt+F1…F12** switches VTs through libseat. Seat deactivation stops scanout and
+input, balances held buttons/keys, stops XR input and hides the terminal overlay.
+Reactivation restores scanout and client focus. Native Wayland clients can use
+DMA-BUF buffers; client cursor surfaces and a fallback software cursor are drawn
+by Dome. The nested and native backends share shell, popup and XR rendering.
+
+The session requests XR and the native Ghostty overlay at startup. If the headset
+or runtime is unavailable, the desktop remains usable; use **Start XR** when it
+becomes available. `DOME_START_XR=0` disables automatic XR startup and
+`DOME_SESSION_TERMINAL=0` starts without a terminal. The saved XR layout at
+`$XDG_CONFIG_HOME/dome/xr.json` is used. Session logs are in
+`$XDG_STATE_HOME/dome/logs` (default `~/.local/state/dome/logs/latest.log`).
+Run `dome-session --check` to verify installation dependencies.
+
+For real KMS regression tests without using the current seat, prepare a private
+VKMS card, then run the native tests. They exercise actual kernel page flips,
+Wayland and EGL client pixels, seat pause/resume, held-button release, inactive
+input suppression and clean exit. No physical input devices are opened.
+
+```sh
+pkexec /usr/bin/bash "$PWD/scripts/vkms-test-device.sh" prepare
+uv run --no-project --with PySide6 --with pillow python scripts/test-native-drm.py
+uv run --no-project --with PySide6 --with pillow python scripts/test-native-drm.py --installed
+pkexec /usr/bin/bash "$PWD/scripts/vkms-test-device.sh" prepare-second-gpu
+uv run --no-project --with PySide6 --with pillow python scripts/test-native-drm.py --multi-gpu
+pkexec /usr/bin/bash "$PWD/scripts/vkms-test-device.sh" cleanup
+```
+
+`DOME_DRM_TEST_DEVICE` and the comma-separated `DOME_DRM_TEST_DEVICES` accept only
+the kernel's `vkms` driver. Its optional
+`DOME_DRM_TEST_CONTROL` socket is available only in that test mode. Production
+sessions always use libseat and libinput. `DOME_DRM_CAPTURE` and `DOME_DRM_REPORT`
+write diagnostic framebuffer snapshots and scanout counters when explicitly set.
+`DOME_DRM_CAPTURE_ALL=1` names snapshots per output; `DOME_DRM_REPORT_ALL=1`
+names reports per GPU. The native tests cover two heads, unplug/replug, negative
+coordinates and a client moving between two virtual GPU devices.
+
+## Clipboard, KWallet and KDE Connect
+
+DomeD supports regular Wayland copy/paste, primary selection (middle-click paste),
+and both `zwlr_data_control_manager_v1` and `ext_data_control_manager_v1` for
+unfocused clipboard tools. Unicode text and arbitrary MIME bytes work. Clipboard
+history/persistence requires a separate clipboard manager. KDE Connect's current
+KSystemClipboard backend uses ext-data-control and is tested in both directions.
+
+The native login session exports its ready Wayland display and Qt platform to D-Bus
+before starting wallet integration. When a PAM wallet socket is supplied, DomeD
+runs the installed `pam_kwallet_init` helper. Current KWallet's `ksecretd` starts
+when no Secret Service provider already owns the session bus; KDE applications can
+activate `kwalletd6` normally. The Dome-specific portal configuration selects
+KWallet for the Secret portal and GTK for common desktop portals. Existing wallet
+settings and login-manager PAM configuration are preserved. Automatic unlocking
+requires PAM login credentials; passwordless login can still require a wallet
+password. The tests use a separate bus, HOME and encrypted disposable wallet and
+verify the real password dialog, Secret Service write/read, and KWallet API.
+
+KDE Connect's daemon/CLI and graphical interface can run inside DomeD; launch
+KDE Connect or its indicator from the application menu. DomeD does not yet run
+general XDG autostart entries, so background discovery should not be assumed at
+login. Remote phone mouse/keyboard control is currently unavailable because DomeD
+has no Remote Desktop portal backend. DomeD now supplies the notification server
+and action buttons used by KDE Connect, including pairing requests. Device pairing,
+network file transfers and phone-side operation require a real-device test. The
+local audit starts KDE Connect in a private network namespace, so it never sends
+pairing, discovery or payload packets to existing devices. File chooser support is
+provided by the GTK portal; SSHFS and PipeWire remain external dependencies.
+
+To repeat the service checks (after preparing local Qt development dependencies):
+
+```sh
+scripts/build-service-fixtures.sh
+uv run --no-project --with dbus-next --with python-xlib --with pillow python scripts/test-session-services.py
+```
+
+## Notifications and keyboard layouts
+
+DomeD owns `org.freedesktop.Notifications` on its session bus when no other desktop
+notification server is present. Standard Notify, replacement, CloseNotification,
+GetCapabilities and GetServerInformation calls are supported. Desktop toasts and
+a separate headset-facing XR pane share the same dismiss and action handling.
+Notifications preserve keyboard focus. Timeouts emit the standard close reasons;
+critical notices and zero-timeout notices stay until acknowledged. Default and
+explicit actions emit ActionInvoked; resident actions keep their toast open.
+Up to three toasts are displayed, with a bounded queue of 128 active notifications.
+Body text is plain text; sound, image hints, markup, inline reply, and persistent
+notification history are not advertised or implemented. Another desktop's existing
+notification daemon is never replaced by a nested DomeD test.
+
+US English and **Anthy** Japanese input are the defaults, using the installed
+Fcitx5 framework. **Super+Space** switches US ↔ Anthy; **Super+Shift+Space** opens
+the application launcher. Clicking the top-bar US/あ indicator also switches input
+methods. The native login session starts Fcitx5 on a private, trusted Wayland
+connection. Input-method-v2 and virtual-keyboard privileges are restricted to that
+connection. Text-input-v3 clients receive Japanese preedit, conversion and commit;
+candidate popups use the same desktop and spatial popup pipeline as application
+popups and retain the text field's keyboard focus.
+
+Fcitx5's Dome-specific configuration lives under `~/.config/dome/fcitx5/`, with
+`keyboard-us` and `anthy` seeded only when no Dome profile exists. Another session's
+Fcitx5 instance and configuration are preserved. GTK applications use the Fcitx
+module; Qt6 uses native Wayland text input. Applications need a compatible text
+input protocol or toolkit module. Fcitx5 and `fcitx5-anthy` must be installed.
+Nested tests start the framework only with `DOME_START_IME=1`; a normal nested
+preview leaves the host input-method service alone.
+
+Open **Dome menu → Keyboard Layouts…** to edit up to four comma-separated XKB
+layout names, positional variants, options and switching shortcut. The panel also
+selects whether the shortcut switches US/Anthy input methods or XKB layout groups.
+Click a text field, use Ctrl+A to clear it, and Enter to apply or Esc to cancel.
+Invalid keymaps leave the working configuration intact. Keyboard preferences and
+the last XKB group save to `$XDG_CONFIG_HOME/dome/keyboard.json` (normally
+`~/.config/dome/keyboard.json`). The panel uses the fitted view pane in XR.
+
+```sh
+uv run --no-project --with PySide6 --with python-xlib --with pillow python scripts/test-input-method.py
+```
 
 ## Native Rust XR frontend
 
@@ -88,13 +298,34 @@ cargo run --locked --features xr --bin dome-xr -- --server http://127.0.0.1:4964
 
 Use the compositor's printed port if it differs. `XR_RUNTIME_JSON` selects the
 runtime for this process. No runtime registration or service settings are changed.
+The default XR background is transparent: Dome submits window/shell/popup layers
+without a desktop background or opaque full-view layer. When `XR_EXTX_overlay` is
+available, it creates an overlay session above the main XR application (placement
+10 by default; override with `--placement N`). It prefers alpha environment
+blending, then additive blending. This preserves the running application's scene
+or runtime-provided passthrough behind the desktop. See the
+[OpenXR overlay extension](https://registry.khronos.org/OpenXR/specs/1.1/html/xrspec.html#XR_EXTX_overlay).
+
+Without overlay support, Dome can use a transparent primary session if the runtime
+supports alpha/additive blending. Camera passthrough must be enabled through the
+headset/runtime; Dome does not start camera capture. If only an opaque primary
+session is possible, normal startup reports that transparency is unsupported.
+Use `--standalone` explicitly for an isolated diagnostic/simulator session that
+may have an opaque background. Startup logs and `--report` record the chosen
+overlay and environment blend settings. Client windows and shell bars keep their
+own content opacity; the XR environment between them stays clear.
+
 `--frames 240 --report /tmp/dome-xr.json --capture /tmp/dome-textures` runs a finite
 session and writes diagnostics and **client texture** PNGs. Those PNGs are not eye
 captures. The integration test separately captures the simulated headset output.
 
-In **room dome** mode, attached windows use spherical OpenXR equirect2 layers,
-curving in both axes, with ray-to-UV hits on the same sphere. In **direct view**,
-window surfaces stay planar. `XR_KHR_composition_layer_equirect2` is required for
+In **room dome** mode, attached windows use open cylindrical OpenXR layers.
+Only the horizontal direction curves; vertical texture spacing stays linear,
+without convergence or a top/bottom cap. The upper lane leans inward by **8°**
+for readability. Adjust **Upper dome inward lean** in XR settings (0–20°), or
+set `dome_upper_tilt_deg` in the geometry profile; 0° gives a straight tube.
+Ray-to-UV hits use the same cylinder and lean as rendering. In **direct view**,
+window surfaces stay planar. `XR_KHR_composition_layer_cylinder` is required for
 the dome; a runtime lacking it gets an explicit error instead of a flat substitute.
 
 Grip a dome window and pull inward by 18 cm to detach it into a flat near panel.
@@ -107,7 +338,7 @@ transitions. A third pull leaves that window on the dome. One- and two-hand pull
 work; lateral grip movement adjusts an attached window along the dome. Scaling
 near panels grows them outward from their central gap so they remain side by side.
 
-The same Qt6 menu/tray/taskbar is rendered into two view-relative XR shell layers,
+The same Qt6 menu/tray/taskbar is rendered into two XR shell layers,
 with configurable angular sizes and lens-safe insets. Menu and preview expansion
 keeps the original top/bottom edges fixed. Hand pinches route into the native shell
 commands, including application actions, task previews and status menus. Horizontal
@@ -136,10 +367,63 @@ stays with its original window outside the window bounds. Tracking/focus loss,
 large tracking jumps and an expired input sender release buttons and cancel grabs.
 Return a window to its lane with **Shift+Super+R**.
 
+### Spatial application popups
+
+Wayland `xdg_popup` menus, nested menus and parented `xdg_toplevel` dialogs are
+separate panels attached to their owning window. They do not take a lane slot.
+Their placement follows the active projection:
+
+* **Direct view / three lanes:** a flat panel 6 cm in front of its parent, aligned
+  with the requested attachment point. Nested menus stack forward from their parent.
+* **Room dome:** a flat panel 14 cm forward and 4 cm above the parent's upper edge.
+  A thin blue beam connects its lower edge to the origin on the parent surface.
+  The beam is decorative and never captures mouse or hand input.
+* **Desktop:** a separate panel to the right with an 8 logical pixel gap. If its
+  full width cannot fit, it is layered over the parent instead. Placement stays
+  within the work area between the shell bars; oversized client buffers are clipped.
+
+Popup textures are captured separately from parent textures, and pointer UVs map
+to the actual popup surface. Popups follow parent movement, scale, workspaces and
+visibility. Protocol popup grabs support nested menus, Escape and outside-click
+dismissal. Losing the owning window's focus or changing the input realm dismisses
+grabbed menus. Dialogs retain their normal client keyboard behavior. Content drawn
+inside a client's existing surface cannot be split into a spatial popup.
+
+**Right-click context menus** use a shared placement and scrolling policy instead
+of the general popup rules. Their bottom centre sits 8 logical pixels above the
+RMB point. Direct-view menus layer 6 cm forward; dome menus layer 14 cm forward
+and connect back to the exact click with a beam. Desktop placement clamps to the
+work area, and XR placement fits between the view-relative shell bars. Context
+menus receive keyboard focus as soon as they map, including clients that do not
+request an explicit popup grab. Other application popups keep the rules above.
+
+Menus taller than the work area have fixed top/bottom scroll controls with a
+bounded content viewport. Click the arrows or use the mouse wheel to reach hidden
+content. Scroll-control clicks stay inside DomeD; clicks in the menu body map back
+to the correct client content coordinates after scrolling. The same viewport
+logic handles DomeD task context menus, where Up/Down, Home/End and Page Up/Down
+navigate or scroll, Enter activates the selected item, and Escape dismisses the
+menu. Keyboard focus stays with the menu while it is open. Native application
+menus continue to use their application's keyboard handling.
+
+```sh
+./scripts/build-local.sh
+python3 scripts/test-popups.py
+```
+
+The isolated test requires PySide6, python-xlib, Pillow and Xvfb. It checks real Qt
+Wayland menus/dialogs, nesting, side-panel and front-fallback desktop pixels,
+separate XR textures, XR pointer coordinates, dismissal and cleanup. Captures and
+protocol logs are saved in `artifacts/popups/`. Rust geometry tests cover both XR
+projections, beam endpoints, matching ray hits, nested placement, parent scale and
+visibility, and hand input. Headset appearance still needs visual verification.
+The test also checks RMB anchors in desktop and XR seat input, immediate context
+focus, top/bottom scrolling, scrolled input coordinates and a task menu with fifty
+desktop actions. Context screenshots are saved alongside the popup captures.
+
 The simulator has no tracked hands: joint/gesture logic is covered by Rust tests
 and injected seat events by real Wayland-client tests. Physical hand ergonomics
-still need headset testing. Controller bindings, complete application popup capture,
-GPU buffer sharing and persistent marker localization remain follow-up work.
+still need headset testing. Controller bindings, GPU buffer sharing and persistent marker localization remain follow-up work.
 The optional Godot viewer remains a separate design prototype.
 
 ## XR routing, cursor ownership and desktop session
@@ -165,14 +449,26 @@ relaunching them. Missing renderer heartbeats recover them within two seconds,
 including after SIGKILL. They are unminimized, moved to desktop 1, clamped to the
 primary work area and stacked. They stay on desktop when XR resumes. Focus loss
 while the session remains visible suspends hand input without promoting windows.
-The current nested backend has one primary output.
+The nested backend and the initial native DRM backend expose one primary output.
 
 A physical mouse motion, button or wheel event takes exclusive XR cursor ownership,
 releases hand buttons and cancels gestures. Movement starts at the last laser target.
 Buttons retain mouse ownership while held; after release and **800 ms** without
 mouse input, hand control resumes with neutral gesture rearming. The delay is
-configurable. Wheel events target the hovered surface. Outside XR, mouse control
-uses the normal desktop stacking path.
+configurable. Wheel events target the hovered surface. The mouse uses one continuous
+angular coordinate across bars, lanes and empty space, with a fixed-size view
+cursor independent of surface depth. A held button keeps its original target for
+continuous drags. Head movement updates the hovered target without extending the
+mouse ownership timeout. Outside XR, mouse control uses the normal desktop stacking path.
+
+In dome mode the upper menu/tray bar borders the top lane and the taskbar borders
+the bottom lane, at the dome radius. Both orbit the dome anchor with horizontal
+headset gaze; pitching the headset lets you look up/down to reach the bars without
+moving them over the room-anchored lanes. Expanded menus keep the bar edge fixed and extend toward the lanes.
+For a dome taller than the headset's field of view, look up/down to see its bars.
+Direct view keeps its head-relative bars and configured lens insets. Horizontal
+bar offsets and widths apply in both projections; bar distance and lens insets
+apply to direct view, while dome bars use the configured dome radius and span.
 
 The system menu includes **Start XR**, **Stop XR**, **Appearance**, **Lock Screen**,
 **Switch User**, **Sleep**, **Log Out of Dome**, **Restart** and **Shut Down**. Build
@@ -180,12 +476,27 @@ The system menu includes **Start XR**, **Stop XR**, **Appearance**, **Lock Scree
 screen locker; switching delegates to the display manager; sleep/power commands
 use logind and its authorization policy. Unsupported commands are disabled. Lock,
 switching and confirmed sleep/power requests also stop XR presentation. Logout
-closes this nested Dome session, preserving the host login. This prototype does
-not implement a standalone DRM/PAM login session or its own secure screen locker.
+closes Dome. In nested mode it preserves the host login; in the installed login
+session it releases DRM/input ownership and returns to SDDM. Dome has its own
+DRM backend; logind/libseat supply session ownership. No secure screen locker is
+implemented yet, so Lock is offered only when an external locker is available.
 
-Appearance offers light/dark bars, accent, desktop background, bar opacity and
+Desktop titlebars use Workbench-style gadgets: close on the left, zoom and depth
+on the right, with square glyphs and raised/pressed bevels. Zoom toggles between
+two size/position presets (initially the monitor work area and original geometry),
+remembering changes made in either state. Depth sends a front window behind the
+others, or brings a rear window forward; Shift-depth always sends it behind.
+Depth ordering remains independent of keyboard focus and survives client repaints.
+Gadgets act on release; dragging off cancels the click. Minimize remains available
+through the Window menu, taskbar and Super+M. Border resizing and Shift-drag tiling
+continue to work. These gadgets apply to desktop frames; XR client panels retain
+their existing presentation.
+
+Appearance offers a light/dark colour scheme, accent, desktop background, chrome opacity and
 mouse-to-hand idle delay, persisted in `$XDG_CONFIG_HOME/dome/appearance.json`.
-The global menu bar and taskbar use the same colours and opacity, in desktop and
+Window titlebars and borders follow the selected theme, accent and chrome opacity;
+existing windows repaint immediately, including inactive decorations. The global
+menu bar and taskbar use the same colours and opacity, in desktop and
 XR. Global menu and status dropdowns share that palette.
 
 XR window gaps are at most **8 Wayland logical content pixels**, horizontally
@@ -200,7 +511,11 @@ exposes `window_gap_px` (0–8) and `window_border_px` (0–2). Older profiles' 
 `window_gap_deg` is retained for compatibility; the pixel setting controls spacing.
 Manually moved spatial panels retain their explicit placement.
 
-Window surfaces follow the configured sphere, with curvature `1 / radius`.
+Window surfaces follow an open vertical cylinder, with horizontal curvature
+`1 / radius` and straight vertical edges. `dome_vertical_span_deg` specifies
+unwrapped cylinder height: physical height is radius × span in radians. Upper
+lane lean rotates its screens about their lower centre edges and preserves
+texture aspect ratio; it does not add a ceiling.
 Enlarging the dome preserves reference card height while shrinking angular sizes.
 Direct-view windows remain flat. Focus changes the same geometry used by lasers
 and mouse hit testing; its visual outset is not saved into gesture transforms.
@@ -234,7 +549,9 @@ Super is the Windows/Meta key. Application Ctrl shortcuts continue to work.
 
 | Shortcut | Action |
 | --- | --- |
-| Super+Space | Search and launch apps |
+| Super+Space | Switch US English / Anthy |
+| Super+Shift+Space | Search and launch apps |
+| Super+T | Open Ghostty XR terminal in the active desktop/XR realm |
 | Alt+Tab / Shift+Alt+Tab | Next / previous window |
 | Super+W or Alt+F4 | Close window |
 | Super+Q | Close windows of active application |
@@ -316,7 +633,7 @@ route and rejects loopback; this project does not change that policy.
 ```sh
 cargo test --locked
 cargo check --locked --features nested
-cargo build --locked --features nested
+cargo build --locked --features standalone,xr
 python3 scripts/test-service.py
 # With Weston and Mesa Wayland examples installed:
 python3 scripts/test-native.py

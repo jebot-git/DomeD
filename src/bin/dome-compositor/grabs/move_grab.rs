@@ -31,6 +31,7 @@ impl PointerGrab<Dome> for MoveSurfaceGrab {
         let delta = event.location - self.start_data.location;
         let new_location = self.initial_window_location.to_f64() + delta;
         if let Some(id) = data.id_for(self.window.toplevel().unwrap().wl_surface()) {
+            data.drag_snap_preview(id, event.location);
             data.action(dome::Action::DesktopMove {
                 id,
                 x: new_location.x as f32,
@@ -64,7 +65,10 @@ impl PointerGrab<Dome> for MoveSurfaceGrab {
         const BTN_LEFT: u32 = 0x110;
 
         if !handle.current_pressed().contains(&BTN_LEFT) {
-            // No more buttons are pressed, release the grab.
+            // Apply a pending tile only on release while Shift remains held.
+            if let Some(id) = data.id_for(self.window.toplevel().unwrap().wl_surface()) {
+                data.finish_desktop_move(id);
+            }
             handle.unset_grab(self, data, event.serial, event.time, true);
         }
     }
@@ -158,5 +162,7 @@ impl PointerGrab<Dome> for MoveSurfaceGrab {
         &self.start_data
     }
 
-    fn unset(&mut self, _data: &mut Dome) {}
+    fn unset(&mut self, data: &mut Dome) {
+        data.snap_preview = None;
+    }
 }

@@ -1,4 +1,5 @@
 {
+  "displays": [],
   "center_m": [
     0.0,
     1.4,
@@ -16,5 +17,6 @@
   "upper_inset_deg": 8.0,
   "vertical_fov_deg": 100.0,
   "window_gap_deg": 3.0,
-  "yaw_deg": 0.0
+  "yaw_deg": 0.0,
+  "dome_upper_tilt_deg": 8.0
 }

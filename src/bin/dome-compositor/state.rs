@@ -25,8 +25,27 @@ use smithay::{
 use crate::CalloopData;
 
 pub struct Dome {
+    pub dmabuf_state: smithay::wayland::dmabuf::DmabufState,
+    pub dmabuf_importer:
+        Option<Box<dyn FnMut(&smithay::backend::allocator::dmabuf::Dmabuf) -> bool>>,
+    pub native_session_active: bool,
+    pub native_ignored_keys: std::collections::HashSet<smithay::backend::input::Keycode>,
+    pub cursor_status: smithay::input::pointer::CursorImageStatus,
     pub appearance: dome::appearance::Appearance,
     pub appearance_open: bool,
+    pub ime: crate::ime::Ime,
+    pub ime_popups: Vec<smithay::wayland::input_method::PopupSurface>,
+    pub keyboard_config: dome::keyboard::Keyboard,
+    pub keyboard_draft: Option<dome::keyboard::Keyboard>,
+    pub keyboard_field: usize,
+    pub keyboard_error: String,
+    pub keyboard_switch: i32,
+    pub keyboard_apply: bool,
+    pub xr_settings_open: bool,
+    pub xr_settings_row: usize,
+    pub display_modes: std::collections::BTreeMap<String, Vec<smithay::output::Mode>>,
+    pub geometry_saved: dome::Config,
+    pub geometry_error: String,
     pub session: crate::session::Session,
     pub session_confirm: Option<dome::appearance::SessionAction>,
     pub xr_child: Option<std::process::Child>,
@@ -42,6 +61,12 @@ pub struct Dome {
     pub menu: Option<usize>,
     pub about: bool,
     pub menu_hover: i32,
+    pub snap_preview: Option<(u64, dome::Rect)>,
+    pub chrome_button: Option<(u64, i32, bool)>,
+    pub workbench_zoom: std::collections::HashMap<u64, crate::decorations::ZoomState>,
+    pub pending_raise: Option<u64>,
+    pub no_raise_focus: Option<u64>,
+    pub last_applied_focus: Option<u64>,
     pub chrome_drag: Option<crate::decorations::Drag>,
     pub shell_keys: std::collections::HashSet<smithay::backend::input::Keycode>,
     pub desktop_manager: bool,
@@ -50,7 +75,11 @@ pub struct Dome {
     pub hover_app: Option<String>,
     pub task_popup: Option<usize>,
     pub task_context: bool,
+    pub task_context_at: Option<[f32; 2]>,
+    pub task_context_offset: f32,
+    pub task_context_selected: usize,
     pub tray: crate::tray::Tray,
+    pub notifications: crate::notifications::Notifications,
     pub pins: Vec<String>,
     pub shell_error: String,
     pub start_time: std::time::Instant,
@@ -82,7 +111,17 @@ pub struct Dome {
     pub output_manager_state: OutputManagerState,
     pub seat_state: SeatState<Dome>,
     pub data_device_state: DataDeviceState,
+    pub primary_selection_state:
+        smithay::wayland::selection::primary_selection::PrimarySelectionState,
+    pub data_control_state: smithay::wayland::selection::wlr_data_control::DataControlState,
+    pub ext_data_control_state: smithay::wayland::selection::ext_data_control::DataControlState,
     pub popups: PopupManager,
+    pub spatial_popups: Vec<(u64, smithay::desktop::PopupKind)>,
+    pub next_popup_id: u64,
+    pub context_trigger: Option<crate::context_menus::Trigger>,
+    pub context_menus: Vec<crate::context_menus::Context>,
+    pub context_scroll_hover: Option<(u64, i32)>,
+    pub context_scroll_buttons: std::collections::HashSet<u32>,
 
     pub seat: Seat<Self>,
 }
@@ -99,15 +138,60 @@ impl Dome {
         let output_manager_state = OutputManagerState::new_with_xdg_output::<Self>(&dh);
         let mut seat_state = SeatState::new();
         let data_device_state = DataDeviceState::new::<Self>(&dh);
+        let primary_selection_state =
+            smithay::wayland::selection::primary_selection::PrimarySelectionState::new::<Self>(&dh);
+        let data_control_state =
+            smithay::wayland::selection::wlr_data_control::DataControlState::new::<Self, _>(
+                &dh,
+                Some(&primary_selection_state),
+                |_| true,
+            );
+        let ext_data_control_state =
+            smithay::wayland::selection::ext_data_control::DataControlState::new::<Self, _>(
+                &dh,
+                Some(&primary_selection_state),
+                |_| true,
+            );
         let popups = PopupManager::default();
+        smithay::wayland::text_input::TextInputManagerState::new::<Self>(&dh);
+        smithay::wayland::input_method::InputMethodManagerState::new::<Self, _>(&dh, |c| {
+            c.get_data::<ClientState>().is_some_and(|d| d.trusted_ime)
+        });
+        smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState::new::<Self, _>(&dh, |c| {
+            c.get_data::<ClientState>().is_some_and(|d| d.trusted_ime)
+        });
 
         // A seat is a group of keyboards, pointer and touch devices.
         // A seat typically has a pointer and maintains a keyboard focus and a pointer focus.
-        let mut seat: Seat<Self> = seat_state.new_wl_seat(&dh, "winit");
+        let mut seat: Seat<Self> = seat_state.new_wl_seat(&dh, "seat0");
 
         // Notify clients that we have a keyboard, for the sake of the example we assume that keyboard is always present.
         // You may want to track keyboard hot-plug in real compositor.
-        seat.add_keyboard(Default::default(), 200, 25).unwrap();
+        let mut keyboard_config = dome::keyboard::Keyboard::load();
+        if let Err(e) = seat.add_keyboard(
+            smithay::input::keyboard::XkbConfig {
+                layout: &keyboard_config.layout,
+                variant: &keyboard_config.variant,
+                options: Some(keyboard_config.options.clone()),
+                ..Default::default()
+            },
+            200,
+            25,
+        ) {
+            eprintln!("Keyboard configuration could not be compiled, using defaults: {e}");
+            keyboard_config = Default::default();
+            seat.add_keyboard(
+                smithay::input::keyboard::XkbConfig {
+                    layout: &keyboard_config.layout,
+                    ..Default::default()
+                },
+                200,
+                25,
+            )
+            .unwrap();
+        }
+        // Restore the last group after construction through update_keyboard.
+        let keyboard_switch = keyboard_config.active as i32;
 
         // Notify clients that we have a pointer (mouse)
         // Here we assume that there is always pointer plugged in
@@ -125,8 +209,26 @@ impl Dome {
         let loop_signal = event_loop.get_signal();
 
         Self {
+            dmabuf_state: smithay::wayland::dmabuf::DmabufState::new(),
+            dmabuf_importer: None,
+            native_session_active: true,
+            native_ignored_keys: Default::default(),
+            cursor_status: smithay::input::pointer::CursorImageStatus::default_named(),
             appearance: dome::appearance::Appearance::load(),
             appearance_open: false,
+            ime: crate::ime::Ime::new(),
+            ime_popups: vec![],
+            keyboard_config,
+            keyboard_draft: None,
+            keyboard_field: 0,
+            keyboard_error: String::new(),
+            keyboard_switch,
+            keyboard_apply: false,
+            xr_settings_open: false,
+            xr_settings_row: 0,
+            display_modes: Default::default(),
+            geometry_saved: dome::Config::default(),
+            geometry_error: String::new(),
             session: crate::session::Session::new(),
             session_confirm: None,
             xr_child: None,
@@ -142,6 +244,12 @@ impl Dome {
             menu: None,
             about: false,
             menu_hover: -1,
+            snap_preview: None,
+            chrome_button: None,
+            workbench_zoom: Default::default(),
+            pending_raise: None,
+            no_raise_focus: None,
+            last_applied_focus: None,
             chrome_drag: None,
             shell_keys: Default::default(),
             desktop_manager: false,
@@ -150,7 +258,11 @@ impl Dome {
             hover_app: None,
             task_popup: None,
             task_context: false,
+            task_context_at: None,
+            task_context_offset: 0.,
+            task_context_selected: 0,
             tray: crate::tray::Tray::new(),
+            notifications: crate::notifications::Notifications::new(),
             pins: crate::tasks::load_pins(),
             shell_error: String::new(),
             start_time,
@@ -183,7 +295,16 @@ impl Dome {
             output_manager_state,
             seat_state,
             data_device_state,
+            primary_selection_state,
+            data_control_state,
+            ext_data_control_state,
             popups,
+            spatial_popups: vec![],
+            next_popup_id: 0,
+            context_trigger: None,
+            context_menus: vec![],
+            context_scroll_hover: None,
+            context_scroll_buttons: Default::default(),
             seat,
         }
     }
@@ -236,11 +357,17 @@ impl Dome {
         &self,
         pos: Point<f64, Logical>,
     ) -> Option<(WlSurface, Point<f64, Logical>)> {
+        if let Some((_, surface, origin)) = self.popup_under(pos) {
+            return Some((surface, origin));
+        }
         self.space
             .element_under(pos)
             .and_then(|(window, location)| {
                 window
-                    .surface_under(pos - location.to_f64(), WindowSurfaceType::ALL)
+                    .surface_under(
+                        pos - location.to_f64(),
+                        WindowSurfaceType::TOPLEVEL | WindowSurfaceType::SUBSURFACE,
+                    )
                     .map(|(s, p)| (s, (p + location).to_f64()))
             })
     }
@@ -248,6 +375,7 @@ impl Dome {
 
 #[derive(Default)]
 pub struct ClientState {
+    pub trusted_ime: bool,
     pub origin: dome::Realm,
     pub compositor_state: CompositorClientState,
 }

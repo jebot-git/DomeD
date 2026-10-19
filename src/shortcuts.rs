@@ -6,10 +6,14 @@ pub enum Command {
     ToggleXrBottom,
     ToggleXrDesktop,
     Appearance,
+    KeyboardSettings,
+    XrSettings,
+    AnchorHere,
     StartXr,
     StopXr,
     Session(crate::appearance::SessionAction),
     Launch,
+    Terminal,
     Desktops,
     Close,
     QuitApp,
@@ -68,6 +72,7 @@ pub fn resolve(key: u32, m: Mods) -> Option<Command> {
     }
     if m.ctrl {
         return match key {
+            0x72 | 0x52 => Some(Command::AnchorHere),
             0xff51 => Some(Command::CycleWorkspace(-1)),
             0xff53 => Some(Command::CycleWorkspace(1)),
             0xff52 => Some(Command::MoveLane(-1)),
@@ -84,7 +89,10 @@ pub fn resolve(key: u32, m: Mods) -> Option<Command> {
         });
     }
     match char::from_u32(key).map(|v| v.to_ascii_lowercase()) {
-        Some(' ') => Some(Command::Launch),
+        Some('p') => Some(Command::Projection),
+        Some(',') => Some(Command::XrSettings),
+        Some('t') if !m.alt && !m.shift => Some(Command::Terminal),
+        Some(' ') if m.shift && !m.alt => Some(Command::Launch),
         Some('h') if m.alt => Some(Command::HideOthers),
         Some('h') => Some(Command::HideApp),
         Some('w') => Some(Command::Close),

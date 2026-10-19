@@ -13,7 +13,7 @@ impl Dome {
             .windows
             .iter()
             .any(|w| !w.minimized && w.workspace == scene.active_workspace);
-        healthy && self.xr_animation.has_surfaces(panels)
+        self.native_session_active && healthy && self.xr_animation.has_surfaces(panels)
     }
     pub fn sync_input_route(&mut self) {
         let desired = self.xr_owns_input();
@@ -83,10 +83,12 @@ impl Dome {
             );
         }
         pointer.unset_grab(self, SERIAL_COUNTER.next_serial(), time);
+        self.dismiss_wayland_popups();
         self.chrome_drag = None;
         self.xr_target = None;
         self.xr_shell_pos = None;
         self.mouse_angles = None;
+        self.xr_bridge.lock().unwrap().mouse_angles = None;
         self.menu = None;
         self.launcher = false;
         self.launch_query.clear();
@@ -95,6 +97,7 @@ impl Dome {
         self.task_context = false;
         self.about = false;
         self.appearance_open = false;
+        self.xr_settings_open = false;
         self.session_confirm = None;
         self.tray.close();
         self.input_xr_active = desired;
@@ -120,18 +123,7 @@ impl Dome {
         let position = if desired {
             pointer.current_location()
         } else {
-            let size = self
-                .space
-                .outputs()
-                .next()
-                .and_then(|o| self.space.output_geometry(o))
-                .map(|r| r.size)
-                .unwrap_or((1280, 800).into());
-            (
-                position[0].clamp(0., (size.w - 1) as f64),
-                position[1].clamp(0., (size.h - 1) as f64),
-            )
-                .into()
+            self.clamp_desktop_pointer((position[0], position[1]).into())
         };
         let under = if desired || self.shell_at(position.x, position.y) {
             None

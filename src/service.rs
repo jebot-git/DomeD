@@ -117,7 +117,10 @@ pub fn serve_native(
                     .parse::<u64>()
                     .ok();
                 let valid = id.is_some_and(|id| {
-                    crate::xr_transport::is_shell(id) || scene.lock().unwrap().window(id).is_some()
+                    crate::xr_transport::is_shell(id) || {
+                        let scene = scene.lock().unwrap();
+                        scene.window(id).is_some() || scene.popup(id).is_some()
+                    }
                 });
                 let frame = if valid {
                     bridge.as_ref().and_then(|b| {
@@ -193,7 +196,8 @@ pub fn serve_native(
                                 }
                                 if let crate::xr_input::SeatEvent::Motion { id, uv } = e {
                                     if (!crate::xr_transport::is_shell(*id)
-                                        && check.window(*id).is_none())
+                                        && check.window(*id).is_none()
+                                        && check.popup(*id).is_none())
                                         || uv.iter().any(|v| !v.is_finite() || v.abs() > 100.)
                                     {
                                         return Err("Invalid pointer target".into());
