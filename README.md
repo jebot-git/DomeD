@@ -703,3 +703,9 @@ subtitle duplication and GPU decoding are handled by mpvr. Its
 `tests/xr/test_domed.py` verifies actual Wayland video pixels, the stereo app ID,
 XR-only placement and cleanup in an isolated compositor with a simulated XR
 heartbeat; it does not claim through-headset verification.
+
+qimgvr 1.2.1 / Arc SBS 0.4.1 retain still-image transparency. The qimgvr integration
+test also checks alpha-zero margins and exact premultiplied RGBA for existing SBS
+and ordinary 2D conversion. Qt supplies premultiplied Wayland pixels, and the
+existing OpenXR layer flags blend them directly; no additional compositor alpha
+conversion is applied. The intermediate PNG uses straight alpha.

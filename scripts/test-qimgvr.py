@@ -142,6 +142,41 @@ try:
         main = next(w for w in state()['windows'] if w['app_id'] == 'qimgvr')
         with request('/api/action', {'op': 'close', 'id': main['id']}): pass
         wait(lambda: not state()['windows'])
+        # Straight-alpha PNG must reach the XR compositor as premultiplied RGBA.
+        alpha_checks = []
+        for preexisting in (True, False):
+            alpha = np.zeros((160, 320 if preexisting else 160, 4), np.uint8)
+            alpha[40:120, 40:120] = [0, 0, 255, 128]
+            if preexisting: alpha[40:120, 200:280] = [255, 0, 0, 64]
+            transparent = runtime / ('alpha_SBS.png' if preexisting else 'alpha_2d.png')
+            cv2.imwrite(str(transparent), alpha)
+            viewer_env['ARC_SBS_MODEL'] = (str(runtime / 'missing.xml') if preexisting else
+                os.environ.get('DOME_QIMGVR_MODEL', str(Path.home() / '.local/share/arc-sbs/models/depth-small.xml')))
+            subprocess.run(['gio', 'open', transparent.as_uri()], env=viewer_env, check=True)
+            alpha_window = wait(lambda: next(w for w in state()['windows'] if w['app_id'] == 'org.qimgvr.Sbs'))
+            def alpha_pixels():
+                with request(f'/api/xr-frame/{alpha_window["id"]}') as response:
+                    aw, ah = int(response.headers['X-Dome-Width']), int(response.headers['X-Dome-Height'])
+                    frame = np.frombuffer(response.read(), np.uint8).reshape(ah, aw, 4)
+                    return frame if frame[:, :, :3].any() else None
+            rgba_alpha = wait(alpha_pixels)
+            ah, aw = rgba_alpha.shape[:2]
+            al, ar = rgba_alpha[ah//2, aw//4], rgba_alpha[ah//2, 3*aw//4]
+            np.testing.assert_allclose(al, [128, 0, 0, 128], atol=1)
+            np.testing.assert_allclose(ar, [0, 0, 64, 64] if preexisting else [128, 0, 0, 128], atol=1)
+            assert rgba_alpha[0, 0, 3] == 0 and rgba_alpha[ah//2, 0, 3] == 0
+            # The intermediate PNG is straight alpha, not flattened/premultiplied storage.
+            displays = list(runtime.glob('qimgvr-*/display.png'))
+            assert len(displays) == 1
+            stored = cv2.imread(str(displays[0]), cv2.IMREAD_UNCHANGED)
+            assert stored.shape[2] == 4 and stored[:, :, 3].min() == 0
+            assert stored[:, :, 2].max() == 255
+            alpha_checks.append({'existing_sbs': preexisting, 'left_rgba': al.tolist(), 'right_rgba': ar.tolist()})
+            cv2.imwrite(str(output / ('alpha-sbs.png' if preexisting else 'alpha-2d.png')),
+                        cv2.cvtColor(rgba_alpha, cv2.COLOR_RGBA2BGRA))
+            main = next(w for w in state()['windows'] if w['app_id'] == 'qimgvr')
+            with request('/api/action', {'op': 'close', 'id': main['id']}): pass
+            wait(lambda: not state()['windows'])
         # Inactive DomeD does not send images to WayVR even if WiVRn is running.
         stop.set(); thread.join(timeout=3)
         time.sleep(2.1)
@@ -153,6 +188,7 @@ try:
                   'main_realm': 'desktop', 'presenter_realm': 'xr', 'stereo': 'side_by_side',
                   'left_rgba': left.tolist(), 'right_rgba': right.tolist(), 'cleanup': True,
                   'ordinary_2d_conversion': True,
+                  'alpha_checks': alpha_checks,
                   'inactive_session_no_xr_window': True, 'headset_verified': False}
         (output / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
         print(json.dumps(report), flush=True)
