@@ -14,6 +14,7 @@ pub enum Command {
     Session(crate::appearance::SessionAction),
     Launch,
     Terminal,
+    FileManager,
     Desktops,
     Close,
     QuitApp,
@@ -91,6 +92,7 @@ pub fn resolve(key: u32, m: Mods) -> Option<Command> {
     match char::from_u32(key).map(|v| v.to_ascii_lowercase()) {
         Some('p') => Some(Command::Projection),
         Some(',') => Some(Command::XrSettings),
+        Some('e') if !m.alt && !m.shift => Some(Command::FileManager),
         Some('t') if !m.alt && !m.shift => Some(Command::Terminal),
         Some(' ') if m.shift && !m.alt => Some(Command::Launch),
         Some('h') if m.alt => Some(Command::HideOthers),
@@ -160,6 +162,7 @@ mod tests {
             ..Mods::default()
         };
         assert_eq!(resolve('w' as u32, m), Some(Command::Close));
+        assert_eq!(resolve('e' as u32, m), Some(Command::FileManager));
         assert_eq!(resolve('3' as u32, m), Some(Command::Workspace(2)));
         assert_eq!(
             resolve('3' as u32, Mods { shift: true, ..m }),

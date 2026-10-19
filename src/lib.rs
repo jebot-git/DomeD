@@ -37,3 +37,6 @@ pub mod terminal;
 pub mod xr_environment;
 
 pub mod desktop_snap;
+
+pub mod launch_context;
+pub mod file_manager;

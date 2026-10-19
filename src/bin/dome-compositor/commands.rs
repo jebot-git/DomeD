@@ -52,6 +52,7 @@ impl Dome {
                 ("About Dome", "", About),
                 ("", "", Separator),
                 ("Launch Application…", "⇧⌘Space", Launch),
+                ("Open Files", "⌘E", FileManager),
                 ("Open Terminal", "⌘T", Terminal),
                 ("Virtual Desktops…", "", Desktops),
                 ("Appearance…", "", Appearance),
@@ -247,6 +248,11 @@ impl Dome {
                 }
                 if let Some(id) = id {
                     self.action(Action::Focus { id });
+                }
+            }
+            FileManager => {
+                if let Err(e) = dome::file_manager::launch(&self.launch_socket(), &[]) {
+                    self.shell_error = format!("Cannot launch file manager: {e}");
                 }
             }
             Terminal => {

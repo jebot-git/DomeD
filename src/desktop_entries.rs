@@ -264,6 +264,8 @@ pub fn launch(app: &App, socket: &str) -> Result<(), String> {
         .arg("launch")
         .arg(&app.path)
         .env("WAYLAND_DISPLAY", socket)
+        .env_remove("WAYLAND_SOCKET")
+        .env("XDG_CURRENT_DESKTOP", "Dome")
         .env("GDK_BACKEND", "wayland")
         .env("QT_QPA_PLATFORM", "wayland")
         .env("SDL_VIDEODRIVER", "wayland")
@@ -307,6 +309,7 @@ pub fn launch_action(app: &App, action: &str, socket: &str) -> Result<(), String
         let ctx = context();
         for (key, value) in [
             ("WAYLAND_DISPLAY", socket),
+            ("XDG_CURRENT_DESKTOP", "Dome"),
             ("GDK_BACKEND", "wayland"),
             ("QT_QPA_PLATFORM", "wayland"),
             ("SDL_VIDEODRIVER", "wayland"),
@@ -315,6 +318,9 @@ pub fn launch_action(app: &App, action: &str, socket: &str) -> Result<(), String
             let v = CString::new(value).map_err(|e| e.to_string())?;
             set(ctx, k.as_ptr(), v.as_ptr());
         }
+        let unset: libloading::Symbol<unsafe extern "C" fn(*mut c_void, *const c_char)> = gio
+            .get(b"g_app_launch_context_unsetenv\0").map_err(|e| e.to_string())?;
+        unset(ctx, c"WAYLAND_SOCKET".as_ptr());
         launch(info, action.as_ptr(), ctx);
         unref(ctx);
         unref(info);
