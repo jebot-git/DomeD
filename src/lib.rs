@@ -1,0 +1,14 @@
+//! Shared policy: desktop and XR are projections of the same window identities.
+pub mod scene;
+pub mod service;
+pub use scene::*;
+
+/// Geometry is opt-in from a JSON file; preview edits are session-local until exported.
+pub fn load_geometry(scene: &mut Scene) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(path) = std::env::var_os("DOME_CONFIG") {
+        let config: Config = serde_json::from_slice(&std::fs::read(path)?)?;
+        config.validate()?;
+        scene.config = config;
+    }
+    Ok(())
+}

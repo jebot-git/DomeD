@@ -1,0 +1,20 @@
+{
+  "center_m": [
+    0.0,
+    1.4,
+    0.0
+  ],
+  "dome_vertical_span_deg": 110.0,
+  "lane_gap_deg": 2.0,
+  "lower_inset_deg": 8.0,
+  "projection": "room_dome",
+  "radius_m": 2.2,
+  "taskbar_height_deg": 7.0,
+  "taskbar_max_width_deg": 100.0,
+  "upper_bar_height_deg": 5.0,
+  "upper_bar_max_width_deg": 110.0,
+  "upper_inset_deg": 8.0,
+  "vertical_fov_deg": 100.0,
+  "window_gap_deg": 3.0,
+  "yaw_deg": 0.0
+}
