@@ -1,16 +1,25 @@
 #!/usr/bin/env python3
 """Real Fcitx5/Anthy composition on an isolated D-Bus, HOME and Xvfb display."""
-import json,os,re,shutil,socket,subprocess,sys,tempfile,time,urllib.request
+import json,os,re,shutil,socket,subprocess,sys,tempfile,threading,time,urllib.request
 from pathlib import Path
 if '--fixture' in sys.argv:
     from PySide6.QtWidgets import QApplication,QLineEdit
     from PySide6.QtCore import QTimer
     app=QApplication([]);app.setDesktopFileName('dome-ime-fixture')
     class Editor(QLineEdit):
+        def keyPressEvent(self,event):
+            print(json.dumps({'kind':'key_press','text':event.text(),'key':event.key()}),flush=True)
+            super().keyPressEvent(event)
+        def mousePressEvent(self,event):
+            print(json.dumps({'kind':'press','button':event.button().value}),flush=True)
+            super().mousePressEvent(event)
+        def wheelEvent(self,event):
+            print(json.dumps({'kind':'wheel'}),flush=True)
+            super().wheelEvent(event)
         def inputMethodEvent(self,event):
             print(json.dumps({'preedit':event.preeditString(),'commit':event.commitString()},ensure_ascii=False),flush=True)
             super().inputMethodEvent(event)
-    editor=Editor();editor.setWindowTitle('DomeD IME fixture');editor.resize(720,180)
+    editor=Editor();editor.setWindowTitle(os.environ.get('DOME_IME_FIXTURE_TITLE','DomeD IME fixture'));editor.resize(720,180)
     editor.textChanged.connect(lambda text:print(json.dumps({'text':text},ensure_ascii=False),flush=True))
     editor.show();editor.setFocus();QTimer.singleShot(90000,app.quit);sys.exit(app.exec())
 if os.environ.get('DOME_IME_TEST_BUS')!='1':
@@ -36,7 +45,7 @@ def wait(fn,timeout=20):
         except (OSError,ValueError,KeyError):pass
         time.sleep(.05)
     raise AssertionError('Timed out; see artifacts/input-method')
-result=1
+result=1;heartbeat_stop=threading.Event();pulse=None
 try:
     directory=tempfile.mkdtemp(prefix='dome-ime-')
     runtime=Path(directory);runtime.chmod(0o700)
@@ -77,8 +86,8 @@ try:
         key(keyname)
         for m in reversed(modifiers):key(m,False)
         time.sleep(.3)
-    def entries():
-        return [json.loads(line)for line in (out/'editor.log').read_text().splitlines() if line.startswith('{')]
+    def entries(name='editor'):
+        return [json.loads(line)for line in (out/(name+'.log')).read_text().splitlines() if line.startswith('{')]
     def shot(name):
         g=host.get_geometry();raw=host.get_image(0,0,g.width,g.height,X.ZPixmap,0xffffffff);Image.frombytes('RGB',(g.width,g.height),raw.data,'raw','BGRX').save(out/(name+'.png'))
     wait(lambda:scene()['focused']==window['id'])
@@ -121,8 +130,57 @@ try:
     check(scene()['focused']==window['id'],'IME candidates and switching preserve the origin window focus')
     chord(['Super_L','Shift_L'],'space');shot('launcher-shortcut');key('Escape')
     check(any('日本語a'==e.get('text') for e in entries()),'Launcher binding remains separate from input-method switching')
+    # Exercise focus restoration while Fcitx owns an input-method keyboard grab.
+    def post(path,value):
+        with urllib.request.urlopen(urllib.request.Request(base+path,data=json.dumps(value).encode(),headers={'Content-Type':'application/json'}),timeout=2)as response:return response.status
+    def heartbeat():
+        while not heartbeat_stop.is_set():
+            post('/api/xr-session',{'visible':True,'focused':True,'head':{'position_m':[0,1.4,0],'orientation_xyzw':[0,0,0,1]},'horizontal_fov_deg':100})
+            heartbeat_stop.wait(.1)
+    pulse=threading.Thread(target=heartbeat,daemon=True);pulse.start()
+    wait(lambda:get('/api/xr-control')['input_realm']=='xr')
+    xr_socket=re.search(r'Dome XR Wayland socket: (\S+)',(out/'compositor.log').read_text())[1]
+    start([sys.executable,__file__,'--fixture'],'xr-editor',{**client_env,'WAYLAND_DISPLAY':xr_socket,'DOME_IME_FIXTURE_TITLE':'DomeD XR input fixture'})
+    xr_window=wait(lambda:next((w for w in scene()['windows']if w['title']=='DomeD XR input fixture'),None))
+    time.sleep(.5)
+    post('/api/xr-input',{'events':[{'kind':'motion','id':xr_window['id'],'uv':[.5,.5]}],'actions':[{'op':'focus','id':xr_window['id']}]})
+    wait(lambda:scene()['focused']==xr_window['id']);time.sleep(.2)
+    key('q');time.sleep(.2)
+    check(any(e.get('text')=='q'for e in entries('xr-editor')),'Shown XR receives keyboard input even with an active input-method grab')
+    for cycle in range(2):
+        xr_before=len(entries('xr-editor'));desktop_before=len(entries())
+        chord(['Super_L','Shift_L'],'d');wait(lambda:get('/api/xr-control')['input_realm']=='desktop')
+        key('w');time.sleep(.2)
+        check(any(e.get('kind')=='key_press'and e.get('text')=='w'for e in entries()[desktop_before:]) and not any(e.get('kind')=='key_press'and e.get('text')=='w'for e in entries('xr-editor')[xr_before:]),'Hidden XR restores desktop typing without leaking keys to XR, cycle '+str(cycle+1))
+        r=next(w['desktop']for w in scene()['windows']if w['id']==window['id']);g=host.get_geometry()
+        xtest.fake_input(xd,X.MotionNotify,x=int(g.x+r['x']+100),y=int(g.y+r['y']+70));xd.sync();time.sleep(.1)
+        for code in [1,4]:
+            for pressed in [True,False]:xtest.fake_input(xd,X.ButtonPress if pressed else X.ButtonRelease,code);xd.sync();time.sleep(.05)
+        check(any(e.get('kind')=='press'for e in entries()[desktop_before:]) and any(e.get('kind')=='wheel'for e in entries()[desktop_before:]) and not any(e.get('kind')in ['press','wheel']for e in entries('xr-editor')[xr_before:]),'Hidden XR passes physical clicks and scrolling exclusively to desktop, cycle '+str(cycle+1))
+        desktop_before=len(entries());xr_before=len(entries('xr-editor'))
+        chord(['Super_L','Shift_L'],'d');wait(lambda:get('/api/xr-control')['input_realm']=='xr');time.sleep(.3)
+        key('e');time.sleep(.2)
+        check(any(e.get('kind')=='key_press'and e.get('text')=='e'for e in entries('xr-editor')[xr_before:]) and not any(e.get('kind')=='key_press'and e.get('text')=='e'for e in entries()[desktop_before:]),'Showing XR restores XR typing without leaking keys to desktop, cycle '+str(cycle+1))
+        post('/api/xr-input',{'events':[{'kind':'motion','id':xr_window['id'],'uv':[.5,.5]}],'actions':[]})
+        time.sleep(.1);pos=xd.screen().root.query_pointer();xtest.fake_input(xd,X.MotionNotify,x=pos.root_x+1,y=pos.root_y);xd.sync();time.sleep(.1)
+        for code in [1,4]:
+            for pressed in [True,False]:xtest.fake_input(xd,X.ButtonPress if pressed else X.ButtonRelease,code);xd.sync();time.sleep(.05)
+        check(any(e.get('kind')=='press'for e in entries('xr-editor')[xr_before:]) and any(e.get('kind')=='wheel'for e in entries('xr-editor')[xr_before:]) and not any(e.get('kind')in ['press','wheel']for e in entries()[desktop_before:]),'Shown XR receives physical clicks and scrolling exclusively, cycle '+str(cycle+1))
+    # Real Japanese conversion must follow both automatic focus changes too.
+    for hidden,target,other in [(True,'editor','xr-editor'),(False,'xr-editor','editor')]:
+        chord(['Super_L','Shift_L'],'d')
+        wait(lambda:get('/api/xr-control')['input_realm']==('desktop'if hidden else'xr'))
+        if method()!='anthy':chord(['Super_L'],'space');wait(lambda:method()=='anthy')
+        before=len(entries(target));other_before=len(entries(other))
+        for c in 'nihongo':key(c)
+        key('space');key('Return')
+        wait(lambda:any(e.get('commit')=='日本語'for e in entries(target)[before:]))
+        check(not any(e.get('commit')=='日本語'for e in entries(other)[other_before:]),'Anthy conversion follows automatic '+('desktop'if hidden else'XR')+' focus restoration without leaking commits')
+    heartbeat_stop.set();pulse.join(timeout=3)
     xd.close();result=0
 finally:
+ heartbeat_stop.set()
+ if pulse:pulse.join(timeout=3)
  for p in reversed(processes):
     if p.poll()is None:p.terminate()
  for p in reversed(processes):

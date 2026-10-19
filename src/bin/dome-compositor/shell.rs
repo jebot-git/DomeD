@@ -177,7 +177,13 @@ impl Dome {
                     .map(|_| w.toplevel().unwrap().wl_surface().clone())
             });
         if let Some(keyboard) = self.seat.get_keyboard() {
-            if !keyboard.is_grabbed() {
+            use smithay::wayland::input_method::InputMethodKeyboardGrab;
+            // IME grabs must follow desktop/XR focus changes. Check the active
+            // grab itself so an application popup can still retain its focus.
+            let follows_focus = keyboard
+                .with_grab(|_, grab| grab.is::<InputMethodKeyboardGrab>())
+                .unwrap_or(true);
+            if follows_focus {
                 let focused = self.context_focus_surface().or(focused);
                 keyboard.set_focus(self, focused, SERIAL_COUNTER.next_serial());
             }
