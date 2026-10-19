@@ -96,11 +96,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let display: Display<Dome> = Display::new()?;
     let display_handle = display.handle();
     let mut state = Dome::new(&mut event_loop, display);
-    // Socket identity is stable across headset connect/disconnect and mouse takeover.
-    let _launch_contexts = [
-        dome::launch_context::Registration::publish(&state.socket_name, dome::Realm::Desktop)?,
-        dome::launch_context::Registration::publish(&state.xr_socket_name, dome::Realm::Xr)?,
-    ];
     dome::load_geometry(&mut state.scene.lock().unwrap())?;
     if std::env::var_os("DOME_CONFIG").is_none() {
         if let Some(config) = dome::geometry_settings::load(&dome::geometry_settings::path())? {
@@ -147,6 +142,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(data.state.xr_bridge.clone()),
     )
     .map_err(|e| e.to_string())?;
+    // Publish only after the loopback service has bound successfully. Older
+    // readers still recognize the version-1 per-socket launch realm.
+    let _launch_contexts = [
+        dome::launch_context::Registration::publish_with_service(&data.state.socket_name,
+            dome::Realm::Desktop, Some(port), Some(data.state.xr_socket_name.to_string_lossy().into_owned()))?,
+        dome::launch_context::Registration::publish_with_service(&data.state.xr_socket_name,
+            dome::Realm::Xr, Some(port), Some(data.state.xr_socket_name.to_string_lossy().into_owned()))?,
+    ];
     eprintln!(
         "Dome Wayland socket: {}",
         data.state.socket_name.to_string_lossy()

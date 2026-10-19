@@ -8,10 +8,17 @@ pub struct Context {
     pub version: u32,
     pub compositor_pid: u32,
     pub realm: Realm,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub control_port: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub xr_socket: Option<String>,
 }
 pub struct Registration(PathBuf);
 impl Registration {
     pub fn publish(socket: &std::ffi::OsStr, realm: Realm) -> io::Result<Self> {
+        Self::publish_with_service(socket, realm, None, None)
+    }
+    pub fn publish_with_service(socket: &std::ffi::OsStr, realm: Realm, control_port: Option<u16>, xr_socket: Option<String>) -> io::Result<Self> {
         use std::io::Write;
         let socket = PathBuf::from(socket);
         let socket = if socket.is_absolute() { socket } else {
@@ -19,7 +26,7 @@ impl Registration {
         };
         let path = PathBuf::from(format!("{}.dome-session.json", socket.display()));
         let temporary = path.with_extension(format!("tmp-{}", std::process::id()));
-        let context = Context { version: 1, compositor_pid: std::process::id(), realm };
+        let context = Context { version: 1, compositor_pid: std::process::id(), realm, control_port, xr_socket };
         let mut file = fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&temporary)?;
         let result = (|| {
             file.write_all(&serde_json::to_vec(&context)?)?;

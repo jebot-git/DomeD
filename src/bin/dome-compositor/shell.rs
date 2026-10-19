@@ -63,6 +63,7 @@ impl Dome {
             if let Some(w) = scene.windows.iter_mut().find(|w| w.id == id) {
                 w.title = title.unwrap_or("Untitled".into());
                 w.app_id = app.unwrap_or("Application".into());
+                w.stereo = dome::stereo::Stereo::for_app_id(&w.app_id);
                 scene.revision += 1;
             }
         }

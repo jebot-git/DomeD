@@ -59,6 +59,17 @@ pub fn serve_native(
                 );
                 continue;
             }
+            if request.method() == &Method::Get && request.url() == "/api/integrations/qimgvr" {
+                let status = bridge.as_ref().map(|b| {
+                    let b = b.lock().unwrap();
+                    serde_json::json!({"version":1, "compositor_pid":std::process::id(),
+                        "xr_socket":b.xr_socket, "xr_active":b.visible(), "sbs_app_id":crate::stereo::QIMGVR_SBS_APP_ID})
+                }).unwrap_or_else(|| serde_json::json!({"version":1,"xr_active":false}));
+                let _ = request.respond(Response::from_string(status.to_string())
+                    .with_header(Header::from_bytes("Content-Type", "application/json").unwrap())
+                    .with_header(Header::from_bytes("Cache-Control", "no-store").unwrap()));
+                continue;
+            }
             if request.method() == &Method::Post && request.url() == "/api/xr-session" {
                 let mut body = String::new();
                 let json = request.headers().iter().any(|h| {

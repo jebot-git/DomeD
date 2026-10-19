@@ -658,3 +658,30 @@ See [desktop validation](docs/DESKTOP-VALIDATION.md).
 
 The [original design draft](docs/design-draft.png) is retained with the project.
 See [docs/DESIGN.md](docs/DESIGN.md) for the coordinate-frame contract and roadmap.
+
+## Optional qimgvr stereo image viewer
+
+qimgvr 1.2.0 with Arc SBS 0.4.0 can serve as Dome's default image viewer. Run
+`python3 /path/to/qimgvr/scripts/install-domed.py` as the desktop user to enable;
+`--disable` restores tracked previous associations. Other desktop defaults are
+preserved. A manual launch is `qimgvr --domed image.jpg` inside Dome.
+
+With an active XR renderer, each image opens in a separate XR-only window while
+the normal viewer stays on the desktop. Existing SBS images bypass inference;
+ordinary images convert asynchronously on the A770. Only the explicit
+`org.qimgvr.Sbs` app ID opts into stereo. Quad and cylinder composition submit
+nonoverlapping image halves to OpenXR LEFT/RIGHT eye visibility, counting two
+layers against the runtime's layer budget. Ordinary apps remain mono.
+
+The private per-socket session record advertises `control_port` and `xr_socket`.
+GET `/api/integrations/qimgvr` returns version 1, compositor PID, XR socket,
+`xr_active` and the stereo app ID. Existing loopback Host/Origin checks apply.
+The viewer validates Unix peer credentials and the owned session record before
+using this endpoint. It does not create a headset session.
+
+Validation: `scripts/build-local.sh --release` builds all features and runs Rust
+tests. Run the isolated compositor/default-opener test with the installed Arc
+Python: `~/.local/opt/arc-sbs/current/venv/bin/python scripts/test-qimgvr.py`.
+It requires Xvfb, qimgvr, cv2/numpy and the local depth model. Results are written
+under ignored `artifacts/qimgvr/`. It tests real Wayland windows and pixel content
+using a simulated renderer heartbeat; it does not verify headset perception.

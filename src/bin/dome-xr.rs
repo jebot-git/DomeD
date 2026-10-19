@@ -195,7 +195,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                                         .is_ok()
                                         && rgba.len() == width as usize * height as usize * 4
                                     {
-                                        if !dome::xr_transport::is_shell(id) {
+                                        let stereo = n.lock().unwrap().scene.as_ref().and_then(|s| s.window(id)).is_some_and(|w| w.stereo == dome::stereo::Stereo::SideBySide);
+                                        if !dome::xr_transport::is_shell(id) && !stereo {
                                             dome::xr_input::paint_border(
                                                 &mut rgba, width, height, border,
                                             );
@@ -413,6 +414,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let mut peak = 0;
         let mut peak_curved = 0;
         let mut peak_flat = 0;
+        let mut peak_stereo = 0;
         let mut peak_shell = 0;
         let mut captured = std::collections::HashSet::new();
         'main: loop {
@@ -508,7 +510,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let mut geometry = vec![];
             let mut popup_beams = vec![];
             let mut popup_ids = std::collections::HashSet::new();
+            let mut stereo_windows = std::collections::HashSet::new();
             if let Some(scene) = scene {
+                stereo_windows.extend(scene.windows.iter().filter(|w| w.stereo == dome::stereo::Stereo::SideBySide).map(|w| w.id));
                 presentation = scene.presentation;
                 if !presentation_initialized {
                     animator = dome::xr_presentation::Animator::initial(presentation);
@@ -758,24 +762,39 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 };
                 (group, q.dome.is_none())
             });
+            let mut layer_budget = 0;
+            visible.retain(|(q, _)| {
+                let cost = if stereo_windows.contains(&q.id) { 2 } else { 1 };
+                if layer_budget + cost > max_layers { return false; }
+                layer_budget += cost; true
+            });
+            peak_stereo = peak_stereo.max(visible.iter().filter(|(q, _)| stereo_windows.contains(&q.id)).count());
+            let stage_ref = &stage;
             let layers: Vec<_> = visible
                 .iter()
-                .map(|(q, p)| {
+                .flat_map(|(q, p)| {
+                    let stereo = if stereo_windows.contains(&q.id) { dome::stereo::Stereo::SideBySide } else { dome::stereo::Stereo::Mono };
+                    stereo.regions(p.width).into_iter().map(move |region| {
+                    let eye = match region.eye {
+                        dome::stereo::Eye::Both => xr::EyeVisibility::BOTH,
+                        dome::stereo::Eye::Left => xr::EyeVisibility::LEFT,
+                        dome::stereo::Eye::Right => xr::EyeVisibility::RIGHT,
+                    };
                     let sub = xr::SwapchainSubImage::new()
                         .swapchain(&p.chain)
                         .image_array_index(0)
                         .image_rect(xr::Rect2Di {
-                            offset: xr::Offset2Di { x: 0, y: 0 },
+                            offset: xr::Offset2Di { x: region.x as _, y: 0 },
                             extent: xr::Extent2Di {
-                                width: p.width as _,
+                                width: region.width as _,
                                 height: p.height as _,
                             },
                         });
                     if let Some(d) = &q.dome {
                         Layer::Dome(
                             xr::CompositionLayerCylinderKHR::new()
-                                .space(&stage)
-                                .eye_visibility(xr::EyeVisibility::BOTH)
+                                .space(stage_ref)
+                                .eye_visibility(eye)
                                 .layer_flags(xr::CompositionLayerFlags::BLEND_TEXTURE_SOURCE_ALPHA)
                                 .sub_image(sub)
                                 .pose(xr_pose(d.layer_pose()))
@@ -786,8 +805,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     } else {
                         Layer::Flat(
                             xr::CompositionLayerQuad::new()
-                                .space(&stage)
-                                .eye_visibility(xr::EyeVisibility::BOTH)
+                                .space(stage_ref)
+                                .eye_visibility(eye)
                                 .layer_flags(xr::CompositionLayerFlags::BLEND_TEXTURE_SOURCE_ALPHA)
                                 .pose(xr_pose(q.pose))
                                 .size(xr::Extent2Df {
@@ -797,6 +816,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                                 .sub_image(sub),
                         )
                     }
+                    })
                 })
                 .collect();
             peak = peak.max(
@@ -833,7 +853,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         running.store(false, Ordering::Relaxed);
         let _ = worker.join();
-        let summary = serde_json::json!({"runtime":runtime,"system":properties.system_name,"overlay":environment.overlay,"environment_blend":format!("{blend:?}"),"overlay_placement":placement,"frames":count,"peak_window_layers":peak,"peak_curved_layers":peak_curved,"peak_flat_layers":peak_flat,"peak_shell_layers":peak_shell,"uploads":uploaded,"hand_tracking_extension":extensions.ext_hand_tracking,"hand_trackers":trackers.iter().filter(|t|t.is_some()).count(),"presentation_hidden_frames":hidden_frames,"presentation_fade_frames":fade_frames,"presentation_slide_frames":slide_frames,"clean_exit":true});
+        let summary = serde_json::json!({"runtime":runtime,"system":properties.system_name,"overlay":environment.overlay,"environment_blend":format!("{blend:?}"),"overlay_placement":placement,"frames":count,"peak_window_layers":peak,"peak_curved_layers":peak_curved,"peak_flat_layers":peak_flat,"peak_stereo_windows":peak_stereo,"peak_shell_layers":peak_shell,"uploads":uploaded,"hand_tracking_extension":extensions.ext_hand_tracking,"hand_trackers":trackers.iter().filter(|t|t.is_some()).count(),"presentation_hidden_frames":hidden_frames,"presentation_fade_frames":fade_frames,"presentation_slide_frames":slide_frames,"clean_exit":true});
         println!("{summary}");
         if let Some(path) = report {
             std::fs::write(path, serde_json::to_vec_pretty(&summary)?)?;

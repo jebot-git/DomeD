@@ -308,6 +308,8 @@ fn default_visible() -> bool {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Window {
     #[serde(default)]
+    pub stereo: crate::stereo::Stereo,
+    #[serde(default)]
     pub origin: Realm,
     #[serde(default = "default_visible")]
     pub desktop_visible: bool,
@@ -536,6 +538,7 @@ impl Scene {
         self.next_id += 1;
         let n = self.windows.len() as f32;
         self.windows.push(Window {
+            stereo: crate::stereo::Stereo::for_app_id(app_id),
             origin: Realm::Desktop,
             desktop_visible: true,
             pullout_slot: None,
