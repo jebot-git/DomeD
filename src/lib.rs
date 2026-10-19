@@ -25,3 +25,5 @@ pub mod taskbar;
 pub mod appearance;
 
 pub mod xr_presentation;
+
+pub mod input_routing;

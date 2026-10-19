@@ -258,7 +258,13 @@ past the top view edge; the taskbar slides past the bottom. Hiding the XR deskto
 fades all window and shell layers, preserving each bar's visibility preference.
 These controls work in dome and direct-view modes and remain available from
 launchers and shell settings. Hidden/transitioning surfaces reject XR pointer
-input; hiding the desktop releases gestures and blocks new typing until restored.
+input. Once every XR panel and tray is hidden, physical mouse and keyboard input
+return to the desktop compositor, including clicking, scrolling and launching apps.
+Showing any panel or either tray returns physical input to XR. Each view restores
+its own previous keyboard focus; held buttons/grabs are released during handoff,
+and stale XR packets cannot recapture the desktop seat. Open XR shell popups and
+modal input capture are dismissed when handing control to desktop. During fade or
+slide-out, XR retains ownership until its last visible surface disappears.
 Desktop window placement and monitor bars are unaffected. This is a presentation
 toggle: the XR session stays alive and does not trigger contingency recovery.
 

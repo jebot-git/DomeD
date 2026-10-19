@@ -111,6 +111,10 @@ impl Animator {
     }
 }
 impl Frame {
+    /// During slide/fade-out XR retains the seat until its last visible layer disappears.
+    pub fn has_surfaces(self, panels: bool) -> bool {
+        self.opacity > 0. && (panels || self.top > 0. || self.bottom > 0.)
+    }
     pub fn interactive(self, target: Presentation, id: u64) -> bool {
         target.interactive(id)
             && self.opacity >= 1.
@@ -167,6 +171,42 @@ impl Frame {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn physical_input_follows_any_visible_panel_or_bar() {
+        let all = Frame::default();
+        assert!(all.has_surfaces(false));
+        let panels_only = Frame {
+            top: 0.,
+            bottom: 0.,
+            opacity: 1.,
+        };
+        assert!(panels_only.has_surfaces(true));
+        assert!(!panels_only.has_surfaces(false));
+        assert!(Frame {
+            top: 1.,
+            bottom: 0.,
+            opacity: 1.
+        }
+        .has_surfaces(false));
+        assert!(Frame {
+            top: 0.,
+            bottom: 1.,
+            opacity: 1.
+        }
+        .has_surfaces(false));
+        assert!(Frame {
+            top: 0.,
+            bottom: 0.,
+            opacity: 0.5
+        }
+        .has_surfaces(true));
+        assert!(!Frame {
+            top: 1.,
+            bottom: 1.,
+            opacity: 0.
+        }
+        .has_surfaces(true));
+    }
     #[test]
     fn initial_hidden_state_has_no_visible_flash() {
         let target = Presentation {

@@ -9,6 +9,7 @@ use smithay::{
 };
 impl Dome {
     pub fn register(&mut self, window: Window) {
+        let previous_focus = self.scene.lock().unwrap().focused;
         let id = self.scene.lock().unwrap().add("Untitled", "Application");
         let origin = window
             .toplevel()
@@ -22,6 +23,10 @@ impl Dome {
         let w = scene.windows.iter_mut().find(|w| w.id == id).unwrap();
         w.origin = origin;
         w.desktop_visible = origin == dome::Realm::Desktop || !visible;
+        if origin == dome::Realm::Xr && visible && !self.input_xr_active {
+            self.focus_history[1] = Some(Some(id));
+            scene.focused = previous_focus;
+        }
         drop(scene);
         self.registry.push((id, window));
     }
@@ -129,7 +134,11 @@ impl Dome {
             .and_then(|(_, w)| {
                 scene
                     .window(scene.focused.unwrap())
-                    .filter(|w| !w.minimized && w.workspace == scene.active_workspace)
+                    .filter(|w| {
+                        !w.minimized
+                            && w.workspace == scene.active_workspace
+                            && (self.input_xr_active || w.desktop_visible)
+                    })
                     .map(|_| w.toplevel().unwrap().wl_surface().clone())
             });
         if let Some(keyboard) = self.seat.get_keyboard() {

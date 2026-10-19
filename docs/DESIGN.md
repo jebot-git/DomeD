@@ -169,9 +169,17 @@ premultiplied RGB and alpha together; fully hidden layers are not submitted.
 Visibility shortcuts stay reserved while launchers/modal shell panels are open.
 Render target flags gate gestures immediately; restored pointer targeting waits
 until the relevant transition completes. Existing input is released on visibility
-changes, new typing is blocked while hidden, and pre-existing key releases remain
-balanced. Hiding presentation never changes window origin, desktop visibility,
-workspace, focus or the renderer health lease. Bar flags survive desktop fades.
+changes, and pre-existing key releases remain balanced. Physical mouse and
+keyboard ownership follows the visible XR composition: panels or either tray keep
+the seat in XR; when the last surface finishes hiding, input returns to desktop.
+Each realm remembers its keyboard focus and desktop pointer position. Handoff
+releases forwarded buttons/grabs, suppresses their later cross-realm releases and
+dismisses shell/modal input capture. Desktop focus restoration excludes unmapped
+XR-only clients, including fallback after a desktop application closes. Renderer
+reset packets preserve desktop launcher context; late XR motion/actions are dropped
+while desktop owns the seat. The control endpoint exposes `input_realm` for testing.
+Hiding presentation never changes window origin, desktop visibility, workspace or
+the renderer health lease. Bar flags survive desktop fades.
 
 Shell appearance lives in a separate validated, atomically replaced configuration.
 Both bars share their background, alpha, foreground, muted, selection and accent

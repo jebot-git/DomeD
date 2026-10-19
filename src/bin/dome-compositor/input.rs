@@ -15,6 +15,7 @@ use crate::state::Dome;
 
 impl Dome {
     pub fn process_input_event<I: InputBackend>(&mut self, event: InputEvent<I>) {
+        self.sync_input_route();
         match event {
             InputEvent::Keyboard { event, .. } => {
                 if !self.launcher
@@ -23,7 +24,7 @@ impl Dome {
                     && !self.appearance_open
                     && self.session_confirm.is_none()
                 {
-                    self.input_realm = if self.xr_bridge.lock().unwrap().visible() {
+                    self.input_realm = if self.input_xr_active {
                         dome::Realm::Xr
                     } else {
                         dome::Realm::Desktop
@@ -185,7 +186,7 @@ impl Dome {
                             }
                             return FilterResult::Intercept(());
                         }
-                        if state.xr_bridge.lock().unwrap().visible()
+                        if state.input_xr_active
                             && (!state.scene.lock().unwrap().presentation.desktop
                                 || state.xr_animation.opacity < 1.)
                         {
@@ -202,8 +203,28 @@ impl Dome {
             }
             InputEvent::PointerMotion { event, .. } => {
                 let delta = event.delta();
-                if (delta.x != 0. || delta.y != 0.) && self.mouse_takeover() {
-                    self.xr_mouse_motion(delta.x, delta.y);
+                if delta.x != 0. || delta.y != 0. {
+                    if self.mouse_takeover() {
+                        self.xr_mouse_motion(delta.x, delta.y);
+                    } else {
+                        let pointer = self.seat.get_pointer().unwrap();
+                        let current = pointer.current_location();
+                        let size = self
+                            .space
+                            .outputs()
+                            .next()
+                            .and_then(|o| self.space.output_geometry(o))
+                            .map(|r| r.size)
+                            .unwrap_or((1280, 800).into());
+                        self.desktop_mouse_motion(
+                            (
+                                (current.x + delta.x).clamp(0., (size.w - 1) as f64),
+                                (current.y + delta.y).clamp(0., (size.h - 1) as f64),
+                            )
+                                .into(),
+                            event.time_msec(),
+                        );
+                    }
                 }
             }
             InputEvent::PointerMotionAbsolute { event, .. } => {
@@ -220,45 +241,24 @@ impl Dome {
                     self.xr_mouse_motion(delta[0], delta[1]);
                     return;
                 }
-                if self.xr_bridge.lock().unwrap().visible() {
+                if self.input_xr_active {
                     return;
                 }
                 self.input_realm = dome::Realm::Desktop;
 
-                let serial = SERIAL_COUNTER.next_serial();
-
-                let pointer = self.seat.get_pointer().unwrap();
-
-                self.task_motion(pos.x, pos.y, output_geo.size.w, output_geo.size.h);
-                if self.chrome_motion(pos.x, pos.y) {
-                    return;
-                }
-                if let Some(menu) = self.menu {
-                    let x0 = [0., 46., 230., 280., 332., 390., 470.][menu];
-                    self.menu_hover = if pos.x >= x0 && pos.x < x0 + 380. && pos.y >= 40. {
-                        ((pos.y - 40.) / 28.) as i32
-                    } else {
-                        -1
-                    };
-                }
-                let under = if self.shell_at(pos.x, pos.y) {
-                    None
-                } else {
-                    self.surface_under(pos)
-                };
-
-                pointer.motion(
-                    self,
-                    under,
-                    &MotionEvent {
-                        location: pos,
-                        serial,
-                        time: event.time_msec(),
-                    },
-                );
-                pointer.frame(self);
+                self.desktop_mouse_motion(pos, event.time_msec());
             }
             InputEvent::PointerButton { event, .. } => {
+                let code = event.button_code();
+                if event.state() == ButtonState::Released {
+                    self.physical_buttons.remove(&code);
+                    if self.ignored_buttons.remove(&code) {
+                        return;
+                    }
+                } else {
+                    self.ignored_buttons.remove(&code);
+                    self.physical_buttons.insert(code);
+                }
                 if self.mouse_takeover() {
                     self.xr_mouse_button(
                         event.button_code(),
@@ -359,6 +359,11 @@ impl Dome {
                     }
                 };
 
+                if button_state == ButtonState::Pressed {
+                    self.desktop_buttons.insert(button);
+                } else {
+                    self.desktop_buttons.remove(&button);
+                }
                 pointer.button(
                     self,
                     &ButtonEvent {
@@ -425,5 +430,51 @@ impl Dome {
             }
             _ => {}
         }
+    }
+    pub fn desktop_mouse_motion(
+        &mut self,
+        pos: smithay::utils::Point<f64, smithay::utils::Logical>,
+        time: u32,
+    ) {
+        self.desktop_pointer = Some([pos.x, pos.y]);
+        let size = self
+            .space
+            .outputs()
+            .next()
+            .and_then(|o| self.space.output_geometry(o))
+            .map(|r| r.size)
+            .unwrap_or((1280, 800).into());
+        let serial = SERIAL_COUNTER.next_serial();
+
+        let pointer = self.seat.get_pointer().unwrap();
+
+        self.task_motion(pos.x, pos.y, size.w, size.h);
+        if self.chrome_motion(pos.x, pos.y) {
+            return;
+        }
+        if let Some(menu) = self.menu {
+            let x0 = [0., 46., 230., 280., 332., 390., 470.][menu];
+            self.menu_hover = if pos.x >= x0 && pos.x < x0 + 380. && pos.y >= 40. {
+                ((pos.y - 40.) / 28.) as i32
+            } else {
+                -1
+            };
+        }
+        let under = if self.shell_at(pos.x, pos.y) {
+            None
+        } else {
+            self.surface_under(pos)
+        };
+
+        pointer.motion(
+            self,
+            under,
+            &MotionEvent {
+                location: pos,
+                serial,
+                time,
+            },
+        );
+        pointer.frame(self);
     }
 }

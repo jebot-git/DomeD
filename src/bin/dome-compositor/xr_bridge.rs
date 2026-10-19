@@ -70,6 +70,9 @@ impl Dome {
             .update(self.start_time.elapsed().as_secs_f64(), presentation);
         if presentation != self.xr_presentation {
             self.xr_presentation = presentation;
+            if self.input_xr_active {
+                self.ignored_buttons.extend(self.physical_buttons.drain());
+            }
             {
                 let mut b = self.xr_bridge.lock().unwrap();
                 b.packets.clear();
@@ -114,6 +117,7 @@ impl Dome {
             });
         }
         self.xr_was_visible = visible;
+        self.sync_input_route();
         let packets = {
             let mut b = self.xr_bridge.lock().unwrap();
             if !b.mouse_owned()
@@ -133,8 +137,19 @@ impl Dome {
             self.dispatch_xr(p);
         }
     }
-    pub fn dispatch_xr(&mut self, p: Packet) {
+    pub fn dispatch_xr(&mut self, mut p: Packet) {
+        // Late renderer packets must not move or refocus the desktop-owned seat.
+        let desktop_owned =
+            !self.input_xr_active && self.xr_bridge.lock().unwrap().last_session.is_some();
+        if desktop_owned {
+            p.actions.clear();
+            p.events.retain(|event| matches!(event, SeatEvent::Reset));
+            if p.events.is_empty() {
+                return;
+            }
+        }
         let realm = self.input_realm;
+        let mut shell_interaction = false;
         self.input_realm = dome::Realm::Xr;
         for a in p.actions {
             let presentation = self.scene.lock().unwrap().presentation;
@@ -157,6 +172,7 @@ impl Dome {
                     self.xr_bridge.lock().unwrap().cursor =
                         Some(dome::xr_transport::Cursor { id, uv });
                     if dome::xr_transport::is_shell(id) {
+                        shell_interaction = true;
                         let layout = self.xr_bridge.lock().unwrap().shell.clone();
                         let x = uv[0] as f64 * layout.width as f64;
                         let y = if id == dome::xr_transport::TOP_BAR {
@@ -327,7 +343,9 @@ impl Dome {
             }
             pointer.frame(self);
         }
-        self.input_realm = if self.launcher || self.menu.is_some() || self.desktop_manager {
+        self.input_realm = if shell_interaction
+            && (self.launcher || self.menu.is_some() || self.desktop_manager)
+        {
             dome::Realm::Xr
         } else {
             realm
@@ -339,7 +357,7 @@ impl Dome {
             let b = self.xr_bridge.lock().unwrap();
             (b.visible(), b.mouse_owned())
         };
-        if !visible {
+        if !visible || !self.xr_owns_input() {
             self.input_realm = dome::Realm::Desktop;
             return false;
         }

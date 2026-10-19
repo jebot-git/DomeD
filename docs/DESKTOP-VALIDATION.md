@@ -15,7 +15,7 @@ server. The test never attaches to the user's display or clipboard. It also
 advertises temporary `.desktop` entries for launcher testing, so no regular
 application is launched.
 
-The combined desktop/XR run passed **93 checks**, including assertions against actual framebuffer
+The combined desktop/XR run passed **105 checks**, including assertions against actual framebuffer
 pixels and events delivered to clients:
 
 * Map two distinct surfaces, verify their colors and click to change visible stacking.
@@ -91,7 +91,7 @@ texture uploads and a clean OpenXR STOPPING/end/EXITING lifecycle. Monado advert
 EXT_hand_tracking but the simulated device supplies no hands, so no hand trackers
 are created. Physical gesture ergonomics and WiVRn streaming are not validated.
 
-`cargo test --locked` passes 60 Rust tests, including scene/layout, gesture/shortcut, catalog/taskbar,
+`cargo test --locked` passes 62 Rust tests, including scene/layout, gesture/shortcut, catalog/taskbar,
 renderer ownership and curved-surface/pull-out/shell tests. They cover three-button mapping, grip
 movement, two-hand scaling/release continuity, drag capture outside windows,
 tracking/focus/timeout/target-loss cancellation, gesture debounce/hysteresis, fist
@@ -158,7 +158,20 @@ Framebuffer captures `01-native-xr-bars-hidden.png`,
 `01-native-xr-desktop-hidden.png` and `01-native-xr-restored.png` show actual
 headset output. The renderer report records intermediate slide/fade frames and
 fully hidden frames. Real seat fixtures verify hidden content rejects clicks and
-new typing, hidden presentation does not promote XR-only clients, and shortcuts
-work with the appearance modal open. Pure tests cover interrupted/reversed
+typing to hidden XR clients, hidden presentation does not promote XR-only clients,
+and visibility shortcuts work with the appearance modal open. Desktop handoff
+dismisses that modal so desktop typing is not captured. Pure tests cover interrupted/reversed
 animations, premultiplied fading, initial hidden state without a visible flash,
 head-relative slide directions and neutral rearming after hidden gestures.
+
+## Visibility-driven physical input routing
+
+Real Wayland fixtures verify desktop keyboard focus restoration, typing, clicking,
+hover scrolling and launcher routing while every XR surface is hidden; restored
+XR-only keyboard focus with panels visible and trays hidden; upper-tray-only and
+taskbar-only XR ownership; and desktop ownership with all panels minimized and both
+trays hidden. A held desktop mouse button is released exactly once at XR handoff,
+and its physical release is not sent to the XR client. Reset packets cannot change
+a desktop launcher's launch realm, closing a desktop app cannot focus an invisible
+XR-only client, and late XR packets cannot refocus or unminimize hidden clients.
+Pure policy tests cover visible-surface combinations and per-realm focus fallback.

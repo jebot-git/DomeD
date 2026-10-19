@@ -6,6 +6,7 @@ mod commands;
 mod decorations;
 mod grabs;
 mod input;
+mod input_routing;
 mod qt;
 mod session;
 mod shell;

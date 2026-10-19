@@ -37,6 +37,7 @@ pub struct Bridge {
     pub last_mouse: Option<Instant>,
     pub mouse_buttons: std::collections::HashSet<u32>,
     pub hand_resume_ms: u64,
+    pub input_realm: crate::Realm,
 }
 impl Default for Bridge {
     fn default() -> Self {
@@ -54,6 +55,7 @@ impl Default for Bridge {
             last_mouse: None,
             mouse_buttons: Default::default(),
             hand_resume_ms: 800,
+            input_realm: crate::Realm::Desktop,
         }
     }
 }
@@ -74,6 +76,7 @@ pub struct Cursor {
 }
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct Control {
+    pub input_realm: crate::Realm,
     pub visible: bool,
     pub mouse: bool,
     pub cursor: Option<Cursor>,
@@ -94,6 +97,7 @@ impl Bridge {
     }
     pub fn control(&self) -> Control {
         Control {
+            input_realm: self.input_realm,
             visible: self.visible(),
             mouse: self.mouse_owned(),
             cursor: self.cursor.clone(),
