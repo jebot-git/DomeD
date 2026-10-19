@@ -1,15 +1,28 @@
 use crate::Dome;
 use dome::{service, Action};
-use font8x8::{UnicodeFonts, BASIC_FONTS};
+
 use smithay::{
     desktop::Window,
-    reexports::wayland_server::protocol::wl_surface::WlSurface,
+    reexports::wayland_server::{protocol::wl_surface::WlSurface, Resource},
     utils::SERIAL_COUNTER,
     wayland::{compositor::with_states, shell::xdg::XdgToplevelSurfaceData},
 };
 impl Dome {
     pub fn register(&mut self, window: Window) {
         let id = self.scene.lock().unwrap().add("Untitled", "Application");
+        let origin = window
+            .toplevel()
+            .unwrap()
+            .wl_surface()
+            .client()
+            .and_then(|c| c.get_data::<crate::state::ClientState>().map(|s| s.origin))
+            .unwrap_or_default();
+        let visible = self.xr_bridge.lock().unwrap().visible();
+        let mut scene = self.scene.lock().unwrap();
+        let w = scene.windows.iter_mut().find(|w| w.id == id).unwrap();
+        w.origin = origin;
+        w.desktop_visible = origin == dome::Realm::Desktop || !visible;
+        drop(scene);
         self.registry.push((id, window));
     }
     pub fn id_for(&self, surface: &WlSurface) -> Option<u64> {
@@ -63,17 +76,21 @@ impl Dome {
                 closed.push(*id);
                 continue;
             };
-            if w.minimized || w.workspace != scene.active_workspace {
+            let mapped = w.desktop_visible && !w.minimized && w.workspace == scene.active_workspace;
+            if !mapped {
                 self.space.unmap_elem(window);
-                continue;
             }
             let pos = if w.maximized {
                 (0, 36)
             } else {
                 (w.desktop.x as i32, w.desktop.y as i32)
             };
-            self.space
-                .map_element(window.clone(), pos, scene.focused == Some(*id));
+            // map_element raises even an already mapped window. Repeating it
+            // for every client commit would replace click stacking with registry order.
+            let pos = pos.into();
+            if mapped && self.space.element_location(window) != Some(pos) {
+                self.space.map_element(window.clone(), pos, false);
+            }
             let toplevel = window.toplevel().unwrap();
             let ready = with_states(toplevel.wl_surface(), |s| {
                 s.data_map
@@ -84,31 +101,62 @@ impl Dome {
                     .initial_configure_sent
             });
             if ready {
-                toplevel.with_pending_state(|s|{s.size=Some(if w.maximized{(size.w,(size.h-96).max(100)).into()}else{(w.desktop.w as i32,w.desktop.h as i32).into()});
+                toplevel.with_pending_state(|s| {
                     use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::State;
-                    if w.maximized{s.states.set(State::Maximized);}else{s.states.unset(State::Maximized);}
+                    s.size=Some(if w.maximized {
+                        (size.w,(size.h-96).max(100)).into()
+                    } else {
+                        (w.desktop.w as i32,w.desktop.h as i32).into()
+                    });
+                    if w.maximized { s.states.set(State::Maximized); }
+                    else { s.states.unset(State::Maximized); }
                 });
                 window.set_activated(scene.focused == Some(*id));
                 toplevel.send_pending_configure();
             }
+        }
+        if let Some((_, window)) = self
+            .registry
+            .iter()
+            .find(|(id, _)| scene.focused == Some(*id))
+        {
+            self.space.raise_element(window, true);
         }
         self.registry.retain(|(id, _)| !closed.contains(id));
         let focused = scene
             .focused
             .and_then(|id| self.registry.iter().find(|(i, _)| *i == id))
             .and_then(|(_, w)| {
-                self.space
-                    .element_location(w)
+                scene
+                    .window(scene.focused.unwrap())
+                    .filter(|w| !w.minimized && w.workspace == scene.active_workspace)
                     .map(|_| w.toplevel().unwrap().wl_surface().clone())
             });
         if let Some(keyboard) = self.seat.get_keyboard() {
             keyboard.set_focus(self, focused, SERIAL_COUNTER.next_serial());
         }
     }
+    pub fn launch_socket(&self) -> String {
+        if self.input_realm == dome::Realm::Xr {
+            &self.xr_socket_name
+        } else {
+            &self.socket_name
+        }
+        .to_string_lossy()
+        .into_owned()
+    }
+    pub fn shell_scene(&self) -> dome::Scene {
+        let scene = self.scene.lock().unwrap();
+        if self.input_realm == dome::Realm::Desktop {
+            scene.desktop_scene()
+        } else {
+            scene.clone()
+        }
+    }
     pub fn launch_selected(&mut self) {
         let apps = self.matching_apps();
         if let Some(app) = apps.first() {
-            if let Err(e) = service::launch(app, &self.socket_name.to_string_lossy()) {
+            if let Err(e) = service::launch(app, &self.launch_socket()) {
                 self.shell_error = e;
             }
         }
@@ -119,7 +167,7 @@ impl Dome {
         let query = self.launch_query.to_lowercase();
         self.apps
             .iter()
-            .filter(|a| a.name.to_lowercase().contains(&query))
+            .filter(|a| a.search(&query))
             .take(8)
             .cloned()
             .collect()
@@ -136,9 +184,41 @@ impl Dome {
             || y >= (size.h - 60) as f64
             || self.launcher
             || self.desktop_manager
-            || (self.hover_app.is_some() && y > (size.h - 210) as f64 && x > 90.)
+            || self.menu.is_some()
+            || self.about
+            || self.appearance_open
+            || self.session_confirm.is_some()
+            || self.tray.state().menu.is_some()
+            || self.decoration_at(x, y).is_some()
+            || self
+                .task_popup
+                .is_some_and(|i| self.task_popup_contains(i, x, y, size.w, size.h))
     }
     pub fn shell_click(&mut self, x: f64, y: f64) {
+        if self.appearance_open || self.session_confirm.is_some() {
+            let size = self
+                .space
+                .outputs()
+                .next()
+                .and_then(|o| self.space.output_geometry(o))
+                .map(|r| r.size)
+                .unwrap_or((1280, 800).into());
+            if self.appearance_open {
+                self.appearance_click(x, y, size.w as f64, size.h as f64);
+            } else {
+                let (left, top) = ((size.w as f64 - 440.) / 2., (size.h as f64 - 200.) / 2.);
+                if x >= left + 230. && x < left + 416. && y >= top + 140. && y < top + 180. {
+                    self.confirm_session();
+                } else {
+                    self.session_confirm = None;
+                }
+            }
+            return;
+        }
+        if self.about {
+            self.about = false;
+            return;
+        }
         let scene = self.scene.lock().unwrap().clone();
         let size = self
             .space
@@ -148,11 +228,51 @@ impl Dome {
             .map(|r| r.size)
             .unwrap_or((1280, 800).into());
         let (width, height) = (size.w as f64, size.h as f64);
+        if self.task_popup.is_some() && self.task_popup_click(x, y, size.w, size.h) {
+            return;
+        }
+
+        let tray = self.visible_tray(size.w);
+        if let Some(index) = tray.menu {
+            let x0 =
+                (width - 176. - (tray.items.len() - index) as f64 * 28.).clamp(4., width - 284.);
+            if x >= x0 && x < x0 + 280. && y >= 40. && y < 40. + tray.rows.len() as f64 * 28. {
+                self.tray.select(((y - 40.) / 28.) as usize);
+            } else {
+                self.tray.close();
+            }
+            return;
+        }
+        if y < 36. {
+            let x0 = width - 176. - tray.items.len() as f64 * 28.;
+            if x >= x0 && x < width - 176. {
+                self.tray
+                    .activate(((x - x0) / 28.) as usize, x as i32, y as i32, false);
+                return;
+            }
+            let next = self.menu_index(x);
+            self.menu = if self.menu == next { None } else { next };
+            self.task_popup = None;
+            self.task_context = false;
+            self.menu_hover = -1;
+            return;
+        }
+        if let Some(menu) = self.menu.take() {
+            let x0 = [0., 46., 230., 280., 332., 390., 470.][menu];
+            if x >= x0 && x < x0 + 380. && y >= 40. {
+                let i = ((y - 40.) / 28.) as usize;
+                if let Some((_, _, command)) = self.menu_items(menu).get(i) {
+                    let command = *command;
+                    self.command(command);
+                }
+            }
+            return;
+        }
         if self.launcher {
             if (100. ..420.).contains(&y) {
                 let index = ((y - 100.) / 36.) as usize;
                 if let Some(a) = self.matching_apps().get(index) {
-                    if let Err(e) = service::launch(a, &self.socket_name.to_string_lossy()) {
+                    if let Err(e) = service::launch(a, &self.launch_socket()) {
                         self.shell_error = e;
                     }
                 }
@@ -184,127 +304,25 @@ impl Dome {
                 self.desktop_manager = true;
                 return;
             }
-            let windows: Vec<_> = scene
-                .windows
-                .iter()
-                .filter(|w| w.workspace == scene.active_workspace)
-                .collect();
-            let index = ((x - 110.) / 130.) as usize;
-            if let Some(w) = windows.get(index) {
-                self.action(Action::Focus { id: w.id });
+            if x >= 110. {
+                self.activate_task(((x - 110.) / 130.) as usize, 0x110);
             }
             return;
         }
-        if y < 36. {
-            if let Some(id) = scene.focused {
-                match x as i32 {
-                    350..=449 => self.action(Action::Minimize { id }),
-                    450..=549 => self.action(Action::Maximize { id }),
-                    550..=649 => self.action(Action::Close { id }),
-                    _ => (),
-                }
-            }
-        }
     }
     pub fn shell_pixels(&self, width: i32, height: i32) -> Vec<u8> {
-        let mut pixels = vec![0u8; width as usize * height as usize * 4];
-        let scene = self.scene.lock().unwrap().clone();
-        let mut rect = |x: i32, y: i32, w: i32, h: i32, color: [u8; 4]| {
-            for py in y.max(0)..(y + h).min(height) {
-                for px in x.max(0)..(x + w).min(width) {
-                    let p = (py as usize * width as usize + px as usize) * 4;
-                    pixels[p..p + 4].copy_from_slice(&color);
-                }
-            }
-        };
-        rect(0, 0, width, 36, [38, 30, 23, 246]);
-        rect(0, height - 60, width, 60, [38, 30, 23, 246]);
-        if self.launcher {
-            rect(20, 56, 600, 400, [45, 35, 26, 255]);
-        }
-        if self.desktop_manager {
-            rect(width - 330, height - 390, 320, 320, [45, 35, 26, 255]);
-        }
-        // ARGB8888 byte order on little-endian hosts is BGRA; alpha is premultiplied.
-        fn label(pixels: &mut [u8], width: i32, height: i32, x: i32, y: i32, text: &str) {
-            let mut dx = x;
-            for ch in text.chars() {
-                if dx + 16 >= width {
-                    break;
-                }
-                if let Some(glyph) = BASIC_FONTS.get(ch) {
-                    for (row, bits) in glyph.iter().enumerate() {
-                        for col in 0..8 {
-                            if bits & (1 << col) != 0 {
-                                for oy in 0..2 {
-                                    for ox in 0..2 {
-                                        let (px, py) = (dx + col * 2 + ox, y + row as i32 * 2 + oy);
-                                        if px >= 0 && px < width && py >= 0 && py < height {
-                                            let p =
-                                                (py as usize * width as usize + px as usize) * 4;
-                                            pixels[p..p + 4].copy_from_slice(&[223, 236, 238, 255]);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                dx += 16;
-            }
-        }
-        let mut text = |x, y, s: &str| label(&mut pixels, width, height, x, y, s);
-        let app = scene
-            .focused
-            .and_then(|id| scene.window(id))
-            .map(|w| w.app_id.chars().take(12).collect::<String>())
-            .unwrap_or("Desktop".into());
-        text(12, 10, &format!("DOME  {app}"));
-        text(350, 10, "Min");
-        text(450, 10, "Max");
-        text(550, 10, "Close");
-        text(width - 280, 10, "Tray: pending");
-        text(12, height - 36, "Launch");
-        text(width - 150, height - 36, "Desktops");
-        for (i, w) in scene
-            .windows
-            .iter()
-            .filter(|w| w.workspace == scene.active_workspace)
-            .enumerate()
-        {
-            if 110 + i as i32 * 130 > width - 280 {
-                break;
-            }
-            text(
-                110 + i as i32 * 130,
-                height - 36,
-                &format!(
-                    "{}{}",
-                    if w.minimized { "_" } else { "" },
-                    w.title.chars().take(7).collect::<String>()
-                ),
-            );
-        }
-        if self.launcher {
-            text(36, 72, &format!("Search: {}", self.launch_query));
-            for (i, app) in self.matching_apps().iter().enumerate() {
-                text(36, 110 + i as i32 * 36, &app.name);
-            }
-        }
-        if self.desktop_manager {
-            for (i, ws) in scene.workspaces.iter().enumerate() {
-                text(
-                    width - 310,
-                    height - 378 + i as i32 * 32,
-                    &format!("{} {}", i + 1, ws.name),
-                );
-            }
-            text(
-                width - 310,
-                height - 378 + scene.workspaces.len() as i32 * 32,
-                "+ New desktop",
-            );
-        }
-        pixels
+        let scene = self.shell_scene();
+        let focused = scene.focused.and_then(|id| scene.window(id));
+        let entry = focused.and_then(|w| self.apps.iter().find(|a| a.matches(&w.app_id)));
+        let app = entry
+            .map(|a| a.name.as_str())
+            .or_else(|| focused.map(|w| w.app_id.as_str()))
+            .unwrap_or("Desktop");
+        let tasks = dome::taskbar::tasks(&scene, &self.apps, &self.pins);
+        let items:Vec<_>=self.menu.map(|m|self.menu_items(m)).unwrap_or_default().iter().map(|(text,shortcut,command)|serde_json::json!({"text":text,"shortcut":shortcut,"enabled":self.command_enabled(*command),"separator":matches!(command,dome::shortcuts::Command::Separator)})).collect();
+        let popup = self.task_popup_json(width, height);
+        crate::qt::paint(
+            serde_json::json!({"kind":"shell","appearance":self.appearance,"appearance_open":self.appearance_open,"session_confirm":self.session_confirm.map(|s|s.label()),"session_error":self.session.state().error,"about":self.about,"about_is_app":self.shell_error=="@app-info","width":width,"height":height,"app":app,"app_info":entry,"menu":self.menu.map(|m|m as i32).unwrap_or(-1),"hover":self.menu_hover,"items":items,"tasks":tasks,"tray":self.visible_tray(width),"task_popup":popup,"launcher":self.launcher,"manager":self.desktop_manager,"query":self.launch_query,"apps":self.matching_apps(),"desktops":scene.workspaces.iter().map(|w|w.name.clone()).collect::<Vec<_>>()}),
+        )
     }
 }

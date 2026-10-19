@@ -1,0 +1,28 @@
+[gd_resource type="OpenXRActionMap" load_steps=6 format=3]
+
+[sub_resource type="OpenXRAction" id="Select"]
+resource_name = "select"
+localized_name = "Select"
+action_type = 0
+toplevel_paths = PackedStringArray("/user/hand/left", "/user/hand/right")
+
+[sub_resource type="OpenXRActionSet" id="Dome"]
+resource_name = "dome"
+localized_name = "Dome viewer"
+actions = [SubResource("Select")]
+
+[sub_resource type="OpenXRIPBinding" id="Left"]
+action = SubResource("Select")
+binding_path = "/user/hand/left/input/select/click"
+
+[sub_resource type="OpenXRIPBinding" id="Right"]
+action = SubResource("Select")
+binding_path = "/user/hand/right/input/select/click"
+
+[sub_resource type="OpenXRInteractionProfile" id="Simple"]
+interaction_profile_path = "/interaction_profiles/khr/simple_controller"
+bindings = [SubResource("Left"), SubResource("Right")]
+
+[resource]
+action_sets = [SubResource("Dome")]
+interaction_profiles = [SubResource("Simple")]

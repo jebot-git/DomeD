@@ -12,3 +12,16 @@ pub fn load_geometry(scene: &mut Scene) -> Result<(), Box<dyn std::error::Error>
     }
     Ok(())
 }
+
+pub mod shortcuts;
+pub mod xr_input;
+
+pub mod xr_transport;
+
+pub mod desktop_entries;
+
+pub mod taskbar;
+
+pub mod appearance;
+
+pub mod xr_presentation;

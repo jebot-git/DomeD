@@ -1,7 +1,7 @@
 use smithay::{
     delegate_xdg_shell,
     desktop::{
-        find_popup_root_surface, get_popup_toplevel_coords, PopupKind, PopupManager, Space, Window,
+        find_popup_root_surface, get_popup_toplevel_coords, PopupKind, PopupManager, Window,
     },
     input::{
         pointer::{Focus, GrabStartData as PointerGrabStartData},
@@ -37,7 +37,7 @@ impl XdgShellHandler for Dome {
     fn new_toplevel(&mut self, surface: ToplevelSurface) {
         let window = Window::new_wayland_window(surface);
         self.register(window.clone());
-        self.space.map_element(window, (100, 80), true);
+        self.sync_scene();
     }
 
     fn title_changed(&mut self, surface: ToplevelSurface) {
@@ -118,12 +118,14 @@ impl XdgShellHandler for Dome {
         if let Some(start_data) = check_grab(&seat, wl_surface, serial) {
             let pointer = seat.get_pointer().unwrap();
 
-            let window = self
+            let Some(window) = self
                 .space
                 .elements()
                 .find(|w| w.toplevel().unwrap().wl_surface() == wl_surface)
-                .unwrap()
-                .clone();
+                .cloned()
+            else {
+                return;
+            };
             let initial_window_location = self.space.element_location(&window).unwrap();
 
             let grab = MoveSurfaceGrab {
@@ -150,12 +152,14 @@ impl XdgShellHandler for Dome {
         if let Some(start_data) = check_grab(&seat, wl_surface, serial) {
             let pointer = seat.get_pointer().unwrap();
 
-            let window = self
+            let Some(window) = self
                 .space
                 .elements()
                 .find(|w| w.toplevel().unwrap().wl_surface() == wl_surface)
-                .unwrap()
-                .clone();
+                .cloned()
+            else {
+                return;
+            };
             let initial_window_location = self.space.element_location(&window).unwrap();
             let initial_window_size = window.geometry().size;
 
@@ -208,10 +212,11 @@ fn check_grab(
 }
 
 /// Should be called on `WlSurface::commit`
-pub fn handle_commit(popups: &mut PopupManager, space: &Space<Window>, surface: &WlSurface) {
+pub fn handle_commit(popups: &mut PopupManager, registry: &[(u64, Window)], surface: &WlSurface) {
     // Handle toplevel commits.
-    if let Some(window) = space
-        .elements()
+    if let Some(window) = registry
+        .iter()
+        .map(|(_, w)| w)
         .find(|w| w.toplevel().unwrap().wl_surface() == surface)
         .cloned()
     {

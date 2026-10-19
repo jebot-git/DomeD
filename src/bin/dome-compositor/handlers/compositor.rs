@@ -35,15 +35,16 @@ impl CompositorHandler for Dome {
                 root = parent;
             }
             if let Some(window) = self
-                .space
-                .elements()
+                .registry
+                .iter()
+                .map(|(_, w)| w)
                 .find(|w| w.toplevel().unwrap().wl_surface() == &root)
             {
                 window.on_commit();
             }
         };
 
-        xdg_shell::handle_commit(&mut self.popups, &self.space, surface);
+        xdg_shell::handle_commit(&mut self.popups, &self.registry, surface);
         resize_grab::handle_commit(&mut self.space, surface);
         self.applied_revision = u64::MAX;
     }

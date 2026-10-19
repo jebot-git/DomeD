@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Exercise the development API; starts and stops its own layout server."""
-import json,os,socket,subprocess,time,urllib.request,urllib.error
+import json,math,os,socket,subprocess,time,urllib.request,urllib.error
 from pathlib import Path
 root=Path(__file__).resolve().parents[1]
 with socket.socket() as s:s.bind(('127.0.0.1',0));port=s.getsockname()[1]
@@ -18,6 +18,12 @@ try:
         try:get();break
         except OSError:time.sleep(.03)
     initial=get();count=len(initial['windows'])
+    xr=json.load(urllib.request.urlopen(base+'/api/xr-scene'))
+    assert xr['source']=='preview' and len(xr['panels'])==count
+    for panel in xr['panels']:
+        assert len(panel['vertices'])==98
+        assert all(len(v)==3 and all(math.isfinite(x)for x in v)for v in panel['vertices'])
+
     assert post({'op':'add','title':'API smoke','app_id':'Test'})[0]==200
     s=get();assert len(s['windows'])==count+1;id=s['focused']
     assert post({'op':'minimize','id':id})[0]==200

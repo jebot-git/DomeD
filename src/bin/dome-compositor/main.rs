@@ -2,11 +2,18 @@
 
 mod handlers;
 
+mod commands;
+mod decorations;
 mod grabs;
 mod input;
+mod qt;
+mod session;
 mod shell;
 mod state;
+mod tasks;
+mod tray;
 mod winit;
+mod xr_bridge;
 
 use smithay::reexports::{
     calloop::EventLoop,
@@ -40,11 +47,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     crate::winit::init_winit(&mut event_loop, &mut data)?;
 
+    data.state.xr_bridge.lock().unwrap().xr_socket =
+        data.state.xr_socket_name.to_string_lossy().into_owned();
+    eprintln!(
+        "Dome XR Wayland socket: {}",
+        data.state.xr_socket_name.to_string_lossy()
+    );
     let port = std::env::var("DOME_PREVIEW_PORT")
         .unwrap_or_else(|_| "49640".into())
         .parse()?;
-    let _service =
-        dome::service::serve(data.state.scene.clone(), port).map_err(|e| e.to_string())?;
+    data.state.control_port = port;
+    data.state.xr_bridge.lock().unwrap().hand_resume_ms = data.state.appearance.hand_resume_ms;
+    let _service = dome::service::serve_native(
+        data.state.scene.clone(),
+        port,
+        Some(data.state.xr_bridge.clone()),
+    )
+    .map_err(|e| e.to_string())?;
     eprintln!(
         "Dome Wayland socket: {}",
         data.state.socket_name.to_string_lossy()
@@ -63,5 +82,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Dome is running
     })?;
 
+    data.state.xr_bridge.lock().unwrap().exit_requested = true;
+    if let Some(mut child) = data.state.xr_child.take() {
+        if child.try_wait()?.is_none() {
+            child.kill()?;
+        }
+        let _ = child.wait();
+    }
     Ok(())
 }

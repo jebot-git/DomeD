@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 
 pub type WindowId = u64;
+fn default_scale() -> f32 {
+    1.
+}
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum Projection {
@@ -77,10 +80,14 @@ pub struct Config {
     pub upper_inset_deg: f32,
     pub lower_inset_deg: f32,
     pub radius_m: f32,
+    pub pullout_distance_m: f32,
     pub center_m: [f32; 3],
     pub yaw_deg: f32,
     pub lane_gap_deg: f32,
+    /// Legacy angular preference, retained when reading older profiles.
     pub window_gap_deg: f32,
+    pub window_gap_px: f32,
+    pub window_border_px: u8,
 }
 impl Default for Config {
     fn default() -> Self {
@@ -95,10 +102,13 @@ impl Default for Config {
             upper_inset_deg: 8.,
             lower_inset_deg: 8.,
             radius_m: 2.2,
+            pullout_distance_m: 1.0,
             center_m: [0., 1.4, 0.],
             yaw_deg: 0.,
             lane_gap_deg: 2.,
-            window_gap_deg: 3.,
+            window_gap_deg: 0.5,
+            window_gap_px: 8.,
+            window_border_px: 1,
         }
     }
 }
@@ -114,10 +124,15 @@ impl Config {
             self.upper_inset_deg,
             self.lower_inset_deg,
             self.radius_m,
+            self.pullout_distance_m,
             self.yaw_deg,
             self.lane_gap_deg,
             self.window_gap_deg,
+            self.window_gap_px,
         ];
+        if !(0. ..=8.).contains(&self.window_gap_px) || self.window_border_px > 2 {
+            return Err("XR spacing must be 0–8 logical pixels; border must be 0–2 pixels".into());
+        }
         if numbers
             .iter()
             .chain(self.center_m.iter())
@@ -133,6 +148,9 @@ impl Config {
         }
         if !(0.6..=8.).contains(&self.radius_m) {
             return Err("Radius must be 0.6–8 metres".into());
+        }
+        if !(0.6..=1.6).contains(&self.pullout_distance_m) {
+            return Err("Pull-out distance must be 0.6–1.6 metres".into());
         }
         if self.center_m.iter().any(|x| x.abs() > 10000.) {
             return Err("Anchor position is outside the supported room range".into());
@@ -200,8 +218,32 @@ pub struct Rect {
     pub w: f32,
     pub h: f32,
 }
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Realm {
+    #[default]
+    Desktop,
+    Xr,
+}
+fn default_visible() -> bool {
+    true
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Window {
+    #[serde(default)]
+    pub origin: Realm,
+    #[serde(default = "default_visible")]
+    pub desktop_visible: bool,
+    #[serde(default)]
+    pub pullout_slot: Option<u8>,
+    #[serde(default)]
+    pub pullout_restore_scale: Option<f32>,
+    #[serde(default)]
+    pub dome_offset_deg: [f32; 2],
+    #[serde(default)]
+    pub xr_pose: Option<Pose>,
+    #[serde(default = "default_scale")]
+    pub xr_scale: f32,
     pub id: WindowId,
     pub title: String,
     pub app_id: String,
@@ -256,6 +298,10 @@ pub struct RayHit {
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Scene {
+    #[serde(default)]
+    pub presentation: crate::xr_presentation::Presentation,
+    #[serde(default)]
+    pub pullout_anchor: Option<Pose>,
     pub config: Config,
     pub view_pose: Pose,
     pub workspaces: Vec<Workspace>,
@@ -270,6 +316,29 @@ pub struct Scene {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Action {
+    XrPresentation {
+        top: Option<bool>,
+        bottom: Option<bool>,
+        desktop: Option<bool>,
+    },
+    PullOut {
+        id: WindowId,
+        head: Pose,
+    },
+    ReturnToDome {
+        id: WindowId,
+    },
+    DomeOffset {
+        id: WindowId,
+        yaw_deg: f32,
+        pitch_deg: f32,
+    },
+    Defocus,
+    SpatialTransform {
+        id: WindowId,
+        pose: Option<Pose>,
+        scale: f32,
+    },
     Add {
         title: String,
         app_id: String,
@@ -357,7 +426,9 @@ impl Scene {
             focused: None,
             revision: 0,
             source: source.into(),
+            presentation: Default::default(),
             next_id: 1,
+            pullout_anchor: None,
         }
     }
     pub fn demo() -> Self {
@@ -385,6 +456,13 @@ impl Scene {
         self.next_id += 1;
         let n = self.windows.len() as f32;
         self.windows.push(Window {
+            origin: Realm::Desktop,
+            desktop_visible: true,
+            pullout_slot: None,
+            pullout_restore_scale: None,
+            dome_offset_deg: [0., 0.],
+            xr_pose: None,
+            xr_scale: 1.,
             id,
             title: title.chars().take(160).collect(),
             app_id: app_id.chars().take(160).collect(),
@@ -407,6 +485,42 @@ impl Scene {
         self.recenter(id).ok();
         self.revision += 1;
         id
+    }
+    /// Preserve clients and promote hidden XR windows to the primary desktop after loss.
+    pub fn desktop_fallback(&mut self, width: f32, height: f32) -> usize {
+        let ids: Vec<_> = self
+            .windows
+            .iter()
+            .filter(|w| !w.desktop_visible)
+            .map(|w| w.id)
+            .collect();
+        for (n, id) in ids.iter().enumerate() {
+            let lane = self.window(*id).unwrap().lane;
+            self.relocate(*id, lane, 0).unwrap();
+            let w = self.window_mut(*id).unwrap();
+            w.desktop_visible = true;
+            w.minimized = false;
+            w.maximized = false;
+            w.desktop.w = w.desktop.w.min((width - 32.).max(100.));
+            w.desktop.h = w.desktop.h.min((height - 132.).max(100.));
+            w.desktop.x = (24. + (n % 8) as f32 * 28.).min((width - w.desktop.w - 8.).max(8.));
+            w.desktop.y = (72. + (n % 8) as f32 * 28.).min((height - w.desktop.h - 68.).max(36.));
+        }
+        if !ids.is_empty() {
+            self.active_workspace = 0;
+            self.focused = ids.last().copied();
+            self.revision += 1;
+        }
+        ids.len()
+    }
+    /// A desktop shell view keeps XR-only clients out of its task list and focus menus.
+    pub fn desktop_scene(&self) -> Self {
+        let mut scene = self.clone();
+        scene.windows.retain(|w| w.desktop_visible);
+        if scene.focused.is_some_and(|id| scene.window(id).is_none()) {
+            scene.focused = None;
+        }
+        scene
     }
     pub fn window(&self, id: WindowId) -> Option<&Window> {
         self.windows.iter().find(|w| w.id == id)
@@ -456,6 +570,85 @@ impl Scene {
     }
     pub fn apply(&mut self, action: Action) -> Result<(), String> {
         match action {
+            Action::XrPresentation {
+                top,
+                bottom,
+                desktop,
+            } => {
+                if let Some(v) = top {
+                    self.presentation.top = v;
+                }
+                if let Some(v) = bottom {
+                    self.presentation.bottom = v;
+                }
+                if let Some(v) = desktop {
+                    self.presentation.desktop = v;
+                }
+            }
+            Action::PullOut { id, head } => {
+                head.validate()?;
+                if self.config.projection != Projection::RoomDome {
+                    return Err("Only dome panels can be pulled out".into());
+                }
+                let w = self.window(id).ok_or("Unknown window")?;
+                if w.minimized || w.workspace != self.active_workspace {
+                    return Err("Panel is not visible".into());
+                }
+                if w.pullout_slot.is_some() {
+                    return Ok(());
+                }
+                let slot = (0..2)
+                    .find(|slot| !self.windows.iter().any(|w| w.pullout_slot == Some(*slot)))
+                    .ok_or("Both pull-out slots are occupied")?;
+                if self.pullout_anchor.is_none() {
+                    let forward = glam::Vec3::from_array(head.rotate([0., 0., -1.]));
+                    let yaw = if forward.x * forward.x + forward.z * forward.z > 0.001 {
+                        (-forward.x).atan2(-forward.z)
+                    } else {
+                        0.
+                    };
+                    self.pullout_anchor = Some(Pose {
+                        position_m: head.position_m,
+                        orientation_xyzw: glam::Quat::from_rotation_y(yaw).to_array(),
+                    });
+                }
+                let w = self.window_mut(id)?;
+                w.pullout_slot = Some(slot);
+                w.pullout_restore_scale = Some(w.xr_scale);
+                w.xr_scale = 1.;
+                w.xr_pose = None;
+            }
+            Action::ReturnToDome { id } => {
+                let w = self.window_mut(id)?;
+                w.pullout_slot = None;
+                w.xr_pose = None;
+                w.xr_scale = w.pullout_restore_scale.take().unwrap_or(1.);
+            }
+            Action::DomeOffset {
+                id,
+                yaw_deg,
+                pitch_deg,
+            } => {
+                if !yaw_deg.is_finite() || !pitch_deg.is_finite() {
+                    return Err("Dome offset must be finite".into());
+                }
+                let w = self.window_mut(id)?;
+                w.dome_offset_deg = [wrap(yaw_deg), pitch_deg.clamp(-70., 70.)];
+            }
+            Action::SpatialTransform { id, pose, scale } => {
+                if let Some(p) = pose {
+                    p.validate()?;
+                }
+                if !scale.is_finite() || !(0.25..=4.).contains(&scale) {
+                    return Err("XR scale must be 0.25–4".into());
+                }
+                let w = self.window_mut(id)?;
+                w.xr_pose = pose;
+                w.xr_scale = scale;
+            }
+            Action::Defocus => {
+                self.focused = None;
+            }
             Action::Add { title, app_id } => {
                 if self.source != "preview" {
                     return Err("Live windows must come from Wayland clients".into());
@@ -670,6 +863,9 @@ impl Scene {
         }) {
             self.choose_focus();
         }
+        if !self.windows.iter().any(|w| w.pullout_slot.is_some()) {
+            self.pullout_anchor = None;
+        }
         self.revision += 1;
         Ok(())
     }
@@ -727,7 +923,48 @@ impl Scene {
                 1 + (ws + self.workspaces.len() - self.active_workspace) % self.workspaces.len()
             };
             let radius = self.config.radius_m + rank as f32 * 0.55;
-            let spans = self.config.lane_spans(space.shares);
+            let raw_spans = self.config.lane_spans(space.shares);
+            // Pixels mean Wayland logical content pixels, independent of headset resolution.
+            let height_at = |bottom: f32, top: f32| {
+                let angular = top - bottom;
+                if self.config.projection == Projection::RoomDome {
+                    (2. * (2.2 / radius * (angular / 2.).to_radians().tan()).atan())
+                        .to_degrees()
+                        .min(angular)
+                } else {
+                    angular
+                }
+            };
+            let heights = raw_spans.map(|[b, t]| height_at(b, t));
+            let pixel_pitch = (0..3)
+                .flat_map(|lane| {
+                    space.lanes[lane]
+                        .windows
+                        .iter()
+                        .filter_map(|id| self.window(*id))
+                        .filter(|w| !w.minimized)
+                        .map(move |w| heights[lane] / w.desktop.h)
+                })
+                .fold(f32::INFINITY, f32::min);
+            let pixel_pitch = if pixel_pitch.is_finite() {
+                pixel_pitch
+            } else {
+                heights.iter().copied().fold(f32::INFINITY, f32::min) / 460.
+            };
+            let lane_gap = self
+                .config
+                .lane_gap_deg
+                .min(self.config.window_gap_px * pixel_pitch);
+            let mut mid = (raw_spans[1][0] + raw_spans[1][1]) / 2.;
+            if self.config.projection == Projection::RoomDome && radius > 2.2 {
+                mid = (2.2 / radius * mid.to_radians().tan()).atan().to_degrees();
+            }
+            let middle = [mid - heights[1] / 2., mid + heights[1] / 2.];
+            let spans = [
+                [middle[1] + lane_gap, middle[1] + lane_gap + heights[0]],
+                middle,
+                [middle[0] - lane_gap - heights[2], middle[0] - lane_gap],
+            ];
             for (lane, band) in space.lanes.iter().enumerate() {
                 let windows: Vec<_> = band
                     .windows
@@ -749,9 +986,15 @@ impl Scene {
                 let gap = if windows.len() < 2 {
                     0.
                 } else {
-                    self.config.window_gap_deg.min(180. / windows.len() as f32)
+                    self.config.window_gap_px
+                        * widths
+                            .iter()
+                            .zip(&windows)
+                            .map(|(width, w)| width / w.desktop.w)
+                            .fold(f32::INFINITY, f32::min)
                 };
-                let scale = ((360. - gap * windows.len() as f32) / total.max(1.)).min(1.);
+                let scale = (360. / (total + gap * windows.len() as f32).max(1.)).min(1.);
+                let gap = gap * scale;
                 for width in &mut widths {
                     *width *= scale;
                 }
@@ -765,6 +1008,8 @@ impl Scene {
                     edge += widths[i] + gap;
                     let (b, t, width) = if w.maximized {
                         let (b, t) = self.config.lane_extent();
+                        let h = height_at(b, t);
+                        let (b, t) = ((b + t - h) / 2., (b + t + h) / 2.);
                         let width = (2.
                             * (((t - b) / 2.).to_radians().tan() * w.desktop.w / w.desktop.h)
                                 .atan())
