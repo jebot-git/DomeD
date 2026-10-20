@@ -78,8 +78,8 @@ try:
     with tempfile.TemporaryDirectory(prefix="dome-terminal-") as directory:
         runtime = Path(directory)
         runtime.chmod(0o700)
-        # Model an existing suspended XR terminal. Desktop launches must leave
-        # this socket untouched even with the normal overlay configuration.
+        # Model an existing suspended XR terminal. New desktop terminals leave
+        # it untouched; Super+F12 explicitly shows the independent overlay.
         (runtime / "ghostty-xr").mkdir(mode=0o700)
         overlay.bind(str(runtime / "ghostty-xr/control.sock"))
         overlay.settimeout(.2)
@@ -207,9 +207,23 @@ try:
         key("Super_L", False)
         wait(lambda: len(state()["windows"]) == 2)
         assert len(list((runtime / "ghostty-xr").glob("wayland-*.sock"))) == 2
+        # Super+T creates a normal window without waking the overlay.
+        try:
+            overlay.recv(1024)
+            raise AssertionError("Desktop terminal launch touched the XR overlay")
+        except socket.timeout:
+            pass
         key("Super_L", True); key("F12"); key("Super_L", False)
-        wait(lambda: len(state()["windows"]) == 3)
-        assert len(list((runtime / "ghostty-xr").glob("wayland-*.sock"))) == 3
+        assert overlay.recv(1024) == b"show"
+        time.sleep(.3)
+        assert len(state()["windows"]) == 2
+        assert len(list((runtime / "ghostty-xr").glob("wayland-*.sock"))) == 2
+        try:
+            overlay.recv(1024)
+            raise AssertionError("Desktop overlay shortcut added a tab or repeated the show request")
+        except socket.timeout:
+            pass
+        print("PASS: desktop Super+T opens a normal terminal; Super+F12 shows the XR overlay without a new window or tab")
 
         def frame():
             with urllib.request.urlopen(base + f"/api/xr-frame/{first}", timeout=2) as response:

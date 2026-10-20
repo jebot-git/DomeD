@@ -59,8 +59,10 @@ opens it or creates and selects a new tab in its existing overlay. In the deskto
 realm, including while XR is suspended, it opens an independent Wayland terminal
 without changing the XR terminal. **F12** hides Ghostty and releases keyboard input back to
 Dome. In XR, **F12** or **Super+F12** reopens the overlay without adding a tab;
-**Super+T** still creates a new tab. In desktop mode, Super+F12 opens a Wayland
-terminal and bare F12 remains available to applications. The overlay uses placement
+**Super+T** still creates a new tab. **Super+F12** always shows or starts the
+independent XR overlay, including in desktop mode and with
+`DOME_TERMINAL_MODE=wayland`; it never creates a desktop window or another tab.
+Bare F12 remains available to desktop applications. The overlay uses placement
 20, above Dome's placement 10.
 
 ```sh
@@ -847,8 +849,9 @@ Open **View → Displays, XR & Keybindings** (Super+Comma), select a keybinding
 row and press Enter or click its value to record a replacement chord. Escape
 cancels; Backspace disables that binding. Changes persist in `dome/xr.json`.
 Duplicate chords are rejected. Bare function keys pass to qimgvr, mpvr, fsv-xr
-and Ghostty XR: Dome’s menu uses Super+F10. In XR overlay mode, F12 and Super+F12
-show Ghostty XR; its own F12 handler hides it while it owns the keyboard. Alt+F4 retains the standard window-close behavior.
+and Ghostty XR: Dome’s menu uses Super+F10. Super+F12 shows the independent
+Ghostty XR overlay from either view; bare F12 also shows it in XR overlay mode.
+Its own F12 handler hides it while it owns the keyboard. Alt+F4 retains the standard window-close behavior.
 
 | Shortcut | Action |
 | --- | --- |

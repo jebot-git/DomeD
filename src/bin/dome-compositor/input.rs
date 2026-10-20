@@ -86,7 +86,7 @@ impl Dome {
                             dome::terminal::Mode::configured(),
                         ) {
                             state.shell_keys.insert(code);
-                            if let Err(e) = dome::terminal::show(&state.launch_socket(), state.input_realm) {
+                            if let Err(e) = dome::terminal::show(&state.launch_socket()) {
                                 state.shell_error = format!("Cannot show Ghostty XR: {e}");
                             }
                             return FilterResult::Intercept(());

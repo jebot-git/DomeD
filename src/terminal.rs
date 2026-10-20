@@ -12,7 +12,9 @@ impl Mode {
     }
 }
 pub fn command(socket: &str, realm: crate::Realm) -> Command {
-    let mode = Mode::configured().for_realm(realm);
+    command_for_mode(socket, Mode::configured().for_realm(realm))
+}
+fn command_for_mode(socket: &str, mode: Mode) -> Command {
     let binary = std::env::var_os("DOME_TERMINAL").unwrap_or_else(||
         if mode == Mode::Wayland { "ghostty-xr".into() } else { "ghostty-xr-launch".into() });
     command_for(socket, binary, mode)
@@ -31,16 +33,15 @@ pub fn show_shortcut(key: u32, mods: crate::shortcuts::Mods, realm: crate::Realm
         && (mods.logo || (realm == crate::Realm::Xr && mode == Mode::Overlay))
 }
 
-/// Reopen the existing overlay without creating another shell tab.
-pub fn show(socket: &str, realm: crate::Realm) -> io::Result<()> {
-    if Mode::configured().for_realm(realm) == Mode::Overlay {
-        if let Some(dir) = std::env::var_os("XDG_RUNTIME_DIR") {
-            if show_overlay(&std::path::PathBuf::from(dir).join("ghostty-xr/control.sock")).is_ok() {
-                return Ok(());
-            }
+/// Show or start the independent overlay in either realm, without adding a tab.
+/// DOME_TERMINAL_MODE controls new terminals, never the overlay shortcut.
+pub fn show(socket: &str) -> io::Result<()> {
+    if let Some(dir) = std::env::var_os("XDG_RUNTIME_DIR") {
+        if show_overlay(&std::path::PathBuf::from(dir).join("ghostty-xr/control.sock")).is_ok() {
+            return Ok(());
         }
     }
-    let mut child = command(socket, realm).spawn()?;
+    let mut child = command_for_mode(socket, Mode::Overlay).spawn()?;
     std::thread::spawn(move || { let _ = child.wait(); });
     Ok(())
 }
