@@ -213,8 +213,10 @@ impl crate::Dome {
             4 => {
                 let fonts = crate::qt::bitmap_fonts();
                 if fonts.is_empty() { return; }
+                // An old font name falls back to the first face when painting;
+                // cycling must advance from that effective face too.
                 let next = fonts.iter().position(|f| f.id == self.appearance.font)
-                    .map_or(0, |index| (index + 1) % fonts.len());
+                    .map_or(1 % fonts.len(), |index| (index + 1) % fonts.len());
                 self.appearance.font = fonts[next].id.clone();
                 if !fonts[next].sizes.contains(&self.appearance.font_size) {
                     self.appearance.font_size = fonts[next].sizes[0];

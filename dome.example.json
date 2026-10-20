@@ -12,6 +12,7 @@
   "lower_inset_deg": 8.0,
   "projection": "room_dome",
   "radius_m": 2.2,
+  "pullout_distance_m": 2.0,
   "taskbar_height_deg": 7.0,
   "taskbar_max_width_deg": 100.0,
   "upper_bar_height_deg": 5.0,

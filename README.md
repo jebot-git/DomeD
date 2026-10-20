@@ -375,15 +375,23 @@ Ray-to-UV hits use the same cylinder and lean as rendering. Dome is the only
 compositor XR projection; Ghostty XR retains its independent direct-view overlay. `XR_KHR_composition_layer_cylinder` is required for
 the dome; a runtime lacking it gets an explicit error instead of a flat substitute.
 
-Grip a dome window and pull inward by 18 cm to detach it into a flat near panel.
-There are exactly **two side-by-side slots** across the session. The slots anchor
-in the room at the user's position/yaw when the first window is pulled, at a
-configured depth of **1 m** (`pullout_distance_m`, range 0.6–1.6 m). They stay there
-when the user moves their head. Push a gripped near panel outward by 18 cm to
-return it to its stored dome position/scale. Releasing is required between these
-transitions. A third pull leaves that window on the dome. One- and two-hand pulls
-work; lateral grip movement adjusts an attached window along the dome. Scaling
-near panels grows them outward from their central gap so they remain side by side.
+Grip a dome window and pull inward by 18 cm, or press **Super+P**, to move it
+into a front reading panel. There are exactly **two side-by-side slots** across
+the session. The panels follow a shallow cylindrical arc at a default distance
+of **2 m** (`pullout_distance_m`, configurable from 0.6–3 m). Each starts at
+1.3 m of arc width and preserves the window's aspect ratio. The pair anchors in
+the room at the user's position/yaw on the first pull, and stays there as the
+user turns or moves their head. Mouse hits and cursor placement use the same
+curved surface; a stationary mouse retains its panel UV through pullout,
+return, scaling and head motion.
+
+Press **Super+P** again to return the focused panel, or push a gripped panel
+outward by 18 cm. **Return to Dome Layout** also restores its original dome
+placement. The shortcut is configurable under Settings → keybindings; old
+profiles gain it automatically unless Super+P is already assigned, in which
+case the new action starts disabled. A third pull leaves that window on the
+dome. One- and two-hand pulls work, and scaling grows panels outward from the
+central gap. Open the hand between pull/return transitions.
 
 The same Qt6 menu/tray/taskbar is rendered into two XR shell layers,
 with configurable angular sizes and lens-safe insets. Menu and preview expansion

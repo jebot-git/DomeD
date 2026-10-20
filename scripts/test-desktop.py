@@ -154,19 +154,19 @@ try:
 
     # Shared XKB groups are sent to real Wayland clients, including modifier updates.
     before_keys=len(events('b'));key('y')
-    check(any(e['kind']=='key_press' and e['text']=='y' for e in events('b')[before_keys:]),'US layout sends the expected character to the focused client')
+    check(wait(lambda:any(e['kind']=='key_press' and e['text']=='y' for e in events('b')[before_keys:])),'US layout sends the expected character to the focused client')
     xr_shortcut(['Super_L','Alt_L'],'space');before_keys=len(events('b'));key('y')
-    check(any(e['kind']=='key_press' and e['text']=='z' for e in events('b')[before_keys:]),'Super+Alt+Space switches the physical keyboard to Czech')
+    check(wait(lambda:any(e['kind']=='key_press' and e['text']=='z' for e in events('b')[before_keys:])),'Super+Alt+Space switches the physical keyboard to Czech')
     keyboard_file=runtime/'config/dome/keyboard.json'
     check(json.loads(keyboard_file.read_text())['active']==1,'Active keyboard layout persists across login sessions')
     click(1080,18);before_keys=len(events('b'));key('y')
-    check(any(e['kind']=='key_press' and e['text']=='y' for e in events('b')[before_keys:]),'Top-bar keyboard indicator cycles layouts without changing focus')
+    check(wait(lambda:any(e['kind']=='key_press' and e['text']=='y' for e in events('b')[before_keys:])),'Top-bar keyboard indicator cycles layouts without changing focus')
     click(20,18);click(100,40+17*28+14);capture('01-keyboard-settings')
     click(700,280);xr_shortcut(['Control_L'],'a');text('us');key('comma');text('de');key('Return')
     wait(lambda:json.loads(keyboard_file.read_text())['layout']=='us,de')
     check(True,'Graphical keyboard settings compile and save a new XKB layout list')
     click(1080,18);before_keys=len(events('b'));key('y')
-    check(any(e['kind']=='key_press' and e['text']=='z' for e in events('b')[before_keys:]),'A configured German layout reaches an already running Wayland client')
+    check(wait(lambda:any(e['kind']=='key_press' and e['text']=='z' for e in events('b')[before_keys:])),'A configured German layout reaches an already running Wayland client')
     click(1080,18)
     click(20,18);click(100,40+17*28+14);click(700,280);xr_shortcut(['Control_L'],'a');text('notareallayout');key('Return');time.sleep(.3);capture('01-keyboard-invalid')
     expected_xkb_errors={line for line in (out/'compositor.log').read_text().splitlines() if line.startswith('xkbcommon: ERROR:')}
@@ -402,6 +402,19 @@ try:
     motion(450,600);wait(lambda:not control()['mouse'])
     xr_packet([{'kind':'motion','id':xid,'uv':[.5,.5]}]);motion(451,600)
     wait(lambda:control()['mouse'] and control().get('mouse_angles') is not None)
+    target=control()['cursor']['id'];action({'op':'focus','id':target})
+    before_cursor=control()['cursor'];xr_shortcut(['Super_L'],'p')
+    wait(lambda:win(target)['pullout_slot'] is not None)
+    check(wait(lambda:control()['cursor'] is not None and control()['cursor']['id']==target and all(abs(a-b)<.001 for a,b in zip(control()['cursor']['uv'],before_cursor['uv']))),'Pullout shortcut keeps the mouse on the same curved panel UV')
+    remaining=[id for id in [aid,bid,xid] if id!=target]
+    for id in remaining:action({'op':'focus','id':id});xr_shortcut(['Super_L'],'p')
+    check(sum(w['pullout_slot'] is not None for w in state()['windows'])==2 and win(remaining[-1])['pullout_slot'] is None,'Pullout shortcut enforces the session-wide two-window limit')
+    action({'op':'focus','id':remaining[0]});xr_shortcut(['Super_L'],'p');wait(lambda:win(remaining[0])['pullout_slot'] is None)
+    action({'op':'focus','id':target});xr_shortcut(['Super_L'],'p');wait(lambda:win(target)['pullout_slot'] is None)
+    check(wait(lambda:control()['cursor'] is not None and control()['cursor']['id']==target),'Return shortcut rebases the mouse onto the original dome surface')
+    # Renew mouse ownership after the keyboard-only slot tests and let the
+    # final return rebase angular coordinates before testing empty-space motion.
+    motion(452,600);motion(451,600)
     initial=control()['mouse_angles'];motion(451,40)
     wait(lambda:control()['cursor'] is None)
     gap=control()['mouse_angles'];time.sleep(.12)
@@ -648,7 +661,9 @@ try:
     result=0
 except Exception as e:
     print('DESKTOP TEST FAILED:',repr(e),flush=True)
-    try:(out/'failure-state.json').write_text(json.dumps(state(),indent=2))
+    import traceback
+    traceback.print_exc()
+    try:(out/'failure-state.json').write_text(json.dumps({'scene':state(),'control':control()},indent=2))
     except Exception:pass
     if not checks or checks[-1]['passed']:checks.append({'passed':False,'check':str(e)})
     if xd is not None:

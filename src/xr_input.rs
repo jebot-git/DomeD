@@ -152,31 +152,35 @@ pub fn quads(scene: &Scene, head: Pose) -> Vec<Quad> {
             let w = scene.window(p.id)?;
             if let Some(slot) = w.pullout_slot {
                 let anchor = scene.pullout_anchor?;
-                let width = 0.78 * w.xr_scale;
+                let radius = scene.config.pullout_distance_m;
+                // Preserve a readable angular size and cap individual arcs below 90°.
+                let width = (1.3 * w.xr_scale).min(radius * 85f32.to_radians());
+                let height = width * w.desktop.h / w.desktop.w;
                 let gap = scene.config.window_gap_px
                     * scene
                         .windows
                         .iter()
                         .filter(|w| w.pullout_slot.is_some())
-                        .map(|w| 0.78 * w.xr_scale / w.desktop.w)
+                        .map(|w| (1.3 * w.xr_scale).min(radius * 85f32.to_radians()) / w.desktop.w)
                         .fold(f32::INFINITY, f32::min);
-                let pose = Pose {
-                    position_m: anchor.transform([
-                        if slot == 0 {
-                            -width / 2. - gap / 2.
-                        } else {
-                            width / 2. + gap / 2.
-                        },
-                        -0.06,
-                        -scene.config.pullout_distance_m,
-                    ]),
-                    orientation_xyzw: anchor.orientation_xyzw,
+                let angle = (width + gap) / (2. * radius) * if slot == 0 { -1. } else { 1. };
+                let dome = DomePatch {
+                    frame: Pose {
+                        position_m: anchor.transform([0., -0.06, 0.]),
+                        orientation_xyzw: (Quat::from_array(anchor.orientation_xyzw)
+                            * Quat::from_rotation_y(-angle))
+                        .to_array(),
+                    },
+                    radius,
+                    horizontal: width / radius,
+                    top: height / (2. * radius),
+                    bottom: -height / (2. * radius),
                 };
                 return Some(Quad {
                     id: p.id,
-                    pose,
-                    size: [width, width * w.desktop.h / w.desktop.w],
-                    dome: None,
+                    pose: dome.layer_pose(),
+                    size: [width, height],
+                    dome: Some(dome),
                 });
             }
             let offset = w.dome_offset_deg;
@@ -230,9 +234,15 @@ pub fn quads(scene: &Scene, head: Pose) -> Vec<Quad> {
     let mut horizontal_pitch = [f32::INFINITY; 3];
     let mut vertical_pitch = f32::INFINITY;
     let mut flat_pitch = [f32::INFINITY; 2];
+    let mut pullout_pitch = [f32::INFINITY; 2];
     for q in &panels {
         let w = scene.window(q.id).unwrap();
         if let Some(d) = &q.dome {
+            if w.pullout_slot.is_some() {
+                pullout_pitch[0] = pullout_pitch[0].min(d.horizontal / w.desktop.w);
+                pullout_pitch[1] = pullout_pitch[1].min((d.top - d.bottom) / w.desktop.h);
+                continue;
+            }
             horizontal_pitch[w.lane] = horizontal_pitch[w.lane].min(d.horizontal / w.desktop.w);
             vertical_pitch = vertical_pitch.min((d.top - d.bottom) / w.desktop.h);
         } else {
@@ -244,8 +254,16 @@ pub fn quads(scene: &Scene, head: Pose) -> Vec<Quad> {
         if scene.focused == Some(panel.id) {
             let w = scene.window(panel.id).unwrap();
             if let Some(d) = &mut panel.dome {
-                let horizontal_pixel = horizontal_pitch[w.lane];
-                let vertical_pixel = vertical_pitch;
+                let horizontal_pixel = if w.pullout_slot.is_some() {
+                    pullout_pitch[0]
+                } else {
+                    horizontal_pitch[w.lane]
+                };
+                let vertical_pixel = if w.pullout_slot.is_some() {
+                    pullout_pitch[1]
+                } else {
+                    vertical_pitch
+                };
                 d.horizontal += 8. * horizontal_pixel;
                 d.top += 4. * vertical_pixel;
                 d.bottom -= 4. * vertical_pixel;
@@ -499,6 +517,14 @@ impl Default for Interaction {
     }
 }
 fn interaction_pose(q: &Quad, scene: &Scene) -> Pose {
+    // Cylinder layer poses describe the circle centre, not the visible surface.
+    // Grabs and inward/outward thresholds must use the panel's actual centre.
+    if let Some(dome) = &q.dome {
+        return Pose {
+            position_m: q.point([0.5, 0.5]).to_array(),
+            orientation_xyzw: dome.frame.orientation_xyzw,
+        };
+    }
     let mut pose = q.pose;
     if q.dome.is_none() && scene.focused == Some(q.id) {
         let lift = Vec3::from_array(pose.rotate([0., 0., 0.001]));
@@ -643,7 +669,7 @@ impl Interaction {
                         docked: scene.window(id).unwrap().pullout_slot.is_some(),
                         switched: false,
                         towards_head: (Vec3::from_array(head.position_m)
-                            - Vec3::from_array(q.pose.position_m))
+                            - Vec3::from_array(interaction_pose(q, scene).position_m))
                         .normalize_or_zero(),
                     });
                     out.actions.push(Action::Focus { id });

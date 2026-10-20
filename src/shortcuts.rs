@@ -28,6 +28,7 @@ pub enum Command {
     MoveLane(i32),
     NewWorkspace,
     ResetSpatial,
+    PullOut,
     Scale(f32),
     Copy,
     Paste,
@@ -111,6 +112,7 @@ pub fn defaults() -> Vec<Binding> {
         },
     );
     add(Menu, 0xffc7, logo);
+    add(PullOut, 'p' as u32, logo);
     for reverse in [false, true] {
         add(
             Cycle(reverse),
@@ -308,6 +310,7 @@ pub fn action_label(command: Command) -> String {
         MoveWorkspace(n) => format!("Move to desktop {}", n + 1),
         NewWorkspace => "New desktop".into(),
         ResetSpatial => "Reset XR placement".into(),
+        PullOut => "Pull window out / return to dome".into(),
         Scale(n) => if n > 1. {
             "Increase XR size"
         } else {
@@ -467,7 +470,7 @@ mod configuration_tests {
                     ..Default::default()
                 }
             ),
-            None
+            Some(Command::PullOut)
         );
         assert_eq!(
             resolve(
@@ -505,4 +508,22 @@ mod configuration_tests {
         bindings[index].mods = Mods::default();
         assert!(validate(&bindings).is_err());
     }
+}
+
+/// Add the new action to saved pre-pullout profiles without taking an existing chord.
+pub fn deserialize_bindings<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<Binding>, D::Error> {
+    let mut bindings = <Vec<Binding> as serde::Deserialize>::deserialize(deserializer)?;
+    if !bindings.iter().any(|b| b.command == Command::PullOut) {
+        let mut binding = defaults()
+            .into_iter()
+            .find(|b| b.command == Command::PullOut)
+            .unwrap();
+        binding.enabled = !bindings
+            .iter()
+            .any(|b| b.enabled && normalized_key(b.key) == binding.key && b.mods == binding.mods);
+        bindings.push(binding);
+    }
+    Ok(bindings)
 }

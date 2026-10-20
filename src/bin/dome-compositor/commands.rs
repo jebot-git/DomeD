@@ -109,6 +109,7 @@ impl Dome {
             4 => vec![
                 ("Increase XR Window Size", "⌘+", Scale(1.1)),
                 ("Decrease XR Window Size", "⌘−", Scale(1. / 1.1)),
+                ("Pull Window Out / Return to Dome", "⌘P", PullOut),
                 ("Return to Dome Layout", "⇧⌘R", ResetSpatial),
                 ("", "", Separator),
                 ("Show / Hide XR Bars", "⇧⌘B", ToggleXrBars),
@@ -150,6 +151,12 @@ impl Dome {
             }
             StartXr => !self.xr_bridge.lock().unwrap().visible(),
             StopXr => self.xr_bridge.lock().unwrap().visible(),
+            PullOut => {
+                self.xr_bridge.lock().unwrap().visible()
+                    && s.focused
+                        .and_then(|id| s.window(id))
+                        .is_some_and(|w| !w.minimized)
+            }
             Separator => false,
             Close | QuitApp | Minimize | Maximize | Scale(_) | ResetSpatial | Copy | Paste
             | SelectAll | HideApp | HideOthers | AppInfo => s.focused.is_some(),
@@ -227,7 +234,9 @@ impl Dome {
             }
             LaunchApp(app) => {
                 if let Some(a) = self.apps.iter().find(|a| a.id == app) {
-                    if let Err(e) = dome::service::launch_focused(a, &self.launch_socket(), &self.scene) {
+                    if let Err(e) =
+                        dome::service::launch_focused(a, &self.launch_socket(), &self.scene)
+                    {
                         self.shell_error = e;
                     }
                 }
@@ -349,6 +358,18 @@ impl Dome {
             NewWorkspace => self.action(Action::AddWorkspace {
                 name: format!("Desktop {}", s.workspaces.len() + 1),
             }),
+            PullOut => {
+                if let Some(w) = id.and_then(|id| s.window(id)) {
+                    if w.pullout_slot.is_some() {
+                        self.action(Action::ReturnToDome { id: w.id });
+                    } else {
+                        let head = self.xr_bridge.lock().unwrap().session.head;
+                        self.action(Action::PullOut { id: w.id, head });
+                    }
+                    // The next XR tick rebases the existing cursor UV through
+                    // the new surface, outside the keyboard input callback.
+                }
+            }
             ResetSpatial => {
                 if let Some(id) = id {
                     self.action(Action::ReturnToDome { id });

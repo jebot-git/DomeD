@@ -117,6 +117,7 @@ pub struct Config {
     pub projection: Projection,
     pub xr_pointer_mode: XrPointerMode,
     pub gaze_smoothing: bool,
+    #[serde(deserialize_with = "crate::shortcuts::deserialize_bindings")]
     pub keybindings: Vec<crate::shortcuts::Binding>,
     pub anchor_mode: AnchorMode,
     pub upper_bar_x_deg: f32,
@@ -163,7 +164,7 @@ impl Default for Config {
             upper_inset_deg: 8.,
             lower_inset_deg: 8.,
             radius_m: 2.2,
-            pullout_distance_m: 1.0,
+            pullout_distance_m: 2.0,
             center_m: [0., 1.4, 0.],
             yaw_deg: 0.,
             lane_gap_deg: 2.,
@@ -241,8 +242,8 @@ impl Config {
         if !(0.6..=8.).contains(&self.radius_m) {
             return Err("Radius must be 0.6–8 metres".into());
         }
-        if !(0.6..=1.6).contains(&self.pullout_distance_m) {
-            return Err("Pull-out distance must be 0.6–1.6 metres".into());
+        if !(0.6..=3.).contains(&self.pullout_distance_m) {
+            return Err("Pull-out distance must be 0.6–3 metres".into());
         }
         if self.center_m.iter().any(|x| x.abs() > 10000.) {
             return Err("Anchor position is outside the supported room range".into());

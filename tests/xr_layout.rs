@@ -66,17 +66,24 @@ fn two_slots_are_world_anchored_and_third_pull_is_atomic() {
     );
     for id in [a, b] {
         let q = before.iter().find(|q| q.id == id).unwrap();
-        assert!(q.dome.is_none());
+        assert!(q.dome.is_some());
         assert_eq!(q.pose, after.iter().find(|q| q.id == id).unwrap().pose);
-        assert!((q.pose.position_m[2] + 1.).abs() < 0.001);
+        let p = q.point([0.5, 0.5]);
+        assert!((p.x.hypot(p.z) - 2.).abs() < 0.001);
     }
     let left = before.iter().find(|q| q.id == a).unwrap();
     let right = before.iter().find(|q| q.id == b).unwrap();
-    assert!(
-        (right.pose.position_m[0] - left.pose.position_m[0] - (0.78 + 8. * 0.78 / 720.)).abs()
-            < 0.001
-    );
-    assert!(left.size[0] < 0.86);
+    let pixel = 1.3 / s.window(a).unwrap().desktop.w;
+    assert!((right.point([0., 0.5]).x - left.point([1., 0.5]).x - 8. * pixel).abs() < 0.0001);
+    assert!((left.size[0] - 1.3).abs() < 0.001);
+    // Curvature is visible yet shallow across each front panel.
+    let normal = left
+        .dome
+        .as_ref()
+        .unwrap()
+        .inward_normal(left.point([0.5, 0.5]));
+    let sag = (left.point([0., 0.5]) - left.point([0.5, 0.5])).dot(normal);
+    assert!((0.05..0.15).contains(&sag));
     s.apply(Action::ReturnToDome { id: a }).unwrap();
     s.apply(Action::PullOut { id: c, head }).unwrap();
     s.apply(Action::Close { id: b }).unwrap();
@@ -120,11 +127,11 @@ fn pulling_then_pushing_a_gripped_panel_returns_to_its_dome_home() {
         apply(&mut s, p);
     }
     assert_eq!(s.window(id).unwrap().pullout_slot, Some(0));
-    let pose = xr_input::quads(&s, head).remove(0).pose;
+    let pulled = xr_input::quads(&s, head).remove(0);
     hand.grip = false;
     let p = i.update(1.05, true, [hand, Hand::default()], &s, head);
     apply(&mut s, p);
-    let target = Vec3::from_array(pose.position_m);
+    let target = pulled.point([0.5, 0.5]);
     let inward = (Vec3::from_array(head.position_m) - target).normalize();
     hand.position = (target + inward * 0.2).to_array();
     hand.ray = (-inward).to_array();
@@ -162,7 +169,7 @@ fn legacy_projection_migration_preserves_pullout() {
     assert!(s.window(id).unwrap().pullout_slot.is_some());
     assert!(xr_input::quads(&s, Pose::default())
         .iter()
-        .all(|q| q.dome.is_none()));
+        .all(|q| q.dome.is_some()));
 }
 
 #[test]
@@ -229,9 +236,12 @@ fn pulled_scaling_keeps_panels_side_by_side_and_restores_dome_size() {
     let left = q.iter().find(|q| q.id == a).unwrap();
     let right = q.iter().find(|q| q.id == b).unwrap();
     assert!(left.size[0] > 1.5);
-    // Eight pixels minus four consumed by the focused right panel's outset.
-    let pixel = 0.78 / s.window(b).unwrap().desktop.w;
-    assert!((right.point([0., 0.5]).x - left.point([1., 0.5]).x - 4. * pixel).abs() < 0.00001);
+    // Focus expands four pixels into the shared gap at the same angular pitch.
+    let pixel = 1.3 / s.window(b).unwrap().desktop.w / s.config.pullout_distance_m;
+    let l = left.point([1., 0.5]);
+    let r = right.point([0., 0.5]);
+    let gap = r.x.atan2(-r.z) - l.x.atan2(-l.z);
+    assert!((gap - 4. * pixel).abs() < 0.00001);
     s.apply(Action::ReturnToDome { id: a }).unwrap();
     assert_eq!(s.window(a).unwrap().xr_scale, 0.6);
 }
@@ -1098,4 +1108,75 @@ fn gaze_settings_keep_old_profiles_compatible_and_roundtrip() {
         gaze
     );
     assert!(serde_json::from_str::<Config>(r#"{"xr_pointer_mode":"invalid"}"#).is_err());
+}
+
+#[test]
+fn curved_pullouts_keep_mouse_uv_and_reticle_after_move_and_resize() {
+    let mut s = scene();
+    let id = s.windows[0].id;
+    let anchor = Pose {
+        position_m: [0.2, 1.6, 0.1],
+        orientation_xyzw: Quat::from_rotation_y(0.4).to_array(),
+    };
+    s.apply(Action::PullOut { id, head: anchor }).unwrap();
+    for scale in [0.6, 1., 1.8] {
+        s.apply(Action::SpatialTransform {
+            id,
+            pose: None,
+            scale,
+        })
+        .unwrap();
+        for head in [
+            anchor,
+            Pose {
+                position_m: [-0.1, 1.7, 0.3],
+                orientation_xyzw: Quat::from_rotation_y(-0.3).to_array(),
+            },
+        ] {
+            let q = xr_input::quads(&s, head).remove(0);
+            for uv in [[0.05, 0.2], [0.5, 0.5], [0.95, 0.8]] {
+                let point = q.point(uv);
+                let ray = xr_input::mouse_ray(head, xr_input::mouse_angles_at(head, point));
+                let actual = q
+                    .hit(Vec3::from_array(head.position_m), ray, false)
+                    .unwrap();
+                assert!((actual[0] - uv[0]).abs() < 0.0001 && (actual[1] - uv[1]).abs() < 0.0001);
+                let cursor = xr_input::surface_reticle(&q, uv, u64::MAX);
+                assert!(
+                    (Vec3::from_array(cursor.pose.position_m).distance(point) - 0.002).abs()
+                        < 0.00001
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn saved_shortcuts_gain_pullout_without_overriding_a_custom_chord() {
+    use dome::shortcuts::{Command, Mods};
+    let mut old = Config::default();
+    old.keybindings.retain(|b| b.command != Command::PullOut);
+    let migrated: Config = serde_json::from_value(serde_json::to_value(&old).unwrap()).unwrap();
+    let binding = migrated
+        .keybindings
+        .iter()
+        .find(|b| b.command == Command::PullOut)
+        .unwrap();
+    assert!(binding.enabled);
+    assert_eq!(binding.key, 'p' as u32);
+    old.keybindings[0].key = 'p' as u32;
+    old.keybindings[0].mods = Mods {
+        logo: true,
+        ..Mods::default()
+    };
+    let migrated: Config = serde_json::from_value(serde_json::to_value(&old).unwrap()).unwrap();
+    assert!(
+        !migrated
+            .keybindings
+            .iter()
+            .find(|b| b.command == Command::PullOut)
+            .unwrap()
+            .enabled
+    );
+    migrated.validate().unwrap();
 }
