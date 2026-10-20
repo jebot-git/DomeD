@@ -586,6 +586,54 @@ fn dome_bars_border_lanes_and_orbit_with_horizontal_head_yaw() {
 }
 
 #[test]
+fn tilted_bars_stay_level_and_rigid_when_turning_the_head() {
+    let layout = dome::xr_transport::ShellLayout {
+        width: 1024, height: 768, top: 36, bottom: 60, notifications: None,
+    };
+    for populated in [false, true] {
+        for anchor_mode in [AnchorMode::Room, AnchorMode::Head] {
+            let mut s = Scene::new("level bars");
+            s.config.anchor_mode = anchor_mode;
+            s.config.dome_upper_tilt_deg = 20.;
+            s.config.yaw_deg = 27.;
+            if populated {
+                for lane in [0, 2] {
+                    let id = s.add("window", "fixture");
+                    s.apply(Action::Move { id, workspace: 0, lane }).unwrap();
+                    s.apply(Action::DomeOffset { id, yaw_deg: 35., pitch_deg: 0. }).unwrap();
+                }
+            }
+            let head = Pose { position_m: s.config.center_m, ..Pose::default() };
+            let original = xr_input::shell_quads(&s, head, &layout);
+            let center = Vec3::from_array(head.position_m);
+            for yaw in [-170_f32, -90., -45., 0., 45., 90., 170.] {
+                let turn = Quat::from_rotation_y(yaw.to_radians());
+                let moved = Pose {
+                    orientation_xyzw: (turn * Quat::from_rotation_x(0.4)
+                        * Quat::from_rotation_z(-0.3)).to_array(),
+                    ..head
+                };
+                let bars = xr_input::shell_quads(&s, moved, &layout);
+                for (a, b) in original.iter().zip(&bars) {
+                    for v in [0., 0.5, 1.] {
+                        assert!((b.point([0., v]).y - b.point([1., v]).y).abs() < 0.00001,
+                            "slanted bar {}, yaw {yaw}, anchor {anchor_mode:?}", b.id);
+                        for u in [0., 0.25, 0.5, 0.75, 1.] {
+                            let expected = center + turn * (a.point([u, v]) - center);
+                            let p = b.point([u, v]);
+                            assert!(expected.distance(p) < 0.00001,
+                                "deformed bar {}, yaw {yaw}, anchor {anchor_mode:?}", b.id);
+                            let hit = b.hit(center, (p - center).normalize(), false).unwrap();
+                            assert!((hit[0] - u).abs() < 0.0001 && (hit[1] - v).abs() < 0.0001);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn bars_follow_rendered_lane_edges_with_at_most_eight_logical_pixels_of_clearance() {
     let layout = dome::xr_transport::ShellLayout {
         width: 1024, height: 768, top: 36, bottom: 60, notifications: None,
@@ -627,7 +675,11 @@ fn bars_follow_rendered_lane_edges_with_at_most_eight_logical_pixels_of_clearanc
                         let bar_pixel = bar.size[1] / nominal;
                         for u in [0., 0.25, 0.5, 0.75, 1.] {
                             let p = bar.point([u, edge_v]);
-                            let local = d.frame.inverse_rotate((p - Vec3::from_array(d.frame.position_m)).to_array());
+                            // Compare unwrapped lane heights in the bar's own
+                            // frame: its lean follows the view heading, while
+                            // an off-centre adjacent panel retains its heading.
+                            let frame = bar.dome.as_ref().unwrap().frame;
+                            let local = frame.inverse_rotate((p - Vec3::from_array(frame.position_m)).to_array());
                             let edge = if lane == 0 { d.top } else { d.bottom } * d.radius;
                             let gap = if lane == 0 { local[1] - edge } else { edge - local[1] };
                             assert!(gap >= -0.00001 && gap / lane_pixel <= 8.01,

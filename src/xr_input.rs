@@ -391,12 +391,23 @@ fn bar_quads(scene: &Scene, head: Pose, shell: &crate::xr_transport::ShellLayout
                 patch.bottom -= gap + bar_height;
                 patch.top = patch.bottom + texture_height;
             }
-            // Orbit in the same cylinder frame rather than separating a flat
-            // bar from a curved/leaning lane at its horizontal edges.
-            let local = patch.frame.inverse_rotate(forward.to_array());
-            let yaw = local[0].atan2(-local[2]);
-            patch.frame.orientation_xyzw = (Quat::from_array(patch.frame.orientation_xyzw)
-                * Quat::from_rotation_y(-yaw)).to_array();
+            // Orbit the entire patch about world up, including its lean pivot.
+            // Turning inside the tilted cylinder frame introduces roll and moves
+            // its edges sideways. Remove the adjacent panel's heading (and head
+            // pitch/roll) before applying the headset's horizontal heading.
+            let lean = if lane == 0 {
+                Quat::from_rotation_x(c.dome_upper_tilt_deg.to_radians())
+            } else { Quat::IDENTITY };
+            let orientation = Quat::from_array(patch.frame.orientation_xyzw);
+            let base = orientation * lean.conjugate();
+            let yaw = forward.x.atan2(-forward.z);
+            let orbit = Quat::from_rotation_y(-yaw) * base.conjugate();
+            let anchor = Vec3::from_array(if c.anchor_mode == crate::AnchorMode::Head {
+                head.position_m
+            } else { scene.frame_pose().position_m });
+            patch.frame.position_m = (anchor + orbit
+                * (Vec3::from_array(patch.frame.position_m) - anchor)).to_array();
+            patch.frame.orientation_xyzw = (orbit * orientation).to_array();
             patch.horizontal = horizontal;
             Quad {
                 id, pose: patch.layer_pose(),
