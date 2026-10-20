@@ -29,10 +29,11 @@ while time.monotonic()-start<args.seconds:
  except (OSError,ValueError,KeyError):pass
  time.sleep(.25)
 seconds=time.monotonic()-start
+last={p:cpu(p) for p in pids}
 if not samples:raise SystemExit('No performance feed samples; check --feed and the WiVRn session.')
 def stats(v):
  v=sorted(v);return {'p50':statistics.median(v),'p95':v[min(len(v)-1,int(.95*len(v)))],'max':max(v)} if v else None
-summary={'process_names':names,'seconds':seconds,'samples':len(samples),'feed_age_ms':stats([s['age_ms'] for s in samples]),'target_hz':sorted(set(s['target_hz'] for s in samples)), 'process_cpu_percent':{str(p):100*(cpu(p)-first[p])/seconds for p in pids if first[p] is not None and cpu(p) is not None},'apps':{},'streams':{}}
+summary={'process_names':names,'seconds':seconds,'samples':len(samples),'feed_age_ms':stats([s['age_ms'] for s in samples]),'target_hz':sorted(set(s['target_hz'] for s in samples)), 'process_cpu_percent':{str(p):100*(last[p]-first[p])/seconds for p in pids if first[p] is not None and last[p] is not None and last[p]>=first[p]},'apps':{},'streams':{}}
 for key,fields in [('apps',['cpu_ms','gpu_ms','interval_ms','period_ms']),('streams',['encode_ms','decode_ms','delivery_ms','encode_display_ms'])]:
  for ident in sorted(set(a['id'] for s in samples for a in s[key])):
   rows=[a for s in samples for a in s[key] if a['id']==ident and a['updated_ns'] and (start+s['elapsed'])*1e9-a['updated_ns']<2e9]
