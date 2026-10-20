@@ -6,6 +6,7 @@ pub enum Command {
     ToggleXrBottom,
     ToggleXrDesktop,
     Appearance,
+    DefaultApplications,
     KeyboardSettings,
     XrSettings,
     AnchorHere,

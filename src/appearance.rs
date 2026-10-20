@@ -7,7 +7,34 @@ pub struct Appearance {
     pub accent: String,
     pub background: [f32; 3],
     pub opacity: u8,
+    pub font: String,
+    pub font_size: u16,
     pub hand_resume_ms: u64,
+}
+#[cfg(test)]
+mod font_tests {
+    use super::Appearance;
+    #[test]
+    fn old_settings_receive_the_unicode_bitmap_default() {
+        let old = r##"{"light":true,"accent":"#61cfa5","background":[0.1,0.2,0.3],"opacity":208,"hand_resume_ms":800}"##;
+        let appearance: Appearance = serde_json::from_str(old).unwrap();
+        assert!(appearance.light);
+        assert_eq!(appearance.font, "GNU Unifont / Sans-Serif");
+        assert_eq!(appearance.font_size, 16);
+        assert!(appearance.validate().is_ok());
+        let restored: Appearance = serde_json::from_slice(&serde_json::to_vec(&appearance).unwrap()).unwrap();
+        assert_eq!(restored.font, appearance.font);
+        assert_eq!(restored.font_size, appearance.font_size);
+    }
+    #[test]
+    fn invalid_font_settings_are_rejected() {
+        let mut appearance = Appearance::default();
+        appearance.font_size = 0;
+        assert!(appearance.validate().is_err());
+        appearance.font_size = 16;
+        appearance.font = "bad\nfont".into();
+        assert!(appearance.validate().is_err());
+    }
 }
 impl Default for Appearance {
     fn default() -> Self {
@@ -16,6 +43,8 @@ impl Default for Appearance {
             accent: "#6babff".into(),
             background: [0.025, 0.045, 0.06],
             opacity: 248,
+            font: "GNU Unifont / Sans-Serif".into(),
+            font_size: 16,
             hand_resume_ms: 800,
         }
     }
@@ -26,6 +55,10 @@ impl Appearance {
             || !self.accent.starts_with('#')
             || !self.accent[1..].bytes().all(|b| b.is_ascii_hexdigit())
             || self.opacity < 160
+            || self.font.is_empty()
+            || self.font.len() > 256
+            || self.font.chars().any(char::is_control)
+            || !(8..=24).contains(&self.font_size)
             || !(300..=2000).contains(&self.hand_resume_ms)
             || self
                 .background

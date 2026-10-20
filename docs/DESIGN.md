@@ -199,7 +199,7 @@ is independent of the native Rust texture and input backend. See README
 for the simulated run, WiVRn preflight and retained engine teardown diagnostics.
 
 Next: zero-copy client texture retention, controller bindings, WiVRn marker
-resolution, imported application-internal global menus and native workspace-editor polish. Later: standalone DRM/libinput, Xwayland, fractional
+resolution and native workspace-editor polish. Later: standalone DRM/libinput, Xwayland, fractional
 scaling, explicit synchronization, accessibility, popup-grab completion, session
 lock, output hotplug and persistent session recovery.
 

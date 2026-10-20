@@ -130,6 +130,9 @@ impl crate::Dome {
     }
     pub fn confirm_session(&mut self) {
         if let Some(action) = self.session_confirm.take() {
+            if matches!(action, SessionAction::Logout | SessionAction::Restart | SessionAction::Shutdown) {
+                self.save_session_on_exit();
+            }
             if action == SessionAction::Logout {
                 self.xr_bridge.lock().unwrap().exit_requested = true;
                 self.loop_signal.stop();
@@ -164,12 +167,13 @@ impl crate::Dome {
         }
     }
     pub fn appearance_click(&mut self, x: f64, y: f64, width: f64, height: f64) {
-        let (left, top) = ((width - 600.) / 2., (height - 400.) / 2.);
-        if x < left || x > left + 600. || y < top || y > top + 400. {
+        let (left, top) = ((width - 600.) / 2., (height - 500.) / 2.);
+        if x < left || x > left + 600. || y < top || y > top + 500. {
             self.appearance_open = false;
             return;
         }
-        if y >= top + 344. {
+        if y >= top + 452. {
+            if x >= left+24. && x < left+300. { self.default_apps_open(); return; }
             self.appearance_open = false;
             return;
         }
@@ -207,18 +211,36 @@ impl crate::Dome {
                 }
             }
             4 => {
+                let fonts = crate::qt::bitmap_fonts();
+                if fonts.is_empty() { return; }
+                let next = fonts.iter().position(|f| f.id == self.appearance.font)
+                    .map_or(0, |index| (index + 1) % fonts.len());
+                self.appearance.font = fonts[next].id.clone();
+                if !fonts[next].sizes.contains(&self.appearance.font_size) {
+                    self.appearance.font_size = fonts[next].sizes[0];
+                }
+            }
+            5 => {
+                let fonts = crate::qt::bitmap_fonts();
+                let Some(font) = fonts.iter().find(|f| f.id == self.appearance.font) else { return; };
+                let next = font.sizes.iter().position(|size| *size == self.appearance.font_size)
+                    .map_or(0, |index| (index + 1) % font.sizes.len());
+                self.appearance.font_size = font.sizes[next];
+            }
+            6 => {
                 self.appearance.hand_resume_ms = if self.appearance.hand_resume_ms >= 1500 {
                     500
                 } else {
                     self.appearance.hand_resume_ms + 500
                 }
             }
-            5 => self.appearance = Default::default(),
+            7 => self.appearance = Default::default(),
             _ => return,
         }
         self.xr_bridge.lock().unwrap().hand_resume_ms = self.appearance.hand_resume_ms;
         if let Err(e) = self.appearance.save() {
             self.shell_error = e;
         }
+        if let Some(toolkit) = &self.toolkit_appearance { toolkit.update(&self.appearance); }
     }
 }

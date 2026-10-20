@@ -1,5 +1,4 @@
 use crate::Dome;
-use base64::Engine;
 use dome::{
     taskbar::{self, Activation, Task},
     Action,
@@ -84,6 +83,7 @@ impl Dome {
             || self.menu.is_some()
             || self.desktop_manager
             || self.about
+            || self.default_apps_open
             || self.appearance_open
             || self.xr_settings_open
             || self.session_confirm.is_some()
@@ -292,8 +292,15 @@ impl Dome {
                 "scroll_band":viewport.band(),"offset":viewport.offset,"can_up":viewport.offset>0.,"can_down":viewport.offset<viewport.max_offset(),"selected":self.task_context_selected});
         }
         let scene = self.scene.lock().unwrap();
-        let mut bridge = self.xr_bridge.lock().unwrap();
-        let rows:Vec<_>=task.windows.iter().take(4).filter_map(|id|{let window=scene.window(*id)?;bridge.requested.insert(*id,std::time::Instant::now());let frame=bridge.frames.get(id);Some(serde_json::json!({"text":window.title,"minimized":window.minimized,"active":scene.focused==Some(*id),"width":frame.map(|f|f.width),"height":frame.map(|f|f.height),"rgba":frame.map(|f|base64::engine::general_purpose::STANDARD.encode(&*f.rgba))}))}).collect();
+        let rows: Vec<_> = task.windows.iter().take(4).filter_map(|id| {
+            let window = scene.window(*id)?;
+            let mut row = self.task_previews.json(*id);
+            if row.is_null() { row = serde_json::json!({}); }
+            row["text"] = serde_json::json!(window.title);
+            row["minimized"] = serde_json::json!(window.minimized);
+            row["active"] = serde_json::json!(scene.focused == Some(*id));
+            Some(row)
+        }).collect();
         serde_json::json!({"x":x,"y":y,"w":width,"h":height,"context":false,"rows":rows})
     }
 }

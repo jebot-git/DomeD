@@ -21,6 +21,7 @@ impl Dome {
         self.launcher = false;
         self.desktop_manager = false;
         self.task_popup = None;
+        self.default_apps_open = false;
         self.appearance_open = false;
         self.xr_settings_open = false;
         self.binding_capture = None;

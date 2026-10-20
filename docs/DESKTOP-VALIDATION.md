@@ -66,7 +66,7 @@ headless Weston. `cargo test --locked` covers the shared scene model; the servic
 smoke test covers the loopback control API and XR mesh export.
 
 This does not establish standalone DRM/libinput support, Xwayland, fractional
-scaling, application global-menu import, complete application popup grabs,
+scaling, complete application popup grabs,
 accessibility or physical XR interaction. Those remain explicit implementation
 work rather than passing tests for features that do not exist yet.
 
@@ -175,3 +175,119 @@ and its physical release is not sent to the XR client. Reset packets cannot chan
 a desktop launcher's launch realm, closing a desktop app cannot focus an invisible
 XR-only client, and late XR packets cannot refocus or unminimize hidden clients.
 Pure policy tests cover visible-surface combinations and per-realm focus fallback.
+
+## Focused application menus, Vulkan and NumLock
+
+Build with `--features standalone,xr`, then run:
+
+```sh
+uv run --no-project --with python-xlib --with pillow python scripts/test-global-menu.py
+```
+
+The test compiles a real Qt Wayland exporter, opens two menu-exporting windows and
+a non-exporting window, activates commands and submenus, checks disabled items and
+focus routing, and types on the numeric keypad with the saved KDE startup setting.
+Composition runs through Zink on Vulkan (lavapipe by default for the disposable
+Xvfb display); framebuffer readbacks and screenshots are saved under
+`artifacts/global-menu`. `DOME_TEST_VULKAN_ICD` selects another Vulkan ICD.
+`DOME_QT6_PREFIX` and `DOME_XVFB` support locally extracted development/test tools.
+This does not establish physical DRM scanout or hardware performance.
+
+`scripts/test-input-method.py` additionally exercises clicking the keyboard
+switcher, US/Anthy switching, Japanese preedit/candidates and committed 日本語,
+plus desktop/XR focus restoration. It also checks Ghostty XR’s Wayland window
+for visible Japanese composition, cancellation, long preedit and Enter commits
+while Anthy stays selected. `DOME_GHOSTTY` selects the Ghostty executable.
+`DOME_FCITX5` and `DOME_FCITX5_REMOTE` may point
+to isolated Fcitx5 binaries; its normal addon/data search environment still applies.
+
+## Compositor placement and GTK universal menus — 2026-10-20
+
+`scripts/test-gtk-menus.py` exercises real GTK3 applications launched through
+DomeD's desktop-entry path on an isolated D-Bus/display. It covers native
+GMenu/GAction exports, disabled and stateful actions, nested menus, the legacy
+appmenu GTK module, shell priority over client grabs, restoring an existing
+application, and desktop/XR popup placement and input. `DOME_TEST_GTK4=1` adds
+GTK4 menu export and popover checks when GTK4 introspection is available. The
+combined run passed 16 checks. Its menu-only GTK4 run uses the Cairo client
+renderer; the compositor and Qt Vulkan path are checked separately.
+
+`scripts/test-vivaldi-menus.py` uses a disposable browser profile and private
+Wayland display. It verifies compositor-configured floating menus, pointer
+traversal into a submenu and the real New Window action. The user's profile and
+browser windows are not used. Vivaldi is a Chromium Wayland client, so its native
+popup handling is checked independently of GTK's menu exporter.
+
+The popup suite additionally covers nested Qt surfaces, scrollable context
+menus, dialogs, texture capture, dismissal and cleanup. The Qt global-menu suite
+passes 13 checks on Vulkan, including live updates and focused action routing.
+Screenshots and reports are in `artifacts/gtk-menus`, `artifacts/vivaldi-menus`,
+`artifacts/popups` and `artifacts/global-menu`.
+
+## Default application handlers
+
+`scripts/test-default-apps.py` uses private XDG directories and registered fixture
+applications to check Dome-specific MIME defaults, real `gio open` dispatch,
+fsvr/fsx-vr detection, explicit folder overrides, incompatible/removed handlers,
+malformed preferences and write errors. It preserves other desktop defaults and
+unrelated MIME entries. With `--compositor`, it additionally starts a private
+D-Bus/Xvfb compositor, verifies chooser confirmation through real pointer input,
+and checks Open Files before and after selecting another file manager.
+
+```sh
+DOME_XVFB=/path/to/Xvfb uv run --no-project --with python-xlib --with pillow python scripts/test-default-apps.py --compositor target/release/dome-compositor
+```
+
+Backend checks can run with `python3 scripts/test-default-apps.py` alone. The
+fixture requires a C++ compiler, Qt6 and GIO development files, and
+`update-desktop-database`. Screenshots and the report are saved under
+`artifacts/default-apps/`.
+
+## Native FLTK and SDL3 popups — 2026-10-20
+
+`scripts/test-native-toolkit-popups.py` passed 16 checks each with SDL 3.4.2 and
+FLTK 1.4.4 on a private native Wayland display. Both clients run with no X11
+display. The host compositor is nested under Xvfb; XR is exercised through the
+XR session/input APIs rather than a physical headset.
+
+Coverage includes committed fixed-size geometry, configured detached desktop
+popups, actual pointer actions, disabled/checkable items, nested traversal,
+keyboard navigation, Escape, shell takeover, menus staying dismissed, above-parent
+XR popups, XR submenu actions, and XR shell dismissal. GTK3/GTK4's existing
+16-check suite also passed after the compositor changes; the Rust suite passed
+122 tests.
+
+The stock FLTK runtime reopens its menus after compositor `popup_done`. Its
+patched runtime ends the modal menu loop before ordinary backend cleanup. The
+patch, pinned source builder, local installation and test commands are described
+in `native/toolkit-hooks/README.md`. The compositor also advertises `wl_seat`
+before `gtk_shell1` for FLTK's registry callback and uses committed fixed-size
+window dimensions for scene/XR coordinates. SDL needed no toolkit backend patch.
+
+Results and screenshots are in `artifacts/fltk-popups`, `artifacts/sdl-popups`
+and `artifacts/gtk-menus`. `artifacts/fltk-stock-popups` retains the failing stock
+runtime reproduction. These popup tests do not establish application global-menu
+export support for FLTK or SDL.
+
+## Czech, Korean and Serbian Cyrillic input — 2026-10-20
+
+The release build passed all 36 checks in `scripts/test-input-method.py`, including
+actual Czech `ěšč`, Serbian Cyrillic `асдљњ` and Korean Hangul `한글` text entry in
+desktop and simulated XR input. English/Anthy switching, Japanese preedit,
+candidate clicks, Ghostty composition/commit, and desktop/XR focus restoration
+remain covered. The script also verifies that the new choices are saved in the
+private Fcitx profile. The Rust suite passed 123 tests, including preserving custom
+method order and layout overrides while omitting unavailable engines.
+
+The tested packages are Fcitx5 5.1.19, Anthy addon 5.1.10, Hangul addon 5.1.9 and
+libhangul 0.2.0. The indicator shows US / あ / CZ / 한 / СР and follows the active
+method. The switcher follows the actual Fcitx group rather than a hardcoded
+English/Japanese toggle. Startup migrates only the compositor-owned input-method
+instance; another session's Fcitx service is preserved.
+
+The regression run also restored detached placement of input-method candidate
+surfaces. These have cursor rectangles rather than xdg-popup configure events,
+so their placement is computed separately from already-configured application
+popups. Anthy's candidate order is learned; tests select the required conversion
+by its preedit and highlighted row instead of assuming a fixed candidate index.
+Results and screenshots are in `artifacts/input-method/`.

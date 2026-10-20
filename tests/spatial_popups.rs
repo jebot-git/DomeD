@@ -51,6 +51,52 @@ fn desktop_prefers_right_panel_and_falls_back_in_front_within_work_area() {
 }
 
 #[test]
+fn desktop_menus_use_configured_geometry_and_nested_flipped_edges() {
+    let (mut scene, root, popup) = fixture(Projection::RoomDome);
+    let work = Rect {
+        x: 0.,
+        y: 36.,
+        w: 1280.,
+        h: 704.,
+    };
+    let child = POPUP_ID_BASE + 2;
+    scene.popups.insert(
+        0,
+        Popup {
+            id: child,
+            parent: popup,
+            root,
+            context_at: None,
+            viewport: None,
+            anchor: Rect {
+                x: -120.,
+                y: 25.,
+                w: 120.,
+                h: 100.,
+            },
+        },
+    );
+    let rects = scene.popup_desktop_rects(work);
+    let parent = scene.window(root).unwrap().desktop;
+    assert_eq!(rects[0].0, popup);
+    assert_eq!(rects[1].0, child);
+    assert_eq!(
+        (rects[0].1.x, rects[0].1.y),
+        (parent.x + 200., parent.y + 100.)
+    );
+    assert_eq!(rects[1].1.x + rects[1].1.w, rects[0].1.x);
+    assert_eq!(rects[1].1.y, rects[0].1.y + 25.);
+    scene
+        .windows
+        .iter_mut()
+        .find(|w| w.id == root)
+        .unwrap()
+        .maximized = true;
+    let rects = scene.popup_desktop_rects(work);
+    assert_eq!((rects[0].1.x, rects[0].1.y), (work.x + 200., work.y + 100.));
+}
+
+#[test]
 fn dome_popup_is_flat_and_ray_targets_match_its_surface() {
     let (scene, root, popup) = fixture(Projection::RoomDome);
     let head = Pose::default();

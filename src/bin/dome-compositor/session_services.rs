@@ -1,4 +1,4 @@
-//! Start optional wallet services only after the native session's Wayland socket exists.
+//! Start optional desktop services after the native session's Wayland socket exists.
 pub fn start() {
     // Diagnostic sessions use private buses and must never touch a real PAM login socket.
     if std::env::var_os("DOME_DRM_TEST_DEVICE").is_some()
@@ -7,6 +7,13 @@ pub fn start() {
         return;
     }
     std::thread::spawn(|| {
+        if std::env::var("DOME_START_KDECONNECT").as_deref() != Ok("0") {
+            match std::process::Command::new("kdeconnect-indicator").spawn() {
+                Ok(_) => (),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
+                Err(error) => eprintln!("KDE Connect indicator startup: {error}"),
+            }
+        }
         if std::env::var_os("PAM_KWALLET5_LOGIN").is_some() {
             match std::process::Command::new("/usr/libexec/pam_kwallet_init").status() {
                 Ok(status) if status.success() => (),

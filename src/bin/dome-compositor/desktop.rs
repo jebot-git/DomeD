@@ -35,13 +35,14 @@ impl DesktopRenderer {
         state.sync_spatial_popups();
         state.xr_input();
         state.sync_scene();
+        state.update_appmenu();
 
         let key = format!(
             "{:?}:{}:{}:{}:{:?}:{:?}:{}:{}",
             (
                 state.applied_revision,
                 (
-                    state.appearance_open,
+                    (state.appearance_open,state.default_apps_open,state.default_apps_row,state.default_apps_choice,state.default_apps.revision()),
                     state.xr_settings_open,
                     state.xr_settings_row,
                     (
@@ -66,21 +67,21 @@ impl DesktopRenderer {
                 ),
                 state.pins.clone(),
                 (
-                    state.tray.state().revision,
+                    (
+                        state.tray.state().revision,
+                        state.appmenus.state().revision,
+                        state.appmenu_path.clone()
+                    ),
                     state.notifications.revision(),
                     state.clipboard.revision,
                     state.history_panel,
                     state.history_selected,
-                    state.launch_index,
+                    (state.launch_index, state.launch_navigation.offset, state.launch_navigation.error.clone()),
                     state.audio.state().revision,
                     state.audio_open,
                     state.audio_selected
                 ),
-                if state.task_popup.is_some() {
-                    state.start_time.elapsed().as_millis() / 100
-                } else {
-                    0
-                }
+                state.task_previews.revision
             ),
             state.launcher,
             state.desktop_manager,
@@ -267,12 +268,14 @@ impl DesktopRenderer {
                 .filter(|(owner, _, inside)| *owner == id && *inside)
                 .map_or(0, |(_, hit, _)| hit);
             let key = format!(
-                "{dw}:{dh}:{}:{}:{}:{}:{}:{zoomed}:{pressed}",
+                "{dw}:{dh}:{}:{}:{}:{}:{}:{}:{}:{zoomed}:{pressed}",
                 w.title,
                 scene.focused == Some(id),
                 state.appearance.light,
                 state.appearance.accent,
-                state.appearance.opacity
+                state.appearance.opacity,
+                state.appearance.font,
+                state.appearance.font_size
             );
             if self
                 .decoration_buffers

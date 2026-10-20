@@ -2,7 +2,10 @@ use std::time::Duration;
 
 use smithay::{
     backend::{
-        renderer::damage::OutputDamageTracker,
+        renderer::{
+            damage::OutputDamageTracker, gles::GlesTexture, Bind, ExportMem, Frame, Offscreen,
+            Renderer,
+        },
         winit::{self, WinitEvent},
     },
     output::{Mode, Output, PhysicalProperties, Subpixel},
@@ -19,7 +22,19 @@ pub fn init_winit(
     let display_handle = &mut data.display_handle;
     let state = &mut data.state;
 
-    let (backend, winit) = winit::init()?;
+    // The host window may be Xvfb or a desktop without Vulkan WSI. Composition
+    // still runs through Vulkan; a separate host context presents the finished image.
+    let (mut backend, winit) = winit::init()?;
+    let mut vulkan = if crate::rendering::selection() == "vulkan" {
+        Some(crate::rendering::offscreen()?)
+    } else {
+        crate::rendering::verify(backend.renderer())?;
+        None
+    };
+    let mut vulkan_target: Option<(
+        smithay::utils::Size<i32, smithay::utils::Physical>,
+        GlesTexture,
+    )> = None;
 
     backend
         .window()
@@ -56,6 +71,7 @@ pub fn init_winit(
     state.space.map_output(&output, (0, 0));
 
     let mut damage_tracker = OutputDamageTracker::from_output(&output);
+    let mut present_damage = OutputDamageTracker::from_output(&output);
 
     crate::activate_client_socket(state);
 
@@ -93,9 +109,94 @@ pub fn init_winit(
                 WinitEvent::Redraw => {
                     let size = backend.window_size();
                     desktop.prepare(state, size);
-                    {
+                    if let Some(compositor) = vulkan.as_mut() {
+                        if vulkan_target.as_ref().is_none_or(|(old, _)| *old != size) {
+                            vulkan_target = Some((
+                                size,
+                                compositor
+                                    .create_buffer(
+                                        smithay::backend::allocator::Fourcc::Abgr8888,
+                                        (size.w, size.h).into(),
+                                    )
+                                    .unwrap(),
+                            ));
+                        }
+                        let mut target = compositor
+                            .bind(&mut vulkan_target.as_mut().unwrap().1)
+                            .unwrap();
+                        let sync = desktop
+                            .render(
+                                state,
+                                compositor,
+                                &mut target,
+                                &mut damage_tracker,
+                                0,
+                                false,
+                            )
+                            .unwrap();
+                        sync.wait().unwrap();
+                        if let Some(path) = std::env::var_os("DOME_RENDER_CAPTURE") {
+                            crate::rendering::capture(
+                                compositor,
+                                &target,
+                                size,
+                                std::path::Path::new(&path),
+                            )
+                            .unwrap();
+                        }
+                        let mapping = compositor
+                            .copy_framebuffer(
+                                &target,
+                                Rectangle::from_size((size.w, size.h).into()),
+                                smithay::backend::allocator::Fourcc::Abgr8888,
+                            )
+                            .unwrap();
+                        let pixels = compositor.map_texture(&mapping).unwrap().to_vec();
+                        drop(mapping);
+                        drop(target);
+                        let (presenter, mut framebuffer) = backend.bind().unwrap();
+                        use smithay::backend::renderer::element::{
+                            memory::{MemoryRenderBuffer, MemoryRenderBufferRenderElement},
+                            Kind,
+                        };
+                        let stride = size.w as usize * 4;
+                        let mut top_down = Vec::with_capacity(pixels.len());
+                        for row in pixels.chunks_exact(stride).rev() {
+                            top_down.extend_from_slice(row);
+                        }
+                        let buffer = MemoryRenderBuffer::from_slice(
+                            &top_down,
+                            smithay::backend::allocator::Fourcc::Abgr8888,
+                            (size.w, size.h),
+                            1,
+                            Transform::Normal,
+                            None,
+                        );
+                        let element = MemoryRenderBufferRenderElement::from_buffer(
+                            presenter,
+                            (0., 0.),
+                            &buffer,
+                            None,
+                            None,
+                            None,
+                            Kind::Unspecified,
+                        )
+                        .unwrap();
+                        present_damage
+                            .render_output(
+                                presenter,
+                                &mut framebuffer,
+                                0,
+                                &[element],
+                                [0., 0., 0., 1.],
+                            )
+                            .unwrap()
+                            .sync
+                            .wait()
+                            .unwrap();
+                    } else {
                         let (renderer, mut framebuffer) = backend.bind().unwrap();
-                        let _sync = desktop
+                        let sync = desktop
                             .render(
                                 state,
                                 renderer,
@@ -105,6 +206,24 @@ pub fn init_winit(
                                 false,
                             )
                             .unwrap();
+                        if let Some(path) = std::env::var_os("DOME_RENDER_CAPTURE") {
+                            sync.wait().unwrap();
+                            crate::rendering::capture(
+                                renderer,
+                                &framebuffer,
+                                size,
+                                std::path::Path::new(&path),
+                            )
+                            .unwrap();
+                            // Mapping readback makes the context surfaceless; restore it before swap.
+                            renderer
+                                .render(&mut framebuffer, size, Transform::Flipped180)
+                                .unwrap()
+                                .finish()
+                                .unwrap()
+                                .wait()
+                                .unwrap();
+                        }
                     }
                     backend.submit(Some(&[Rectangle::from_size(size)])).unwrap();
                     crate::desktop::finish_frame(state, &output);

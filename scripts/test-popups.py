@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import re
+import signal
 import shutil
 import socket
 import subprocess
@@ -16,6 +17,8 @@ import urllib.request
 from PIL import Image
 from Xlib import X, XK, display
 from Xlib.ext import xtest
+
+signal.pthread_sigmask(signal.SIG_SETMASK, [])
 
 if os.environ.get("DOME_POPUP_TEST_BUS") != "1":
     os.execvpe("dbus-run-session", ["dbus-run-session", "--", sys.executable, *sys.argv],
@@ -85,10 +88,11 @@ try:
             display_name = ":" + pipe.readline().strip()
         env = {**os.environ, "DISPLAY": display_name, "XDG_RUNTIME_DIR": directory,
                "XDG_CONFIG_HOME": str(runtime / "config"), "XDG_DATA_HOME": str(runtime / "data"), "DOME_PREVIEW_PORT": str(port),
-               "LIBGL_ALWAYS_SOFTWARE": "1", "RUST_LOG": "warn"}
+               "LIBGL_ALWAYS_SOFTWARE": "1", "RUST_LOG": "warn", "DOME_LOGIN_SESSION": "0",
+               "DOME_START_XR": "0", "DOME_RENDERER": "gles"}
         for name in ("WAYLAND_DISPLAY", "WAYLAND_SOCKET", "QT_QPA_PLATFORM"):
             env.pop(name, None)
-        start([os.environ.get("DOME_COMPOSITOR",str(root / "target/debug/dome-compositor"))], "compositor", env)
+        start([os.environ.get("DOME_COMPOSITOR",str(root / "target/debug/dome-compositor")), "--backend", "nested"], "compositor", env)
         wait(lambda: state()["source"] == "wayland")
         socket_name = re.search(r"Dome Wayland socket: (\S+)", (out / "compositor.log").read_text())[1]
         start([sys.executable, str(root / "scripts/popup-client.py"), str(out / "events.jsonl")], "client",
@@ -216,11 +220,11 @@ try:
         assert popup["root"] == parent and popup["parent"] == parent
         assert len(state()["windows"]) == 1
         rect = state()["windows"][0]["desktop"]
-        x, y = rect["x"] + rect["w"] + 8, rect["y"]
+        x, y = rect["x"] + popup["anchor"]["x"], rect["y"] + popup["anchor"]["y"]
         time.sleep(.2)
-        image = screenshot("desktop-side")
+        image = screenshot("desktop-anchored")
         expect_pixel(image, x + 100, y + 100, (54, 163, 129))
-        expect_pixel(image, rect["x"] + 200, rect["y"] + 100, (189, 62, 78))
+        expect_pixel(image, rect["x"] + 100, rect["y"] + 50, (189, 62, 78))
         wait(lambda: frame(popup["id"])).save(out / "popup-texture.png")
         parent_texture = wait(lambda: frame(parent))
         expect_pixel(parent_texture.convert("RGB"), 250, 150, (189, 62, 78))
@@ -241,7 +245,7 @@ try:
         wait(lambda: len(state()["popups"]) == 2)
         child = next(p for p in state()["popups"] if p["id"] != popup["id"])
         assert child["parent"] == popup["id"]
-        click(x + 100, y + 100)
+        click(x + child["anchor"]["x"] + 100, y + child["anchor"]["y"] + 50)
         wait(lambda: any(e["kind"] == "press" and e["panel"] == "nested" for e in events()))
         key("Escape")
         wait(lambda: len(state()["popups"]) == 1)
@@ -256,13 +260,15 @@ try:
         with urllib.request.urlopen(request, timeout=2) as response:
             assert response.status == 200
         wait(lambda: not state()["popups"])
-        # A popup near the right edge must overlap its owner, not escape the output.
+        # A popup near the right edge keeps its constrained client anchor.
         action({"op": "desktop_move", "id": parent, "x": 800, "y": 100})
         key("p")
         wait(lambda: len(state()["popups"]) == 1)
         time.sleep(.2)
-        image = screenshot("desktop-front-fallback")
-        expect_pixel(image, 800 + (720 - 240) / 2 + 100, 200, (54, 163, 129))
+        image = screenshot("desktop-edge-anchor")
+        edge = state()["popups"][0]["anchor"]
+        expect_pixel(image, min(800 + edge["x"], 1280 - edge["w"]) + 100,
+                     min(100 + edge["y"], 740 - edge["h"]) + 100, (54, 163, 129))
         # An outside click dismisses the protocol popup and returns focus to the owner.
         click(50, 700)
         wait(lambda: not state()["popups"])

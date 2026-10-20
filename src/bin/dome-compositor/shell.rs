@@ -148,6 +148,14 @@ impl Dome {
                 toplevel.send_pending_configure();
             }
         }
+        let restoring = std::mem::take(&mut self.restore_stacking);
+        if restoring {
+            for saved in &scene.windows {
+                if let Some((_, window)) = self.registry.iter().find(|(id, _)| *id == saved.id) {
+                    if self.space.element_location(window).is_some() { self.space.raise_element(window, false); }
+                }
+            }
+        }
         let raise = self.pending_raise.take().or_else(|| {
             (scene.focused != self.last_applied_focus && scene.focused != self.no_raise_focus)
                 .then_some(scene.focused)
@@ -155,7 +163,7 @@ impl Dome {
         });
         self.no_raise_focus = None;
         self.last_applied_focus = scene.focused;
-        if let Some((_, window)) = self.registry.iter().find(|(id, _)| Some(*id) == raise) {
+        if let Some((_, window)) = self.registry.iter().find(|(id, _)| !restoring && Some(*id) == raise) {
             self.space.raise_element(window, true);
         }
         self.workbench_zoom
@@ -209,28 +217,36 @@ impl Dome {
     }
     pub fn launch_selected(&mut self) {
         let apps = self.matching_apps();
-        if let Some(app) = apps.get(self.launch_index) {
-            if let Err(e) = service::launch(app, &self.launch_socket()) {
-                self.shell_error = e;
-            }
+        let executable = (!self.launch_navigation.navigated || apps.is_empty())
+            .then(|| dome::desktop_entries::find_executable(self.launch_query.trim()))
+            .flatten();
+        let result = if let Some(path) = executable {
+            dome::desktop_entries::launch_executable(&path, &self.launch_socket())
+        } else if let Some(app) = apps.get(self.launch_index) {
+            service::launch_focused(app, &self.launch_socket(), &self.scene)
+        } else {
+            Err(format!("No application or executable found: {}", self.launch_query.trim()))
+        };
+        if let Err(error) = result {
+            self.launch_navigation.error = error;
+            self.launch_navigation.repeat = None;
+            return;
         }
         self.launcher = false;
         self.launch_query.clear();
         self.launch_index = 0;
+        self.launch_navigation = Default::default();
     }
     pub fn matching_apps(&self) -> Vec<service::App> {
         let query = self.launch_query.to_lowercase();
         self.apps
             .iter()
             .filter(|a| a.search(&query))
-            .take(8)
             .cloned()
             .collect()
     }
     pub fn shell_at(&self, x: f64, y: f64) -> bool {
-        if self.decoration_at(x, y).is_some() {
-            return true;
-        }
+        let global = (x,y);
         let geometry = self.output_geometry_at((x, y).into());
         let origin = if self.input_realm == dome::Realm::Xr {
             (0, 0).into()
@@ -256,12 +272,15 @@ impl Dome {
             || self.menu.is_some()
             || self.about
             || self.xr_settings_open
+            || self.default_apps_open
             || self.appearance_open
             || self.session_confirm.is_some()
             || self.tray.state().menu.is_some()
             || self
                 .task_popup
                 .is_some_and(|i| self.task_popup_contains(i, x, y, size.w, size.h))
+            || (self.popup_under(global.into()).is_none()
+                && self.decoration_at(global.0, global.1).is_some())
     }
     pub fn shell_click(&mut self, x: f64, y: f64) {
         let origin = if self.input_realm == dome::Realm::Xr {
@@ -271,6 +290,7 @@ impl Dome {
         };
         let (x, y) = (x - origin.x as f64, y - origin.y as f64);
         let size = self.shell_geometry().size;
+        if self.default_apps_click(x,y,size.w,size.h) { return; }
         if self.audio_click(x, y, size.w, size.h) {
             return;
         }
@@ -350,14 +370,17 @@ impl Dome {
                 return;
             }
             let next = self.menu_index(x);
-            self.menu = if self.menu == next { None } else { next };
+            self.open_menu(if self.menu == next { None } else { next });
             self.task_popup = None;
             self.task_context = false;
             self.menu_hover = -1;
             return;
         }
+        if self.appmenu_click(x, y, size.w, size.h) {
+            return;
+        }
         if let Some(menu) = self.menu.take() {
-            let x0 = [0., 46., 230., 280., 332., 390., 470.][menu];
+            let x0 = self.menu_x(menu);
             if x >= x0 && x < x0 + 380. && y >= 40. {
                 let i = ((y - 40.) / 28.) as usize;
                 if let Some((_, _, command)) = self.menu_items(menu).get(i) {
@@ -368,12 +391,13 @@ impl Dome {
             return;
         }
         if self.launcher {
-            if (100. ..420.).contains(&y) {
-                let index = ((y - 100.) / 36.) as usize;
-                if let Some(a) = self.matching_apps().get(index) {
-                    if let Err(e) = service::launch(a, &self.launch_socket()) {
-                        self.shell_error = e;
-                    }
+            if (20. ..620.).contains(&x) && (104. ..392.).contains(&y) {
+                let index = self.launch_navigation.offset + ((y - 104.) / 36.) as usize;
+                if index < self.matching_apps().len() {
+                    self.launch_index = index;
+                    self.launch_navigation.navigated = true;
+                    self.launch_selected();
+                    return;
                 }
             }
             self.launcher = false;
@@ -395,9 +419,7 @@ impl Dome {
         }
         if y >= height - 60. {
             if x < 100. {
-                self.launcher = true;
-                self.launch_query.clear();
-                self.launch_index = 0;
+                self.open_launcher();
                 return;
             }
             if x >= width - 90. {
@@ -426,7 +448,7 @@ impl Dome {
         let items:Vec<_>=self.menu.map(|m|self.menu_items(m)).unwrap_or_default().iter().map(|(text,shortcut,command)|{let bindings=&scene.config.keybindings;let chord=if dome::shortcuts::defaults().iter().any(|b|b.command==*command){bindings.iter().find(|b|b.enabled&&b.command==*command).map(|b|b.label()).unwrap_or_default()}else{shortcut.to_string()};serde_json::json!({"text":text,"shortcut":chord,"enabled":self.command_enabled(*command),"separator":matches!(command,dome::shortcuts::Command::Separator)})}).collect();
         let popup = self.task_popup_json(width, height);
         crate::qt::paint(
-            serde_json::json!({"kind":"shell","keyboard":if self.keyboard_config.ime && self.ime.snapshot().method=="anthy" {"あ".to_owned()}else{self.keyboard_config.label()},"keyboard_settings":self.keyboard_draft,"keyboard_field":self.keyboard_field,"keyboard_error":if self.keyboard_error.is_empty(){self.ime.snapshot().error}else{self.keyboard_error.clone()},"keyboard_shortcut":self.keyboard_draft.as_ref().map(|d|d.switch_shortcut.label()),"audio":self.audio_json(width,height),"history":self.history_json(width,height),"notifications": if !self.audio_open && self.history_panel.is_none() && self.input_realm == dome::Realm::Desktop {self.notifications.layout(width,height)} else {vec![]},"xr_settings":self.xr_settings_json(width,height),"appearance":self.appearance,"appearance_open":self.appearance_open,"session_confirm":self.session_confirm.map(|s|s.label()),"session_error":self.session.state().error,"about":self.about,"about_is_app":self.shell_error=="@app-info","width":width,"height":height,"app":app,"app_info":entry,"menu":self.menu.map(|m|m as i32).unwrap_or(-1),"hover":self.menu_hover,"items":items,"tasks":tasks,"tray":self.visible_tray(width),"task_popup":popup,"launcher":self.launcher,"launch_index":self.launch_index,"xr_active":self.input_xr_active,"manager":self.desktop_manager,"query":self.launch_query,"apps":self.matching_apps(),"desktops":scene.workspaces.iter().map(|w|w.name.clone()).collect::<Vec<_>>()}),
+            serde_json::json!({"kind":"shell","menu_headers":self.menu_headers(),"appmenu_panels":self.appmenu_panels(width,height),"keyboard":if self.keyboard_config.ime {dome::keyboard::input_method_label(&self.ime.snapshot().method).map(str::to_owned).unwrap_or_else(||self.keyboard_config.label())}else{self.keyboard_config.label()},"keyboard_settings":self.keyboard_draft,"keyboard_field":self.keyboard_field,"keyboard_error":if self.keyboard_error.is_empty(){self.ime.snapshot().error}else{self.keyboard_error.clone()},"keyboard_shortcut":self.keyboard_draft.as_ref().map(|d|d.switch_shortcut.label()),"audio":self.audio_json(width,height),"history":self.history_json(width,height),"notifications": if !self.audio_open && self.history_panel.is_none() && self.input_realm == dome::Realm::Desktop {self.notifications.layout(width,height)} else {vec![]},"xr_settings":self.xr_settings_json(width,height),"default_apps":self.default_apps_json(width,height),"appearance":self.appearance,"appearance_open":self.appearance_open,"session_confirm":self.session_confirm.map(|s|s.label()),"session_error":self.session.state().error,"about":self.about,"about_is_app":self.shell_error=="@app-info","width":width,"height":height,"app":app,"app_info":entry,"menu":self.menu.map(|m|m as i32).unwrap_or(-1),"hover":self.menu_hover,"items":items,"tasks":tasks,"tray":self.visible_tray(width),"task_popup":popup,"launcher":self.launcher,"launch_index":self.launch_index.saturating_sub(self.launch_navigation.offset),"launch_offset":self.launch_navigation.offset,"launch_total":self.matching_apps().len(),"launch_error":self.launch_navigation.error,"xr_active":self.input_xr_active,"manager":self.desktop_manager,"query":self.launch_query,"apps":self.matching_apps().into_iter().skip(self.launch_navigation.offset).take(crate::launcher::ROWS).collect::<Vec<_>>(),"desktops":scene.workspaces.iter().map(|w|w.name.clone()).collect::<Vec<_>>()}),
         )
     }
 }

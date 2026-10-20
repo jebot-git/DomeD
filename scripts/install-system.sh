@@ -3,7 +3,10 @@
 set -euo pipefail
 [[ $(id -u) -eq 0 ]] || { echo "Run with pkexec /usr/bin/bash $0" >&2; exit 1; }
 root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-stage="$root/build/system-stage"
+stage="${1:-$root/build/system-stage}"
+# Keep concurrent prepared installs from interleaving backups and checksums.
+exec 9>/run/lock/domed-install.lock
+/usr/bin/flock -x 9
 files=(
     usr/local/bin/dome-compositor
     usr/local/bin/dome-xr
@@ -11,12 +14,25 @@ files=(
     usr/local/bin/dome-session
     usr/local/libexec/dome-session-client
     usr/share/xdg-desktop-portal/dome-portals.conf
+    usr/share/xdg-desktop-portal/portals/dome-settings.portal
     usr/share/wayland-sessions/dome.desktop
     usr/local/share/applications/org.domed.Compositor.desktop
     usr/local/share/doc/domed/README.md
     usr/local/share/doc/domed/LICENSE
     usr/local/share/doc/domed/THIRD-PARTY.md
     usr/local/share/doc/domed/dome.example.json
+    usr/local/share/doc/domed/protocols/gtk-shell.xml
+    usr/local/share/doc/domed/protocols/COPYING.gtk
+    usr/local/share/doc/domed/fonts/OFL-1.1.txt
+    usr/local/share/doc/domed/fonts/COPYING.unifont
+    usr/local/share/doc/domed/fonts/README.unifont
+    usr/local/share/doc/domed/fonts/upstream.json
+    usr/local/share/doc/domed/fonts/cozette-v1.30.0/LICENSE
+    usr/local/share/doc/domed/fonts/cozette-v1.30.0/upstream.json
+    usr/local/share/doc/domed/fonts/galmuri-v2.40.4/OFL.txt
+    usr/local/share/doc/domed/fonts/galmuri-v2.40.4/upstream.json
+    usr/local/share/doc/domed/fonts/denkichip-v1.213/OFL.txt
+    usr/local/share/doc/domed/fonts/denkichip-v1.213/upstream.json
 )
 for file in "${files[@]}"; do
     [[ -f "$stage/$file" && ! -L "$stage/$file" ]] || { echo "Missing staged file: $file" >&2; exit 1; }
@@ -32,6 +48,9 @@ for file in "${files[@]}"; do
     fi
     mode=0644
     [[ "$file" == usr/local/bin/* || "$file" == usr/local/libexec/* ]] && mode=0755
+    # A prior install can leave a documentation directory with the caller's
+    # restrictive umask. Installed public files must remain readable by users.
+    /usr/bin/install -d -o root -g root -m 0755 "$(dirname -- "$target")"
     /usr/bin/install -D -o root -g root -m "$mode" -- "$stage/$file" "$target"
 done
 /usr/bin/install -d -m 0755 /usr/local/share/domed

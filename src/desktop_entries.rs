@@ -115,18 +115,39 @@ fn localized(group: &BTreeMap<String, String>, key: &str, locale: &str) -> Strin
     unescape(group.get(key).map(String::as_str).unwrap_or(""))
 }
 fn executable(name: &str) -> bool {
+    find_executable(name).is_some()
+}
+/// Resolve one executable name, preserving PATH order; no shell or argument parsing.
+pub fn find_executable(name: &str) -> Option<PathBuf> {
     use std::os::unix::fs::PermissionsExt;
     let valid = |p: &Path| {
         p.is_file()
             && p.metadata()
                 .is_ok_and(|m| m.permissions().mode() & 0o111 != 0)
     };
-    if name.contains('/') {
-        valid(Path::new(name))
+    if name.is_empty() {
+        None
+    } else if name.contains('/') {
+        valid(Path::new(name)).then(|| std::path::absolute(name).ok()).flatten()
     } else {
         std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())
-            .any(|p| valid(&p.join(name)))
+            .map(|p| p.join(name))
+            .find(|p| valid(p))
+            .and_then(|p| std::path::absolute(p).ok())
     }
+}
+pub fn launch_executable(path: &Path, socket: &str) -> Result<(), String> {
+    let mut child = std::process::Command::new(path)
+        .env("WAYLAND_DISPLAY", socket)
+        .env_remove("WAYLAND_SOCKET")
+        .env("XDG_CURRENT_DESKTOP", "Dome")
+        .env("GDK_BACKEND", "wayland")
+        .env("QT_QPA_PLATFORM", "wayland")
+        .env("SDL_VIDEODRIVER", "wayland")
+        .spawn()
+        .map_err(|e| format!("Cannot launch {}: {e}", path.display()))?;
+    std::thread::spawn(move || { let _ = child.wait(); });
+    Ok(())
 }
 pub fn parse(
     text: &str,

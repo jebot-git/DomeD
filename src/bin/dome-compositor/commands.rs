@@ -7,12 +7,18 @@ use smithay::{
 };
 impl Dome {
     pub fn menu_index(&self, x: f64) -> Option<usize> {
-        [46., 230., 280., 332., 390., 470., 528.]
+        if x < 0. {
+            return None;
+        }
+        self.menu_headers()
             .iter()
-            .position(|end| x < *end)
+            .position(|h| x >= h.x as f64 && x < (h.x + h.width) as f64 && h.enabled)
     }
     pub fn menu_items(&self, m: usize) -> Vec<(String, &'static str, Command)> {
         use Command::*;
+        if self.exported_menu(m) {
+            return Vec::new();
+        }
         if m == 1 {
             let scene = self.shell_scene();
             let w = scene.focused.and_then(|id| scene.window(id));
@@ -91,6 +97,7 @@ impl Dome {
                     Session(dome::appearance::SessionAction::Shutdown),
                 ),
                 ("Keyboard Layouts…", "", KeyboardSettings),
+                ("Default Applications…", "", DefaultApplications),
             ],
             1 => vec![("Close Application Windows", "⌘Q", QuitApp)],
             2 => vec![("Close Window", "⌘W", Close)],
@@ -187,7 +194,9 @@ impl Dome {
                     },
                 });
             }
+            DefaultApplications => self.default_apps_open(),
             Appearance => {
+                self.default_apps_open = false;
                 self.keyboard_draft = None;
                 self.appearance_open = true;
             }
@@ -218,7 +227,7 @@ impl Dome {
             }
             LaunchApp(app) => {
                 if let Some(a) = self.apps.iter().find(|a| a.id == app) {
-                    if let Err(e) = dome::service::launch(a, &self.launch_socket()) {
+                    if let Err(e) = dome::service::launch_focused(a, &self.launch_socket(), &self.scene) {
                         self.shell_error = e;
                     }
                 }
@@ -260,15 +269,13 @@ impl Dome {
                 }
             }
             Launch => {
-                self.launcher = true;
-                self.launch_query.clear();
-                self.launch_index = 0;
+                self.open_launcher();
             }
             Desktops => {
                 self.desktop_manager = true;
             }
             Menu => {
-                self.menu = Some(0);
+                self.open_menu(Some(0));
                 self.menu_hover = 0;
             }
             Close => {

@@ -1,32 +1,41 @@
 #![allow(irrefutable_let_patterns)]
 
-mod handlers;
+mod appmenu;
 mod file_manager;
+mod global_menu;
+mod handlers;
+mod rendering;
 
-mod commands;
 mod audio;
+mod default_apps;
 mod clipboard;
-mod histories;
+mod commands;
 mod context_menus;
 mod decorations;
 mod desktop;
 #[cfg(feature = "standalone")]
 mod drm;
 mod grabs;
+mod histories;
 mod ime;
 mod input;
 mod input_routing;
 mod keyboard;
+mod launcher;
 mod notifications;
 mod outputs;
 mod qt;
 mod session;
+mod session_restore;
 mod session_services;
+mod gtk_menu;
 mod shell;
 mod snapping;
 mod spatial_popups;
 mod state;
 mod tasks;
+mod task_previews;
+mod toolkit_appearance;
 mod tray;
 mod winit;
 mod xr_bridge;
@@ -53,15 +62,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         .into()
     });
-    if args.first().is_some_and(|a| a == "--backend") {
-        if args.len() < 2 {
-            return Err("--backend requires drm or nested".into());
+    while args
+        .first()
+        .is_some_and(|a| matches!(a.as_str(), "--backend" | "--renderer"))
+    {
+        let option = args[0].clone();
+        let value = args
+            .get(1)
+            .ok_or_else(|| format!("{option} requires a value"))?
+            .clone();
+        if option == "--backend" {
+            backend = value;
+        } else {
+            std::env::set_var("DOME_RENDERER", value);
         }
-        backend = args[1].clone();
         args.drain(..2);
     }
+    if !matches!(rendering::selection().as_str(), "vulkan" | "gles") {
+        return Err("DOME_RENDERER must be vulkan or gles".into());
+    }
     if args.first().is_some_and(|a| a == "--help" || a == "-h") {
-        println!("dome-compositor [--backend drm|nested] [--terminal | --command PROGRAM ARGS...]\n  drm: native libseat/libinput/DRM compositor (login screen or unused TTY)\n  nested: development window in an existing Wayland/X11 desktop\n  --check-backend: report backend support without opening a seat or display");
+        println!("dome-compositor [--backend drm|nested] [--renderer vulkan|gles] [--terminal | --command PROGRAM ARGS...]\n  drm: native libseat/libinput/DRM compositor (login screen or unused TTY)\n  nested: development window in an existing Wayland/X11 desktop\n  --renderer: Vulkan via Mesa Zink (default), or native GLES\n  --check-backend: report backend support without opening a seat or display");
         return Ok(());
     }
     if !matches!(backend.as_str(), "drm" | "nested") {
@@ -72,8 +93,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             return Err("Native DRM support is not compiled in".into());
         }
         println!(
-            "DomeD backend: {backend}; native DRM compiled: {}",
-            cfg!(feature = "standalone")
+            "DomeD backend: {backend}; native DRM compiled: {}; renderer: {}",
+            cfg!(feature = "standalone"),
+            rendering::selection()
         );
         return Ok(());
     }
@@ -96,9 +118,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )?;
     }
 
+    // Initialize our offscreen Qt chrome before exporting the client toolkit environment.
+    crate::qt::bitmap_fonts();
+    let toolkit_appearance = toolkit_appearance::ToolkitAppearance::start(&dome::appearance::Appearance::load())
+        .unwrap_or_else(|error| { eprintln!("Toolkit appearance service: {error}"); None });
     let display: Display<Dome> = Display::new()?;
     let display_handle = display.handle();
     let mut state = Dome::new(&mut event_loop, display);
+    state.toolkit_appearance = toolkit_appearance;
+    event_loop.handle().insert_source(
+        smithay::reexports::calloop::timer::Timer::from_duration(std::time::Duration::from_millis(20)),
+        |_, _, data| {
+            data.state.repeat_launcher_key();
+            data.state.update_session_restore();
+            smithay::reexports::calloop::timer::TimeoutAction::ToDuration(std::time::Duration::from_millis(20))
+        },
+    )?;
     dome::load_geometry(&mut state.scene.lock().unwrap())?;
     if std::env::var_os("DOME_CONFIG").is_none() {
         if let Some(config) = dome::geometry_settings::load(&dome::geometry_settings::path())? {
@@ -148,18 +183,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Publish only after the loopback service has bound successfully. Older
     // readers still recognize the version-1 per-socket launch realm.
     let _launch_contexts = [
-        dome::launch_context::Registration::publish_with_service(&data.state.socket_name,
-            dome::Realm::Desktop, Some(port), Some(data.state.xr_socket_name.to_string_lossy().into_owned()))?,
-        dome::launch_context::Registration::publish_with_service(&data.state.xr_socket_name,
-            dome::Realm::Xr, Some(port), Some(data.state.xr_socket_name.to_string_lossy().into_owned()))?,
+        dome::launch_context::Registration::publish_with_service(
+            &data.state.socket_name,
+            dome::Realm::Desktop,
+            Some(port),
+            Some(data.state.xr_socket_name.to_string_lossy().into_owned()),
+        )?,
+        dome::launch_context::Registration::publish_with_service(
+            &data.state.xr_socket_name,
+            dome::Realm::Xr,
+            Some(port),
+            Some(data.state.xr_socket_name.to_string_lossy().into_owned()),
+        )?,
     ];
     eprintln!(
         "Dome Wayland socket: {}",
         data.state.socket_name.to_string_lossy()
     );
     eprintln!("Control and spatial preview: http://127.0.0.1:{port}");
+    data.state.start_session_restore();
     if args.first().is_some_and(|s| s == "--terminal") {
-        dome::terminal::launch(&data.state.socket_name.to_string_lossy(), dome::Realm::Desktop)?;
+        dome::terminal::launch(
+            &data.state.socket_name.to_string_lossy(),
+            dome::Realm::Desktop,
+        )?;
     } else if args.first().is_some_and(|s| s == "--command" || s == "-c") {
         if let Some(program) = args.get(1) {
             std::process::Command::new(program)
@@ -175,6 +222,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Dome is running
     })?;
 
+    data.state.save_session_on_exit();
     data.state.xr_bridge.lock().unwrap().exit_requested = true;
     if let Some(mut child) = data.state.xr_child.take() {
         if child.try_wait()?.is_none() {
@@ -188,12 +236,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 fn activate_client_socket(state: &Dome) {
     std::env::set_var("WAYLAND_DISPLAY", &state.socket_name);
     if std::env::var("DOME_LOGIN_SESSION").as_deref() == Ok("1") {
+        gtk_menu::enable_legacy_module();
         std::env::set_var("QT_IM_MODULE", "wayland");
         std::env::set_var("GTK_IM_MODULE", "fcitx");
         std::env::set_var("XMODIFIERS", "@im=fcitx");
     }
     state.ime.start(&state.display_handle);
-    if std::env::var("DOME_LOGIN_SESSION").as_deref() == Ok("1") {
+    if std::env::var("DOME_LOGIN_SESSION").as_deref() == Ok("1") || state.toolkit_appearance.is_some() {
         let _ = std::process::Command::new("dbus-update-activation-environment")
             .args([
                 "--systemd",
@@ -205,9 +254,21 @@ fn activate_client_socket(state: &Dome) {
                 "QT_IM_MODULE",
                 "GTK_IM_MODULE",
                 "XMODIFIERS",
+                "GTK_MODULES",
+                "GTK_USE_PORTAL",
+                "FONTCONFIG_FILE",
+                "XDG_DATA_DIRS",
+                "QT_QPA_PLATFORMTHEME",
+                "QT_STYLE_OVERRIDE",
+                "QT_QUICK_CONTROLS_STYLE",
+                "GTK_THEME=",
+                "UBUNTU_MENUPROXY",
+                "LD_LIBRARY_PATH",
                 "DISPLAY=",
             ])
             .status();
+    }
+    if std::env::var("DOME_LOGIN_SESSION").as_deref() == Ok("1") {
         session_services::start();
     }
 }

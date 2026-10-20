@@ -7,6 +7,8 @@ Build dome-compositor with --features nested first. Requires Xvfb, Mesa and gio.
 """
 import json,os,re,shutil,socket,subprocess,sys,tempfile,time,urllib.request,threading,signal
 from pathlib import Path
+# A test launched from Dome may inherit the compositor's blocked termination signals.
+signal.pthread_sigmask(signal.SIG_SETMASK, [])
 import PySide6
 from PIL import Image
 from Xlib import X,XK,display
@@ -98,7 +100,7 @@ try:
     start([xvfb,'-displayfd',str(wr),'-screen','0','1600x1000x24','-nolisten','tcp','-noreset'],'xvfb',os.environ.copy(),pass_fds=(wr,));os.close(wr)
     with os.fdopen(rd)as pipe:display_name=':'+pipe.readline().strip()
     assert display_name!=':'
-    env={**os.environ,'DISPLAY':display_name,'XDG_RUNTIME_DIR':directory,'XDG_SESSION_TYPE':'x11','XDG_CONFIG_HOME':str(runtime/'config'),'XDG_CURRENT_DESKTOP':'Dome','XDG_DATA_HOME':str(data),'XDG_DATA_DIRS':str(runtime/'empty'),'DOME_PREVIEW_PORT':str(port),'LIBGL_ALWAYS_SOFTWARE':'1','RUST_LOG':'warn'}
+    env={**os.environ,'DOME_LOGIN_SESSION':'0','DOME_START_XR':'0','DISPLAY':display_name,'XDG_RUNTIME_DIR':directory,'XDG_SESSION_TYPE':'x11','XDG_CONFIG_HOME':str(runtime/'config'),'XDG_CURRENT_DESKTOP':'Dome','XDG_DATA_HOME':str(data),'XDG_DATA_DIRS':str(runtime/'empty'),'DOME_PREVIEW_PORT':str(port),'DOME_RENDERER':'gles','LIBGL_ALWAYS_SOFTWARE':'1','RUST_LOG':'warn'}
     (runtime/'config/dome').mkdir(parents=True)
     (runtime/'config/dome/keyboard.json').write_text(json.dumps({'ime':False,'layout':'us,cz','switch_shortcut':'super_alt_space'}))
     for name in ['WAYLAND_DISPLAY','WAYLAND_SOCKET','QT_QPA_PLATFORM','QT_PLUGIN_PATH','QT_QPA_PLATFORM_PLUGIN_PATH']:env.pop(name,None)
@@ -107,7 +109,7 @@ try:
     (out/'session.jsonl').unlink(missing_ok=True)
     session_fixture=start([sys.executable,'scripts/session-client.py',str(out/'session.jsonl')],'session-fixture',env)
     wait(lambda:any(e['kind']=='ready' for e in events('session')))
-    compositor=start([os.environ.get('DOME_COMPOSITOR',str(root/'target/debug/dome-compositor'))],'compositor',env)
+    compositor=start([os.environ.get('DOME_COMPOSITOR',str(root/'target/debug/dome-compositor')),'--backend','nested'],'compositor',env)
     wait(lambda:state()['source']=='wayland')
     match=re.search(r'Dome Wayland socket: (\S+)',(out/'compositor.log').read_text());assert match
     client_env={**env,'WAYLAND_DISPLAY':match[1],'QT_QPA_PLATFORM':'wayland','QT_WAYLAND_CLIENT_BUFFER_INTEGRATION':'shm','LD_LIBRARY_PATH':qt_lib+':'+env.get('LD_LIBRARY_PATH','')}
@@ -188,21 +190,33 @@ try:
     caption=image().crop((active['x']+32,active['y']-28,active['x']+active['w']-100,active['y']-4))
     check(sum(min(c)>180 for c in caption.getdata())>30,'Dark active titlebar keeps readable light caption text')
     click(20,18);click(100,222);capture('01-appearance-dark')
-    click(800,280)
+    appearance_y=lambda row:(host.get_geometry().height-500)/2+80+row*48
+    click(800,appearance_y(0))
     settings=runtime/'config/dome/appearance.json'
     wait(lambda:settings.exists() and json.loads(settings.read_text())['light'])
     wait(lambda:sum(inactive_title())>sum(dark_inactive)+150)
     check(True,'Existing inactive window decorations repaint immediately when the colour scheme changes')
     capture('01-appearance-light')
-    click(800,328)
+    click(800,appearance_y(1))
     wait(lambda:json.loads(settings.read_text())['accent']=='#61cfa5' and active_border()!=blue_border)
     check(active_border()[1]>active_border()[2],'Active decoration borders follow the configured accent colour')
-    opaque=active_border();click(800,424);click(800,424)
+    opaque=active_border();click(800,appearance_y(3));click(800,appearance_y(3))
     wait(lambda:json.loads(settings.read_text())['opacity']==208 and active_border()!=opaque)
     check(True,'Chrome opacity updates existing decoration buffers')
     capture('01-appearance-light-accent')
     check(all(abs(a-b)<2 for a,b in zip(pixel(650,10),pixel(1260,742))),'Light appearance updates both bars to the same palette')
-    click(800,520);click(640,568)
+    before_font=json.loads(settings.read_text())['font']
+    caption_box=(active['x']+32,active['y']-28,active['x']+active['w']-100,active['y']-4)
+    before_caption=image().crop(caption_box).tobytes()
+    click(800,appearance_y(4))
+    wait(lambda:json.loads(settings.read_text())['font']!=before_font)
+    wait(lambda:image().crop(caption_box).tobytes()!=before_caption)
+    check(True,'Global bitmap font selection persists and repaints existing window captions')
+    chosen_font=json.loads(settings.read_text())['font']
+    click(800,appearance_y(5))
+    check(json.loads(settings.read_text())['font']==chosen_font and 8<=json.loads(settings.read_text())['font_size']<=24,'Font size selection preserves the face and uses a native desktop size')
+    capture('01-appearance-bitmap-font')
+    click(800,appearance_y(7));click(640,(host.get_geometry().height-500)/2+470)
     check(not json.loads(settings.read_text())['light'],'Appearance reset persists default settings')
     for row,kind in [(11,'lock'),(12,'switch_user')]:
         click(20,18);click(100,40+row*28+14);wait(lambda:any(e['kind']==kind for e in events('session')))
@@ -280,11 +294,11 @@ try:
     check(True,'XR LMB/MMB/RMB reach real Wayland seat and timeout releases every held button')
     shell=lambda:json.load(urllib.request.urlopen(base+'/api/xr-shell'))
     layout=wait(lambda:shell()if shell()['width']else None)
-    xr_packet([{'kind':'motion','id':0,'uv':[420/layout['width'],18/layout['top']]},{'kind':'button','button':0x110,'pressed':True},{'kind':'button','button':0x110,'pressed':False}])
+    xr_packet([{'kind':'motion','id':0,'uv':[130/layout['width'],18/layout['top']]},{'kind':'button','button':0x110,'pressed':True},{'kind':'button','button':0x110,'pressed':False}])
     wait(lambda:shell()['top']>36);layout=shell()
-    xr_packet([{'kind':'motion','id':0,'uv':[430/layout['width'],54/layout['top']]},{'kind':'button','button':0x110,'pressed':True},{'kind':'button','button':0x110,'pressed':False}])
+    xr_packet([{'kind':'motion','id':0,'uv':[150/layout['width'],110/layout['top']]},{'kind':'button','button':0x110,'pressed':True},{'kind':'button','button':0x110,'pressed':False}])
     wait(lambda:win(bid)['minimized']);action({'op':'focus','id':bid})
-    check(True,'XR shell pinch opens the universal menu and invokes native Minimize')
+    check(True,'XR shell pinch opens the active application menu and invokes Hide')
     def post_json(path,value):
         with urllib.request.urlopen(urllib.request.Request(base+path,data=json.dumps(value).encode(),headers={'Content-Type':'application/json'}),timeout=2)as response:return json.load(response)
     def control():return json.load(urllib.request.urlopen(base+'/api/xr-control'))
@@ -530,11 +544,11 @@ try:
     action({'op':'desktop_resize','id':aid,'w':resized['w'],'h':resized['h']})
     action({'op':'desktop_move','id':aid,'x':resized['x'],'y':resized['y']})
     wait(lambda:any(e['kind']=='resize'and abs(e['w']-860)<4 and abs(e['h']-540)<4 for e in events('a')))
-    background=pixel(1200,600);click(420,18);capture('02-classic-window-menu');click(430,54);wait(lambda:win(aid)['minimized'])
-    check(pixel(1050,450)==background,'Native menu minimizes and removes the surface from output')
+    background=pixel(1200,600);xr_shortcut(['Super_L'],'m');wait(lambda:win(aid)['minimized'])
+    check(pixel(1050,450)==background,'Window shortcut minimizes and removes the surface from output')
     click(160,770);wait(lambda:state()['focused']==aid and not win(aid)['minimized'])
     check(wait(lambda:color_at(1050,450,red)),'Native taskbar restores the minimized surface')
-    click(420,18);click(430,82);wait(lambda:win(aid)['maximized'])
+    xr_shortcut(['Super_L'],'Return');wait(lambda:win(aid)['maximized'])
     wait(lambda:any(e['kind']=='resize'and e['w']==1280 and e['h']==704 for e in events('a')))
     check(wait(lambda:color_at(1200,600,red)),'Native maximize paints through the work area and reserves bars');capture('03-maximized')
     host.configure(width=1100,height=850);xd.sync()
@@ -543,7 +557,7 @@ try:
     host.configure(width=1280,height=800);xd.sync()
     wait(lambda:host.get_geometry().width==1280 and host.get_geometry().height==800)
     wait(lambda:events('a')[-1]['kind']=='resize'and events('a')[-1]['w']==1280)
-    click(420,18);click(430,82);wait(lambda:not win(aid)['maximized'])
+    xr_shortcut(['Super_L'],'Return');wait(lambda:not win(aid)['maximized'])
     check(win(aid)['desktop']==resized,'Restore retains pre-maximize desktop geometry')
     # Native manager appears at the right of the taskbar; choose second desktop.
     click(1100,770);capture('04-desktop-manager');click(1000,470)

@@ -39,10 +39,10 @@ impl Dome {
     }
     pub fn desktop_popup_rects(&self, scene: &dome::Scene) -> Vec<(u64, dome::Rect)> {
         let mut result = Vec::new();
-        for popup in &scene.popups {
-            let Some(owner) = scene.window(popup.root) else {
+        for owner in &scene.windows {
+            if !scene.popups.iter().any(|p| p.root == owner.id) {
                 continue;
-            };
+            }
             let g = self.output_geometry_at(
                 (
                     owner.desktop.x as f64 + owner.desktop.w as f64 / 2.,
@@ -56,13 +56,14 @@ impl Dome {
                 w: g.size.w as f32,
                 h: (g.size.h - 96).max(1) as f32,
             };
-            if let Some(rect) = scene
-                .popup_desktop_rects(work)
-                .into_iter()
-                .find(|(id, _)| *id == popup.id)
-            {
-                result.push(rect);
-            }
+            // Keep parents before their children for both rendering and hit testing.
+            // PopupManager may enumerate nested popups in the opposite order.
+            result.extend(
+                scene
+                    .popup_desktop_rects(work)
+                    .into_iter()
+                    .filter(|(id, _)| scene.popup(*id).is_some_and(|p| p.root == owner.id)),
+            );
         }
         result
     }

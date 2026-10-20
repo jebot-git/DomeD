@@ -32,9 +32,16 @@ pub struct Dome {
     pub native_ignored_keys: std::collections::HashSet<smithay::backend::input::Keycode>,
     pub cursor_status: smithay::input::pointer::CursorImageStatus,
     pub appearance: dome::appearance::Appearance,
+    pub toolkit_appearance: Option<crate::toolkit_appearance::ToolkitAppearance>,
     pub appearance_open: bool,
+    pub default_apps: crate::default_apps::Defaults,
+    pub default_apps_open: bool,
+    pub default_apps_row: usize,
+    pub default_apps_choice: Option<usize>,
     pub ime: crate::ime::Ime,
     pub ime_popups: Vec<smithay::wayland::input_method::PopupSurface>,
+    #[cfg(feature = "standalone")]
+    pub keyboard_devices: Vec<smithay::reexports::input::Device>,
     pub keyboard_config: dome::keyboard::Keyboard,
     pub keyboard_draft: Option<dome::keyboard::Keyboard>,
     pub keyboard_field: usize,
@@ -47,6 +54,8 @@ pub struct Dome {
     pub geometry_saved: dome::Config,
     pub geometry_error: String,
     pub session: crate::session::Session,
+    pub session_persistence: Option<crate::session_restore::Persistence>,
+    pub restore_stacking: bool,
     pub session_confirm: Option<dome::appearance::SessionAction>,
     pub xr_child: Option<std::process::Child>,
     pub control_port: u16,
@@ -59,7 +68,11 @@ pub struct Dome {
     pub applied_revision: u64,
     pub launcher: bool,
     pub launch_index: usize,
+    pub launch_navigation: crate::launcher::Navigation,
     pub binding_capture: Option<usize>,
+    pub appmenus: crate::appmenu::Menus,
+    pub appmenu_target: (Option<u64>, Option<crate::appmenu::Address>),
+    pub appmenu_path: Vec<i32>,
     pub menu: Option<usize>,
     pub about: bool,
     pub menu_hover: i32,
@@ -76,6 +89,7 @@ pub struct Dome {
     pub apps: Vec<dome::service::App>,
     pub hover_app: Option<String>,
     pub task_popup: Option<usize>,
+    pub task_previews: crate::task_previews::TaskPreviews,
     pub task_context: bool,
     pub task_context_at: Option<[f32; 2]>,
     pub task_context_offset: f32,
@@ -127,6 +141,7 @@ pub struct Dome {
     pub data_control_state: smithay::wayland::selection::wlr_data_control::DataControlState,
     pub ext_data_control_state: smithay::wayland::selection::ext_data_control::DataControlState,
     pub popups: PopupManager,
+    pub popup_grab: Option<smithay::desktop::PopupGrab<Self>>,
     pub spatial_popups: Vec<(u64, smithay::desktop::PopupKind)>,
     pub next_popup_id: u64,
     pub context_trigger: Option<crate::context_menus::Trigger>,
@@ -142,7 +157,7 @@ impl Dome {
         let start_time = std::time::Instant::now();
 
         let dh = display.handle();
-
+        dh.create_global::<Self, wayland_protocols_plasma::appmenu::server::org_kde_kwin_appmenu_manager::OrgKdeKwinAppmenuManager, _>(1, ());
         let compositor_state = CompositorState::new::<Self>(&dh);
         let xdg_shell_state = XdgShellState::new::<Self>(&dh);
         let shm_state = ShmState::new::<Self>(&dh, vec![]);
@@ -176,6 +191,11 @@ impl Dome {
         // A seat typically has a pointer and maintains a keyboard focus and a pointer focus.
         let mut seat: Seat<Self> = seat_state.new_wl_seat(&dh, "seat0");
 
+        // FLTK 1.4's registry callback stores gtk_shell1 on its seat without
+        // checking that wl_seat has arrived. Advertise the seat first so these
+        // native Wayland clients can bind our GTK menu extension safely.
+        crate::gtk_menu::register(&dh);
+
         // Notify clients that we have a keyboard, for the sake of the example we assume that keyboard is always present.
         // You may want to track keyboard hot-plug in real compositor.
         let mut keyboard_config = dome::keyboard::Keyboard::load();
@@ -200,6 +220,13 @@ impl Dome {
                 25,
             )
             .unwrap();
+        }
+        let keyboard = seat.get_keyboard().unwrap();
+        let numlock = dome::keyboard::startup_numlock().or_else(crate::keyboard::existing_numlock);
+        if let Some(num_lock) = numlock {
+            let mut modifiers = keyboard.modifier_state();
+            modifiers.num_lock = num_lock;
+            keyboard.set_modifier_state(modifiers);
         }
         // Restore the last group after construction through update_keyboard.
         let keyboard_switch = keyboard_config.active as i32;
@@ -226,9 +253,16 @@ impl Dome {
             native_ignored_keys: Default::default(),
             cursor_status: smithay::input::pointer::CursorImageStatus::default_named(),
             appearance: dome::appearance::Appearance::load(),
+            toolkit_appearance: None,
             appearance_open: false,
+            default_apps: crate::default_apps::Defaults::new(),
+            default_apps_open: false,
+            default_apps_row: 0,
+            default_apps_choice: None,
             ime: crate::ime::Ime::new(),
             ime_popups: vec![],
+            #[cfg(feature = "standalone")]
+            keyboard_devices: Vec::new(),
             keyboard_config,
             keyboard_draft: None,
             keyboard_field: 0,
@@ -241,6 +275,8 @@ impl Dome {
             geometry_saved: dome::Config::default(),
             geometry_error: String::new(),
             session: crate::session::Session::new(),
+            session_persistence: None,
+            restore_stacking: false,
             session_confirm: None,
             xr_child: None,
             control_port: 49640,
@@ -253,7 +289,11 @@ impl Dome {
             applied_revision: u64::MAX,
             launcher: false,
             launch_index: 0,
+            launch_navigation: Default::default(),
             binding_capture: None,
+            appmenus: crate::appmenu::Menus::new(),
+            appmenu_target: (None, None),
+            appmenu_path: Vec::new(),
             menu: None,
             about: false,
             menu_hover: -1,
@@ -270,6 +310,7 @@ impl Dome {
             apps: dome::service::apps(),
             hover_app: None,
             task_popup: None,
+            task_previews: Default::default(),
             task_context: false,
             task_context_at: None,
             task_context_offset: 0.,
@@ -321,6 +362,7 @@ impl Dome {
             data_control_state,
             ext_data_control_state,
             popups,
+            popup_grab: None,
             spatial_popups: vec![],
             next_popup_id: 0,
             context_trigger: None,

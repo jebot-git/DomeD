@@ -32,6 +32,7 @@ impl Dome {
         None
     }
     pub fn chrome_press(&mut self, x: f64, y: f64) -> bool {
+        if self.popup_under((x,y).into()).is_some() { return false; }
         let Some((id, hit)) = self.decoration_at(x, y) else {
             return false;
         };

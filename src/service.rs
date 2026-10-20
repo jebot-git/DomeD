@@ -9,6 +9,18 @@ use std::{
 use tiny_http::{Header, Method, Response, Server};
 
 pub use crate::desktop_entries::{apps, launch, launch_action, App};
+
+/// A launcher request restores an existing application through compositor policy,
+/// even when its toolkit omits an activation request or startup token.
+pub fn launch_focused(app: &App, socket: &str, scene: &Arc<Mutex<Scene>>) -> Result<(), String> {
+    launch(app, socket)?;
+    let mut scene = scene.lock().unwrap();
+    let id = scene.focused.filter(|id| scene.window(*id).is_some_and(|w|app.matches(&w.app_id)))
+        .or_else(||scene.windows.iter().rev().find(|w|app.matches(&w.app_id)).map(|w|w.id));
+    if std::env::var_os("DOME_MENU_TRACE").is_some() { eprintln!("launch focus: app={} class={} windows={:?} selected={id:?}",app.desktop_id,app.startup_wm_class,scene.windows.iter().map(|w|(w.id,w.app_id.as_str())).collect::<Vec<_>>()); }
+    if let Some(id) = id { scene.apply(Action::Focus { id })?; }
+    Ok(())
+}
 pub fn serve(
     scene: Arc<Mutex<Scene>>,
     port: u16,
@@ -309,11 +321,12 @@ pub fn serve_native(
                                     .and_then(|v| v.as_str())
                                     .unwrap_or("desktop")
                                 {
-                                    "desktop" => launch(app, &socket),
+                                    "desktop" => launch_focused(app, &socket, &scene),
                                     "xr" => bridge
                                         .as_ref()
                                         .ok_or_else(|| "Native compositor required".to_string())
-                                        .and_then(|b| launch(app, &b.lock().unwrap().xr_socket)),
+                                        .map(|b| b.lock().unwrap().xr_socket.clone())
+                                        .and_then(|socket| launch_focused(app, &socket, &scene)),
                                     _ => Err("Unknown launch realm".into()),
                                 }
                             }

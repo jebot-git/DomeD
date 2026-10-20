@@ -98,6 +98,7 @@ impl Dome {
         self.task_context = false;
         self.about = false;
         self.appearance_open = false;
+        self.default_apps_open = false;
         self.xr_settings_open = false;
         self.session_confirm = None;
         self.tray.close();

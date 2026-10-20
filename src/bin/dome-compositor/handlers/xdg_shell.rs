@@ -1,8 +1,6 @@
 use smithay::{
     delegate_xdg_shell,
-    desktop::{
-        find_popup_root_surface, get_popup_toplevel_coords, PopupKind, PopupManager, Window,
-    },
+    desktop::{find_popup_root_surface, PopupKind, PopupManager, Window},
     input::{
         pointer::{Focus, GrabStartData as PointerGrabStartData},
         Seat,
@@ -211,6 +209,7 @@ impl XdgShellHandler for Dome {
             keyboard.set_focus(self, grab.current_grab(), serial);
             keyboard.set_grab(self, PopupKeyboardGrab::new(&grab), serial);
             pointer.set_grab(self, PopupPointerGrab::new(&grab), serial, Focus::Keep);
+            self.popup_grab = Some(grab);
         }
     }
 }
@@ -303,14 +302,82 @@ impl Dome {
                 .into(),
         );
 
-        // The target geometry for the positioner should be relative to its parent's geometry, so
-        // we will compute that here.
-        let mut target = output_geo;
-        target.loc -= get_popup_toplevel_coords(&PopupKind::Xdg(popup.clone()));
-        target.loc -= window_geo.loc;
-
+        // Children can be created before their parent's first buffer commit.
+        // Use the geometry already configured to the client, including pending state.
+        let mut parent_offset = smithay::utils::Point::<i32, smithay::utils::Logical>::from((0, 0));
+        let mut parent_size = window_geo.size;
+        let mut ancestor = popup.get_parent_surface();
+        for depth in 0..16 {
+            let Some(surface) = ancestor else {
+                break;
+            };
+            let state = with_states(&surface, |states| {
+                let data = states
+                    .data_map
+                    .get::<smithay::wayland::shell::xdg::XdgPopupSurfaceData>()?
+                    .lock()
+                    .unwrap();
+                let geometry = data
+                    .server_pending
+                    .as_ref()
+                    .unwrap_or_else(|| data.current_server_state())
+                    .geometry;
+                Some((geometry, data.parent.clone()))
+            });
+            let Some((geometry, next)) = state else {
+                break;
+            };
+            parent_offset += geometry.loc;
+            if depth == 0 {
+                parent_size = geometry.size;
+            }
+            ancestor = next;
+        }
+        let parent = dome::Rect {
+            x: (window_geo.loc.x + parent_offset.x) as f32,
+            y: (window_geo.loc.y + parent_offset.y) as f32,
+            w: parent_size.w as f32,
+            h: parent_size.h as f32,
+        };
+        let work = dome::Rect {
+            x: output_geo.loc.x as f32,
+            y: (output_geo.loc.y + 36) as f32,
+            w: output_geo.size.w as f32,
+            h: (output_geo.size.h - 96).max(1) as f32,
+        };
+        let context = self
+            .context_menus
+            .iter()
+            .find(|m| m.surface == *popup.wl_surface());
         popup.with_pending_state(|state| {
-            state.geometry = state.positioner.get_unconstrained_geometry(target);
+            let size = state.positioner.get_geometry().size;
+            let placed = if let Some(context) = context {
+                dome::context_menu::rect(
+                    parent,
+                    context.point,
+                    [size.w as f32, (size.h as f32).min(work.h)],
+                    work,
+                )
+            } else if self.input_realm == dome::Realm::Xr {
+                dome::Rect {
+                    x: parent.x + (parent.w - size.w as f32) / 2.,
+                    y: parent.y - size.h as f32 - 8.,
+                    w: size.w as f32,
+                    h: size.h as f32,
+                }
+            } else {
+                dome::spatial_popup::desktop_rect(parent, [size.w as f32, size.h as f32], work)
+            };
+            // Publish DomeD's placement to the client. Moving only the drawn
+            // surface leaves GTK/Chromium's submenu navigation in the wrong space.
+            state.geometry = Rectangle::new(
+                (
+                    (placed.x - parent.x).round() as i32,
+                    (placed.y - parent.y).round() as i32,
+                )
+                    .into(),
+                size,
+            );
         });
     }
 }

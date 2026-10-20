@@ -90,6 +90,8 @@ try:
             display_name = ":" + pipe.readline().strip()
         assert display_name != ":"
         env = {**os.environ, "DISPLAY": display_name, "XDG_RUNTIME_DIR": directory,
+               "DOME_LOGIN_SESSION": "0", "DOME_BACKEND": "nested", "DOME_START_XR": "0", "DOME_RENDERER": "gles",
+               "SDL_VIDEO_WAYLAND_ALLOW_LIBDECOR": "0",
                "XDG_CONFIG_HOME": str(runtime / "config"), "SHELL": "/bin/sh",
                "DOME_PREVIEW_PORT": str(port), "DOME_TERMINAL_MODE": "overlay",
                "DOME_TERMINAL": str(root / "../ghostty-xr/build/ghostty-xr"), "LIBGL_ALWAYS_SOFTWARE": "1", "RUST_LOG": "warn", "SDL_JOYSTICK_DISABLE_UDEV": "1",
@@ -135,6 +137,29 @@ try:
         key("Return")
         wait(lambda: (runtime / "typed").exists())
         assert (runtime / "typed").read_text().strip() == "domed"
+        # Clipboard shortcuts must use the seat's selection, including UTF-8 paste.
+        wayland = re.search(r"Dome Wayland socket: (\S+)", (out / "compositor.log").read_text())[1]
+        clipboard_env = {**env, "WAYLAND_DISPLAY": wayland}
+        pasted = runtime / "pasted"
+        command = "printf '%s' 'Žluťoučký 日本語' > " + str(pasted)
+        subprocess.run(["wl-copy", "--type", "text/plain;charset=utf-8"], input=command.encode(),
+                       env=clipboard_env, check=True, timeout=3)
+        assert subprocess.check_output(["wl-paste", "--no-newline"], env=clipboard_env, timeout=3).decode() == command
+        action({"op": "focus", "id": first})
+        time.sleep(.3)
+        key("Control_L", True); key("Shift_L", True); key("v")
+        key("Shift_L", False); key("Control_L", False)
+        time.sleep(.2); key("Return")
+        wait(lambda: pasted.exists())
+        assert pasted.read_text() == "Žluťoučký 日本語"
+        key("Control_L", True); key("Shift_L", True); key("a"); key("c")
+        key("Shift_L", False); key("Control_L", False)
+        copied = subprocess.check_output(["wl-paste", "--no-newline"], env=clipboard_env, timeout=3).decode()
+        assert "domed" in copied, copied
+        # Exercise the windowless overlay backend without opening a headset or input device.
+        helper = root / "../ghostty-xr/build/clipboard-test"
+        subprocess.run([str(helper)], env={**clipboard_env, "GHOSTTY_CLIPBOARD_INTEGRATION": "1"},
+                       check=True, timeout=8)
         key("Super_L", True)
         key("t")
         key("Super_L", False)
@@ -169,7 +194,7 @@ try:
         except socket.timeout:
             pass
         xd.close()
-        print("PASS: desktop terminal independent of suspended XR overlay, Wayland identity, seat typing, Super+T, multiple instances, XR texture bridge, maximize/minimize/focus/close, socket cleanup")
+        print("PASS: independent desktop terminal, clipboard copy/UTF-8 paste, windowless clipboard roundtrip, Wayland seat typing, Super+T, XR texture bridge, window lifecycle and socket cleanup")
 finally:
     overlay.close()
     for child in reversed(processes):

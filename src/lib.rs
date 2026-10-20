@@ -1,5 +1,6 @@
 //! Shared policy: desktop and XR are projections of the same window identities.
 pub mod scene;
+pub mod session_state;
 pub mod service;
 pub use scene::*;
 

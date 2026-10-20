@@ -26,6 +26,7 @@ impl Dome {
 
     /// Refresh from committed Wayland resources, never from client-controlled IDs.
     pub fn sync_spatial_popups(&mut self) {
+        self.cleanup_popup_grab();
         let mut live = Vec::new();
         for (id, window) in &self.registry {
             for (popup, location) in
@@ -155,7 +156,13 @@ impl Dome {
                 .context_menus
                 .iter()
                 .find(|m| m.surface == *popup.wl_surface());
-            let owner_rect = self.scene.lock().unwrap().window(root).map(|w| w.desktop);
+            let owner = self
+                .scene
+                .lock()
+                .unwrap()
+                .window(root)
+                .map(|w| (w.desktop, w.maximized));
+            let owner_rect = owner.map(|(rect, _)| rect);
             let work_height = if self.input_xr_active {
                 672.
             } else {
@@ -170,6 +177,48 @@ impl Dome {
                     .unwrap_or(704)
                     .max(1) as f32
             };
+            let mut anchor = Rect {
+                x: (location.x - offset.x) as f32,
+                y: (location.y - offset.y) as f32,
+                w: geo.size.w as f32,
+                h: geo.size.h as f32,
+            };
+            // Input-method popups have no xdg configure. Their cursor rectangle
+            // is an origin hint; apply DomeD placement here, independently of
+            // xdg popups whose configured geometry must be used unchanged.
+            if matches!(popup, PopupKind::InputMethod(_)) {
+                if let Some(parent) = owner_rect {
+                    let output = self.output_geometry_at(
+                        (
+                            parent.x as f64 + parent.w as f64 / 2.,
+                            parent.y as f64 + parent.h as f64 / 2.,
+                        )
+                            .into(),
+                    );
+                    let work = Rect {
+                        x: output.loc.x as f32,
+                        y: output.loc.y as f32 + 36.,
+                        w: output.size.w as f32,
+                        h: (output.size.h - 96).max(1) as f32,
+                    };
+                    let parent = if owner.is_some_and(|(_, maximized)| maximized) {
+                        work
+                    } else {
+                        parent
+                    };
+                    let placed = if self.input_realm == dome::Realm::Xr {
+                        Rect {
+                            x: parent.x + (parent.w - anchor.w) / 2.,
+                            y: parent.y - anchor.h - 8.,
+                            ..anchor
+                        }
+                    } else {
+                        dome::spatial_popup::desktop_rect(parent, [anchor.w, anchor.h], work)
+                    };
+                    anchor.x = placed.x - parent.x;
+                    anchor.y = placed.y - parent.y;
+                }
+            }
             descriptors.push(Popup {
                 context_at: context.map(|m| m.point),
                 viewport: context.map(|m| {
@@ -178,12 +227,7 @@ impl Dome {
                 id: *id,
                 parent,
                 root,
-                anchor: Rect {
-                    x: (location.x - offset.x) as f32,
-                    y: (location.y - offset.y) as f32,
-                    w: geo.size.w as f32,
-                    h: geo.size.h as f32,
-                },
+                anchor,
             });
         }
         self.spatial_popups = live.into_iter().map(|(id, _, p, _)| (id, p)).collect();
@@ -256,6 +300,36 @@ impl Dome {
                 smithay::utils::SERIAL_COUNTER.next_serial(),
                 self.start_time.elapsed().as_millis() as u32,
             );
+        }
+        self.applied_revision = u64::MAX;
+        self.popup_grab = None;
+    }
+
+    pub fn cleanup_popup_grab(&mut self) {
+        if !self.popup_grab.as_ref().is_some_and(|g| g.has_ended()) {
+            return;
+        }
+        self.popup_grab = None;
+        if let Some(pointer) = self.seat.get_pointer().filter(|p| {
+            p.with_grab(|_, g| g.is::<smithay::desktop::PopupPointerGrab<Self>>())
+                .unwrap_or(false)
+        }) {
+            pointer.unset_grab(
+                self,
+                smithay::utils::SERIAL_COUNTER.next_serial(),
+                self.start_time.elapsed().as_millis() as u32,
+            );
+        }
+        if let Some(keyboard) = self.seat.get_keyboard().filter(|k| {
+            k.with_grab(|_, g| g.is::<smithay::desktop::PopupKeyboardGrab<Self>>())
+                .unwrap_or(false)
+        }) {
+            keyboard.unset_grab(self);
+            let focused = self.scene.lock().unwrap().focused;
+            let surface = focused
+                .and_then(|id| self.registry.iter().find(|(i, _)| *i == id))
+                .map(|(_, w)| w.toplevel().unwrap().wl_surface().clone());
+            keyboard.set_focus(self, surface, smithay::utils::SERIAL_COUNTER.next_serial());
         }
         self.applied_revision = u64::MAX;
     }

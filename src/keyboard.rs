@@ -1,5 +1,46 @@
 //! Persistent XKB settings shared by the desktop and XR seat.
 use serde::{Deserialize, Serialize};
+
+/// Default input choices; Fcitx keyboard-rs uses XKB's Cyrillic Serbian default.
+pub const INPUT_METHODS: &[(&str, &str)] = &[
+    ("keyboard-us", "US"),
+    ("anthy", "あ"),
+    ("keyboard-cz", "CZ"),
+    ("hangul", "한"),
+    ("keyboard-rs", "СР"),
+];
+
+pub fn input_method_label(method: &str) -> Option<&'static str> {
+    INPUT_METHODS
+        .iter()
+        .find(|(id, _)| *id == method)
+        .map(|(_, label)| *label)
+}
+
+/// Preserve custom ordering/layout overrides; add only engines actually installed.
+pub fn complete_input_methods(
+    existing: &[(String, String)],
+    available: &[String],
+) -> Vec<(String, String)> {
+    let mut result = existing.to_vec();
+    for (id, _) in INPUT_METHODS {
+        if available.iter().any(|name| name == id) && !result.iter().any(|(name, _)| name == id) {
+            result.push(((*id).into(), String::new()));
+        }
+    }
+    result
+}
+
+pub fn next_input_method<'a>(current: &str, methods: &'a [(String, String)]) -> Option<&'a str> {
+    if methods.is_empty() {
+        return None;
+    }
+    let index = methods
+        .iter()
+        .position(|(id, _)| id == current)
+        .map_or(0, |i| (i + 1) % methods.len());
+    Some(&methods[index].0)
+}
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Keyboard {
@@ -116,6 +157,32 @@ impl Keyboard {
 mod tests {
     use super::*;
     #[test]
+    fn input_choices_preserve_custom_methods_and_skip_uninstalled_engines() {
+        let existing = vec![
+            ("keyboard-us".into(), "us".into()),
+            ("custom".into(), "cz".into()),
+        ];
+        let available = vec![
+            "keyboard-us".into(),
+            "keyboard-cz".into(),
+            "keyboard-rs".into(),
+        ];
+        let methods = complete_input_methods(&existing, &available);
+        assert_eq!(&methods[..2], &existing);
+        assert_eq!(methods[2].0, "keyboard-cz");
+        assert_eq!(methods[3].0, "keyboard-rs");
+        assert_eq!(complete_input_methods(&methods, &available), methods);
+        assert_eq!(next_input_method("keyboard-us", &methods), Some("custom"));
+        assert_eq!(
+            next_input_method("keyboard-rs", &methods),
+            Some("keyboard-us")
+        );
+        assert_eq!(next_input_method("unknown", &methods), Some("keyboard-us"));
+        assert_eq!(next_input_method("keyboard-us", &[]), None);
+        assert_eq!(input_method_label("hangul"), Some("한"));
+        assert_eq!(input_method_label("keyboard-rs"), Some("СР"));
+    }
+    #[test]
     fn shortcuts_do_not_conflict_with_launcher_or_extra_modifiers() {
         for shortcut in [
             SwitchShortcut::SuperShiftSpace,
@@ -141,5 +208,61 @@ mod tests {
         assert!(c.validate().is_ok());
         c.variant = "qwerty;bad".into();
         assert!(c.validate().is_err());
+    }
+}
+
+/// KDE's kcminputrc uses 0=on, 1=off and 2=leave unchanged.
+pub fn numlock_setting(config: &str) -> Option<bool> {
+    let mut keyboard = false;
+    let mut result = None;
+    for line in config.lines().map(str::trim) {
+        if line.starts_with('#') || line.starts_with(';') {
+            continue;
+        }
+        if line.starts_with('[') {
+            keyboard = line == "[Keyboard]";
+            continue;
+        }
+        if keyboard {
+            if let Some((key, value)) = line.split_once('=') {
+                if key.trim() == "NumLock" {
+                    result = match value.trim() {
+                        "0" => Some(true),
+                        "1" => Some(false),
+                        _ => None,
+                    };
+                }
+            }
+        }
+    }
+    result
+}
+pub fn startup_numlock() -> Option<bool> {
+    let directory = std::env::var_os("XDG_CONFIG_HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            std::path::PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".config")
+        });
+    std::fs::read_to_string(directory.join("kcminputrc"))
+        .ok()
+        .and_then(|s| numlock_setting(&s))
+}
+#[cfg(test)]
+mod numlock_tests {
+    use super::*;
+    #[test]
+    fn kde_numlock_preferences_and_other_groups() {
+        assert_eq!(
+            numlock_setting("[Keyboard]\nNumLock=0\n[Mouse]\nNumLock=1"),
+            Some(true)
+        );
+        assert_eq!(numlock_setting("[Keyboard]\nNumLock = 1"), Some(false));
+        for value in ["2", "", "garbage"] {
+            assert_eq!(
+                numlock_setting(&format!("[Keyboard]\nNumLock={value}")),
+                None
+            );
+        }
+        assert_eq!(numlock_setting("[Mouse]\nNumLock=0"), None);
     }
 }

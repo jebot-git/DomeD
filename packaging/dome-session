@@ -14,9 +14,15 @@ if [[ "${1:-}" == --check ]]; then
         echo 'KWallet is optional and is not installed.'
     fi
     if command -v fcitx5 >/dev/null && [[ -f /usr/share/fcitx5/inputmethod/anthy.conf ]]; then
-        echo 'US English / Anthy input switching is available through Fcitx5.'
+        echo 'English / Japanese / Czech / Serbian Cyrillic input switching is available through Fcitx5.'
     else
         echo 'Install fcitx5 and fcitx5-anthy for Japanese input.'
+    fi
+    if [[ -f /usr/share/fcitx5/inputmethod/hangul.conf ]]; then
+        echo 'Korean Hangul composition is available through Fcitx5.'
+    fi
+    if [[ "${DOME_FLTK_HOOKS:-1}" != 0 && -f "$HOME/.local/lib/domed/fltk/libfltk.so.1.4" ]]; then
+        echo 'User-local FLTK Wayland popup dismissal hook is available.'
     fi
     exit 0
 fi
@@ -41,6 +47,12 @@ unset DISPLAY WAYLAND_DISPLAY WAYLAND_SOCKET
 export XDG_CURRENT_DESKTOP=Dome XDG_SESSION_DESKTOP=dome XDG_SESSION_TYPE=wayland
 export QT_QPA_PLATFORM=wayland
 export QT_IM_MODULE=wayland GTK_IM_MODULE=fcitx XMODIFIERS=@im=fcitx
+# Native FLTK 1.4 otherwise reopens menus dismissed by the compositor. Keep the
+# compatibility core local to this session; never replace distribution libraries.
+fltk_runtime="$HOME/.local/lib/domed/fltk"
+if [[ "${DOME_FLTK_HOOKS:-1}" != 0 && -f "$fltk_runtime/libfltk.so.1.4" ]]; then
+    export LD_LIBRARY_PATH="$fltk_runtime${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+fi
 export DOME_LOGIN_SESSION=1 DOME_BACKEND=drm
 export LIBSEAT_BACKEND="${LIBSEAT_BACKEND:-logind}"
 export DOME_START_XR="${DOME_START_XR:-1}"

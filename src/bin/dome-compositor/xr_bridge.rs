@@ -25,6 +25,9 @@ impl Dome {
         if let Some(menu) = self.menu {
             top = (40 + self.menu_items(menu).len() as i32 * 28 + 4).min(height);
         }
+        for panel in self.appmenu_panels(width, height) {
+            top = top.max((panel.y + panel.rows.len() as i32 * 28 + 8).min(height));
+        }
         let tray = self.tray.state();
         if tray.menu.is_some() {
             top = top.max((40 + tray.rows.len() as i32 * 28 + 4).min(height));
@@ -35,6 +38,7 @@ impl Dome {
         if self.audio_open
             || self.history_panel.is_some()
             || self.about
+            || self.default_apps_open
             || self.appearance_open
             || self.xr_settings_open
             || self.session_confirm.is_some()
@@ -268,8 +272,9 @@ impl Dome {
                         self.xr_shell_pos = Some([x, y]);
                         self.audio_motion(x, layout.width as i32, layout.height as i32);
                         self.task_motion(x, y, layout.width as i32, layout.height as i32);
-                        if let Some(menu) = self.menu {
-                            let x0 = [0., 46., 230., 280., 332., 390., 470.][menu];
+                        self.appmenu_motion(x, y, layout.width as i32, layout.height as i32);
+                        if let Some(menu) = self.menu.filter(|m| !self.exported_menu(*m)) {
+                            let x0 = self.menu_x(menu);
                             self.menu_hover = if x >= x0 && x < x0 + 380. && y >= 40. {
                                 ((y - 40.) / 28.) as i32
                             } else {
@@ -632,6 +637,7 @@ impl Dome {
         }
     }
     pub fn export_xr_surface(&mut self, renderer: &mut GlesRenderer) {
+        self.update_task_previews(renderer);
         let request = {
             let mut b = self.xr_bridge.lock().unwrap();
             b.requested.retain(|_, t| t.elapsed().as_secs_f32() < 0.5);

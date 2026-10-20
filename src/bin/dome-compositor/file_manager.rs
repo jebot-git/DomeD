@@ -37,8 +37,8 @@ impl Server {
         let socket = self.socket(connection, header).await;
         let mut arguments: Vec<String> = option.into_iter().map(str::to_owned).collect();
         arguments.push("--".into()); arguments.extend(urls);
-        let binary = std::env::var_os("DOME_FILE_MANAGER").unwrap_or_else(|| "fsv-xr".into());
-        let mut command = dome::file_manager::command_for(&socket, binary, &arguments);
+        let mut command = dome::file_manager::command(&socket, &arguments)
+            .map_err(|e|zbus::fdo::Error::Failed(e.to_string()))?;
         if !startup.is_empty() { command.env("DESKTOP_STARTUP_ID", startup); }
         let mut child = command.spawn().map_err(|e| zbus::fdo::Error::Failed(format!("Cannot launch file manager: {e}")))?;
         std::thread::spawn(move || { let _ = child.wait(); });

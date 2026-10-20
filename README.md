@@ -12,8 +12,9 @@ and the OpenXR frontend are Rust; a small C++ FFI adapter calls Qt6 painting/sty
 Mac-style global menu and a native Rust/OpenXR frontend displaying live Wayland
 window textures, open cylindrical dome surfaces, flat pulled-out panels and
 shared XR shell bars. Application identity/actions use XDG desktop entries; the
-status area hosts StatusNotifier items and DBusMenu menus. WiVRn marker localization
-and arbitrary application-internal global-menu import remain future work.
+status area hosts StatusNotifier items and DBusMenu menus. Focused applications
+can export their real menu bars through KDE AppMenu and DBusMenu. WiVRn marker
+localization remains future work.
 
 ![Dome layout laboratory](docs/preview.png)
 
@@ -96,7 +97,7 @@ texture transport without a headset; headset appearance still needs visual testi
 Install a Rust toolchain, C linker, `pkg-config`, Wayland/EGL/GLES and xkbcommon
 development packages. On Ubuntu/Debian the development packages are typically
 `build-essential pkg-config libwayland-dev libegl1-mesa-dev libgles2-mesa-dev
-libxkbcommon-dev qt6-base-dev`. Qt6 Widgets 6.4 or newer supplies shell fonts,
+libxkbcommon-dev qt6-base-dev libfontconfig1-dev libfreetype-dev libglib2.0-dev`. Qt6 Widgets 6.4 or newer supplies shell fonts,
 menu styling and server-side window decorations. Then run from an existing Wayland or X11 desktop:
 
 ```sh
@@ -186,6 +187,19 @@ becomes available. `DOME_START_XR=0` disables automatic XR startup and
 `$XDG_STATE_HOME/dome/logs` (default `~/.local/state/dome/logs/latest.log`).
 Run `dome-session --check` to verify installation dependencies.
 
+Native logins save open applications and window placement in
+`$XDG_STATE_HOME/dome/session.json` (normally `~/.local/state/dome/session.json`).
+The next login reopens applications using their saved argument boundaries and
+working directories, then restores workspaces, lane order/rotation, desktop
+geometry and stacking, minimized/maximized state, and XR poses, scale, dome offsets and
+pullout placement. XR presenters recreated later by their owning applications
+retain their placement even when the headset starts after login. Transient
+dialogs and popups are excluded; document recovery remains application-owned.
+The file is private and written atomically, with background checkpoints and a
+final save before logout, restart, shutdown or compositor termination.
+`DOME_SESSION_RESTORE=0` disables both saving and restoring. Nested sessions leave
+the saved login untouched unless explicitly enabled with `DOME_SESSION_RESTORE=1`.
+
 For real KMS regression tests without using the current seat, prepare a private
 VKMS card, then run the native tests. They exercise actual kernel page flips,
 Wayland and EGL client pixels, seat pause/resume, held-button release, inactive
@@ -209,6 +223,29 @@ write diagnostic framebuffer snapshots and scanout counters when explicitly set.
 names reports per GPU. The native tests cover two heads, unplug/replug, negative
 coordinates and a client moving between two virtual GPU devices.
 
+## Compositor renderer
+
+DomeD defaults to `--renderer vulkan` (`DOME_RENDERER=vulkan`). Smithay's GLES
+renderer runs through [Mesa Zink](https://docs.mesa3d.org/drivers/zink.html), which
+executes composition on Vulkan. This is a Vulkan-backed GLES implementation,
+not a separate native Vulkan implementation of Smithay's renderer traits.
+Mesa Zink and a Vulkan driver for the GPU are required. Startup logs the actual
+renderer and rejects a Vulkan request if the driver is not Zink.
+
+Native DRM composition renders to GBM scanout buffers. Nested mode uses an
+independent Vulkan context for composition and copies the finished frame through
+a GLES presentation context, so the host display need not provide Vulkan WSI.
+The nested copy is intended for development; it is not a zero-copy path. Driver
+selection is confined to compositor context creation and does not override the
+renderers of launched applications. `--renderer gles` or `DOME_RENDERER=gles`
+selects the previous GLES path. `DOME_RENDER_CAPTURE=/path/frame.ppm` enables
+nested framebuffer readback for diagnostics.
+
+The keyboard respects `[Keyboard] NumLock` in `kcminputrc`: `0` enables NumLock,
+`1` disables it, and `2` (or an absent setting) preserves the existing kernel LED
+state when available. NumLock and CapsLock survive keyboard layout changes, and native
+keyboard LEDs follow NumLock/CapsLock/ScrollLock, including newly added devices.
+
 ## Clipboard, KWallet and KDE Connect
 
 DomeD supports regular Wayland copy/paste, primary selection (middle-click paste),
@@ -228,10 +265,11 @@ requires PAM login credentials; passwordless login can still require a wallet
 password. The tests use a separate bus, HOME and encrypted disposable wallet and
 verify the real password dialog, Secret Service write/read, and KWallet API.
 
-KDE Connect's daemon/CLI and graphical interface can run inside DomeD; launch
-KDE Connect or its indicator from the application menu. DomeD does not yet run
-general XDG autostart entries, so background discovery should not be assumed at
-login. Remote phone mouse/keyboard control is currently unavailable because DomeD
+KDE Connect's indicator starts automatically at login when `kdeconnect-indicator`
+is installed, after the session's Wayland display is ready. Set
+`DOME_START_KDECONNECT=0` to disable this startup. Its daemon/CLI and graphical
+interface can also run inside DomeD. DomeD does not yet run general XDG autostart
+entries. Remote phone mouse/keyboard control is currently unavailable because DomeD
 has no Remote Desktop portal backend. DomeD now supplies the notification server
 and action buttons used by KDE Connect, including pairing requests. Device pairing,
 network file transfers and phone-side operation require a real-device test. The
@@ -260,9 +298,10 @@ Body text is plain text; sound, image hints, markup, inline reply, and persisten
 notification history are not advertised or implemented. Another desktop's existing
 notification daemon is never replaced by a nested DomeD test.
 
-US English and **Anthy** Japanese input are the defaults, using the installed
-Fcitx5 framework. **Super+Space** switches US ↔ Anthy; **Super+Shift+Space** opens
-the application launcher. Clicking the top-bar US/あ indicator also switches input
+US English, **Anthy** Japanese, Czech, Korean **Hangul**, and Serbian Cyrillic
+input use the installed Fcitx5 framework. **Super+Space** cycles the available
+methods; **Super+Shift+Space** opens the application launcher. Clicking the
+top-bar US/あ/CZ/한/СР indicator also switches input
 methods. The native login session starts Fcitx5 on a private, trusted Wayland
 connection. Input-method-v2 and virtual-keyboard privileges are restricted to that
 connection. Text-input-v3 clients receive Japanese preedit, conversion and commit;
@@ -270,16 +309,20 @@ candidate popups use the same desktop and spatial popup pipeline as application
 popups and retain the text field's keyboard focus.
 
 Fcitx5's Dome-specific configuration lives under `~/.config/dome/fcitx5/`, with
-`keyboard-us` and `anthy` seeded only when no Dome profile exists. Another session's
+`keyboard-us` and `anthy` seeded when no Dome profile exists. Startup adds installed
+`keyboard-cz`, `hangul` and `keyboard-rs` choices to the active Dome group while
+preserving existing entries, order and layout overrides. Serbian uses the default
+Cyrillic XKB layout; Hangul uses Korean syllable composition. Another session's
 Fcitx5 instance and configuration are preserved. GTK applications use the Fcitx
 module; Qt6 uses native Wayland text input. Applications need a compatible text
-input protocol or toolkit module. Fcitx5 and `fcitx5-anthy` must be installed.
+input protocol or toolkit module. Fcitx5, `fcitx5-anthy` and `fcitx5-hangul` supply
+the complete set; unavailable engines are omitted from the switch cycle.
 Nested tests start the framework only with `DOME_START_IME=1`; a normal nested
 preview leaves the host input-method service alone.
 
 Open **Dome menu → Keyboard Layouts…** to edit up to four comma-separated XKB
 layout names, positional variants, options and switching shortcut. The panel also
-selects whether the shortcut switches US/Anthy input methods or XKB layout groups.
+selects whether the shortcut switches input methods or XKB layout groups.
 Click a text field, use Ctrl+A to clear it, and Enter to apply or Esc to cancel.
 Invalid keymaps leave the working configuration intact. Keyboard preferences and
 the last XKB group save to `$XDG_CONFIG_HOME/dome/keyboard.json` (normally
@@ -378,9 +421,10 @@ Their placement follows the active projection:
 * **Room dome:** a flat panel 14 cm forward and 4 cm above the parent's upper edge.
   A thin blue beam connects its lower edge to the origin on the parent surface.
   The beam is decorative and never captures mouse or hand input.
-* **Desktop:** a separate panel to the right with an 8 logical pixel gap. If its
-  full width cannot fit, it is layered over the parent instead. Placement stays
-  within the work area between the shell bars; oversized client buffers are clipped.
+* **Desktop:** a separate panel to the right with an 8 logical pixel gap, or over
+  the parent when space is tight. DomeD announces this placement in the Wayland
+  popup configure event so GTK, Chromium and other clients use the same coordinates
+  for submenu navigation. Placement stays within the work area between shell bars.
 
 Popup textures are captured separately from parent textures, and pointer UVs map
 to the actual popup surface. Popups follow parent movement, scale, workspaces and
@@ -432,8 +476,9 @@ XR surfaces contain client content without compositor titlebars or borders; the
 focused window expands **4 logical pixels on each edge**, filling four pixels
 of the adjacent gap. A 1 mm depth bias keeps raised edges in front. Global menus
 own window commands. Applications that draw controls into their own client buffers
-retain those controls. Arbitrary application-internal global menus are not yet
-imported.
+retain those controls. Menu-exporting applications provide their actual command
+trees in the global bar; applications without an exported menu keep their controls
+in their own windows.
 
 Dome has two Wayland sockets, printed at startup. Desktop launches connect to the
 normal socket and appear in both projections. Launches through the XR shell use
@@ -491,12 +536,69 @@ through the Window menu, taskbar and Super+M. Border resizing and Shift-drag til
 continue to work. These gadgets apply to desktop frames; XR client panels retain
 their existing presentation.
 
-Appearance offers a light/dark colour scheme, accent, desktop background, chrome opacity and
+Appearance offers a light/dark colour scheme, accent, desktop background, chrome opacity, global bitmap font and native pixel size, and
 mouse-to-hand idle delay, persisted in `$XDG_CONFIG_HOME/dome/appearance.json`.
 Window titlebars and borders follow the selected theme, accent and chrome opacity;
 existing windows repaint immediately, including inactive decorations. The global
 menu bar and taskbar use the same colours and opacity, in desktop and
 XR. Global menu and status dropdowns share that palette.
+
+The global font applies to all Dome-owned menus, panels, dialogs, notifications
+and window captions in desktop and XR. The picker offers only fixed-strike fonts
+with a Unicode character map and Latin text coverage, with each font's available
+native pixel sizes from 8–24 px. Outline and symbol-only fonts are excluded.
+GNU Unifont's 16 px Unicode bitmap face is embedded as the default, including
+Japanese glyphs. DenkiChip Hangul at 12 px and Galmuri 7/9/11/14 bitmap-only faces are
+also embedded as Japanese/Korean options; their native strikes are offered
+without substituting their outline versions. Cozette 1.30.0 is also embedded
+as a native 13 px bitmap option. Installed PCF, BDF and OTB fonts are discovered at compositor
+startup, including user fonts in the usual data directories. No system Fontconfig
+policy is changed. Settings save automatically; existing chrome repaints when
+the font changes. Qt and GTK application controls inherit the session font, size,
+light/dark mode and accent. Existing toolkit windows update when these settings
+change; application-specific editor and document preferences still apply.
+
+The login session publishes a desktop Settings portal and generates private GTK
+themes and a Fontconfig configuration under its runtime directory. A GTK bridge
+also updates portal dialogs. Other desktop sessions' settings are preserved.
+Qt applications need their GTK platform-theme plugin (`qt6-gtk-platformtheme` on
+Ubuntu) and the GTK3 runtime to receive the shared palette and font.
+
+`scripts/test-toolkit-appearance.py` checks real Qt, GTK3 and GTK4 windows launched
+through Dome, live appearance changes, portal-dialog settings, and subsequent
+launches. Build `scripts/toolkit-client.cpp` with Qt6Widgets into
+`artifacts/toolkit-appearance/qt-client` first; the test needs Python Xlib, Pillow,
+GTK introspection and Xvfb. Its report and screenshot go to that same directory.
+
+**Default Applications…** is available from the system menu and the Appearance
+pane. It covers folders, text/Markdown/JSON, PDF and Office documents, common
+image/audio/video formats, archives, and web/email links. Select a file type,
+choose a registered application, and confirm **Use selected application**.
+Arrow keys navigate, Enter opens/applies, Escape goes back, and the mouse wheel
+browses the list. Refresh reloads the available handlers. Missing handlers and
+save errors are shown in the pane.
+
+Associations are saved atomically in `$XDG_CONFIG_HOME/dome-mimeapps.list`,
+the standard desktop-specific MIME preferences honored by GIO and file-opening
+tools in Dome. Other desktop sessions retain their own defaults. When installed,
+`fsvr` (or `fsx-vr`, then the legacy `fsv-xr` name) is preferred for folders;
+an explicit Dome folder choice takes precedence. **Open Files**, Super+E and
+the FileManager1 service use that choice with the requesting Wayland realm.
+`DOME_FILE_MANAGER` remains an explicit launch override.
+
+[Miro PDF](https://github.com/vincent-uden/miro) is the recommended optional PDF
+viewer. When installed, Dome selects `miro-pdf` for PDF files unless a Dome PDF
+choice already exists. Without Miro, choose and install a viewer yourself in
+Default Applications; Dome does not select a replacement. Other desktops' PDF
+preferences are preserved.
+
+`scripts/install-miro.sh` builds and installs Miro 0.12.0 into `~/.local` from
+the verified upstream revision with Dome's appearance patch. It requires Rust,
+a C/C++ toolchain, Clang headers, and Fontconfig/GLib development packages.
+In a Dome session, Miro follows Appearance's light/dark setting on startup and
+while open, for both its interface and PDF pages. Its saved preferences remain
+unchanged and continue to apply outside Dome. See
+`native/toolkit-hooks/README.md` for patch provenance.
 
 XR window gaps are at most **8 Wayland logical content pixels**, horizontally
 and between lanes, including **room-dome view**. Different client sizes and crowded rings use the smaller
@@ -524,16 +626,50 @@ and mouse hit testing; its visual outset is not saved into gesture transforms.
 The application catalog reads standard XDG data directories and recursive desktop
 file IDs, with user overrides/hidden tombstones, locale-aware names, icons,
 categories, keywords, visibility rules, TryExec and Desktop Actions. GIO performs
-launching and field-code expansion. The active application's global menu derives
-its name and actions from its desktop entry, alongside compositor window/edit
-commands. It does not invent an application's internal menu tree.
+launching and field-code expansion. A launcher request also restores and focuses
+a matching existing window through DomeD's window policy, including applications
+whose toolkit omits an activation request. The system menu remains available at the left.
+The bold application menu follows focus and provides application identity, desktop
+actions, hide and quit commands. The focused window's exported menus replace
+Dome's generic File/Edit/View/Window/Help menus. Windows without an exported menu
+show the system and application menus rather than another application's commands.
 
-The global bar follows the classic Apple arrangement: system menu, bold active
-application, File/Edit/View/Window/Help, and right-aligned monochrome status extras
-and clock. StatusNotifierItem icons and DBusMenu actions run through a Rust worker;
-Dome uses an existing watcher when present and creates one only when absent.
-Application command menus are separate from XDG desktop entries: importing
-arbitrary toolkit-exported application menus is still future work.
+KDE's `org_kde_kwin_appmenu_manager` Wayland protocol associates each window with
+its `com.canonical.dbusmenu` endpoint. Dome announces the standard AppMenu registrar
+when no host owns it, reads menu updates off the rendering thread, and supports
+nested menus, shortcuts, disabled/hidden items and check/radio state. Focus changes,
+dialog parent menus, exporter removal and desktop/XR routing share the same menu
+selection and hit testing. Toolkits must export a native menu; Dome cannot extract
+commands drawn privately inside an application's content. Qt
+native menu export is discovered through the registrar; both the default Qt theme
+and the KDE platform theme work without changing Dome's desktop identity. The right side hosts StatusNotifier icons and a clock;
+Dome uses an existing status watcher when present and creates one only when absent.
+
+GTK applications use the `gtk_shell1` Wayland handshake and `org.gtk.Menus` /
+`org.gtk.Actions` exports. DomeD announces that the shell owns application menus
+and menu bars, reads their live models, and dispatches actions on the focused
+application. Login sessions enable an installed `appmenu-gtk-module` for legacy
+GTK3 menu bars while preserving existing GTK modules. If that module omits its
+surface address, DomeD can use an unambiguous export from the surface client's
+verified process; it never guesses between different windows' exports.
+
+DomeD configures application popup positions before mapping them, including
+submenus created before their parent's first commit. Drawing, hit testing and
+client submenu navigation use those configured coordinates. Ended popup grabs
+are released before another input event; clicking an ungrabbed menu keeps the
+application's keyboard focus. `DOME_MENU_TRACE=1` logs menu routing diagnostics.
+
+Native FLTK 1.4 and SDL3 popups use the same desktop/XR policy. DomeD advertises
+its seat before the GTK shell extension for FLTK compatibility, and fixed-size
+clients' committed dimensions are reflected in scene/XR coordinates. FLTK 1.4.4
+also needs a backend fix to stop reopening menus after compositor dismissal;
+`scripts/prepare-native-toolkit-popups.sh --fetch --install-runtime` builds and
+installs a user-local compatibility core enabled by the next DomeD login.
+`DOME_FLTK_HOOKS=0` disables that runtime. See
+[the hook documentation](native/toolkit-hooks/README.md) and
+[toolkit coverage](docs/TOOLKIT-INTEGRATION-AUDIT.md). These popup fixes do not
+invent application menu exports: FLTK/SDL applications still need an exporter
+to publish their commands in the universal menu.
 
 The taskbar follows Plasma-style behavior: group by application, activate/minimize
 single tasks, choose windows through live thumbnail previews, wheel-cycle a group,
@@ -541,6 +677,26 @@ middle-click for a new instance, and right-click for desktop actions, pin/unpin 
 Close All. Pins use desktop-file IDs and persist in
 `$XDG_CONFIG_HOME/dome/taskbar.json`. Launcher search remains at the left and the
 virtual desktop manager at the right.
+
+The Launch menu browses the entire visible XDG application catalog through an
+eight-row viewport. Hold a cursor key to keep scrolling; selection wraps at both
+ends. Home/End jump to the first/last match, and typing or Backspace filters the
+catalog and resets selection. Enter runs an exact executable name from PATH even
+without a desktop entry. Using cursor keys to select a menu match makes Enter
+launch that desktop entry instead. Failed launches leave the menu open with an
+error so the query can be corrected.
+
+`scripts/test-launcher.py` exercises real held-key navigation, filtering, scrolled
+mouse selection and PATH launching. `scripts/test-session-restore.py` exercises
+logout/login with actual desktop/XR clients, private saved arguments and a late
+XR presenter. Both use a private Xvfb display and D-Bus session; run them with
+Python Xlib/Pillow (plus PySide6 for session restore), setting `DOME_XVFB` if needed.
+
+Task previews use separate GPU-scaled captures capped at 126×76 pixels, with a
+shared refresh budget. Unchanged surfaces reuse their cached images; hovering
+does not request full-resolution XR readbacks or continuously repaint the shell.
+`scripts/test-task-previews.py` checks four large grouped windows, live updates,
+dismissal, and keyboard responsiveness while the previews are open.
 
 ## Gaze pointer and click gestures
 
@@ -627,7 +783,7 @@ Ghostty XR’s own controls. Alt+F4 retains the standard window-close behavior.
 
 | Shortcut | Action |
 | --- | --- |
-| Super+Space | Switch US English / Anthy |
+| Super+Space | Cycle input methods: English, Japanese, Czech, Korean, Serbian Cyrillic |
 | Super+Shift+Space | Search and launch apps |
 | Super+T | Open Ghostty XR terminal in the active desktop/XR realm |
 | Alt+Tab / Shift+Alt+Tab | XR: next / previous window in the same lane, recentered; desktop: next / previous window |
@@ -663,8 +819,8 @@ slide-out, XR retains ownership until its last visible surface disappears.
 Desktop window placement and monitor bars are unaffected. This is a presentation
 toggle: the XR session stays alive and does not trigger contingency recovery.
 
-The global bar supplies compositor commands in App, File, Edit, View, Window and
-Help menus. It does not yet import arbitrary application-exported menu trees.
+The global bar uses the focused application's exported menu tree in both desktop
+and XR, alongside DomeD's system and application controls.
 
 ## Run the XR prototype in a simulated headset
 

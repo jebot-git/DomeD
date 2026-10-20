@@ -15,9 +15,13 @@ use crate::state::Dome;
 
 impl Dome {
     pub fn process_input_event<I: InputBackend>(&mut self, event: InputEvent<I>) {
+        self.cleanup_popup_grab();
         self.sync_input_route();
         match event {
             InputEvent::Keyboard { event, .. } => {
+                if event.state() == smithay::backend::input::KeyState::Pressed {
+                    self.session_interacted();
+                }
                 if self.native_ignored_keys.remove(&event.key_code())
                     && event.state() == smithay::backend::input::KeyState::Released
                 {
@@ -28,6 +32,7 @@ impl Dome {
                     && !self.launcher
                     && self.menu.is_none()
                     && !self.desktop_manager
+                    && !self.default_apps_open
                     && !self.appearance_open
                     && !self.xr_settings_open
                     && self.session_confirm.is_none()
@@ -57,9 +62,12 @@ impl Dome {
                         // Keep ownership until release, including confirmation keys that
                         // close the launcher. Forward releases of keys held before it opened.
                         if !pressed && state.shell_keys.remove(&code) {
+                            if state.launch_navigation.repeat.is_some_and(|(key, _, _)| key == code) {
+                                state.launch_navigation.repeat = None;
+                            }
                             return FilterResult::Intercept(());
                         }
-                        if pressed && state.shell_keys.contains(&code) && !state.launcher {
+                        if pressed && state.shell_keys.contains(&code) {
                             return FilterResult::Intercept(());
                         }
                         if pressed
@@ -132,6 +140,10 @@ impl Dome {
                                 return FilterResult::Intercept(());
                             }
                         }
+                        if pressed && state.default_apps_key(sym.raw()) {
+                            state.shell_keys.insert(code);
+                            return FilterResult::Intercept(());
+                        }
                         if pressed && state.audio_key(sym.raw()) {
                             state.shell_keys.insert(code);
                             return FilterResult::Intercept(());
@@ -200,14 +212,22 @@ impl Dome {
                             }
                             if let Some(menu) = state.menu {
                                 state.shell_keys.insert(code);
+                                if state.appmenu_key(sym.raw()) {
+                                    return FilterResult::Intercept(());
+                                }
                                 match sym.raw() {
                                     0xff1b => state.menu = None,
                                     0xff51 => {
-                                        state.menu = Some((menu + 6) % 7);
+                                        state.open_menu(Some(
+                                            (menu + state.menu_headers().len() - 1)
+                                                % state.menu_headers().len(),
+                                        ));
                                         state.menu_hover = 0;
                                     }
                                     0xff53 => {
-                                        state.menu = Some((menu + 1) % 7);
+                                        state.open_menu(Some(
+                                            (menu + 1) % state.menu_headers().len(),
+                                        ));
                                         state.menu_hover = 0;
                                     }
                                     0xff52 => state.menu_hover = (state.menu_hover - 1).max(0),
@@ -232,39 +252,7 @@ impl Dome {
                         }
                         if state.launcher && pressed {
                             state.shell_keys.insert(code);
-                            {
-                                match sym.raw() {
-                                    0xff1b => {
-                                        state.launcher = false;
-                                    }
-                                    0xff08 => {
-                                        state.launch_query.pop();
-                                        state.launch_index = 0;
-                                    }
-                                    0xff52 | 0xff51 => {
-                                        state.launch_index = state.launch_index.saturating_sub(1)
-                                    }
-                                    0xff54 | 0xff53 => {
-                                        state.launch_index = (state.launch_index + 1)
-                                            .min(state.matching_apps().len().saturating_sub(1))
-                                    }
-                                    0xff50 => state.launch_index = 0,
-                                    0xff57 => {
-                                        state.launch_index =
-                                            state.matching_apps().len().saturating_sub(1)
-                                    }
-                                    0xff0d => state.launch_selected(),
-                                    _ => {
-                                        if let Some(c) = sym.key_char().filter(|c| !c.is_control())
-                                        {
-                                            if state.launch_query.len() < 80 {
-                                                state.launch_query.push(c);
-                                                state.launch_index = 0;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+                            state.launcher_key(code, sym.raw(), sym.key_char(), !mods.ctrl && !mods.alt && !mods.logo);
                             return FilterResult::Intercept(());
                         }
                         if state.input_xr_active
@@ -320,6 +308,7 @@ impl Dome {
                 self.desktop_mouse_motion(pos, event.time_msec());
             }
             InputEvent::PointerButton { event, .. } => {
+                if event.state() == ButtonState::Pressed { self.session_interacted(); }
                 let code = event.button_code();
                 if event.state() == ButtonState::Released {
                     if code == 0x110 {
@@ -350,6 +339,14 @@ impl Dome {
                 let button_state = event.state();
 
                 let pos = pointer.current_location();
+                if button_state == ButtonState::Pressed && std::env::var_os("DOME_MENU_TRACE").is_some() {
+                    eprintln!("menu input: pos={pos:?} grab={} menu={:?} popup={:?} focus={:?}", pointer.is_grabbed(), self.menu, self.popup_under(pos).map(|p|p.0), self.scene.lock().unwrap().focused);
+                }
+                if button_state == ButtonState::Pressed && self.shell_at(pos.x,pos.y)
+                    && self.spatial_popups.iter().any(|(_,p)| matches!(p, smithay::desktop::PopupKind::Xdg(_))) {
+                    // Shell controls keep priority over an application's popup grab.
+                    self.dismiss_wayland_popups();
+                }
                 if button_state == ButtonState::Released
                     && self.context_scroll_buttons.remove(&button)
                 {
@@ -401,6 +398,7 @@ impl Dome {
                 if button_state == ButtonState::Pressed
                     && !pointer.is_grabbed()
                     && !self.about
+                    && !self.default_apps_open
                     && !self.appearance_open
                     && !self.xr_settings_open
                     && self.session_confirm.is_none()
@@ -455,7 +453,7 @@ impl Dome {
                             }
                         };
                         self.action(dome::Action::Focus { id: focus_id });
-                        if !self.ime_popups.iter().any(|p| p.wl_surface() == &surface) {
+                        if self.scene.lock().unwrap().window(id).is_some() {
                             keyboard.set_focus(self, Some(surface), serial);
                         }
                     } else if let Some((window, _loc)) = self
@@ -537,6 +535,7 @@ impl Dome {
                 ) {
                     return;
                 }
+                if self.default_apps_scroll(vertical_amount) { return; }
                 if self.history_scroll(vertical_amount) {
                     return;
                 }
@@ -615,8 +614,9 @@ impl Dome {
             pointer.frame(self);
             return;
         }
-        if let Some(menu) = self.menu {
-            let x0 = [0., 46., 230., 280., 332., 390., 470.][menu];
+        self.appmenu_motion(local.x, local.y, size.w, size.h);
+        if let Some(menu) = self.menu.filter(|m| !self.exported_menu(*m)) {
+            let x0 = self.menu_x(menu);
             self.menu_hover = if local.x >= x0 && local.x < x0 + 380. && local.y >= 40. {
                 ((local.y - 40.) / 28.) as i32
             } else {

@@ -1,0 +1,126 @@
+diff --git a/src/app.rs b/src/app.rs
+index 6a56cae..3d47b4b 100644
+--- a/src/app.rs
++++ b/src/app.rs
+@@ -173,6 +173,9 @@ pub enum AppMessage {
+     #[strum(disabled)]
+     #[serde(skip)]
+     FileWatcher(WatchNotification),
++    #[strum(disabled)]
++    #[serde(skip)]
++    DomeAppearance(iced::theme::Mode),
+     ToggleDarkModeUi,
+     ToggleDarkModePdf,
+     TogglePageBorders,
+@@ -274,6 +277,7 @@ impl App {
+             Ok(mut viewer) => {
+                 viewer.set_scale_factor(self.scale_factor);
+                 viewer.set_pdf_dark_mode(self.invert_pdf);
++                viewer.set_interface_dark_mode(self.dark_mode);
+                 self.pdfs.push(viewer);
+                 iced::Task::done(AppMessage::OpenTab(self.pdfs.len() - 1))
+             }
+@@ -466,10 +470,25 @@ impl App {
+                 }
+                 iced::Task::none()
+             }
++            AppMessage::DomeAppearance(mode) => {
++                let dark = match mode {
++                    iced::theme::Mode::Dark => true,
++                    iced::theme::Mode::Light => false,
++                    iced::theme::Mode::None => return iced::Task::none(),
++                };
++                self.dark_mode = dark;
++                self.invert_pdf = dark;
++                for pdf in &mut self.pdfs {
++                    pdf.set_interface_dark_mode(dark);
++                    pdf.set_pdf_dark_mode(dark);
++                }
++                tracing::info!(dark, "Dome appearance applied to interface and PDF");
++                iced::Task::none()
++            }
+             AppMessage::ToggleDarkModeUi => {
+                 self.dark_mode = !self.dark_mode;
+                 for pdf in &mut self.pdfs {
+-                    pdf.set_interface_dark_mode(self.invert_pdf);
++                    pdf.set_interface_dark_mode(self.dark_mode);
+                 }
+                 iced::Task::none()
+             }
+@@ -1172,6 +1191,7 @@ impl App {
+             Subscription::run(file_watcher).map(AppMessage::FileWatcher),
+         ];
+         subs.append(&mut platform_specific::listeners());
++        subs.push(crate::dome_appearance::subscription());
+ 
+         let config = CONFIG.read().unwrap();
+         if config.rpc_enabled {
+diff --git a/src/dome_appearance.rs b/src/dome_appearance.rs
+new file mode 100644
+index 0000000..7748376
+--- /dev/null
++++ b/src/dome_appearance.rs
+@@ -0,0 +1,27 @@
++//! Follow DomeD's standard desktop Settings portal without rewriting Miro preferences.
++use iced::{Subscription, Task};
++
++use crate::app::AppMessage;
++
++fn enabled() -> bool {
++    std::env::var("XDG_CURRENT_DESKTOP")
++        .unwrap_or_default()
++        .split(':')
++        .any(|desktop| desktop.eq_ignore_ascii_case("Dome"))
++}
++
++pub fn startup() -> Task<AppMessage> {
++    if enabled() {
++        iced::system::theme().map(AppMessage::DomeAppearance)
++    } else {
++        Task::none()
++    }
++}
++
++pub fn subscription() -> Subscription<AppMessage> {
++    if enabled() {
++        iced::system::theme_changes().map(AppMessage::DomeAppearance)
++    } else {
++        Subscription::none()
++    }
++}
+diff --git a/src/main.rs b/src/main.rs
+index ebe13f7..33b5c49 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -24,6 +24,7 @@ mod app;
+ mod bookmarks;
+ mod common_menu;
+ mod config;
++mod dome_appearance;
+ mod geometry;
+ mod icons;
+ mod jumplist;
+@@ -171,6 +172,8 @@ fn main() -> anyhow::Result<()> {
+             let mut startup_tasks =
+                 startup_tasks.chain(iced::window::latest().map(app::AppMessage::FoundWindowId));
+ 
++            startup_tasks = startup_tasks.chain(dome_appearance::startup());
++
+             for task in platform_specific::startup_tasks().into_iter() {
+                 startup_tasks = startup_tasks.chain(task);
+             }
+@@ -385,8 +388,13 @@ pub fn settings() -> iced::window::Settings {
+     let icon_img = include_bytes!("../assets/logo.png");
+     let icon = from_file_data(icon_img, None).ok();
+ 
+-    Settings {
++    let mut settings = Settings {
+         icon,
+         ..Default::default()
++    };
++    #[cfg(target_os = "linux")]
++    {
++        settings.platform_specific.application_id = "miro-pdf".to_string();
+     }
++    settings
+ }

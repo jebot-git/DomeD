@@ -36,6 +36,13 @@ impl SeatHandler for Dome {
         self.cursor_status = image;
     }
 
+    fn led_state_changed(&mut self, _seat: &Seat<Self>, leds: smithay::input::keyboard::LedState) {
+        #[cfg(feature = "standalone")]
+        self.update_keyboard_leds(leds);
+        #[cfg(not(feature = "standalone"))]
+        let _ = leds;
+    }
+
     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&WlSurface>) {
         let dh = &self.display_handle;
         let client = focused.and_then(|s| dh.get_client(s.id()).ok());

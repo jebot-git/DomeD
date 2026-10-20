@@ -93,7 +93,19 @@ impl Scene {
                                 work,
                             )
                         } else {
-                            desktop_rect(parent, [popup.anchor.w, popup.height()], work)
+                            if self.window(popup.id).is_some() {
+                                desktop_rect(parent, [popup.anchor.w, popup.height()], work)
+                            } else {
+                                // Use the geometry DomeD configured to the client, relative
+                                // to its parent. Moving it again here would desynchronize
+                                // submenu navigation from rendering and hit testing.
+                                Rect {
+                                    x: parent.x + popup.anchor.x,
+                                    y: parent.y + popup.anchor.y,
+                                    w: popup.anchor.w,
+                                    h: popup.height(),
+                                }
+                            }
                         },
                     ));
                 }

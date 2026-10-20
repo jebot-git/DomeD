@@ -30,6 +30,7 @@ impl Ime {
         let shared = state.clone();
         std::thread::spawn(move || {
             let mut child: Option<std::process::Child> = None;
+            let mut configured = false;
             loop {
                 match receive.recv_timeout(Duration::from_millis(200)) {
                     Ok(Request::Start(stream)) => {
@@ -78,7 +79,10 @@ impl Ime {
                             {
                                 file.write_all(b"[Hotkey/TriggerKeys]\n0=\n[Hotkey/EnumerateForwardKeys]\n0=\n[Hotkey/EnumerateBackwardKeys]\n0=\n").map_err(|e|e.to_string())?;
                             }
-                            let mut command = std::process::Command::new("/usr/bin/fcitx5");
+                            let mut command = std::process::Command::new(
+                                std::env::var_os("DOME_FCITX5")
+                                    .unwrap_or_else(|| "/usr/bin/fcitx5".into()),
+                            );
                             command
                                 .args([
                                     "-D",
@@ -98,7 +102,10 @@ impl Ime {
                             command.spawn().map_err(|e| e.to_string())
                         })();
                         match result {
-                            Ok(p) => child = Some(p),
+                            Ok(p) => {
+                                child = Some(p);
+                                configured = false;
+                            }
                             Err(e) => shared.lock().unwrap().error = e,
                         }
                     }
@@ -114,13 +121,17 @@ impl Ime {
                                     let current = p
                                         .call::<_, _, String>("CurrentInputMethod", &())
                                         .unwrap_or_default();
-                                    let next = if current == "anthy" {
-                                        "keyboard-us"
-                                    } else {
-                                        "anthy"
-                                    };
-                                    if let Err(e) = p.call::<_, _, ()>("SetCurrentIM", &(next,)) {
-                                        shared.lock().unwrap().error = e.to_string();
+                                    let methods = method_group(&p).map(|(_, _, methods)| methods);
+                                    if let Ok(methods) = methods {
+                                        if let Some(next) =
+                                            dome::keyboard::next_input_method(&current, &methods)
+                                        {
+                                            if let Err(e) =
+                                                p.call::<_, _, ()>("SetCurrentIM", &(next,))
+                                            {
+                                                shared.lock().unwrap().error = e.to_string();
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -167,6 +178,12 @@ impl Ime {
                                 "/controller",
                                 "org.fcitx.Fcitx.Controller1",
                             ) {
+                                if !configured {
+                                    match configure_methods(&p) {
+                                        Ok(()) => configured = true,
+                                        Err(error) => shared.lock().unwrap().error = error,
+                                    }
+                                }
                                 if let Ok(method) =
                                     p.call::<_, _, String>("CurrentInputMethod", &())
                                 {
@@ -220,6 +237,37 @@ impl Ime {
             Err(e) => self.state.lock().unwrap().error = e.to_string(),
         }
     }
+}
+
+fn method_group(p: &Proxy<'_>) -> Result<(String, String, Vec<(String, String)>), String> {
+    let group: String = p
+        .call("CurrentInputMethodGroup", &())
+        .map_err(|e| e.to_string())?;
+    let (layout, methods): (String, Vec<(String, String)>) = p
+        .call("InputMethodGroupInfo", &(group.as_str(),))
+        .map_err(|e| e.to_string())?;
+    Ok((group, layout, methods))
+}
+
+/// Update only the compositor-owned Fcitx instance. Existing groups and entries
+/// remain intact, including layout overrides and custom input methods.
+fn configure_methods(p: &Proxy<'_>) -> Result<(), String> {
+    type Available = (String, String, String, String, String, String, bool);
+    let available: Vec<Available> = p
+        .call("AvailableInputMethods", &())
+        .map_err(|e| e.to_string())?;
+    let names: Vec<String> = available.into_iter().map(|method| method.0).collect();
+    let (group, layout, methods) = method_group(p)?;
+    let updated = dome::keyboard::complete_input_methods(&methods, &names);
+    if updated != methods {
+        p.call::<_, _, ()>(
+            "SetInputMethodGroupInfo",
+            &(group.as_str(), layout.as_str(), updated),
+        )
+        .map_err(|e| e.to_string())?;
+        p.call::<_, _, ()>("Save", &()).map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 use crate::Dome;
 use smithay::{

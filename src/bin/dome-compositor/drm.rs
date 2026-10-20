@@ -1,4 +1,4 @@
-//! Native seat, DRM/KMS scanout, GBM/EGL rendering and libinput devices.
+//! Native seat, DRM/KMS scanout, Vulkan-backed Zink or GLES rendering and libinput.
 use crate::{desktop::DesktopRenderer, CalloopData, Dome};
 use smithay::{
     backend::{
@@ -60,6 +60,7 @@ struct Native {
     drm: DrmDevice,
     gbm: GbmDevice<DrmDeviceFd>,
     renderer: GlesRenderer,
+    renderer_name: String,
     outputs: Vec<NativeOutput>,
     device_id: u64,
     path: PathBuf,
@@ -329,7 +330,7 @@ impl Native {
                     "physical_scanout":o.scanout.is_some(),"rendered_frames":o.rendered_frames,"presented_frames":o.presented_frames})
             }).collect();
             let first = self.outputs.first();
-            let value = serde_json::json!({"backend":"drm","device":self.path,"active":self.active,"outputs":outputs,
+            let value = serde_json::json!({"backend":"drm","renderer":crate::rendering::selection(),"renderer_name":self.renderer_name,"device":self.path,"active":self.active,"outputs":outputs,
                 "rendered_frames":self.rendered_frames,"presented_frames":self.presented_frames,
                 "width":first.map(|o|o.size.w),"height":first.map(|o|o.size.h),
                 "physical_scanout":first.is_some_and(|o|o.scanout.is_some()),"dmabuf_imports":self.dmabuf_imports});
@@ -506,6 +507,21 @@ pub fn init(event_loop: &mut EventLoop<CalloopData>, data: &mut CalloopData) -> 
             move |event, _, data| {
                 if !data.state.native_session_active {
                     return;
+                }
+                match &event {
+                    InputEvent::DeviceAdded { device }
+                        if device.has_capability(
+                            smithay::reexports::input::DeviceCapability::Keyboard,
+                        ) =>
+                    {
+                        data.state.keyboard_devices.push(device.clone());
+                        let leds = data.state.seat.get_keyboard().unwrap().led_state();
+                        data.state.update_keyboard_leds(leds);
+                    }
+                    InputEvent::DeviceRemoved { device } => {
+                        data.state.keyboard_devices.retain(|d| d != device)
+                    }
+                    _ => (),
                 }
                 if let InputEvent::Keyboard { event, .. } = &event {
                     let mods = data.state.seat.get_keyboard().unwrap().modifier_state();
@@ -779,6 +795,15 @@ fn init_gpu(
     session: Option<&mut LibSeatSession>,
     _test: bool,
 ) -> Result<Rc<RefCell<Native>>, Error> {
+    crate::rendering::create(|| init_gpu_inner(handle, state, path, session, _test))
+}
+fn init_gpu_inner(
+    handle: smithay::reexports::calloop::LoopHandle<'_, CalloopData>,
+    state: &mut Dome,
+    path: &Path,
+    session: Option<&mut LibSeatSession>,
+    _test: bool,
+) -> Result<Rc<RefCell<Native>>, Error> {
     let owned = if let Some(session) = session {
         session.open(
             path,
@@ -808,11 +833,13 @@ fn init_gpu(
     let gbm = GbmDevice::new(fd)?;
     let display = unsafe { EGLDisplay::new(gbm.clone())? };
     let context = EGLContext::new(&display)?;
-    let renderer = unsafe { GlesRenderer::new(context)? };
+    let mut renderer = unsafe { GlesRenderer::new(context)? };
+    let renderer_name = crate::rendering::verify(&mut renderer)?;
     let native = Rc::new(RefCell::new(Native {
         drm,
         gbm,
         renderer,
+        renderer_name,
         outputs: Vec::new(),
         device_id,
         path: path.into(),

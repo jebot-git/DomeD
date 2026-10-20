@@ -5,6 +5,7 @@ impl Dome {
         self.keyboard_draft = Some(self.keyboard_config.clone());
         self.keyboard_field = 0;
         self.keyboard_error.clear();
+        self.default_apps_open = false;
         self.appearance_open = true;
     }
     pub fn keyboard_settings_key(&mut self, sym: u32, character: Option<char>, ctrl: bool) -> bool {
@@ -80,6 +81,7 @@ impl Dome {
                 draft.active = draft
                     .active
                     .min(draft.layout.split(',').count().saturating_sub(1));
+                let previous_modifiers = keyboard.modifier_state();
                 let result = draft.validate().and_then(|_| {
                     keyboard
                         .set_xkb_config(
@@ -95,6 +97,22 @@ impl Dome {
                 });
                 match result {
                     Ok(()) => {
+                        let mut modifiers = keyboard.modifier_state();
+                        modifiers.num_lock = previous_modifiers.num_lock;
+                        modifiers.caps_lock = previous_modifiers.caps_lock;
+                        keyboard.set_modifier_state(modifiers);
+                        #[cfg(feature = "standalone")]
+                        self.update_keyboard_leds(keyboard.led_state());
+                        if let Some(focus) = keyboard.current_focus() {
+                            use smithay::input::keyboard::KeyboardTarget;
+                            let seat = self.seat.clone();
+                            focus.modifiers(
+                                &seat,
+                                self,
+                                keyboard.modifier_state(),
+                                smithay::utils::SERIAL_COUNTER.next_serial(),
+                            );
+                        }
                         keyboard.with_xkb_state(self, |mut xkb| {
                             xkb.set_layout(Layout(draft.active as u32))
                         });
@@ -129,6 +147,39 @@ impl Dome {
             if let Err(e) = self.keyboard_config.save() {
                 self.keyboard_error = e;
             }
+        }
+    }
+}
+
+/// Preserve the kernel LED state when the desktop preference is “leave unchanged”.
+pub fn existing_numlock() -> Option<bool> {
+    std::fs::read_dir("/sys/class/leds")
+        .ok()?
+        .filter_map(Result::ok)
+        .filter(|e| e.file_name().to_string_lossy().ends_with("::numlock"))
+        .find_map(|e| {
+            std::fs::read_to_string(e.path().join("brightness"))
+                .ok()
+                .and_then(|s| s.trim().parse::<u32>().ok())
+                .map(|n| n != 0)
+        })
+}
+#[cfg(feature = "standalone")]
+impl Dome {
+    pub fn update_keyboard_leds(&mut self, state: smithay::input::keyboard::LedState) {
+        use smithay::reexports::input::Led;
+        let mut leds = Led::empty();
+        if state.num == Some(true) {
+            leds |= Led::NUMLOCK;
+        }
+        if state.caps == Some(true) {
+            leds |= Led::CAPSLOCK;
+        }
+        if state.scroll == Some(true) {
+            leds |= Led::SCROLLLOCK;
+        }
+        for device in &mut self.keyboard_devices {
+            device.led_update(leds);
         }
     }
 }
