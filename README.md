@@ -10,7 +10,7 @@ and the OpenXR frontend are Rust; a small C++ FFI adapter calls Qt6 painting/sty
 
 **Current milestone:** a standalone DRM/KMS Wayland compositor with Qt6 decorations, a classic
 Mac-style global menu and a native Rust/OpenXR frontend displaying live Wayland
-window textures, open cylindrical dome surfaces, flat direct-view/pulled-out panels and
+window textures, open cylindrical dome surfaces, flat pulled-out panels and
 shared XR shell bars. Application identity/actions use XDG desktop entries; the
 status area hosts StatusNotifier items and DBusMenu menus. WiVRn marker localization
 and arbitrary application-internal global-menu import remain future work.
@@ -326,8 +326,8 @@ Only the horizontal direction curves; vertical texture spacing stays linear,
 without convergence or a top/bottom cap. The upper lane leans inward by **8°**
 for readability. Adjust **Upper dome inward lean** in XR settings (0–20°), or
 set `dome_upper_tilt_deg` in the geometry profile; 0° gives a straight tube.
-Ray-to-UV hits use the same cylinder and lean as rendering. In **direct view**,
-window surfaces stay planar. `XR_KHR_composition_layer_cylinder` is required for
+Ray-to-UV hits use the same cylinder and lean as rendering. Dome is the only
+compositor XR projection; Ghostty XR retains its independent direct-view overlay. `XR_KHR_composition_layer_cylinder` is required for
 the dome; a runtime lacking it gets an explicit error instead of a flat substitute.
 
 Grip a dome window and pull inward by 18 cm to detach it into a flat near panel.
@@ -358,7 +358,7 @@ OpenXR `EXT_hand_tracking` supplies the 26 joints per hand when supported:
 | Index/thumb pinch | Left mouse button |
 | Middle/thumb pinch | Middle mouse button |
 | Ring/thumb pinch | Right mouse button |
-| Grip and move | Slide along the dome, or move a direct-view window |
+| Grip and move | Slide along the dome |
 | Pull / push a gripped dome panel | Pull into a near slot / return to dome |
 | Grip the same window with both hands and change separation | Scale the panel |
 
@@ -375,8 +375,6 @@ Wayland `xdg_popup` menus, nested menus and parented `xdg_toplevel` dialogs are
 separate panels attached to their owning window. They do not take a lane slot.
 Their placement follows the active projection:
 
-* **Direct view / three lanes:** a flat panel 6 cm in front of its parent, aligned
-  with the requested attachment point. Nested menus stack forward from their parent.
 * **Room dome:** a flat panel 14 cm forward and 4 cm above the parent's upper edge.
   A thin blue beam connects its lower edge to the origin on the parent surface.
   The beam is decorative and never captures mouse or hand input.
@@ -458,9 +456,8 @@ releases hand buttons and cancels gestures. Movement starts at the last laser ta
 Buttons retain mouse ownership while held; after release and **800 ms** without
 mouse input, hand control resumes with neutral gesture rearming. The delay is
 configurable. Wheel events target the hovered surface. The mouse uses one continuous
-angular coordinate across bars, lanes and empty space, with a fixed-size view
-cursor independent of surface depth. A held button keeps its original target for
-continuous drags. Head movement updates the hovered target without extending the
+angular coordinate across bars, lanes and empty space, with a cursor placed on the hit surface, following its curvature and lean. A held button keeps its original target for
+continuous drags. Head and carousel movement preserve the cursor’s surface UV without extending the
 mouse ownership timeout. Outside XR, mouse control uses the normal desktop stacking path.
 
 In dome mode the upper menu/tray bar borders the top lane and the taskbar borders
@@ -468,9 +465,9 @@ the bottom lane, at the dome radius. Both orbit the dome anchor with horizontal
 headset gaze; pitching the headset lets you look up/down to reach the bars without
 moving them over the room-anchored lanes. Expanded menus keep the bar edge fixed and extend toward the lanes.
 For a dome taller than the headset's field of view, look up/down to see its bars.
-Direct view keeps its head-relative bars and configured lens insets. Horizontal
-bar offsets and widths apply in both projections; bar distance and lens insets
-apply to direct view, while dome bars use the configured dome radius and span.
+Dome bars use the configured dome radius and span. Adjust **Dome height / vertical
+span** and **Dome height / anchor Y** in settings to change the dome’s size and elevation.
+Older profiles with `in_view` automatically load as `room_dome`.
 
 The system menu includes **Start XR**, **Stop XR**, **Appearance**, **Lock Screen**,
 **Switch User**, **Sleep**, **Log Out of Dome**, **Restart** and **Shut Down**. Build
@@ -545,16 +542,50 @@ Close All. Pins use desktop-file IDs and persist in
 `$XDG_CONFIG_HOME/dome/taskbar.json`. Launcher search remains at the left and the
 virtual desktop manager at the right.
 
+## Notification and clipboard history
+
+The right-side tray includes a bell for **Notification history** and a clipboard
+for **Clipboard history**. Both open the same readable history pane in desktop
+and XR. Arrows, Home/End and the wheel browse entries; Delete removes an entry,
+Escape closes, and **Clear history** empties the list.
+
+Notification history retains the latest 200 notices after expiry or dismissal,
+with replacement notices updating their existing entry. The bell marks unread
+notifications. Clipboard history keeps up to 50 items, including text, images,
+file lists and other offered formats. Select an item to restore it to the
+clipboard, then paste normally. Transfers run off the compositor thread and
+preserve MIME types and bytes. Capture is bounded to 8 MiB per item and 32 MiB
+total; both histories last for the current session.
+
+Tray pixmaps retain their colours, transparency and aspect ratio. Application
+icon paths, themed icons and attention-icon fallback are supported.
+
+Test the histories on an isolated display and private bus:
+
+```sh
+uv run --no-project --with dbus-next --with python-xlib --with pillow python scripts/test-shell-history.py
+```
+
 ## Keyboard shortcuts
 
 Super is the Windows/Meta key. Application Ctrl shortcuts continue to work.
+The taskbar’s rightmost **Desktop / XR** button switches physical input between
+views, starting XR when needed. The launcher supports cursor keys, Home/End and
+Enter for selecting and launching a match.
+
+Open **View → Displays, XR & Keybindings** (Super+Comma), select a keybinding
+row and press Enter or click its value to record a replacement chord. Escape
+cancels; Backspace disables that binding. Changes persist in `dome/xr.json`.
+Duplicate chords are rejected. Bare function keys pass to qimgvr, mpvr, fsv-xr
+and Ghostty XR: Dome’s menu uses Super+F10. F12 and Super+F12 remain reserved for
+Ghostty XR’s own controls. Alt+F4 retains the standard window-close behavior.
 
 | Shortcut | Action |
 | --- | --- |
 | Super+Space | Switch US English / Anthy |
 | Super+Shift+Space | Search and launch apps |
 | Super+T | Open Ghostty XR terminal in the active desktop/XR realm |
-| Alt+Tab / Shift+Alt+Tab | Next / previous window |
+| Alt+Tab / Shift+Alt+Tab | XR: next / previous window in the same lane, recentered; desktop: next / previous window |
 | Super+W or Alt+F4 | Close window |
 | Super+Q | Close windows of active application |
 | Super+M / Super+Enter | Minimize / toggle maximize |
@@ -569,13 +600,13 @@ Super is the Windows/Meta key. Application Ctrl shortcuts continue to work.
 | Alt+Super+B | Slide XR taskbar out / back in |
 | Shift+Super+D | Fade the entire XR desktop out / back in |
 | Super+C/V/A | Copy / paste / select all using client Ctrl bindings |
-| F10, arrows, Enter, Escape | Navigate classic global menus |
+| Super+F10, arrows, Enter, Escape | Navigate classic global menus |
 
 XR visibility controls are also in **View**. Bar slides and desktop fades take
 250 ms and reverse continuously if toggled mid-animation. The upper bar slides
 past the top view edge; the taskbar slides past the bottom. Hiding the XR desktop
 fades all window and shell layers, preserving each bar's visibility preference.
-These controls work in dome and direct-view modes and remain available from
+These controls remain available from
 launchers and shell settings. Hidden/transitioning surfaces reject XR pointer
 input. Once every XR panel and tray is hidden, physical mouse and keyboard input
 return to the desktop compositor, including clicking, scrolling and launching apps.

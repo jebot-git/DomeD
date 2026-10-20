@@ -47,7 +47,7 @@ fn scroll_viewport_keeps_controls_out_of_content_and_reveals_last_item() {
 
 #[test]
 fn context_panel_tracks_the_click_in_both_xr_projections_and_dome_beam_ends_there() {
-    for projection in [Projection::InView, Projection::RoomDome] {
+    for projection in [Projection::RoomDome] {
         let mut scene = Scene::new("test");
         scene.config.projection = projection;
         let root = scene.add("parent", "test");

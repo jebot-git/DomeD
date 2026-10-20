@@ -10,11 +10,13 @@
 #include <QtCore/QJsonObject>
 #include <QtCore/QJsonArray>
 #include <QtCore/QDateTime>
+#include <QtCore/QDir>
+#include <QtCore/QFileInfo>
 #include <cstring>
 static QApplication *app() {
     static int argc=3;static char name[]="dome-qt",platform[]="-platform",offscreen[]="offscreen";
     static char *argv[]={name,platform,offscreen,nullptr};
-    static QApplication *application=[](){auto *a=new QApplication(argc,argv);a->setStyle(QStyleFactory::create("Fusion"));a->setFont(QFont("Sans Serif",10));return a;}();return application;
+    static QApplication *application=[](){auto *a=new QApplication(argc,argv);a->setStyle(QStyleFactory::create("Fusion"));a->setFont(QFont("Sans Serif",10));if(QIcon::themeName().isEmpty())QIcon::setThemeName("breeze");QIcon::setFallbackThemeName("hicolor");return a;}();return application;
 }
 // Shared by painting and hit testing: close left, zoom then depth at right.
 static QRect workbenchGadget(int width,int hit) {
@@ -28,6 +30,33 @@ extern "C" int dome_qt_hit(int width,int height,int x,int y) {
     if(y<30){for(int hit:{1,3,6})if(workbenchGadget(width,hit).contains(x,y))return hit;return 4;}
     if(x<4||x>=width-4||y>=height-4)return 5;
     return 0;
+}
+// SNI pixmaps are network-order ARGB, not premultiplied RGBA. Preserve their colours.
+static QImage trayImage(const QJsonObject &item,const QColor &foreground) {
+    QImage result(22,22,QImage::Format_ARGB32_Premultiplied);result.fill(Qt::transparent);
+    QPainter p(&result);p.setRenderHint(QPainter::Antialiasing);p.setRenderHint(QPainter::SmoothPixmapTransform);
+    const auto key=item["key"].toString();
+    if(key=="dome.clipboard"||key=="dome.notifications") {
+        p.setPen(QPen(foreground,1.6));p.setBrush(Qt::NoBrush);
+        if(key=="dome.clipboard") {p.drawRoundedRect(QRectF(5,4,12,15),1.5,1.5);p.drawRoundedRect(QRectF(8,2,6,4),1,1);p.drawLine(8,10,14,10);p.drawLine(8,14,14,14);}
+        else {p.drawArc(QRectF(6,4,10,12),0,180*16);p.drawLine(6,10,5,16);p.drawLine(16,10,17,16);p.drawLine(5,16,17,16);p.drawArc(QRectF(9,16,4,4),180*16,180*16);p.drawLine(11,2,11,4);}
+        return result;
+    }
+    auto raw=QByteArray::fromBase64(item["pixmap"].toString().toLatin1());int w=item["width"].toInt(),h=item["height"].toInt();
+    if(w>0&&h>0&&w<=512&&h<=512&&raw.size()==qint64(w)*h*4) {
+        QByteArray rgba=raw;for(int k=0;k<raw.size();k+=4){rgba[k]=raw[k+1];rgba[k+1]=raw[k+2];rgba[k+2]=raw[k+3];rgba[k+3]=raw[k];}
+        QImage bitmap(reinterpret_cast<const unsigned char*>(rgba.constData()),w,h,QImage::Format_RGBA8888);
+        QSize size=bitmap.size().scaled(22,22,Qt::KeepAspectRatio);p.drawImage(QRect(QPoint((22-size.width())/2,(22-size.height())/2),size),bitmap);
+        return result;
+    }
+    const auto name=item["icon"].toString(),path=item["icon_theme_path"].toString();auto paths=QIcon::themeSearchPaths();
+    if(!path.isEmpty())QIcon::setThemeSearchPaths(QStringList{path}+paths);
+    QIcon icon=QFileInfo(name).isAbsolute()?QIcon(name):QIcon::fromTheme(name);
+    if(icon.isNull()&&!path.isEmpty())for(const auto &suffix:QStringList{"",".svg",".png",".xpm"}) {auto file=QDir(path).filePath(name+suffix);if(QFileInfo::exists(file)){icon=QIcon(file);break;}}
+    if(!icon.isNull())icon.paint(&p,QRect(0,0,22,22));
+    else {p.setPen(foreground);p.drawRoundedRect(QRect(3,3,16,16),3,3);p.drawText(QRect(0,0,22,22),Qt::AlignCenter,item["title"].toString().left(1).toUpper());}
+    if(!path.isEmpty())QIcon::setThemeSearchPaths(paths);
+    return result;
 }
 extern "C" int dome_qt_paint(const char *json,unsigned char *pixels,int length) {
     app();auto o=QJsonDocument::fromJson(json).object();int w=o["width"].toInt(),h=o["height"].toInt();if(w<1||h<1||qint64(w)*h*4!=length)return 0;
@@ -90,19 +119,21 @@ extern "C" int dome_qt_paint(const char *json,unsigned char *pixels,int length) 
     p.setFont(app()->font());p.setPen(foreground);p.drawText(QRect(w-168,0,152,35),Qt::AlignRight|Qt::AlignVCenter,QDateTime::currentDateTime().toString("ddd HH:mm"));
     p.drawText(QRect(w-220,0,44,35),Qt::AlignCenter,o["keyboard"].toString());
     auto tray=o["tray"].toObject();auto extras=tray["items"].toArray();int tx=w-220-extras.size()*28;
-    for(int index=0;index<extras.size();++index){auto item=extras[index].toObject();QImage status(22,22,QImage::Format_ARGB32_Premultiplied);status.fill(Qt::transparent);QPainter iconPainter(&status);auto icon=QIcon::fromTheme(item["icon"].toString());if(!icon.isNull()){icon.paint(&iconPainter,QRect(0,0,22,22));}else{auto raw=QByteArray::fromBase64(item["pixmap"].toString().toLatin1());int iw=item["width"].toInt(),ih=item["height"].toInt();if(iw>0&&ih>0&&raw.size()==qint64(iw)*ih*4){QByteArray rgba=raw;for(int k=0;k<raw.size();k+=4){rgba[k]=raw[k+1];rgba[k+1]=raw[k+2];rgba[k+2]=raw[k+3];rgba[k+3]=raw[k];}QImage bitmap(reinterpret_cast<const unsigned char*>(rgba.constData()),iw,ih,QImage::Format_RGBA8888);iconPainter.drawImage(QRect(0,0,22,22),bitmap);}}
-        iconPainter.setCompositionMode(QPainter::CompositionMode_SourceIn);iconPainter.fillRect(status.rect(),foreground);iconPainter.end();int x=tx+index*28;if(tray["menu"].toInt(-1)==index){p.fillRect(QRect(x,0,28,35),selection);}p.drawImage(x+3,7,status);if(item["attention"].toBool()){p.setPen(accent);p.drawLine(x+10,32,x+18,32);}}
-    p.fillRect(0,h-60,w,60,barBackground);p.setPen(foreground);p.drawText(QRect(12,h-60,86,60),Qt::AlignVCenter,"⌕  Launch");p.drawText(QRect(w-150,h-60,140,60),Qt::AlignVCenter,"▦  Desktops");
-    int i=0;for(auto v:o["tasks"].toArray()){auto task=v.toObject();int x=110+i++*130;if(x>w-280)break;
+    for(int index=0;index<extras.size();++index){auto item=extras[index].toObject();int x=tx+index*28;
+        if((!tray["menu"].isNull()&&tray["menu"].toInt(-1)==index)||(item["key"].toString()=="dome.clipboard"&&o["history"].toObject()["kind"].toString()=="clipboard")||(item["key"].toString()=="dome.notifications"&&o["history"].toObject()["kind"].toString()=="notifications"))p.fillRect(QRect(x,0,28,35),selection);
+        p.drawImage(x+3,7,trayImage(item,foreground));if(item["attention"].toBool()){p.setPen(accent);p.drawLine(x+10,32,x+18,32);}
+    }
+    p.fillRect(0,h-60,w,60,barBackground);p.setPen(foreground);p.drawText(QRect(12,h-60,86,60),Qt::AlignVCenter,"⌕  Launch");p.drawText(QRect(w-240,h-60,140,60),Qt::AlignVCenter,"▦  Desktops");p.drawText(QRect(w-90,h-60,86,60),Qt::AlignCenter,o["xr_active"].toBool()?"Desktop":"XR");
+    int i=0;for(auto v:o["tasks"].toArray()){auto task=v.toObject();int x=110+i++*130;if(x>w-380)break;
         if(task["active"].toBool())p.fillRect(QRect(x-5,h-56,126,52),selection);
         QIcon icon=QIcon::fromTheme(task["icon"].toString());if(!icon.isNull())icon.paint(&p,QRect(x+4,h-46,28,28));
         p.setPen(task["minimized"].toBool()?muted:foreground);p.drawText(QRect(x+37,h-51,82,36),Qt::AlignVCenter,p.fontMetrics().elidedText(task["name"].toString(),Qt::ElideRight,80));
         int count=task["windows"].toArray().size();if(count>0){p.setPen(Qt::NoPen);p.setBrush(task["active"].toBool()?accent:QColor(155,169,188));p.drawRoundedRect(QRect(x+24,h-7,76,3),1,1);}if(count>1){p.setPen(foreground);p.drawText(QRect(x+96,h-18,22,14),Qt::AlignRight,QString::number(count));}
     }
-    if(o["launcher"].toBool()){p.fillRect(QRect(20,56,600,400),QColor(26,35,45));p.setPen(QColor(232,238,245));p.drawText(36,88,"Applications  ·  "+o["query"].toString());i=0;for(auto value:o["apps"].toArray()){auto a=value.toObject();int y=106+i++*36;QIcon icon=QIcon::fromTheme(a["icon"].toString());icon.paint(&p,QRect(36,y,24,24));p.drawText(72,y+19,p.fontMetrics().elidedText(a["name"].toString(),Qt::ElideRight,280));auto categories=a["categories"].toArray();if(!categories.isEmpty()){p.setPen(QColor(155,172,187));p.drawText(QRect(370,y,230,26),Qt::AlignRight|Qt::AlignVCenter,categories[0].toString());p.setPen(QColor(232,238,245));}}}
+    if(o["launcher"].toBool()){p.fillRect(QRect(20,56,600,400),QColor(26,35,45));p.setPen(QColor(232,238,245));p.drawText(36,88,"Applications  ·  "+o["query"].toString());i=0;for(auto value:o["apps"].toArray()){auto a=value.toObject();int y=106+i*36;if(i++==o["launch_index"].toInt())p.fillRect(QRect(28,y-2,584,34),selection);QIcon icon=QIcon::fromTheme(a["icon"].toString());icon.paint(&p,QRect(36,y,24,24));p.drawText(72,y+19,p.fontMetrics().elidedText(a["name"].toString(),Qt::ElideRight,280));auto categories=a["categories"].toArray();if(!categories.isEmpty()){p.setPen(QColor(155,172,187));p.drawText(QRect(370,y,230,26),Qt::AlignRight|Qt::AlignVCenter,categories[0].toString());p.setPen(QColor(232,238,245));}}}
     if(o["manager"].toBool()){p.fillRect(QRect(w-330,h-390,320,320),QColor(26,35,45));p.setPen(QColor(232,238,245));i=0;for(auto a:o["desktops"].toArray()){p.drawText(w-310,h-362+i*32,QString::number(i+1)+"  "+a.toString());++i;}p.drawText(w-310,h-362+i*32,"+ New desktop");}
     auto popup=o["task_popup"].toObject();if(!popup.isEmpty()){int x=popup["x"].toInt(),y=popup["y"].toInt(),pw=popup["w"].toInt(),ph=popup["h"].toInt();p.fillRect(QRect(x,y,pw,ph),QColor(38,45,55,254));int band=popup["scroll_band"].toInt(),offset=popup["offset"].toInt();p.save();p.setClipRect(QRect(x,y+band,pw,ph-2*band));auto rows=popup["rows"].toArray();i=0;for(auto value:rows){auto a=value.toObject();bool context=popup["context"].toBool();int index=i;int ry=y+band+6+i++*(context?32:88)-offset;if(context){if(index==popup["selected"].toInt(-1))p.fillRect(QRect(x+4,ry,pw-8,32),selection);p.setPen(a["enabled"].toBool()?QColor(238,242,247):QColor(129,137,149));p.drawText(QRect(x+14,ry,pw-28,32),Qt::AlignVCenter,a["text"].toString());}else{
-        if(a["active"].toBool())p.fillRect(QRect(x+4,ry,pw-8,84),QColor(64,80,102));int iw=a["width"].toInt(),ih=a["height"].toInt();auto bytes=QByteArray::fromBase64(a["rgba"].toString().toLatin1());if(iw>0&&ih>0&&bytes.size()==qint64(iw)*ih*4){QImage thumb(reinterpret_cast<const unsigned char*>(bytes.constData()),iw,ih,QImage::Format_RGBA8888);QSize size=thumb.size().scaled(126,76,Qt::KeepAspectRatio);p.drawImage(QRect(x+10,ry+4,size.width(),size.height()),thumb);}else{p.fillRect(QRect(x+10,ry+4,126,76),QColor(66,75,88));}
+        if(a["active"].toBool()){p.fillRect(QRect(x+4,ry,pw-8,84),QColor(64,80,102));}int iw=a["width"].toInt(),ih=a["height"].toInt();auto bytes=QByteArray::fromBase64(a["rgba"].toString().toLatin1());if(iw>0&&ih>0&&bytes.size()==qint64(iw)*ih*4){QImage thumb(reinterpret_cast<const unsigned char*>(bytes.constData()),iw,ih,QImage::Format_RGBA8888);QSize size=thumb.size().scaled(126,76,Qt::KeepAspectRatio);p.drawImage(QRect(x+10,ry+4,size.width(),size.height()),thumb);}else{p.fillRect(QRect(x+10,ry+4,126,76),QColor(66,75,88));}
         p.setPen(QColor(238,242,247));p.drawText(QRect(x+146,ry+5,162,70),Qt::AlignVCenter|Qt::TextWordWrap,p.fontMetrics().elidedText(a["text"].toString(),Qt::ElideRight,155));
     }}p.restore();if(band>0){for(bool up:{true,false}){QRect control(x,up?y:y+ph-band,pw,band);p.fillRect(control,background);p.setPen(popup[up?"can_up":"can_down"].toBool()?foreground:muted);p.drawText(control,Qt::AlignCenter,up?QString::fromUtf8("▲"):QString::fromUtf8("▼"));}}}
     if(menu>=0){auto items=o["items"].toArray();int x=xs[menu],height=items.size()*28+8;p.fillRect(QRect(x,36,380,height),background);for(i=0;i<items.size();++i){auto a=items[i].toObject();QStyleOptionMenuItem item;item.rect=QRect(x+3,40+i*28,374,28);item.text=a["text"].toString();item.state=a["enabled"].toBool(true)?QStyle::State_Enabled:QStyle::State_None;item.menuItemType=a["separator"].toBool()?QStyleOptionMenuItem::Separator:QStyleOptionMenuItem::Normal;if(i==o["hover"].toInt(-1))item.state|=QStyle::State_Selected;item.palette=menuPalette;app()->style()->drawControl(QStyle::CE_MenuItem,&item,&p);p.setPen(a["enabled"].toBool()?foreground:muted);if(i==o["hover"].toInt(-1)&&a["enabled"].toBool())p.setPen(foreground);p.drawText(QRect(x+240,40+i*28,128,28),Qt::AlignRight|Qt::AlignVCenter,a["shortcut"].toString());}}
@@ -112,7 +143,7 @@ extern "C" int dome_qt_paint(const char *json,unsigned char *pixels,int length) 
         int x=xrSettings["x"].toInt(),y=xrSettings["y"].toInt(),sw=xrSettings["w"].toInt(),sh=xrSettings["h"].toInt();
         double rowHeight=xrSettings["row_height"].toDouble();
         p.fillRect(QRect(x,y,sw,sh),background);p.setPen(foreground);
-        p.drawText(QRect(x+20,y+4,sw-40,32),Qt::AlignVCenter,"Displays, XR Layout & Anchoring");
+        p.drawText(QRect(x+20,y+4,sw-40,32),Qt::AlignVCenter,"Displays, XR & Keybindings");
         auto rows=xrSettings["rows"].toArray();
         int first=xrSettings["first"].toInt(),visible=xrSettings["visible"].toInt();
         p.save();p.setClipRect(QRect(x+12,y+40,sw-24,qRound(visible*rowHeight)));
@@ -151,6 +182,21 @@ extern "C" int dome_qt_paint(const char *json,unsigned char *pixels,int length) 
         auto label=o["session_confirm"].toString();p.drawText(box.adjusted(24,20,-24,-110),Qt::AlignCenter,label+"?");
         p.setPen(muted);p.drawText(box.adjusted(24,70,-24,-60),Qt::AlignCenter|Qt::TextWordWrap,label=="Log Out of Dome"?"Close this Dome compositor session and its application connections.":"This action applies to the computer session.");
         p.fillRect(QRect(box.x()+24,box.y()+140,180,40),selection);p.fillRect(QRect(box.x()+230,box.y()+140,186,40),selection);p.setPen(foreground);p.drawText(QRect(box.x()+24,box.y()+140,180,40),Qt::AlignCenter,"Cancel");p.drawText(QRect(box.x()+230,box.y()+140,186,40),Qt::AlignCenter,label);
+    }
+    auto history=o["history"].toObject();
+    if(!history.isEmpty()) {
+        int x=history["x"].toInt(),y=history["y"].toInt(),hw=history["w"].toInt(),hh=history["h"].toInt();
+        p.fillRect(QRect(x,y,hw,hh),background);p.setPen(foreground);p.drawText(QRect(x+18,y+4,hw-36,32),Qt::AlignVCenter,history["title"].toString());
+        auto rows=history["rows"].toArray();int first=history["first"].toInt(),visible=history["visible"].toInt();
+        p.save();p.setClipRect(QRect(x+10,y+44,hw-20,visible*64));
+        for(int index=first;index<qMin(rows.size(),first+visible);++index){int ry=y+44+(index-first)*64;auto row=rows[index].toObject();
+            if(index==history["selected"].toInt())p.fillRect(QRect(x+10,ry,hw-20,62),selection);
+            p.setPen(muted);auto date=QDateTime::fromSecsSinceEpoch(qint64(row["timestamp"].toDouble())).toString("ddd HH:mm");p.drawText(QRect(x+18,ry+2,hw-150,18),Qt::AlignVCenter,p.fontMetrics().elidedText(row["detail"].toString(),Qt::ElideRight,hw-150));p.drawText(QRect(x+hw-130,ry+2,92,18),Qt::AlignRight|Qt::AlignVCenter,date);
+            p.setPen(foreground);p.drawText(QRect(x+18,ry+22,hw-66,38),Qt::AlignLeft|Qt::AlignTop|Qt::TextWordWrap,p.fontMetrics().elidedText(row["text"].toString(),Qt::ElideRight,(hw-66)*2));p.drawText(QRect(x+hw-36,ry,26,62),Qt::AlignCenter,"×");
+        }
+        if(rows.isEmpty()){p.setPen(muted);p.drawText(QRect(x+18,y+60,hw-36,80),Qt::AlignCenter,"History is empty");}p.restore();
+        p.setPen(muted);p.drawText(QRect(x+18,y+hh-60,hw-36,18),Qt::AlignCenter,history["kind"].toString()=="clipboard"?"Select an item to copy · Arrows browse · Delete removes":"Arrows browse · Delete removes · Escape closes");
+        p.fillRect(QRect(x+14,y+hh-36,hw/2-21,30),selection);p.fillRect(QRect(x+hw/2+7,y+hh-36,hw/2-21,30),selection);p.setPen(foreground);p.drawText(QRect(x+14,y+hh-36,hw/2-21,30),Qt::AlignCenter,"Clear history");p.drawText(QRect(x+hw/2+7,y+hh-36,hw/2-21,30),Qt::AlignCenter,"Close");
     }
     auto error=o["session_error"].toString();if(!error.isEmpty()){p.fillRect(QRect(w/2-300,h-106,600,40),background);p.setPen(foreground);p.drawText(QRect(w/2-290,h-106,580,40),Qt::AlignVCenter,p.fontMetrics().elidedText(error,Qt::ElideRight,580));}
     }

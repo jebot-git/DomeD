@@ -47,6 +47,10 @@ pub fn serve_native(
                 );
                 continue;
             }
+            if request.method() == &Method::Get && request.url() == "/api/keybindings/defaults" {
+                let _ = request.respond(Response::from_string(serde_json::to_string(&crate::shortcuts::defaults()).unwrap()).with_header(Header::from_bytes("Content-Type", "application/json").unwrap()));
+                continue;
+            }
             if request.method() == &Method::Get && request.url() == "/api/xr-control" {
                 let control = bridge
                     .as_ref()

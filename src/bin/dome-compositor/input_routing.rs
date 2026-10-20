@@ -92,6 +92,7 @@ impl Dome {
         self.menu = None;
         self.launcher = false;
         self.launch_query.clear();
+        self.launch_index = 0;
         self.desktop_manager = false;
         self.task_popup = None;
         self.task_context = false;
@@ -100,6 +101,7 @@ impl Dome {
         self.xr_settings_open = false;
         self.session_confirm = None;
         self.tray.close();
+        self.history_panel = None;
         self.input_xr_active = desired;
         self.input_realm = realm;
         {

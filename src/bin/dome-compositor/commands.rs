@@ -103,20 +103,19 @@ impl Dome {
                 ("Increase XR Window Size", "⌘+", Scale(1.1)),
                 ("Decrease XR Window Size", "⌘−", Scale(1. / 1.1)),
                 ("Return to Dome Layout", "⇧⌘R", ResetSpatial),
-                ("Toggle Dome / Direct View", "⌘P", Projection),
                 ("", "", Separator),
                 ("Show / Hide XR Bars", "⇧⌘B", ToggleXrBars),
                 ("Show / Hide Upper XR Bar", "⌥⌘T", ToggleXrTop),
                 ("Show / Hide XR Taskbar", "⌥⌘B", ToggleXrBottom),
                 ("Show / Hide XR Desktop", "⇧⌘D", ToggleXrDesktop),
-                ("Displays & XR Configuration…", "⌘,", XrSettings),
+                ("Displays, XR & Keybindings…", "⌘,", XrSettings),
                 ("Anchor Dome at Headset", "⌃⌘R", AnchorHere),
             ],
             5 => vec![
                 ("Minimize", "⌘M", Minimize),
                 ("Zoom", "⌘Return", Maximize),
-                ("Next Window", "Alt Tab", Cycle(false)),
-                ("Previous Window", "⇧Alt Tab", Cycle(true)),
+                ("Next Window in Lane", "Alt Tab", Cycle(false)),
+                ("Previous Window in Lane", "⇧Alt Tab", Cycle(true)),
                 ("Virtual Desktops…", "", Desktops),
                 ("New Desktop", "⇧⌘N", NewWorkspace),
             ],
@@ -263,6 +262,7 @@ impl Dome {
             Launch => {
                 self.launcher = true;
                 self.launch_query.clear();
+                self.launch_index = 0;
             }
             Desktops => {
                 self.desktop_manager = true;
@@ -300,12 +300,7 @@ impl Dome {
                 }
             }
             Cycle(reverse) => {
-                let ids: Vec<_> = s
-                    .windows
-                    .iter()
-                    .filter(|w| w.workspace == s.active_workspace && !w.minimized)
-                    .map(|w| w.id)
-                    .collect();
+                let ids = dome::input_routing::cycle_windows(&s, self.input_realm);
                 if !ids.is_empty() {
                     let i = ids.iter().position(|i| Some(*i) == id).unwrap_or(0);
                     let next = if reverse {
@@ -314,6 +309,9 @@ impl Dome {
                         (i + 1) % ids.len()
                     };
                     self.action(Action::Focus { id: ids[next] });
+                    if self.input_realm == dome::Realm::Xr {
+                        self.action(Action::Recenter { id: ids[next] });
+                    }
                 }
             }
             Workspace(workspace) if workspace < s.workspaces.len() => {
@@ -371,15 +369,6 @@ impl Dome {
             Copy => self.client_chord(54),
             Paste => self.client_chord(55),
             SelectAll => self.client_chord(38),
-            Projection => {
-                let mut config = s.config;
-                config.projection = if config.projection == dome::Projection::RoomDome {
-                    dome::Projection::InView
-                } else {
-                    dome::Projection::RoomDome
-                };
-                self.action(Action::Configure { config });
-            }
             About => {
                 self.about = true;
                 self.shell_error = "Dome — experimental Rust / Smithay / Qt6 desktop".into();

@@ -41,10 +41,16 @@ impl Dome {
     }
     pub fn adjust_xr_setting(&mut self, row: usize, direction: f32) {
         let c = self.scene.lock().unwrap().config.clone();
-        let adjusted = if row < geometry_settings::rows(&c).len() {
+        let geometry_count = geometry_settings::rows(&c).len();
+        if row >= geometry_count && row < geometry_count + c.keybindings.len() {
+            self.binding_capture = Some(row - geometry_count);
+            self.geometry_error = "Press a key chord; Backspace disables, Escape cancels".into();
+            return;
+        }
+        let adjusted = if row < geometry_count {
             geometry_settings::adjust(&c, row, direction)
         } else {
-            self.adjust_display_setting(&c, row - geometry_settings::rows(&c).len(), direction)
+            self.adjust_display_setting(&c, row - geometry_count - c.keybindings.len(), direction)
         };
         match adjusted {
             Ok(config) => {
@@ -118,7 +124,10 @@ impl Dome {
             .len()
             .saturating_sub(1);
         match key {
-            0xff1b => self.xr_settings_open = false,
+            0xff1b => {
+                self.xr_settings_open = false;
+                self.binding_capture = None;
+            }
             0xff52 => self.xr_settings_row = self.xr_settings_row.saturating_sub(1),
             0xff54 => self.xr_settings_row = (self.xr_settings_row + 1).min(last),
             0xff51 => self.adjust_xr_setting(self.xr_settings_row, -1.),
@@ -154,6 +163,19 @@ impl Dome {
             .into_iter()
             .map(|(a, b)| (a.to_string(), b))
             .collect();
+        for (index, binding) in c.keybindings.iter().enumerate() {
+            rows.push((
+                format!(
+                    "Keybinding · {}",
+                    dome::shortcuts::action_label(binding.command)
+                ),
+                if self.binding_capture == Some(index) {
+                    "Press chord…".into()
+                } else {
+                    binding.label()
+                },
+            ));
+        }
         for name in self.display_modes.keys() {
             let profile = c.displays.iter().find(|d| d.name == *name);
             let output = self.space.outputs().find(|o| o.name() == *name);
@@ -276,5 +298,78 @@ impl Dome {
         }
         c.validate()?;
         Ok(c)
+    }
+}
+
+impl Dome {
+    pub fn resolve_shortcut(
+        &self,
+        key: u32,
+        mods: dome::shortcuts::Mods,
+    ) -> Option<dome::shortcuts::Command> {
+        dome::shortcuts::resolve_with(&self.scene.lock().unwrap().config.keybindings, key, mods)
+    }
+    pub fn capture_binding(&mut self, key: u32, mods: dome::shortcuts::Mods) -> bool {
+        let Some(index) = self.binding_capture.filter(|_| self.xr_settings_open) else {
+            self.binding_capture = None;
+            return false;
+        };
+        if key == 0xff1b {
+            self.binding_capture = None;
+            self.geometry_error.clear();
+            return true;
+        }
+        if (0xffe1..=0xffee).contains(&key) {
+            return true;
+        }
+        if key == 0x20
+            && self
+                .keyboard_config
+                .switch_shortcut
+                .matches(mods.logo, mods.ctrl, mods.alt, mods.shift)
+        {
+            self.geometry_error =
+                "That chord switches keyboard layouts; choose another chord".into();
+            return true;
+        }
+        let mut config = self.scene.lock().unwrap().config.clone();
+        let Some(binding) = config.keybindings.get_mut(index) else {
+            self.binding_capture = None;
+            return true;
+        };
+        binding.enabled = key != 0xff08;
+        if binding.enabled {
+            binding.key = if key == 0xfe20 {
+                0xff09
+            } else {
+                char::from_u32(key)
+                    .map(|c| c.to_ascii_lowercase() as u32)
+                    .unwrap_or(key)
+            };
+            binding.mods = mods;
+        }
+        match config.validate() {
+            Ok(()) => {
+                self.geometry_error.clear();
+                self.action(Action::Configure { config });
+                self.persist_geometry();
+                self.binding_capture = None;
+            }
+            Err(error) => self.geometry_error = error,
+        }
+        true
+    }
+    pub fn toggle_desktop_xr(&mut self) {
+        let visible = self.xr_bridge.lock().unwrap().visible();
+        if !visible {
+            self.action(Action::XrPresentation {
+                top: Some(true),
+                bottom: Some(true),
+                desktop: Some(true),
+            });
+            self.start_xr();
+        } else {
+            self.command(dome::shortcuts::Command::ToggleXrDesktop);
+        }
     }
 }

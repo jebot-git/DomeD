@@ -4,6 +4,8 @@ mod handlers;
 mod file_manager;
 
 mod commands;
+mod clipboard;
+mod histories;
 mod context_menus;
 mod decorations;
 mod desktop;

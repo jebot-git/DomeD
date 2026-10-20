@@ -51,7 +51,29 @@ delegate_seat!(Dome);
 //
 
 impl SelectionHandler for Dome {
-    type SelectionUserData = ();
+    type SelectionUserData = std::sync::Arc<crate::clipboard::Entry>;
+    fn new_selection(
+        &mut self,
+        ty: smithay::wayland::selection::SelectionTarget,
+        source: Option<smithay::wayland::selection::SelectionSource>,
+        _seat: Seat<Self>,
+    ) {
+        if ty == smithay::wayland::selection::SelectionTarget::Clipboard {
+            self.clipboard.changed(source);
+        }
+    }
+    fn send_selection(
+        &mut self,
+        _ty: smithay::wayland::selection::SelectionTarget,
+        mime: String,
+        fd: std::os::fd::OwnedFd,
+        _seat: Seat<Self>,
+        data: &Self::SelectionUserData,
+    ) {
+        if let Some((_, bytes)) = data.formats.iter().find(|(m, _)| m == &mime) {
+            crate::clipboard::send_data(fd, bytes.clone());
+        }
+    }
 }
 
 impl DataDeviceHandler for Dome {

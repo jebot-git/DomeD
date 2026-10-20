@@ -25,21 +25,22 @@ fn dome_curvature_and_mouse_uv_use_identical_open_cylinder() {
     assert!((q.point([0., 0.5]) - q.point([0.5, 0.5])).dot(normal) > 0.05);
 }
 #[test]
-fn direct_view_is_flat_and_moves_with_view() {
-    let mut s = scene();
-    s.config.projection = Projection::InView;
+fn dome_is_curved_and_room_anchored_by_default() {
+    let s = scene();
     let head = Pose::default();
     let q = xr_input::quads(&s, head).remove(0);
-    assert!(q.dome.is_none());
-    let normal = Quat::from_array(q.pose.orientation_xyzw) * Vec3::Z;
-    assert!((q.point([0., 0.5]) - q.point([0.5, 0.5])).dot(normal).abs() < 0.0001);
-    let next = Pose {
-        position_m: [1., 1.4, 0.],
-        ..head
-    };
-    let moved = xr_input::quads(&s, next).remove(0);
-    assert!((moved.pose.position_m[0] - q.pose.position_m[0] - 1.).abs() < 0.0001);
+    assert!(q.dome.is_some());
+    let moved = xr_input::quads(
+        &s,
+        Pose {
+            position_m: [1., 1.4, 0.],
+            ..head
+        },
+    )
+    .remove(0);
+    assert_eq!(moved.pose, q.pose);
 }
+
 #[test]
 fn two_slots_are_world_anchored_and_third_pull_is_atomic() {
     let mut s = scene();
@@ -146,7 +147,7 @@ fn pulling_then_pushing_a_gripped_panel_returns_to_its_dome_home() {
     assert!(xr_input::quads(&s, head).remove(0).dome.is_some());
 }
 #[test]
-fn switching_projection_hides_pullout_without_losing_dome_slot() {
+fn legacy_projection_migration_preserves_pullout() {
     let mut s = scene();
     let id = s.windows[0].id;
     s.apply(Action::PullOut {
@@ -154,17 +155,20 @@ fn switching_projection_hides_pullout_without_losing_dome_slot() {
         head: Pose::default(),
     })
     .unwrap();
-    s.config.projection = Projection::InView;
+    let mut value = serde_json::to_value(&s.config).unwrap();
+    value["projection"] = serde_json::json!("in_view");
+    let config = serde_json::from_value(value).unwrap();
+    s.apply(Action::Configure { config }).unwrap();
+    assert!(s.window(id).unwrap().pullout_slot.is_some());
     assert!(xr_input::quads(&s, Pose::default())
         .iter()
-        .all(|p| p.dome.is_none()));
-    s.config.projection = Projection::RoomDome;
-    assert!(s.window(id).unwrap().pullout_slot.is_some());
+        .all(|q| q.dome.is_none()));
 }
+
 #[test]
-fn shell_insets_and_popup_growth_keep_bar_edges_fixed() {
+fn dome_popup_growth_keeps_bar_edges_fixed() {
     let mut s = scene();
-    s.config.projection = Projection::InView;
+    s.config.projection = Projection::RoomDome;
     let layout = dome::xr_transport::ShellLayout {
         width: 1280,
         height: 800,
@@ -174,22 +178,6 @@ fn shell_insets_and_popup_growth_keep_bar_edges_fixed() {
     };
     let head = Pose::default();
     let bars = xr_input::shell_quads(&s, head, &layout);
-    let top = head
-        .inverse_rotate((bars[0].point([0.5, 0.]) - Vec3::from_array(head.position_m)).to_array());
-    assert!(
-        (top[1].atan2(-top[2]).to_degrees()
-            - (s.config.vertical_fov_deg / 2. - s.config.upper_inset_deg))
-            .abs()
-            < 0.001
-    );
-    let bottom = head
-        .inverse_rotate((bars[1].point([0.5, 1.]) - Vec3::from_array(head.position_m)).to_array());
-    assert!(
-        (bottom[1].atan2(-bottom[2]).to_degrees()
-            - (-s.config.vertical_fov_deg / 2. + s.config.lower_inset_deg))
-            .abs()
-            < 0.001
-    );
     let expanded = xr_input::shell_quads(
         &s,
         head,
@@ -250,7 +238,7 @@ fn pulled_scaling_keeps_panels_side_by_side_and_restores_dome_size() {
 #[test]
 fn left_pinch_can_click_while_right_hand_hovers() {
     let mut s = scene();
-    s.config.projection = Projection::InView;
+    s.config.projection = Projection::RoomDome;
     let head = Pose::default();
     let q = xr_input::quads(&s, head).remove(0);
     let point = q.point([0.5, 0.5]);
@@ -734,7 +722,7 @@ fn dome_bars_border_lanes_and_orbit_with_horizontal_gaze() {
 
 #[test]
 fn mouse_crosses_bars_empty_space_and_lanes_without_depth_or_size_jumps() {
-    for projection in [Projection::RoomDome, Projection::InView] {
+    for projection in [Projection::RoomDome] {
         let mut s = scene();
         s.config.projection = projection;
         let head = Pose {
@@ -934,7 +922,7 @@ fn cylinder_packing_preserves_texture_aspect_ratio_in_crowded_lanes() {
 fn upper_lean_configuration_is_compatible_and_bounded() {
     let old: Config = serde_json::from_str("{}").unwrap();
     assert_eq!(old.dome_upper_tilt_deg, 8.);
-    let adjusted = dome::geometry_settings::adjust(&old, 20, 1.).unwrap();
+    let adjusted = dome::geometry_settings::adjust(&old, 19, 1.).unwrap();
     assert_eq!(adjusted.dome_upper_tilt_deg, 9.);
     let mut c = old;
     for invalid in [-1., 21., f32::NAN, f32::INFINITY] {
@@ -962,7 +950,7 @@ fn expanded_settings_fit_view_pane_and_follow_projection_preferences() {
         bottom: 60,
         notifications: None,
     };
-    for projection in [Projection::InView, Projection::RoomDome] {
+    for projection in [Projection::RoomDome] {
         scene.config.projection = projection;
         scene.config.anchor_mode = AnchorMode::Head;
         let q = dome::xr_input::shell_quads(&scene, head, &layout);
@@ -983,7 +971,7 @@ fn expanded_settings_fit_view_pane_and_follow_projection_preferences() {
 
 #[test]
 fn notification_pane_follows_head_and_maps_its_crop_without_bar_stretching() {
-    for projection in [Projection::InView, Projection::RoomDome] {
+    for projection in [Projection::RoomDome] {
         let mut s = scene();
         s.config.projection = projection;
         let head = Pose {
@@ -1024,4 +1012,73 @@ fn notification_pane_follows_head_and_maps_its_crop_without_bar_stretching() {
             assert_eq!(a.pose, b.pose);
         }
     }
+}
+
+#[test]
+fn mouse_rebases_to_the_same_uv_after_head_and_carousel_movement() {
+    let mut s = scene();
+    let id = s.windows[0].id;
+    s.apply(Action::Move {
+        id,
+        lane: 0,
+        workspace: 0,
+    })
+    .unwrap();
+    let head = Pose {
+        position_m: [0.2, 1.6, 0.1],
+        orientation_xyzw: Quat::from_rotation_y(0.4).to_array(),
+    };
+    for rotation in [0., 25., -40.] {
+        s.workspaces[0].lanes[0].rotation_deg = rotation;
+        let q = xr_input::quads(&s, head).remove(0);
+        for uv in [[0.1, 0.2], [0.5, 0.5], [0.9, 0.8]] {
+            let point = q.point(uv);
+            let angles = xr_input::mouse_angles_at(head, point);
+            let actual = q
+                .hit(
+                    Vec3::from_array(head.position_m),
+                    xr_input::mouse_ray(head, angles),
+                    false,
+                )
+                .unwrap();
+            assert!((actual[0] - uv[0]).abs() < 0.0001 && (actual[1] - uv[1]).abs() < 0.0001);
+            let reticle = xr_input::surface_reticle(&q, uv, u64::MAX);
+            assert!(
+                (Vec3::from_array(reticle.pose.position_m).distance(point) - 0.002).abs() < 0.00001
+            );
+            let normal = q.dome.as_ref().unwrap().inward_normal(point);
+            assert!(
+                (Quat::from_array(reticle.pose.orientation_xyzw) * Vec3::Z).distance(normal)
+                    < 0.00001
+            );
+        }
+    }
+}
+#[test]
+fn settings_persist_height_and_bindings_and_reject_conflicts_atomically() {
+    let folder = std::env::temp_dir().join(format!(
+        "dome-settings-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let path = folder.join("xr.json");
+    let mut c = Config::default();
+    c.center_m[1] = 1.75;
+    c.dome_vertical_span_deg = 130.;
+    let index = c
+        .keybindings
+        .iter()
+        .position(|b| b.command == dome::shortcuts::Command::Launch)
+        .unwrap();
+    c.keybindings[index].key = 'l' as u32;
+    dome::geometry_settings::save(&path, &c).unwrap();
+    assert_eq!(dome::geometry_settings::load(&path).unwrap().unwrap(), c);
+    let saved = std::fs::read(&path).unwrap();
+    c.keybindings.push(c.keybindings[0].clone());
+    assert!(dome::geometry_settings::save(&path, &c).is_err());
+    assert_eq!(std::fs::read(&path).unwrap(), saved);
+    std::fs::remove_dir_all(folder).unwrap();
 }

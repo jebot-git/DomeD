@@ -1,5 +1,5 @@
 //! Shared native XR interaction policy. No engine or renderer owns gesture semantics.
-use crate::{Action, Pose, Projection, Scene};
+use crate::{Action, Pose, Scene};
 use glam::{Quat, Vec3};
 use serde::{Deserialize, Serialize};
 /// Open cylinder strip. Vertical coordinates are height/radius, in radians of
@@ -138,9 +138,7 @@ impl Quad {
 }
 pub fn quads(scene: &Scene, head: Pose) -> Vec<Quad> {
     let old = scene.frame_pose();
-    let frame = if scene.config.projection == Projection::InView
-        || scene.config.anchor_mode == crate::AnchorMode::Head
-    {
+    let frame = if scene.config.anchor_mode == crate::AnchorMode::Head {
         head
     } else {
         old
@@ -152,10 +150,7 @@ pub fn quads(scene: &Scene, head: Pose) -> Vec<Quad> {
         .filter(|p| p.workspace == scene.active_workspace)
         .filter_map(|p| {
             let w = scene.window(p.id)?;
-            if let Some(slot) = w
-                .pullout_slot
-                .filter(|_| scene.config.projection == Projection::RoomDome)
-            {
+            if let Some(slot) = w.pullout_slot {
                 let anchor = scene.pullout_anchor?;
                 let width = 0.78 * w.xr_scale;
                 let gap = scene.config.window_gap_px
@@ -184,76 +179,49 @@ pub fn quads(scene: &Scene, head: Pose) -> Vec<Quad> {
                     dome: None,
                 });
             }
-            let local =
-                old.inverse_rotate(std::array::from_fn(|i| p.center_m[i] - old.position_m[i]));
-            let offset = if scene.config.projection == Projection::RoomDome {
-                w.dome_offset_deg
-            } else {
-                [0., 0.]
-            };
+            let offset = w.dome_offset_deg;
             let yaw = (p.yaw_deg + offset[0]).to_radians();
-            let scale = if scene.config.projection == Projection::RoomDome {
-                w.xr_scale.min(175. / p.width_deg)
-            } else {
-                w.xr_scale
-            };
+            let scale = w.xr_scale.min(175. / p.width_deg);
             let mid = (p.top_deg + p.bottom_deg) / 2.;
             let half = (p.top_deg - p.bottom_deg) / 2. * scale;
-            let pitch = if scene.config.projection == Projection::RoomDome {
-                mid + offset[1]
-            } else {
-                (mid + offset[1]).clamp(-89. + half.min(84.), 89. - half.min(84.))
+            let pitch = mid + offset[1];
+            let height = p.radius_m * (p.top_deg - p.bottom_deg).to_radians() * scale;
+            let dome = DomePatch {
+                frame: {
+                    let frame = Pose {
+                        position_m: frame.position_m,
+                        orientation_xyzw: (fq * Quat::from_rotation_y(-yaw)).to_array(),
+                    };
+                    if w.lane == 0 {
+                        upper_tilt_frame(
+                            frame,
+                            p.radius_m,
+                            (pitch - half).to_radians(),
+                            scene.config.dome_upper_tilt_deg,
+                            (p.width_deg * scale).to_radians(),
+                        )
+                    } else {
+                        frame
+                    }
+                },
+                radius: p.radius_m,
+                horizontal: (p.width_deg * scale).min(175.).to_radians(),
+                top: (pitch + half).to_radians(),
+                bottom: (pitch - half).to_radians(),
             };
-            let q = fq * Quat::from_rotation_y(-yaw) * Quat::from_rotation_x(pitch.to_radians());
-            let height = if scene.config.projection == Projection::RoomDome {
-                p.radius_m * (p.top_deg - p.bottom_deg).to_radians() * scale
-            } else {
-                2. * p.radius_m * ((p.top_deg - p.bottom_deg) / 2.).to_radians().tan() * scale
-            };
-            let dome = if scene.config.projection == Projection::RoomDome {
-                Some(DomePatch {
-                    frame: {
-                        let frame = Pose {
-                            position_m: frame.position_m,
-                            orientation_xyzw: (fq * Quat::from_rotation_y(-yaw)).to_array(),
-                        };
-                        if w.lane == 0 {
-                            upper_tilt_frame(
-                                frame,
-                                p.radius_m,
-                                (pitch - half).to_radians(),
-                                scene.config.dome_upper_tilt_deg,
-                                (p.width_deg * scale).to_radians(),
-                            )
-                        } else {
-                            frame
-                        }
-                    },
-                    radius: p.radius_m,
-                    horizontal: (p.width_deg * scale).min(175.).to_radians(),
-                    top: (pitch + half).to_radians(),
-                    bottom: (pitch - half).to_radians(),
-                })
-            } else {
-                None
-            };
-            let pose = if let Some(d) = &dome {
-                let angle = pitch.to_radians();
-                Pose {
-                    position_m: d.frame.transform([0., p.radius_m * angle, -p.radius_m]),
-                    orientation_xyzw: d.frame.orientation_xyzw,
-                }
-            } else {
-                w.xr_pose.unwrap_or(Pose {
-                    position_m: frame.transform(local),
-                    orientation_xyzw: q.to_array(),
-                })
+            let pose = Pose {
+                position_m: dome.frame.transform([
+                    0.,
+                    p.radius_m * pitch.to_radians(),
+                    -p.radius_m,
+                ]),
+                orientation_xyzw: dome.frame.orientation_xyzw,
             };
             Some(Quad {
                 id: p.id,
                 pose,
                 size: [height * w.desktop.w / w.desktop.h, height],
-                dome,
+                dome: Some(dome),
             })
         })
         .collect();
@@ -296,7 +264,7 @@ pub fn quads(scene: &Scene, head: Pose) -> Vec<Quad> {
     crate::spatial_popup::append_quads(scene, &mut panels, head);
     panels
 }
-/// Direct-view bars use lens-safe insets. Dome bars sit outside the lane
+/// Dome bars sit outside the lane
 /// latitudes and orbit the dome anchor with the headset's horizontal gaze.
 /// Head pitch stays independent so looking up/down can reach either bar.
 fn bar_quads(scene: &Scene, head: Pose, shell: &crate::xr_transport::ShellLayout) -> Vec<Quad> {
@@ -306,17 +274,12 @@ fn bar_quads(scene: &Scene, head: Pose, shell: &crate::xr_transport::ShellLayout
     let c = &scene.config;
     // Expanded configuration is a view pane, never a stretched upper bar.
     if shell.top == shell.height {
-        let room = c.projection == Projection::RoomDome;
-        let frame = if room && c.anchor_mode == crate::AnchorMode::Room {
+        let frame = if c.anchor_mode == crate::AnchorMode::Room {
             scene.frame_pose()
         } else {
             head
         };
-        let depth = if room {
-            c.radius_m
-        } else {
-            c.pullout_distance_m
-        };
+        let depth = c.radius_m;
         let aspect = shell.width as f32 / shell.height as f32;
         let height = (2. * depth * (c.vertical_fov_deg.min(80.) * 0.35).to_radians().tan())
             .min(2. * depth * 40f32.to_radians().tan() / aspect);
@@ -330,7 +293,7 @@ fn bar_quads(scene: &Scene, head: Pose, shell: &crate::xr_transport::ShellLayout
             dome: None,
         }];
     }
-    if c.projection == Projection::RoomDome {
+    {
         let anchor = if c.anchor_mode == crate::AnchorMode::Head {
             head
         } else {
@@ -411,66 +374,32 @@ fn bar_quads(scene: &Scene, head: Pose, shell: &crate::xr_transport::ShellLayout
         })
         .collect();
     }
-    let depth = c.bar_distance_m;
-    let top_edge = depth
-        * (c.vertical_fov_deg / 2. - c.upper_inset_deg)
-            .to_radians()
-            .tan();
-    let top_bottom = depth
-        * (c.vertical_fov_deg / 2. - c.upper_inset_deg - c.upper_bar_height_deg)
-            .to_radians()
-            .tan();
-    let bottom_edge = depth
-        * (-c.vertical_fov_deg / 2. + c.lower_inset_deg)
-            .to_radians()
-            .tan();
-    let bottom_top = depth
-        * (-c.vertical_fov_deg / 2. + c.lower_inset_deg + c.taskbar_height_deg)
-            .to_radians()
-            .tan();
-    [
-        (
-            crate::xr_transport::TOP_BAR,
-            c.upper_bar_max_width_deg,
-            shell.top,
-            (top_edge - top_bottom) / 36.,
-            top_edge,
-            true,
-        ),
-        (
-            crate::xr_transport::TASK_BAR,
-            c.taskbar_max_width_deg,
-            shell.bottom,
-            (bottom_top - bottom_edge) / 60.,
-            bottom_edge,
-            false,
-        ),
-    ]
-    .into_iter()
-    .map(|(id, width, pixels, scale, edge, top)| {
-        let h = pixels as f32 * scale;
-        Quad {
-            id,
-            pose: Pose {
-                position_m: head.transform([
-                    depth
-                        * (if top {
-                            c.upper_bar_x_deg
-                        } else {
-                            c.taskbar_x_deg
-                        })
-                        .to_radians()
-                        .tan(),
-                    edge + if top { -h / 2. } else { h / 2. },
-                    -depth,
-                ]),
-                orientation_xyzw: head.orientation_xyzw,
-            },
-            size: [2. * depth * (width.min(160.) / 2.).to_radians().tan(), h],
-            dome: None,
-        }
-    })
-    .collect()
+}
+/// Rebase a mouse cursor from its surface point after the head or panel moves.
+pub fn mouse_angles_at(head: Pose, point: Vec3) -> [f32; 2] {
+    let d = Vec3::from_array(
+        head.inverse_rotate((point - Vec3::from_array(head.position_m)).to_array()),
+    )
+    .normalize_or_zero();
+    [d.x.atan2(-d.z), d.y.clamp(-1., 1.).asin()]
+}
+/// Cursor geometry follows the same curved or flat surface used for input.
+pub fn surface_reticle(surface: &Quad, uv: [f32; 2], id: u64) -> Quad {
+    let point = surface.point(uv);
+    let normal = surface
+        .dome
+        .as_ref()
+        .map(|d| d.inward_normal(point))
+        .unwrap_or_else(|| Quat::from_array(surface.pose.orientation_xyzw) * Vec3::Z);
+    Quad {
+        id,
+        pose: Pose {
+            position_m: (point + normal * 0.002).to_array(),
+            orientation_xyzw: Quat::from_rotation_arc(Vec3::Z, normal).to_array(),
+        },
+        size: [0.02, 0.02],
+        dome: None,
+    }
 }
 /// One angular pointer spans all depths and empty space without target snapping.
 pub fn mouse_ray(head: Pose, angles: [f32; 2]) -> Vec3 {
@@ -543,8 +472,6 @@ struct Grab {
 struct Scale {
     id: u64,
     distance: f32,
-    mid: Vec3,
-    pose: Pose,
     value: f32,
 }
 pub struct Interaction {
@@ -701,7 +628,7 @@ impl Interaction {
             }
             self.owner = None;
             self.target = None;
-            if scene.config.projection == Projection::RoomDome {
+            {
                 if let [Some(a), Some(b)] = &self.grabs {
                     if a.id == b.id {
                         if a.switched || b.switched {
@@ -744,7 +671,6 @@ impl Interaction {
                 if a.id == b.id {
                     let left = Vec3::from_array(hands[0].position);
                     let right = Vec3::from_array(hands[1].position);
-                    let mid = (left + right) / 2.;
                     let d = left.distance(right);
                     if d < 0.04 {
                         return self.reset();
@@ -752,23 +678,12 @@ impl Interaction {
                     let s = self.scale.get_or_insert_with(|| Scale {
                         id: a.id,
                         distance: d,
-                        mid,
-                        pose: interaction_pose(quads.iter().find(|q| q.id == a.id).unwrap(), scene),
                         value: scene.window(a.id).unwrap().xr_scale,
                     });
                     let value = (s.value * d / s.distance).clamp(0.25, 4.);
-                    let position =
-                        mid + (Vec3::from_array(s.pose.position_m) - s.mid) * (value / s.value);
                     out.actions.push(Action::SpatialTransform {
                         id: s.id,
-                        pose: if scene.config.projection == Projection::RoomDome {
-                            None
-                        } else {
-                            Some(Pose {
-                                position_m: position.to_array(),
-                                ..s.pose
-                            })
-                        },
+                        pose: None,
                         scale: value,
                     });
                     return out;
@@ -788,7 +703,7 @@ impl Interaction {
             for i in 0..2 {
                 if let Some(g) = &mut self.grabs[i] {
                     let delta = Vec3::from_array(hands[i].position) - g.start;
-                    if scene.config.projection == Projection::RoomDome {
+                    {
                         if g.switched {
                             continue;
                         }
@@ -824,16 +739,6 @@ impl Interaction {
                                 pitch_deg: g.dome_offset[1] + (local.y / r).to_degrees(),
                             });
                         }
-                    } else {
-                        let position = Vec3::from_array(g.pose.position_m) + delta;
-                        out.actions.push(Action::SpatialTransform {
-                            id: g.id,
-                            pose: Some(Pose {
-                                position_m: position.to_array(),
-                                ..g.pose
-                            }),
-                            scale: g.scale,
-                        });
                     }
                 }
             }
@@ -1028,7 +933,6 @@ mod tests {
     use super::*;
     fn setup() -> (Scene, Pose, Hand) {
         let mut s = Scene::new("test");
-        s.config.projection = Projection::InView;
         let id = s.add("Client", "app");
         let _ = id;
         let q = quads(&s, Pose::default()).remove(0);
@@ -1099,7 +1003,7 @@ mod tests {
         hand.pinch = [true; 3];
         let p = i.update(1.01, true, [hand, Hand::default()], &s, h);
         apply(&mut s, &p);
-        let old = s.windows[0].xr_pose.unwrap();
+        let old = s.windows[0].dome_offset_deg;
         hand.position[0] += 0.1;
         let p = i.update(1.02, true, [hand, Hand::default()], &s, h);
         assert!(!p
@@ -1107,9 +1011,8 @@ mod tests {
             .iter()
             .any(|e| matches!(e, SeatEvent::Button { pressed: true, .. })));
         apply(&mut s, &p);
-        assert!(
-            (s.windows[0].xr_pose.unwrap().position_m[0] - old.position_m[0] - 0.1).abs() < 0.001
-        );
+        assert!(s.windows[0].dome_offset_deg[0] > old[0]);
+        assert!(s.windows[0].xr_pose.is_none());
     }
     #[test]
     fn both_grips_scale_and_releasing_one_does_not_jump() {
@@ -1141,7 +1044,8 @@ mod tests {
         i.update(1., true, [hand, Hand::default()], &s, h);
         hand.pinch[0] = true;
         i.update(1.01, true, [hand, Hand::default()], &s, h);
-        hand.ray = (Vec3::from_array(hand.ray) + Vec3::X * 4.)
+        let q = quads(&s, h).remove(0);
+        hand.ray = (q.point([1.2, 0.5]) - Vec3::from_array(hand.position))
             .normalize()
             .to_array();
         let p = i.update(1.02, true, [hand, Hand::default()], &s, h);

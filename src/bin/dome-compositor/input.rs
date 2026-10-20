@@ -23,7 +23,8 @@ impl Dome {
                 {
                     return;
                 }
-                if !self.launcher
+                if self.history_panel.is_none()
+                    && !self.launcher
                     && self.menu.is_none()
                     && !self.desktop_manager
                     && !self.appearance_open
@@ -61,6 +62,27 @@ impl Dome {
                             return FilterResult::Intercept(());
                         }
                         if pressed
+                            && state.capture_binding(
+                                if mods.shift && mods.logo {
+                                    key.raw_latin_sym_or_raw_current_sym()
+                                        .filter(|s| (49..=56).contains(&s.raw()))
+                                        .unwrap_or(sym)
+                                        .raw()
+                                } else {
+                                    sym.raw()
+                                },
+                                dome::shortcuts::Mods {
+                                    logo: mods.logo,
+                                    ctrl: mods.ctrl,
+                                    alt: mods.alt,
+                                    shift: mods.shift,
+                                },
+                            )
+                        {
+                            state.shell_keys.insert(code);
+                            return FilterResult::Intercept(());
+                        }
+                        if pressed
                             && sym.raw() == 0x20
                             && state
                                 .keyboard_config
@@ -83,29 +105,35 @@ impl Dome {
                         }
                         // Visibility remains available from launchers and modal shell panels.
                         if pressed {
-                            if let Some(command) = dome::shortcuts::resolve(
-                                sym.raw(),
-                                dome::shortcuts::Mods {
-                                    logo: mods.logo,
-                                    ctrl: mods.ctrl,
-                                    alt: mods.alt,
-                                    shift: mods.shift,
-                                },
-                            )
-                            .filter(|c| {
-                                matches!(
-                                    c,
-                                    dome::shortcuts::Command::ToggleXrBars
-                                        | dome::shortcuts::Command::ToggleXrTop
-                                        | dome::shortcuts::Command::ToggleXrBottom
-                                        | dome::shortcuts::Command::ToggleXrDesktop
+                            if let Some(command) = state
+                                .resolve_shortcut(
+                                    sym.raw(),
+                                    dome::shortcuts::Mods {
+                                        logo: mods.logo,
+                                        ctrl: mods.ctrl,
+                                        alt: mods.alt,
+                                        shift: mods.shift,
+                                    },
                                 )
-                            }) {
+                                .filter(|c| {
+                                    matches!(
+                                        c,
+                                        dome::shortcuts::Command::ToggleXrBars
+                                            | dome::shortcuts::Command::ToggleXrTop
+                                            | dome::shortcuts::Command::ToggleXrBottom
+                                            | dome::shortcuts::Command::ToggleXrDesktop
+                                    )
+                                })
+                            {
                                 state.shell_keys.insert(code);
                                 state.menu = None;
                                 state.command(command);
                                 return FilterResult::Intercept(());
                             }
+                        }
+                        if pressed && state.history_key(sym.raw()) {
+                            state.shell_keys.insert(code);
+                            return FilterResult::Intercept(());
                         }
                         if pressed && state.xr_settings_key(sym.raw()) {
                             state.shell_keys.insert(code);
@@ -144,7 +172,7 @@ impl Dome {
                             return FilterResult::Intercept(());
                         }
                         if pressed {
-                            if let Some(command) = dome::shortcuts::resolve(
+                            if let Some(command) = state.resolve_shortcut(
                                 if mods.shift && mods.logo {
                                     key.raw_latin_sym_or_raw_current_sym()
                                         .filter(|s| (49..=56).contains(&s.raw()))
@@ -206,6 +234,19 @@ impl Dome {
                                     }
                                     0xff08 => {
                                         state.launch_query.pop();
+                                        state.launch_index = 0;
+                                    }
+                                    0xff52 | 0xff51 => {
+                                        state.launch_index = state.launch_index.saturating_sub(1)
+                                    }
+                                    0xff54 | 0xff53 => {
+                                        state.launch_index = (state.launch_index + 1)
+                                            .min(state.matching_apps().len().saturating_sub(1))
+                                    }
+                                    0xff50 => state.launch_index = 0,
+                                    0xff57 => {
+                                        state.launch_index =
+                                            state.matching_apps().len().saturating_sub(1)
                                     }
                                     0xff0d => state.launch_selected(),
                                     _ => {
@@ -213,24 +254,11 @@ impl Dome {
                                         {
                                             if state.launch_query.len() < 80 {
                                                 state.launch_query.push(c);
+                                                state.launch_index = 0;
                                             }
                                         }
                                     }
                                 }
-                            }
-                            return FilterResult::Intercept(());
-                        }
-                        if pressed
-                            && mods.logo
-                            && mods.shift
-                            && !mods.alt
-                            && !mods.ctrl
-                            && sym.key_char() == Some(' ')
-                        {
-                            state.shell_keys.insert(code);
-                            {
-                                state.launcher = true;
-                                state.launch_query.clear();
                             }
                             return FilterResult::Intercept(());
                         }
@@ -385,7 +413,7 @@ impl Dome {
                             && pos.x < size.w as f64 - 220.
                             && tray.menu.is_none()
                         {
-                            self.tray.activate(
+                            self.activate_tray(
                                 ((pos.x - tray_start) / 28.) as usize,
                                 pos.x as i32,
                                 pos.y as i32,
@@ -395,7 +423,7 @@ impl Dome {
                         }
                         if pos.y >= (size.h - 60) as f64
                             && pos.x >= 110.
-                            && pos.x < (size.w - 160) as f64
+                            && pos.x < (size.w - 250) as f64
                         {
                             self.activate_task(((pos.x - 110.) / 130.) as usize, button);
                         } else {
@@ -483,6 +511,9 @@ impl Dome {
                             vertical: vertical_amount,
                         }],
                     });
+                    return;
+                }
+                if self.history_scroll(vertical_amount) {
                     return;
                 }
                 if self.xr_settings_scroll(vertical_amount) {

@@ -30,10 +30,10 @@ def done():
 def start():
     check("Boolean($('tasks').children.length && $('radius_m').value && $('scene').width)")
     capture('dome-preview.png')
-    js("$('projection').value='in_view';$('projection').dispatchEvent(new Event('change'))")
+    js("$('toggle-view').click()")
     steps.extend([
-      lambda:check("snapshot.scene.config.projection==='in_view'"),
-      lambda:capture('dome-in-view.png'),
+      lambda:check("view==='desktop' && !document.querySelector('#projection') && snapshot.scene.config.projection==='room_dome'"),
+      lambda:capture('dome-desktop-toggle.png'),
       lambda:js("$('desktops').click();$('workspace-name').value='UI smoke';$('new-workspace').requestSubmit()"),
       lambda:check("$('manager').open && snapshot.scene.workspaces.some(w=>w.name==='UI smoke')"),
       lambda:js("const cards=[...document.querySelectorAll('.workspace-card')];cards.at(-1).children[1].click();cards.at(-1).querySelector('input').value='Renamed';cards.at(-1).querySelector('button').click()"),
@@ -42,11 +42,15 @@ def start():
       lambda:check("!snapshot.scene.workspaces.some(w=>w.name==='Renamed')"),
       lambda:js("$('manager').close();$('launch').click()"),
       lambda:check("$('launcher').open && document.activeElement===$('search') && apps.length>0"),
+      lambda:js("$('search').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true}))"),
+      lambda:check("launchIndex===Math.min(1,matches().length-1) && $('app-results').children[launchIndex].classList.contains('selected')"),
+      lambda:js("$('search').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowUp',bubbles:true}))"),
+      lambda:check("launchIndex===0"),
       lambda:js("$('search').value='no-such-app-928354';$('search').dispatchEvent(new Event('input'))"),
       lambda:check("$('app-results').textContent==='No matching applications'"),
       lambda:js("$('launcher').close();$('desktop').click()"),
       lambda:capture('dome-desktop.png'),
-      lambda:js("$('xr').click();$('projection').value='room_dome';$('projection').dispatchEvent(new Event('change'));$('unfold').click()"),
+      lambda:js("$('xr').click();$('unfold').click()"),
       lambda:capture('dome-unfolded.png'),
       lambda:js("$('unfold').click()"),
       done])

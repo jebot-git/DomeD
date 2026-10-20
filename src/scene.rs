@@ -7,7 +7,7 @@ fn default_scale() -> f32 {
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum Projection {
-    InView,
+    #[serde(alias = "in_view")]
     RoomDome,
 }
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
@@ -107,6 +107,7 @@ impl Default for DisplayConfig {
 pub struct Config {
     pub displays: Vec<DisplayConfig>,
     pub projection: Projection,
+    pub keybindings: Vec<crate::shortcuts::Binding>,
     pub anchor_mode: AnchorMode,
     pub upper_bar_x_deg: f32,
     pub taskbar_x_deg: f32,
@@ -135,6 +136,7 @@ impl Default for Config {
         Self {
             displays: Vec::new(),
             projection: Projection::RoomDome,
+            keybindings: crate::shortcuts::defaults(),
             anchor_mode: AnchorMode::Room,
             upper_bar_x_deg: 0.,
             taskbar_x_deg: 0.,
@@ -161,6 +163,7 @@ impl Default for Config {
 }
 impl Config {
     pub fn validate(&self) -> Result<(), String> {
+        crate::shortcuts::validate(&self.keybindings)?;
         let mut names = std::collections::HashSet::new();
         for display in &self.displays {
             if display.name.is_empty()
@@ -262,7 +265,6 @@ impl Config {
     }
     pub fn lane_extent(&self) -> (f32, f32) {
         match self.projection {
-            Projection::InView => self.view_lane_extent(),
             Projection::RoomDome => (
                 -self.dome_vertical_span_deg / 2.,
                 self.dome_vertical_span_deg / 2.,
@@ -670,9 +672,6 @@ impl Scene {
             }
             Action::PullOut { id, head } => {
                 head.validate()?;
-                if self.config.projection != Projection::RoomDome {
-                    return Err("Only dome panels can be pulled out".into());
-                }
                 let w = self.window(id).ok_or("Unknown window")?;
                 if w.minimized || w.workspace != self.active_workspace {
                     return Err("Panel is not visible".into());
@@ -965,7 +964,6 @@ impl Scene {
     }
     pub fn frame_pose(&self) -> Pose {
         match self.config.projection {
-            Projection::InView => self.view_pose,
             Projection::RoomDome if self.config.anchor_mode == AnchorMode::Head => self.view_pose,
             Projection::RoomDome => {
                 let a = self.config.yaw_deg.to_radians() / 2.;
@@ -979,23 +977,8 @@ impl Scene {
     pub fn point(&self, yaw: f32, elevation: f32, radius: f32) -> [f32; 3] {
         let y = yaw.to_radians();
         let e = elevation.to_radians();
-        if self.config.projection == Projection::RoomDome {
-            return self
-                .frame_pose()
-                .transform([radius * y.sin(), radius * e, -radius * y.cos()]);
-        }
-        // In-view borders are constant screen pitch, keeping peripheral windows
-        // inside the flat view-relative trays rather than bowing across them.
-        let e = if self.config.projection == Projection::InView {
-            (e.tan() * y.cos()).atan()
-        } else {
-            e
-        };
-        self.frame_pose().transform([
-            radius * e.cos() * y.sin(),
-            radius * e.sin(),
-            -radius * e.cos() * y.cos(),
-        ])
+        self.frame_pose()
+            .transform([radius * y.sin(), radius * e, -radius * y.cos()])
     }
     fn preserve_lane_centres(&mut self, before: &[Panel]) {
         let after = self.panels();
@@ -1027,10 +1010,8 @@ impl Scene {
             // Pixels mean Wayland logical content pixels, independent of headset resolution.
             let height_at = |bottom: f32, top: f32| {
                 let angular = top - bottom;
-                if self.config.projection == Projection::RoomDome {
+                {
                     angular * (2.2 / radius).min(1.)
-                } else {
-                    angular
                 }
             };
             let heights = raw_spans.map(|[b, t]| height_at(b, t));
@@ -1054,7 +1035,7 @@ impl Scene {
                 .lane_gap_deg
                 .min(self.config.window_gap_px * pixel_pitch);
             let mut mid = (raw_spans[1][0] + raw_spans[1][1]) / 2.;
-            if self.config.projection == Projection::RoomDome && radius > 2.2 {
+            if radius > 2.2 {
                 mid *= 2.2 / radius;
             }
             let middle = [mid - heights[1] / 2., mid + heights[1] / 2.];
@@ -1074,16 +1055,7 @@ impl Scene {
                 let height = top - bottom;
                 let mut widths: Vec<f32> = windows
                     .iter()
-                    .map(|w| {
-                        if self.config.projection == Projection::RoomDome {
-                            height * w.desktop.w / w.desktop.h
-                        } else {
-                            (2. * ((height / 2.).to_radians().tan() * w.desktop.w / w.desktop.h)
-                                .atan())
-                            .to_degrees()
-                            .clamp(14., 100.)
-                        }
-                    })
+                    .map(|w| height * w.desktop.w / w.desktop.h)
                     .collect();
                 let total: f32 = widths.iter().sum();
                 let gap = if windows.len() < 2 {
@@ -1097,7 +1069,7 @@ impl Scene {
                             .fold(f32::INFINITY, f32::min)
                 };
                 let mut scale = (360. / (total + gap * windows.len() as f32).max(1.)).min(1.);
-                if self.config.projection == Projection::RoomDome {
+                {
                     scale = scale.min(175. / widths.iter().copied().fold(1., f32::max));
                 }
                 let gap = gap * scale;
@@ -1116,27 +1088,18 @@ impl Scene {
                         let (b, t) = self.config.lane_extent();
                         let h = height_at(b, t);
                         let (b, t) = ((b + t - h) / 2., (b + t + h) / 2.);
-                        if self.config.projection == Projection::RoomDome {
+                        {
                             let width = ((t - b) * w.desktop.w / w.desktop.h).min(175.);
                             let height = width * w.desktop.h / w.desktop.w;
                             ((b + t - height) / 2., (b + t + height) / 2., width)
-                        } else {
-                            let width = (2.
-                                * (((t - b) / 2.).to_radians().tan() * w.desktop.w / w.desktop.h)
-                                    .atan())
-                            .to_degrees()
-                            .min(170.);
-                            (b, t, width)
                         }
-                    } else if self.config.projection == Projection::RoomDome {
+                    } else {
                         let mid = (bottom + top) / 2.;
                         (
                             mid - height * scale / 2.,
                             mid + height * scale / 2.,
                             widths[i],
                         )
-                    } else {
-                        (bottom, top, widths[i])
                     };
                     panels.push(Panel {
                         id: w.id,
@@ -1172,7 +1135,7 @@ impl Scene {
         if len < 1e-6 {
             return None;
         }
-        if self.config.projection == Projection::RoomDome {
+        {
             let origin = glam::Vec3::from_array(origin);
             let direction = glam::Vec3::from_array(direction) / len;
             return crate::xr_input::quads(self, self.view_pose)
@@ -1186,65 +1149,12 @@ impl Scene {
                 })
                 .min_by(|a, b| a.distance_m.total_cmp(&b.distance_m));
         }
-        let frame = self.frame_pose();
-        let d = frame.inverse_rotate(direction.map(|v| v / len));
-        let o = frame.inverse_rotate(std::array::from_fn::<_, 3, _>(|i| {
-            origin[i] - frame.position_m[i]
-        }));
-        let dot = o.iter().zip(d).map(|(a, b)| a * b).sum::<f32>();
-        let c = o.iter().map(|v| v * v).sum::<f32>() - self.config.radius_m.powi(2);
-        let discriminant = dot * dot - c;
-        if discriminant < 0. {
-            return None;
-        }
-        let roots = [-dot - discriminant.sqrt(), -dot + discriminant.sqrt()];
-        for distance in roots {
-            if distance <= 0. {
-                continue;
-            }
-            let p = std::array::from_fn::<_, 3, _>(|i| o[i] + d[i] * distance);
-            let yaw = wrap(p[0].atan2(-p[2]).to_degrees());
-            let el = if self.config.projection == Projection::InView {
-                p[1].atan2(-p[2]).to_degrees()
-            } else {
-                (p[1] / self.config.radius_m)
-                    .clamp(-1., 1.)
-                    .asin()
-                    .to_degrees()
-            };
-            let mut panels = self.panels();
-            panels.sort_by_key(|p| {
-                (
-                    self.focused == Some(p.id),
-                    self.window(p.id).is_some_and(|w| w.maximized),
-                )
-            });
-            for panel in panels
-                .iter()
-                .rev()
-                .filter(|p| p.workspace == self.active_workspace)
-            {
-                let dx = wrap(yaw - panel.yaw_deg);
-                if dx.abs() <= panel.width_deg / 2. && el >= panel.bottom_deg && el <= panel.top_deg
-                {
-                    return Some(RayHit {
-                        id: panel.id,
-                        uv: [
-                            dx / panel.width_deg + 0.5,
-                            (panel.top_deg - el) / (panel.top_deg - panel.bottom_deg),
-                        ],
-                        distance_m: distance,
-                    });
-                }
-            }
-        }
-        None
     }
     /// Mesh using the native cylinder and upper-lane lean; no pole convergence.
     pub fn mesh(&self, p: &Panel, segments: u32) -> Vec<[f32; 3]> {
         let count = segments.clamp(1, 256);
         let mut out = Vec::with_capacity((count as usize + 1) * 2);
-        if self.config.projection == Projection::RoomDome {
+        {
             let mut nominal = self.clone();
             nominal.focused = None;
             nominal.active_workspace = p.workspace;

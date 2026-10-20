@@ -579,7 +579,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     state.out.push_back(p);
                 }
             }
-            // Mouse is drawn on a stable view plane, including between surfaces.
+            // Mouse and hand cursors follow the hit surface; empty space has a view cursor.
             // Tracked hands continue to use physical ray intersections.
             let cursor_hands = if control.mouse && focused && head_valid && transition.opacity >= 1.
             {
@@ -615,33 +615,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                                     .distance_squared(glam::Vec3::from_array(hand.position)),
                             )
                     });
-                let reticle = if control.mouse {
-                    control
-                        .mouse_angles
-                        .map(|angles| dome::xr_input::mouse_reticle(head_pose, angles))
-                } else {
-                    hit.map(|(q, uv)| {
-                        let point = q.point(uv);
-                        let normal = if let Some(d) = &q.dome {
-                            d.inward_normal(point)
-                        } else {
-                            glam::Quat::from_array(q.pose.orientation_xyzw) * glam::Vec3::Z
-                        };
-                        dome::xr_input::Quad {
-                            id: u64::MAX - i as u64,
-                            pose: Pose {
-                                position_m: (point + normal * 0.002).to_array(),
-                                orientation_xyzw: glam::Quat::from_rotation_arc(
-                                    glam::Vec3::Z,
-                                    normal,
-                                )
-                                .to_array(),
-                            },
-                            size: [0.02, 0.02],
-                            dome: None,
-                        }
-                    })
-                };
+                let reticle = hit
+                    .map(|(q, uv)| dome::xr_input::surface_reticle(q, uv, u64::MAX - i as u64))
+                    .or_else(|| if control.mouse {
+                        control.mouse_angles.map(|angles| dome::xr_input::mouse_reticle(head_pose, angles))
+                    } else { None });
                 if let Some(reticle) = reticle {
                     let id = reticle.id;
                     let pressed = hand.grip || hand.pinch.iter().any(|p| *p);
@@ -743,7 +721,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             if geometry.iter().any(|q| q.dome.is_some())
                 && !extensions.khr_composition_layer_cylinder
             {
-                return Err("Room dome requires XR_KHR_composition_layer_cylinder; use direct-view projection on this runtime".into());
+                return Err("Room dome requires XR_KHR_composition_layer_cylinder; enable cylinder layer support in the XR runtime".into());
             }
             let mut visible: Vec<_> = geometry
                 .iter()

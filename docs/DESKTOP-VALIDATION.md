@@ -99,7 +99,7 @@ priority, ambiguous pinch suppression and neutral rearming after tracking loss.
 The API smoke test and real EGL Wayland client test also pass.
 
 The combined run also verifies a real StatusNotifier/DBusMenu action, XR-shell
-pinch menu activation, spherical dome layers followed by flat pulled/direct-view
+pinch menu activation, cylindrical dome layers followed by flat pulled-out
 layers, live grouped thumbnails, task wheel cycling, XDG Desktop Action execution,
 persisted launcher pins, grouped close-all and launching a pinned app after closing
 its windows. Additional actual headset captures are `01-native-xr-pulled.png` and

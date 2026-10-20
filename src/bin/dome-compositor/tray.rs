@@ -16,6 +16,7 @@ pub struct Item {
     pub key: String,
     pub title: String,
     pub icon: String,
+    pub icon_theme_path: String,
     pub pixmap: String,
     pub width: i32,
     pub height: i32,
@@ -347,27 +348,34 @@ fn run(
             }
             let title = proxy.get_property("Title").unwrap_or_default();
             let attention = status == "NeedsAttention";
-            let icon = proxy
+            let mut icon: String = proxy
                 .get_property(if attention {
                     "AttentionIconName"
                 } else {
                     "IconName"
                 })
                 .unwrap_or_default();
-            let images: Vec<(i32, i32, Vec<u8>)> = proxy
+            if attention && icon.is_empty() {
+                icon = proxy.get_property("IconName").unwrap_or_default();
+            }
+            let icon_theme_path = proxy.get_property("IconThemePath").unwrap_or_default();
+            let mut images: Vec<(i32, i32, Vec<u8>)> = proxy
                 .get_property(if attention {
                     "AttentionIconPixmap"
                 } else {
                     "IconPixmap"
                 })
                 .unwrap_or_default();
+            if attention && images.is_empty() {
+                images = proxy.get_property("IconPixmap").unwrap_or_default();
+            }
             let (width, height, pixmap) = images
                 .into_iter()
                 .filter(|(w, h, p)| {
                     *w > 0
                         && *h > 0
-                        && *w <= 128
-                        && *h <= 128
+                        && *w <= 512
+                        && *h <= 512
                         && p.len() == (*w as usize) * (*h as usize) * 4
                 })
                 .min_by_key(|(w, _, _)| (*w - 22).abs())
@@ -385,6 +393,7 @@ fn run(
                 key: key.clone(),
                 title,
                 icon,
+                icon_theme_path,
                 pixmap,
                 width,
                 height,
@@ -415,6 +424,34 @@ fn run(
 impl crate::Dome {
     pub fn visible_tray(&self, width: i32) -> Snapshot {
         let mut state = self.tray.state();
+        if let Some(index) = state.menu.as_mut() {
+            *index += 2;
+        }
+        let own = |key: &str, title: &str, attention: bool| Item {
+            key: key.into(),
+            title: title.into(),
+            icon: String::new(),
+            icon_theme_path: String::new(),
+            pixmap: String::new(),
+            width: 0,
+            height: 0,
+            attention,
+            service: String::new(),
+            path: String::new(),
+            menu: String::new(),
+            item_is_menu: false,
+        };
+        state.items.splice(
+            0..0,
+            [
+                own("dome.clipboard", "Clipboard history", false),
+                own(
+                    "dome.notifications",
+                    "Notification history",
+                    self.notifications.unread(),
+                ),
+            ],
+        );
         state.items.truncate(((width - 704).max(0) / 28) as usize);
         if state.menu.is_some_and(|i| i >= state.items.len()) {
             state.menu = None;

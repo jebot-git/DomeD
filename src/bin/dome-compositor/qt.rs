@@ -19,3 +19,27 @@ pub fn paint(value: Value) -> Vec<u8> {
 pub fn hit(w: i32, h: i32, x: i32, y: i32) -> i32 {
     unsafe { dome_qt_hit(w, h, x, y) }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use base64::Engine;
+    #[test]
+    fn tray_pixmaps_keep_network_argb_colours_and_alpha() {
+        let pixel = [255u8, 12, 93, 208];
+        let raw = pixel.repeat(22 * 22);
+        let value = serde_json::json!({"kind":"shell","width":1024,"height":768,"tray":{"items":[{"key":"test","title":"Colour","width":22,"height":22,"pixmap":base64::engine::general_purpose::STANDARD.encode(raw)}]}});
+        let image = paint(value.clone());
+        let index = (18 * 1024 + 790) * 4;
+        assert_eq!(&image[index..index + 4], &[208, 93, 12, 255]);
+        let mut transparent = value;
+        transparent["tray"]["items"][0]["pixmap"] = serde_json::json!(
+            base64::engine::general_purpose::STANDARD.encode([0u8, 255, 0, 0].repeat(22 * 22))
+        );
+        let image = paint(transparent);
+        assert!(
+            image[index + 2] < 50,
+            "Transparent red must not become opaque or tinted"
+        );
+    }
+}

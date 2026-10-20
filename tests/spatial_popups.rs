@@ -51,8 +51,8 @@ fn desktop_prefers_right_panel_and_falls_back_in_front_within_work_area() {
 }
 
 #[test]
-fn direct_view_popup_is_flat_in_front_and_ray_targets_match_its_surface() {
-    let (scene, root, popup) = fixture(Projection::InView);
+fn dome_popup_is_flat_and_ray_targets_match_its_surface() {
+    let (scene, root, popup) = fixture(Projection::RoomDome);
     let head = Pose::default();
     let quads = xr_input::quads(&scene, head);
     let parent = quads.iter().find(|q| q.id == root).unwrap();
@@ -60,7 +60,7 @@ fn direct_view_popup_is_flat_in_front_and_ray_targets_match_its_surface() {
     assert!(panel.dome.is_none());
     let offset = Quat::from_array(parent.pose.orientation_xyzw).conjugate()
         * (Vec3::from_array(panel.pose.position_m) - Vec3::from_array(parent.pose.position_m));
-    assert!((offset.z - 0.06).abs() < 1e-5);
+    assert!((offset.z - 0.14).abs() < 1e-5);
     for uv in [[0.1, 0.2], [0.5, 0.5], [0.9, 0.8]] {
         let origin = Vec3::from_array(head.position_m);
         let actual = panel
@@ -68,7 +68,7 @@ fn direct_view_popup_is_flat_in_front_and_ray_targets_match_its_surface() {
             .unwrap();
         assert!((actual[0] - uv[0]).abs() < 1e-5 && (actual[1] - uv[1]).abs() < 1e-5);
     }
-    assert!(spatial_popup::beams(&scene, &quads, head).is_empty());
+    assert!(!spatial_popup::beams(&scene, &quads, head).is_empty());
 }
 
 #[test]
@@ -93,7 +93,7 @@ fn dome_popup_floats_above_and_forward_with_beam_back_to_origin() {
 
 #[test]
 fn nested_popups_follow_parent_and_inherit_visibility_without_lane_slots() {
-    let (mut scene, root, popup) = fixture(Projection::InView);
+    let (mut scene, root, popup) = fixture(Projection::RoomDome);
     let child = POPUP_ID_BASE + 2;
     scene.popups.insert(
         0,
@@ -183,7 +183,7 @@ fn parented_dialog_is_a_popup_instead_of_an_independent_dome_card() {
 #[test]
 fn hand_pinches_target_popup_and_outside_pinches_leave_for_dismissal() {
     use xr_input::{Hand, Interaction, SeatEvent};
-    let (scene, root, popup) = fixture(Projection::InView);
+    let (scene, root, popup) = fixture(Projection::RoomDome);
     let head = Pose::default();
     let quads = xr_input::quads(&scene, head);
     let panel = quads.iter().find(|q| q.id == popup).unwrap();

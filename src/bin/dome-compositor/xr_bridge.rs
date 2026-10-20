@@ -32,7 +32,8 @@ impl Dome {
         if self.launcher {
             top = 456.min(height);
         }
-        if self.about
+        if self.history_panel.is_some()
+            || self.about
             || self.appearance_open
             || self.xr_settings_open
             || self.session_confirm.is_some()
@@ -45,7 +46,11 @@ impl Dome {
         if let Some(index) = self.task_popup {
             bottom = bottom.max((height as f64 - self.popup_rect(index, width, height).1) as i32);
         }
-        let toasts = self.notifications.layout(width, height);
+        let toasts = if self.history_panel.is_some() {
+            vec![]
+        } else {
+            self.notifications.layout(width, height)
+        };
         let notification_rect = toasts.first().map(|first| {
             [
                 first.x as u32,
@@ -105,6 +110,7 @@ impl Dome {
         }
     }
     pub fn xr_input(&mut self) {
+        self.clipboard.poll(&self.seat);
         if !self.native_session_active {
             self.xr_bridge.lock().unwrap().packets.clear();
             return;
@@ -373,7 +379,7 @@ impl Dome {
                                 && x < layout.width as f64 - 220.
                                 && tray.menu.is_none()
                             {
-                                self.tray.activate(
+                                self.activate_tray(
                                     ((x - tx) / 28.) as usize,
                                     x as i32,
                                     y as i32,
@@ -381,7 +387,7 @@ impl Dome {
                                 );
                             } else if y >= (layout.height as f64 - 60.)
                                 && x >= 110.
-                                && x < layout.width as f64 - 160.
+                                && x < layout.width as f64 - 250.
                             {
                                 self.activate_task(((x - 110.) / 130.) as usize, button);
                             } else {
@@ -420,6 +426,9 @@ impl Dome {
                     horizontal,
                     vertical,
                 } => {
+                    if self.xr_shell_pos.is_some() && self.history_scroll(vertical) {
+                        continue;
+                    }
                     if self.xr_shell_pos.is_some() && self.xr_settings_scroll(vertical) {
                         continue;
                     }
@@ -540,7 +549,10 @@ impl Dome {
         surfaces.extend(dome::xr_input::shell_quads(&scene, session.head, &layout));
         surfaces.retain(|q| self.xr_animation.interactive(scene.presentation, q.id));
         let head = glam::Vec3::from_array(session.head.position_m);
-        let angles = self.mouse_angles.get_or_insert_with(|| {
+        // Rebase from the last surface UV as the head or carousel moves. A
+        // stationary mouse stays on its panel instead of drifting with gaze.
+        let previous = self.mouse_angles.unwrap_or([0., 0.]);
+        let mut angles = {
             cursor
                 .as_ref()
                 .and_then(|c| {
@@ -549,17 +561,13 @@ impl Dome {
                         .find(|q| q.id == c.id)
                         .map(|q| q.point(c.uv))
                 })
-                .map(|p| {
-                    let d =
-                        glam::Vec3::from_array(session.head.inverse_rotate((p - head).to_array()))
-                            .normalize_or_zero();
-                    [d.x.atan2(-d.z), d.y.clamp(-1., 1.).asin()]
-                })
-                .unwrap_or([0., 0.])
-        });
-        dome::xr_input::move_mouse(angles, dx, dy);
-        let ray = dome::xr_input::mouse_ray(session.head, *angles);
-        self.xr_bridge.lock().unwrap().mouse_angles = Some(*angles);
+                .map(|p| dome::xr_input::mouse_angles_at(session.head, p))
+                .unwrap_or(previous)
+        };
+        dome::xr_input::move_mouse(&mut angles, dx, dy);
+        self.mouse_angles = Some(angles);
+        let ray = dome::xr_input::mouse_ray(session.head, angles);
+        self.xr_bridge.lock().unwrap().mouse_angles = Some(angles);
         let target = surfaces
             .iter()
             .filter(|q| !captured || cursor.as_ref().is_some_and(|c| c.id == q.id))

@@ -62,7 +62,7 @@ impl Appearance {
         std::fs::rename(tmp, path).map_err(|e| e.to_string())
     }
 }
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum SessionAction {
     Lock,
     SwitchUser,

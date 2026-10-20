@@ -1,5 +1,5 @@
 //! Placement shared by the Wayland desktop, XR renderer and XR hit testing.
-use crate::{xr_input::Quad, Pose, Projection, Rect, Scene};
+use crate::{xr_input::Quad, Pose, Rect, Scene};
 use glam::{Mat3, Quat, Vec3};
 use serde::{Deserialize, Serialize};
 
@@ -134,11 +134,7 @@ pub fn append_quads(scene: &Scene, panels: &mut Vec<Quad>, head: Pose) {
             ];
             let q = Quat::from_array(parent.pose.orientation_xyzw);
             let center = Vec3::from_array(parent.pose.position_m);
-            let depth = if scene.config.projection == Projection::RoomDome {
-                0.14
-            } else {
-                0.06
-            };
+            let depth = 0.14;
             let click_center = popup.context_at.map(|point| {
                 let point = scene
                     .popup(popup.parent)
@@ -151,17 +147,8 @@ pub fn append_quads(scene: &Scene, panels: &mut Vec<Quad>, head: Pose) {
                     size[1] / 2. + crate::context_menu::GAP * parent.size[1] / ph,
                     depth,
                 )
-            } else if scene.config.projection == Projection::RoomDome {
-                Vec3::new(0., parent.size[1] / 2. + size[1] / 2. + 0.04, 0.14)
             } else {
-                // Retain the requested attachment point, clamped to the parent.
-                Vec3::new(
-                    ((popup.anchor.x + popup.anchor.w / 2.) / pw - 0.5).clamp(-0.5, 0.5)
-                        * parent.size[0],
-                    (0.5 - (popup.anchor.y + popup.anchor.h / 2.) / ph).clamp(-0.5, 0.5)
-                        * parent.size[1],
-                    0.06,
-                )
+                Vec3::new(0., parent.size[1] / 2. + size[1] / 2. + 0.04, 0.14)
             };
             let mut panel = Quad {
                 id: popup.id,
@@ -185,9 +172,6 @@ pub fn append_quads(scene: &Scene, panels: &mut Vec<Quad>, head: Pose) {
 
 /// Decorative beams never enter the list used for input targeting.
 pub fn beams(scene: &Scene, panels: &[Quad], head: Pose) -> Vec<Quad> {
-    if scene.config.projection != Projection::RoomDome {
-        return vec![];
-    }
     scene
         .popups
         .iter()

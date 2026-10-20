@@ -11,9 +11,10 @@ const INTERFACE: &str = "org.freedesktop.Notifications";
 #[derive(Clone, Serialize)]
 pub struct Notice {
     pub id: u32,
-    app: String,
-    summary: String,
-    body: String,
+    pub timestamp: u64,
+    pub app: String,
+    pub summary: String,
+    pub body: String,
     actions: Vec<[String; 2]>,
     critical: bool,
     #[serde(skip)]
@@ -26,6 +27,8 @@ struct State {
     revision: u64,
     next: u32,
     notices: Vec<Notice>,
+    history: Vec<Notice>,
+    unread: bool,
 }
 #[derive(Clone, Serialize)]
 pub struct Toast {
@@ -67,7 +70,11 @@ impl Server {
     ) -> zbus::fdo::Result<u32> {
         if actions.len() % 2 != 0
             || actions.len() > 32
-            || summary.len() + body.len() + app_name.len() > 65536
+            || summary.len()
+                + body.len()
+                + app_name.len()
+                + actions.iter().map(|a| a.len()).sum::<usize>()
+                > 65536
         {
             return Err(zbus::fdo::Error::InvalidArgs(
                 "Notification is too large or actions are not pairs".into(),
@@ -106,6 +113,7 @@ impl Server {
         };
         let notice = Notice {
             id,
+            timestamp: crate::clipboard::now(),
             app: app_name,
             summary,
             body,
@@ -117,6 +125,12 @@ impl Server {
             resident,
             deadline: timeout.map(|d| Instant::now() + d),
         };
+        s.history.retain(|n| n.id != id);
+        s.history.push(notice.clone());
+        if s.history.len() > 200 {
+            s.history.remove(0);
+        }
+        s.unread = true;
         if let Some(i) = index {
             s.notices[i] = notice;
         } else {
@@ -178,6 +192,35 @@ impl Notifications {
             }
         });
         Self { state, send }
+    }
+    pub fn history(&self) -> Vec<Notice> {
+        self.state
+            .lock()
+            .unwrap()
+            .history
+            .iter()
+            .rev()
+            .cloned()
+            .collect()
+    }
+    pub fn unread(&self) -> bool {
+        self.state.lock().unwrap().unread
+    }
+    pub fn mark_read(&self) {
+        let mut s = self.state.lock().unwrap();
+        s.unread = false;
+        s.revision += 1;
+    }
+    pub fn clear_history(&self) {
+        let mut s = self.state.lock().unwrap();
+        s.history.clear();
+        s.unread = false;
+        s.revision += 1;
+    }
+    pub fn remove_history(&self, id: u32) {
+        let mut s = self.state.lock().unwrap();
+        s.history.retain(|n| n.id != id);
+        s.revision += 1;
     }
     pub fn revision(&self) -> u64 {
         self.state.lock().unwrap().revision
@@ -298,5 +341,46 @@ fn run(state: Arc<Mutex<State>>, receive: mpsc::Receiver<Request>) -> zbus::Resu
             }
         }
         std::thread::sleep(Duration::from_millis(30));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn replacement_expiry_and_dismissal_keep_a_bounded_notification_history() {
+        let state = Arc::new(Mutex::new(State::default()));
+        let server = Server(state.clone());
+        let notify = |replaces, summary: &str| {
+            server
+                .notify(
+                    "app".into(),
+                    replaces,
+                    String::new(),
+                    summary.into(),
+                    "body".into(),
+                    vec![],
+                    HashMap::new(),
+                    100,
+                )
+                .unwrap()
+        };
+        let id = notify(0, "first");
+        assert_eq!(notify(id, "replacement"), id);
+        assert_eq!(state.lock().unwrap().history.len(), 1);
+        assert!(remove(&state, id));
+        assert_eq!(state.lock().unwrap().history[0].summary, "replacement");
+        for _ in 0..210 {
+            let id = notify(0, "later");
+            remove(&state, id);
+        }
+        let (send, _) = mpsc::channel();
+        let notices = Notifications { state, send };
+        assert_eq!(notices.history().len(), 200);
+        assert!(notices.unread());
+        notices.mark_read();
+        assert!(!notices.unread());
+        notices.clear_history();
+        assert!(notices.history().is_empty());
     }
 }

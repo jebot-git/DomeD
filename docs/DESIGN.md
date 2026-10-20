@@ -27,18 +27,10 @@ asymmetric projection, and use the intersection of the two comfortable eye regio
 A symmetric vertical FOV is an initial profile for the layout laboratory, not a
 substitute for `xrLocateViews` or a lens-distortion measurement.
 
-Lane projection is switchable without destroying or reordering windows:
-
-* `in_view`: lanes use the current view frame. With vertical FOV V, upper inset U,
-  lower inset L, upper tray height T and taskbar height B, the usable vertical
-  interval is `[-V/2 + L + B, V/2 - U - T]`. Two lane gaps are removed; the three
-  lane shares divide the remainder. Insets and bars are reserved angular space.
-  Curved patch borders use constant view pitch, so peripheral window edges do not
-  bow upward/downward across the flat trays.
-* `room_dome`: lanes use the room anchor. Their total vertical span is
-  `dome_vertical_span_deg`, independently of the tray FOV, bar heights and insets.
-  All three lanes form a large 360-degree spatial carousel. The trays continue to
-  use the view frame and may visually pass in front of the room carousel.
+The compositor uses only `room_dome`: lanes use the room anchor and their total
+vertical span is `dome_vertical_span_deg`, independently of the tray FOV, heights
+and insets. `center_m[1]` sets elevation. Legacy `in_view` profiles deserialize as
+`room_dome`. Ghostty XR owns its independent direct-view overlay.
 
 The default shares are 23/54/23 percent. Resizing a shared border changes only the
 adjacent pair and preserves total height. Windows in a lane are ordered around a
@@ -95,7 +87,7 @@ menu export is not yet imported. Do not replace a login session with this protot
 
 The native Rust XR frontend exports rendered Wayland window trees and Qt shell
 images through an RGBA bridge into Vulkan/OpenXR swapchains. Dome-attached panels
-use spherical `KHR_composition_layer_equirect2` patches; direct-view and detached
+use cylindrical `KHR_composition_layer_cylinder` patches; detached
 panels use flat quads. Ray hits use exactly the same surface geometry as rendering.
 Window state and input run on the compositor thread; HTTP work runs on a separate
 XR worker and uploads finish before swapchain release. Window capture is capped

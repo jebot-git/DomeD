@@ -1,5 +1,5 @@
 //! Validated, persistent XR layout and room-anchor preferences.
-use crate::{AnchorMode, Config, Pose, Projection};
+use crate::{AnchorMode, Config, Pose};
 use std::{
     io::Write,
     path::{Path, PathBuf},
@@ -59,15 +59,6 @@ pub fn anchor_here(config: &Config, head: Pose) -> Result<Config, String> {
 pub fn rows(c: &Config) -> Vec<(&'static str, String)> {
     vec![
         (
-            "Projection",
-            if c.projection == Projection::RoomDome {
-                "Room dome"
-            } else {
-                "Direct view / three lanes"
-            }
-            .into(),
-        ),
-        (
             "Dome anchor",
             if c.anchor_mode == AnchorMode::Room {
                 "Fixed in room"
@@ -96,14 +87,18 @@ pub fn rows(c: &Config) -> Vec<(&'static str, String)> {
         ),
         ("Taskbar width", format!("{:.0}°", c.taskbar_max_width_deg)),
         ("Taskbar height", format!("{:.0}°", c.taskbar_height_deg)),
-        ("XR bar distance", format!("{:.2} m", c.bar_distance_m)),
+        ("XR notification distance", format!("{:.2} m", c.bar_distance_m)),
         ("Dome radius", format!("{:.1} m", c.radius_m)),
         (
-            "Dome vertical span",
-            format!("{:.0}°", c.dome_vertical_span_deg),
+            "Dome height / vertical span",
+            format!(
+                "{:.2} m ({:.0}°)",
+                c.radius_m * c.dome_vertical_span_deg.to_radians(),
+                c.dome_vertical_span_deg
+            ),
         ),
         ("Room anchor X", format!("{:.2} m", c.center_m[0])),
-        ("Room anchor Y", format!("{:.2} m", c.center_m[1])),
+        ("Dome height / anchor Y", format!("{:.2} m", c.center_m[1])),
         ("Room anchor Z", format!("{:.2} m", c.center_m[2])),
         ("Room anchor yaw", format!("{:.0}°", c.yaw_deg)),
         ("Lane gap", format!("{:.1}°", c.lane_gap_deg)),
@@ -122,36 +117,29 @@ pub fn adjust(config: &Config, row: usize, direction: f32) -> Result<Config, Str
     let mut c = config.clone();
     match row {
         0 => {
-            c.projection = if c.projection == Projection::RoomDome {
-                Projection::InView
-            } else {
-                Projection::RoomDome
-            }
-        }
-        1 => {
             c.anchor_mode = if c.anchor_mode == AnchorMode::Room {
                 AnchorMode::Head
             } else {
                 AnchorMode::Room
             }
         }
-        2 => c.upper_bar_x_deg += direction,
-        3 => c.upper_inset_deg += direction,
-        4 => c.upper_bar_max_width_deg += direction * 5.,
-        5 => c.upper_bar_height_deg += direction,
-        6 => c.taskbar_x_deg += direction,
-        7 => c.lower_inset_deg += direction,
-        8 => c.taskbar_max_width_deg += direction * 5.,
-        9 => c.taskbar_height_deg += direction,
-        10 => c.bar_distance_m += direction * 0.05,
-        11 => c.radius_m += direction * 0.1,
-        12 => c.dome_vertical_span_deg += direction * 5.,
-        13..=15 => c.center_m[row - 13] += direction * 0.05,
-        16 => c.yaw_deg += direction * 5.,
-        17 => c.lane_gap_deg += direction * 0.5,
-        18 => c.pullout_distance_m += direction * 0.05,
-        19 => c.vertical_fov_deg += direction * 5.,
-        20 => c.dome_upper_tilt_deg += direction,
+        1 => c.upper_bar_x_deg += direction,
+        2 => c.upper_inset_deg += direction,
+        3 => c.upper_bar_max_width_deg += direction * 5.,
+        4 => c.upper_bar_height_deg += direction,
+        5 => c.taskbar_x_deg += direction,
+        6 => c.lower_inset_deg += direction,
+        7 => c.taskbar_max_width_deg += direction * 5.,
+        8 => c.taskbar_height_deg += direction,
+        9 => c.bar_distance_m += direction * 0.05,
+        10 => c.radius_m += direction * 0.1,
+        11 => c.dome_vertical_span_deg += direction * 5.,
+        12..=14 => c.center_m[row - 12] += direction * 0.05,
+        15 => c.yaw_deg += direction * 5.,
+        16 => c.lane_gap_deg += direction * 0.5,
+        17 => c.pullout_distance_m += direction * 0.05,
+        18 => c.vertical_fov_deg += direction * 5.,
+        19 => c.dome_upper_tilt_deg += direction,
         _ => return Err("Unknown XR setting".into()),
     }
     c.validate()?;

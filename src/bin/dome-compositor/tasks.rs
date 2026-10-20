@@ -78,7 +78,8 @@ impl Dome {
         x >= px && x < px + pw && y >= py && y < py + ph
     }
     pub fn task_motion(&mut self, x: f64, y: f64, w: i32, h: i32) {
-        if self.launcher
+        if self.history_panel.is_some()
+            || self.launcher
             || self.menu.is_some()
             || self.desktop_manager
             || self.about
@@ -91,7 +92,7 @@ impl Dome {
         if self.task_context {
             return;
         }
-        if y >= (h - 60) as f64 && x >= 110. && x < (w - 160) as f64 {
+        if y >= (h - 60) as f64 && x >= 110. && x < (w - 250) as f64 {
             let i = ((x - 110.) / 130.) as usize;
             if self
                 .task_list()
@@ -234,7 +235,7 @@ impl Dome {
         let pointer = pointer - self.shell_geometry().loc.to_f64();
         if pointer.y < (size.h - 60) as f64
             || pointer.x < 110.
-            || pointer.x >= (size.w - 160) as f64
+            || pointer.x >= (size.w - 250) as f64
         {
             return false;
         }

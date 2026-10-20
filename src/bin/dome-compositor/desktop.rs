@@ -65,7 +65,14 @@ impl DesktopRenderer {
                     state.task_context_selected
                 ),
                 state.pins.clone(),
-                (state.tray.state().revision, state.notifications.revision()),
+                (
+                    state.tray.state().revision,
+                    state.notifications.revision(),
+                    state.clipboard.revision,
+                    state.history_panel,
+                    state.history_selected,
+                    state.launch_index
+                ),
                 if state.task_popup.is_some() {
                     state.start_time.elapsed().as_millis() / 100
                 } else {

@@ -3,19 +3,13 @@ fn near(a: f32, b: f32) {
     assert!((a - b).abs() < 0.001, "{a} != {b}");
 }
 #[test]
-fn view_geometry_uses_fov_heights_and_both_insets() {
-    let mut c = Config {
-        projection: Projection::InView,
-        ..Config::default()
-    };
-    let spans = c.lane_spans([0.25, 0.5, 0.25]);
-    near(spans[0][1], 37.);
-    near(spans[2][0], -35.);
-    c.upper_inset_deg += 3.;
-    near(c.lane_extent().1, 34.);
-    c.lower_inset_deg += 4.;
-    near(c.lane_extent().0, -31.);
+fn legacy_direct_view_profiles_migrate_to_dome() {
+    let config: Config = serde_json::from_str(r#"{"projection":"in_view"}"#).unwrap();
+    assert_eq!(config.projection, Projection::RoomDome);
+    config.validate().unwrap();
+    assert_eq!(serde_json::to_value(config).unwrap()["projection"], "room_dome");
 }
+
 #[test]
 fn room_carousel_height_is_independent_of_trays() {
     let mut c = Config::default();
@@ -31,7 +25,7 @@ fn room_carousel_height_is_independent_of_trays() {
 #[test]
 fn upper_and_lower_widths_are_independent_and_dont_change_lanes() {
     let mut c = Config {
-        projection: Projection::InView,
+        projection: Projection::RoomDome,
         ..Config::default()
     };
     let before = c.lane_extent();
@@ -224,11 +218,11 @@ fn desktop_manager_add_rename_and_switch() {
     assert!(s.apply(Action::AddWorkspace { name: " ".into() }).is_err());
 }
 #[test]
-fn mode_switch_keeps_windows_order_and_focus() {
+fn height_change_keeps_windows_order_and_focus() {
     let mut s = Scene::demo();
     let old = s.clone();
     let mut c = s.config.clone();
-    c.projection = Projection::InView;
+    c.dome_vertical_span_deg = 130.;
     s.apply(Action::Configure { config: c }).unwrap();
     assert_eq!(s.focused, old.focused);
     for (a, b) in s.workspaces.iter().zip(old.workspaces.iter()) {
@@ -240,7 +234,7 @@ fn mode_switch_keeps_windows_order_and_focus() {
     assert_ne!(s.panels()[0].top_deg, old.panels()[0].top_deg);
 }
 #[test]
-fn view_pose_moves_only_in_view_lanes() {
+fn view_pose_moves_only_head_anchored_dome() {
     let mut s = Scene::default();
     s.add("a", "x");
     let before = s.panels()[0].center_m;
@@ -251,7 +245,7 @@ fn view_pose_moves_only_in_view_lanes() {
     s.apply(Action::ViewPose { pose }).unwrap();
     assert_eq!(s.panels()[0].center_m, before);
     let mut c = s.config.clone();
-    c.projection = Projection::InView;
+    c.anchor_mode = AnchorMode::Head;
     s.apply(Action::Configure { config: c }).unwrap();
     assert_ne!(s.panels()[0].center_m, before);
     assert_eq!(
@@ -300,25 +294,22 @@ fn live_mode_never_synthesizes_client_windows() {
 }
 
 #[test]
-fn in_view_peripheral_windows_fit_between_flat_trays() {
-    let mut s = Scene::default();
-    s.config.projection = Projection::InView;
-    let (_, top) = s.config.lane_extent();
-    for yaw in [-70., -35., 0., 35., 70.] {
-        let p = s.point(yaw, top, s.config.radius_m);
-        let local = s
-            .view_pose
-            .inverse_rotate(std::array::from_fn(|i| p[i] - s.view_pose.position_m[i]));
-        near(local[1].atan2(-local[2]).to_degrees(), top);
+fn dome_height_is_constant_around_the_carousel() {
+    let s = Scene::default();
+    let (_,top) = s.config.lane_extent();
+    for yaw in [-70.,-35.,0.,35.,70.] {
+        let p = s.point(yaw,top,s.config.radius_m);
+        near(p[1]-s.config.center_m[1],s.config.radius_m*top.to_radians());
     }
 }
+
 #[test]
 fn geometry_changes_keep_each_lane_central_window_in_place() {
     let mut s = Scene::demo();
     let yaw = s.panels().iter().find(|p| p.id == 3).unwrap().yaw_deg;
     near(yaw, 0.);
     let mut c = s.config.clone();
-    c.projection = Projection::InView;
+    c.projection = Projection::RoomDome;
     s.apply(Action::Configure { config: c }).unwrap();
     near(s.panels().iter().find(|p| p.id == 3).unwrap().yaw_deg, yaw);
     s.apply(Action::ResizeBoundary {
