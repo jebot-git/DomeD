@@ -160,7 +160,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         let mut ids: Vec<_> = scene
                             .windows
                             .iter()
-                            .filter(|w| w.workspace == scene.active_workspace && !w.minimized)
+                            .filter(|w| w.xr_visible && w.workspace == scene.active_workspace && !w.minimized)
                             .map(|w| w.id)
                             .collect();
                         if let Ok(response) = agent.get(&format!("{base}/api/xr-shell")).call() {

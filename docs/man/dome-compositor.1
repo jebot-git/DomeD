@@ -27,6 +27,16 @@ Launch a custom client. Remaining arguments belong to that client.
 .TP
 .B "\-\-help"
 Show usage.
+.SH WINDOW TRANSFER
+Super+Shift+X, or Window > Send Window to XR / Desktop, transfers the focused
+Wayland or X11 window and its dialogs between DomeD's views without restarting
+the application. The window appears exclusively at its destination; other windows
+of the application stay in place. Both desktop geometry and XR placement are
+retained. Focus stays in the source view. Switch input with the taskbar's
+Desktop / XR button to use the destination. Sending to XR requires an active
+XR session. If XR stops, its windows return to the desktop. The shortcut can be
+changed in keybindings. Native OpenXR overlays and other compositors are not
+supported by this action.
 .SH ENVIRONMENT
 DOME_BACKEND and DOME_RENDERER select backend and renderer. DOME_CONFIG selects a geometry profile. DOME_PREVIEW_PORT selects the loopback bridge port (default 49640). DOME_TERMINAL selects a terminal executable without arguments.
 .SH INTERACTION

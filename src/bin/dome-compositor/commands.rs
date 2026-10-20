@@ -127,6 +127,15 @@ impl Dome {
                 ("Move Window Right in Lane", "⌥⌘→", MoveHorizontal(1)),
             ],
             5 => vec![
+                (
+                    if self.input_realm == dome::Realm::Xr {
+                        "Send Window to Desktop"
+                    } else {
+                        "Send Window to XR"
+                    },
+                    "⇧⌘X",
+                    SendToOtherRealm,
+                ),
                 ("Minimize", "⌘M", Minimize),
                 ("Zoom", "⌘Return", Maximize),
                 ("Next Window in Lane", "Alt Tab", Cycle(false)),
@@ -158,6 +167,10 @@ impl Dome {
             }
             StartXr => !self.xr_bridge.lock().unwrap().visible(),
             StopXr => self.xr_bridge.lock().unwrap().visible(),
+            SendToOtherRealm => {
+                s.focused.and_then(|id| s.window(id)).is_some_and(|w| !w.minimized)
+                    && (self.input_realm == dome::Realm::Xr || self.xr_bridge.lock().unwrap().visible())
+            }
             PullOut => {
                 self.xr_bridge.lock().unwrap().visible()
                     && s.focused
@@ -391,6 +404,61 @@ impl Dome {
             NewWorkspace => self.action(Action::AddWorkspace {
                 name: format!("Desktop {}", s.workspaces.len() + 1),
             }),
+            SendToOtherRealm => {
+                if let Some(id) = id {
+                    let target = if self.input_realm == dome::Realm::Xr {
+                        dome::Realm::Desktop
+                    } else {
+                        dome::Realm::Xr
+                    };
+                    let root = s.popup_owner(id);
+                    // Release held pointer buttons against the old surface before it disappears.
+                    let pointer = self.seat.get_pointer().unwrap();
+                    let time = self.start_time.elapsed().as_millis() as u32;
+                    self.ignored_buttons.extend(self.physical_buttons.drain());
+                    let mut buttons = self.desktop_buttons.drain()
+                        .collect::<std::collections::HashSet<_>>();
+                    buttons.extend(self.xr_buttons.drain().filter(|b| !self.xr_shell_buttons.contains(b)));
+                    self.xr_shell_buttons.clear();
+                    for button in buttons {
+                        pointer.button(self, &smithay::input::pointer::ButtonEvent {
+                            button, state: smithay::backend::input::ButtonState::Released,
+                            serial: SERIAL_COUNTER.next_serial(), time,
+                        });
+                    }
+                    self.dismiss_wayland_popups();
+                    pointer.motion(
+                        self,
+                        None,
+                        &smithay::input::pointer::MotionEvent {
+                            location: pointer.current_location(),
+                            serial: SERIAL_COUNTER.next_serial(),
+                            time,
+                        },
+                    );
+                    pointer.frame(self);
+                    self.chrome_drag = None;
+                    self.xr_target = None;
+                    self.xr_shell_pos = None;
+                    self.task_popup = None;
+                    self.menu = None;
+                    self.action(Action::SendToRealm { id, realm: target });
+                    self.focus_history[usize::from(target == dome::Realm::Xr)] = Some(Some(id));
+                    {
+                        let mut scene = self.scene.lock().unwrap();
+                        scene.focused = dome::input_routing::restore_focus(&scene, None, self.input_realm);
+                        scene.revision += 1;
+                    }
+                    let mut bridge = self.xr_bridge.lock().unwrap();
+                    bridge.cursor = None;
+                    bridge.mouse_buttons.clear();
+                    bridge.packets.clear();
+                    bridge.requested.remove(&root);
+                    drop(bridge);
+                    self.applied_revision = u64::MAX;
+                    self.sync_scene();
+                }
+            }
             PullOut => {
                 if let Some(w) = id.and_then(|id| s.window(id)) {
                     if w.pullout_slot.is_some() {

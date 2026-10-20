@@ -858,6 +858,7 @@ show Ghostty XR; its own F12 handler hides it while it owns the keyboard. Alt+F4
 | Alt+Tab / Shift+Alt+Tab | XR: next / previous window in the same lane, recentered; desktop: next / previous window |
 | Alt+F4 | Close window |
 | Super+Q | Close windows of active application |
+| Shift+Super+X | Send focused window and its dialogs to the other desktop / XR view |
 | Super+M / Super+Enter | Minimize / toggle maximize |
 | Super+1…8 / Shift+Super+1…8 | Switch desktop / move window to desktop |
 | Ctrl+Super+Left/Right | Previous / next desktop |
@@ -873,6 +874,17 @@ show Ghostty XR; its own F12 handler hides it while it owns the keyboard. Alt+F4
 | Shift+Super+D | Fade the entire XR desktop out / back in |
 | Super+C/V/A | Copy / paste / select all using client Ctrl bindings |
 | Super+F10, arrows, Enter, Escape | Navigate classic global menus |
+
+**Window → Send Window to XR / Desktop** transfers the focused DomeD-managed
+Wayland or X11 window without restarting its application. Shift+Super+X is
+configurable in keybindings. Transfers are exclusive to the destination; normal
+launches retain their existing shared presentation. Desktop geometry and XR
+placement survive a round trip. Dialogs follow their parent, while other windows
+of the same application stay where they are. Focus stays in the source view;
+switch input with the taskbar’s Desktop / XR button to use the destination.
+Sending to XR requires an active XR session. If XR stops, its windows return to
+the desktop. Presentation is saved with the session layout. Native OpenXR
+overlays and other compositors are outside this feature’s scope.
 
 XR visibility controls are also in **View**. Bar slides and desktop fades take
 250 ms and reverse continuously if toggled mid-animation. The upper bar slides

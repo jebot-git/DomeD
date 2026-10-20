@@ -59,9 +59,17 @@ impl Scene {
     pub fn popup_owner(&self, id: u64) -> u64 {
         self.popup(id).map_or(id, |p| p.root)
     }
+    pub fn surface_visible_in(&self, id: u64, realm: crate::Realm) -> bool {
+        self.popup(id).map_or_else(
+            || self.window(id).is_some_and(|w| {
+                !w.minimized && w.workspace == self.active_workspace && w.visible_in(realm)
+            }),
+            |p| self.popup_visible(p, realm == crate::Realm::Desktop),
+        )
+    }
     pub fn popup_visible(&self, p: &Popup, desktop: bool) -> bool {
         self.window(p.root).is_some_and(|w| {
-            !w.minimized && w.workspace == self.active_workspace && (!desktop || w.desktop_visible)
+            !w.minimized && w.workspace == self.active_workspace && w.visible_in(if desktop { crate::Realm::Desktop } else { crate::Realm::Xr })
         }) && self.window(p.id).is_none_or(|w| !w.minimized)
     }
     pub fn popup_desktop_rects(&self, work: Rect) -> Vec<(u64, Rect)> {

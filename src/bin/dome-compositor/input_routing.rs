@@ -12,18 +12,18 @@ impl Dome {
         let panels = scene
             .windows
             .iter()
-            .any(|w| !w.minimized && w.workspace == scene.active_workspace);
+            .any(|w| w.xr_visible && !w.minimized && w.workspace == scene.active_workspace);
         self.native_session_active && healthy && self.xr_animation.has_surfaces(panels)
     }
     pub fn sync_input_route(&mut self) {
         let desired = self.xr_owns_input();
         let mut scene = self.scene.lock().unwrap().clone();
-        // Application close/minimize fallback must not focus an unmapped XR-only client.
-        if !desired
-            && !self.input_xr_active
+        // Closing, minimizing or transferring must leave focus in the active view.
+        let realm = if desired { Realm::Xr } else { Realm::Desktop };
+        if desired == self.input_xr_active
             && scene
                 .focused
-                .is_some_and(|id| scene.window(id).is_some_and(|w| !w.desktop_visible))
+                .is_some_and(|id| scene.window(id).is_some_and(|w| !w.visible_in(realm)))
         {
             let stacked = self
                 .space
@@ -32,11 +32,11 @@ impl Dome {
                 .filter_map(|w| self.id_for(w.toplevel().unwrap().wl_surface()))
                 .find(|id| {
                     scene.window(*id).is_some_and(|w| {
-                        w.desktop_visible && !w.minimized && w.workspace == scene.active_workspace
+                        w.visible_in(realm) && !w.minimized && w.workspace == scene.active_workspace
                     })
                 });
             let focus =
-                dome::input_routing::restore_focus(&scene, stacked.map(Some), Realm::Desktop);
+                dome::input_routing::restore_focus(&scene, stacked.map(Some), realm);
             {
                 let mut current = self.scene.lock().unwrap();
                 current.focused = focus;
@@ -52,7 +52,6 @@ impl Dome {
             return;
         }
         let healthy = self.xr_bridge.lock().unwrap().visible();
-        let realm = if desired { Realm::Xr } else { Realm::Desktop };
         let remembered = if !desired && !healthy {
             None
         } else {

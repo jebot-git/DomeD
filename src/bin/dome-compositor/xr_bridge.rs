@@ -223,6 +223,12 @@ impl Dome {
         let mut shell_interaction = false;
         self.input_realm = dome::Realm::Xr;
         for a in p.actions {
+            // Renderer packets may still reference a window just sent to the desktop.
+            if let dome::Action::Focus { id } = &a {
+                if !self.scene.lock().unwrap().surface_visible_in(*id, dome::Realm::Xr) {
+                    continue;
+                }
+            }
             let presentation = self.scene.lock().unwrap().presentation;
             if presentation.desktop && self.xr_animation.opacity >= 1. && !self.shell_modal_open() {
                 self.action(a);
@@ -239,6 +245,13 @@ impl Dome {
             let time = self.start_time.elapsed().as_millis() as u32;
             match e {
                 SeatEvent::Motion { id, uv } => {
+                    if !dome::xr_transport::is_shell(id)
+                        && !self.scene.lock().unwrap().surface_visible_in(id, dome::Realm::Xr)
+                    {
+                        self.xr_target = None;
+                        self.xr_bridge.lock().unwrap().cursor = None;
+                        continue;
+                    }
                     self.context_scroll_hover = None;
                     if !self
                         .xr_animation
@@ -301,10 +314,7 @@ impl Dome {
 
                     let active = {
                         let scene = self.scene.lock().unwrap();
-                        scene.popup(id).map_or_else(
-                            || scene.window(id).is_some(),
-                            |p| scene.popup_visible(p, false),
-                        )
+                        scene.surface_visible_in(id, dome::Realm::Xr)
                     };
                     if active {
                         if let Some((surface, geo)) = self.popup_surface(id) {

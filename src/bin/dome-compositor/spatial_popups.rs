@@ -118,6 +118,7 @@ impl Dome {
             if let Some(w) = scene.windows.iter_mut().find(|w| w.id == *id) {
                 w.workspace = owner.workspace;
                 w.desktop_visible = owner.desktop_visible;
+                w.xr_visible = owner.xr_visible;
                 w.desktop.w = geo.size.w as f32;
                 w.desktop.h = geo.size.h as f32;
             }
@@ -241,7 +242,7 @@ impl Dome {
                 return false;
             }
             scene.popup(*id).is_some_and(|p| {
-                !scene.popup_visible(p, false)
+                !scene.popup_visible(p, !self.input_xr_active)
                     || scene.focused.map(|id| scene.popup_owner(id)) != Some(p.root)
             })
         });

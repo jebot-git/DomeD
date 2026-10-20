@@ -517,7 +517,7 @@ impl Dome {
                     });
                 if let Some(saved) = saved {
                     let mut placement = saved.clone();
-                    if placement.origin == Realm::Desktop {
+                    if placement.desktop_visible {
                         let r = &placement.desktop;
                         let output = self.output_geometry_at(
                             ((r.x + r.w / 2.) as f64, (r.y + r.h / 2.) as f64).into(),
@@ -551,6 +551,9 @@ impl Dome {
                         .map(|w| w.lanes.each_ref().map(|lane| lane.rotation_deg))
                         .collect();
                     persistence.restored.insert(saved.id, window.id);
+                    if !self.xr_bridge.lock().unwrap().visible() && !placement.desktop_visible {
+                        placement.desktop_visible = true;
+                    }
                     layout.place(&mut scene, &placement, window.id, &persistence.restored);
                     if !persistence.interacted {
                         self.restore_stacking = true;
@@ -589,7 +592,7 @@ impl Dome {
                         || target.is_some_and(|id| {
                             scene
                                 .window(id)
-                                .is_some_and(|w| self.input_xr_active || w.desktop_visible)
+                                .is_some_and(|w| w.visible_in(self.input_realm))
                         });
                     if available {
                         self.restore_stacking = true;

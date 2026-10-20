@@ -5,6 +5,7 @@ pub enum Command {
     ToggleXrTop,
     ToggleXrBottom,
     ToggleXrDesktop,
+    SendToOtherRealm,
     Appearance,
     DefaultApplications,
     KeyboardSettings,
@@ -119,6 +120,7 @@ pub fn defaults() -> Vec<Binding> {
     );
     add(Menu, 0xffc7, logo);
     add(PullOut, 'p' as u32, logo);
+    add(SendToOtherRealm, 'x' as u32, Mods { shift: true, ..logo });
     for reverse in [false, true] {
         add(
             Cycle(reverse),
@@ -304,6 +306,7 @@ pub fn action_label(command: Command) -> String {
         ToggleXrBars => "Toggle XR bars".into(),
         ToggleXrTop => "Toggle upper XR bar".into(),
         ToggleXrBottom => "Toggle XR taskbar".into(),
+        SendToOtherRealm => "Send window to other desktop / XR".into(),
         ToggleXrDesktop => "Toggle desktop / XR".into(),
         XrSettings => "Settings".into(),
         AnchorHere => "Anchor dome here".into(),
@@ -559,7 +562,7 @@ pub fn deserialize_bindings<'de, D: serde::Deserializer<'de>>(
         } else { unique.push(binding); }
     }
     let mut bindings = unique;
-    for mut binding in defaults().into_iter().filter(|b| b.id.is_some() || b.command == Command::PullOut) {
+    for mut binding in defaults().into_iter().filter(|b| b.id.is_some() || matches!(b.command, Command::PullOut | Command::SendToOtherRealm)) {
         let present = bindings.iter().any(|b| match &binding.id {
             Some(id) => b.id.as_ref() == Some(id),
             None => b.command == binding.command,

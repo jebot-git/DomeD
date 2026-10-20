@@ -71,6 +71,7 @@ impl Layout {
         window.minimized = saved.minimized;
         window.maximized = saved.maximized;
         window.desktop_visible = saved.desktop_visible;
+        window.xr_visible = saved.xr_visible;
         window.xr_pose = saved.xr_pose;
         window.xr_scale = saved.xr_scale;
         window.dome_offset_deg = saved.dome_offset_deg;

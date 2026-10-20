@@ -185,7 +185,7 @@ impl Dome {
                             && scene
                                 .popup(w.id)
                                 .is_none_or(|p| scene.popup_visible(p, !self.input_xr_active))
-                            && (self.input_xr_active || w.desktop_visible)
+                            && w.visible_in(self.input_realm)
                     })
                     .map(|_| w.toplevel().unwrap().wl_surface().clone())
             });
@@ -216,7 +216,7 @@ impl Dome {
         if self.input_realm == dome::Realm::Desktop {
             scene.desktop_scene()
         } else {
-            scene.clone()
+            scene.realm_scene(dome::Realm::Xr)
         }
     }
     pub fn launch_selected(&mut self) {

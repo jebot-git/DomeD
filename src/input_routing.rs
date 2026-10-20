@@ -5,7 +5,7 @@ pub fn restore_focus(scene: &Scene, remembered: Option<Option<u64>>, realm: Real
         scene.window(id).is_some_and(|w| {
             !w.minimized
                 && w.workspace == scene.active_workspace
-                && (realm == Realm::Xr || w.desktop_visible)
+                && w.visible_in(realm)
         })
     };
     match remembered {
@@ -54,7 +54,7 @@ pub fn cycle_windows(scene: &Scene, realm: Realm) -> Vec<u64> {
             .windows
             .iter()
             .copied()
-            .filter(|id| scene.window(*id).is_some_and(|w| !w.minimized))
+            .filter(|id| scene.window(*id).is_some_and(|w| w.xr_visible && !w.minimized))
             .collect()
     } else {
         scene

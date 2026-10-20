@@ -312,6 +312,9 @@ pub struct Window {
     pub origin: Realm,
     #[serde(default = "default_visible")]
     pub desktop_visible: bool,
+    /// Independent of launch origin; old layouts keep shared desktop/XR presentation.
+    #[serde(default = "default_visible")]
+    pub xr_visible: bool,
     #[serde(default)]
     pub pullout_slot: Option<u8>,
     #[serde(default)]
@@ -332,6 +335,15 @@ pub struct Window {
     pub desktop: Rect,
     pub restore: Option<Rect>,
 }
+impl Window {
+    pub fn visible_in(&self, realm: Realm) -> bool {
+        match realm {
+            Realm::Desktop => self.desktop_visible,
+            Realm::Xr => self.xr_visible,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Lane {
     pub windows: Vec<WindowId>,
@@ -396,6 +408,7 @@ pub struct Scene {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Action {
+    SendToRealm { id: WindowId, realm: Realm },
     XrPresentation {
         top: Option<bool>,
         bottom: Option<bool>,
@@ -541,6 +554,7 @@ impl Scene {
             stereo: crate::stereo::Stereo::for_app_id(app_id),
             origin: Realm::Desktop,
             desktop_visible: true,
+            xr_visible: true,
             pullout_slot: None,
             pullout_restore_scale: None,
             dome_offset_deg: [0., 0.],
@@ -598,8 +612,11 @@ impl Scene {
     }
     /// A desktop shell view keeps XR-only clients out of its task list and focus menus.
     pub fn desktop_scene(&self) -> Self {
+        self.realm_scene(Realm::Desktop)
+    }
+    pub fn realm_scene(&self, realm: Realm) -> Self {
         let mut scene = self.clone();
-        scene.windows.retain(|w| w.desktop_visible);
+        scene.windows.retain(|w| w.visible_in(realm));
         if scene.focused.is_some_and(|id| scene.window(id).is_none()) {
             scene.focused = None;
         }
@@ -653,6 +670,20 @@ impl Scene {
     }
     pub fn apply(&mut self, action: Action) -> Result<(), String> {
         match action {
+            Action::SendToRealm { id, realm } => {
+                let root = self.popup_owner(id);
+                self.window(root).ok_or("Unknown window")?;
+                let children: Vec<_> = self.popups.iter()
+                    .filter(|p| p.root == root)
+                    .map(|p| p.id)
+                    .collect();
+                for w in &mut self.windows {
+                    if w.id == root || children.contains(&w.id) {
+                        w.desktop_visible = realm == Realm::Desktop;
+                        w.xr_visible = realm == Realm::Xr;
+                    }
+                }
+            }
             Action::XrPresentation {
                 top,
                 bottom,
@@ -1026,7 +1057,7 @@ impl Scene {
                     .windows
                     .iter()
                     .filter_map(|id| self.window(*id))
-                    .filter(|w| !w.minimized && self.popup(w.id).is_none())
+                    .filter(|w| w.xr_visible && !w.minimized && self.popup(w.id).is_none())
                     .map(move |w| heights[lane] / w.desktop.h)
             })
             .fold(f32::INFINITY, f32::min);
@@ -1066,7 +1097,7 @@ impl Scene {
                     .windows
                     .iter()
                     .filter_map(|id| self.window(*id))
-                    .filter(|w| !w.minimized && self.popup(w.id).is_none())
+                    .filter(|w| w.xr_visible && !w.minimized && self.popup(w.id).is_none())
                     .collect();
                 let [bottom, top] = spans[lane];
                 let height = top - bottom;
