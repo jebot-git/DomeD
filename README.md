@@ -255,7 +255,9 @@ history/persistence requires a separate clipboard manager. KDE Connect's current
 KSystemClipboard backend uses ext-data-control and is tested in both directions.
 
 The native login session exports its ready Wayland display and Qt platform to D-Bus
-before starting wallet integration. When a PAM wallet socket is supplied, DomeD
+before starting wallet integration and the installed KDE Polkit authentication
+agent. This keeps administrative prompts available without Plasma autostart;
+`DOME_START_POLKIT=0` disables agent startup. When a PAM wallet socket is supplied, DomeD
 runs the installed `pam_kwallet_init` helper. Current KWallet's `ksecretd` starts
 when no Secret Service provider already owns the session bus; KDE applications can
 activate `kwalletd6` normally. The Dome-specific portal configuration selects
