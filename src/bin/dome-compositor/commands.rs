@@ -256,7 +256,7 @@ impl Dome {
                 }
             }
             Terminal => {
-                if let Err(e) = dome::terminal::launch(&self.launch_socket()) {
+                if let Err(e) = dome::terminal::launch(&self.launch_socket(), self.input_realm) {
                     self.shell_error = format!("Cannot launch Ghostty XR: {e}");
                 }
             }

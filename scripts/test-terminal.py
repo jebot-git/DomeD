@@ -33,6 +33,7 @@ if not xvfb:
 if not xvfb:
     raise SystemExit("Install Xvfb or set DOME_XVFB")
 processes, logs = [], []
+overlay = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
 with socket.socket() as sock:
     sock.bind(("127.0.0.1", 0))
     port = sock.getsockname()[1]
@@ -76,6 +77,11 @@ try:
     with tempfile.TemporaryDirectory(prefix="dome-terminal-") as directory:
         runtime = Path(directory)
         runtime.chmod(0o700)
+        # Model an existing suspended XR terminal. Desktop launches must leave
+        # this socket untouched even with the normal overlay configuration.
+        (runtime / "ghostty-xr").mkdir(mode=0o700)
+        overlay.bind(str(runtime / "ghostty-xr/control.sock"))
+        overlay.settimeout(.2)
         rd, wr = os.pipe()
         start([xvfb, "-displayfd", str(wr), "-screen", "0", "1600x1000x24", "-nolisten", "tcp"],
               "xvfb", os.environ.copy(), pass_fds=(wr,))
@@ -85,7 +91,8 @@ try:
         assert display_name != ":"
         env = {**os.environ, "DISPLAY": display_name, "XDG_RUNTIME_DIR": directory,
                "XDG_CONFIG_HOME": str(runtime / "config"), "SHELL": "/bin/sh",
-               "DOME_PREVIEW_PORT": str(port), "DOME_TERMINAL_MODE": "wayland", "LIBGL_ALWAYS_SOFTWARE": "1", "RUST_LOG": "warn", "SDL_JOYSTICK_DISABLE_UDEV": "1",
+               "DOME_PREVIEW_PORT": str(port), "DOME_TERMINAL_MODE": "overlay",
+               "DOME_TERMINAL": str(root / "../ghostty-xr/build/ghostty-xr"), "LIBGL_ALWAYS_SOFTWARE": "1", "RUST_LOG": "warn", "SDL_JOYSTICK_DISABLE_UDEV": "1",
                "SDL_HINT_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR": "0",
                # An invalid runtime proves Wayland mode does not initialize OpenXR.
                "XR_RUNTIME_JSON": str(runtime / "no-openxr.json")}
@@ -156,9 +163,15 @@ try:
             action({"op": "close", "id": window["id"]})
         wait(lambda: not state()["windows"])
         wait(lambda: not list((runtime / "ghostty-xr").glob("wayland-*.sock")))
+        try:
+            overlay.recv(1024)
+            raise AssertionError("Desktop terminal launch sent a command to the suspended XR terminal")
+        except socket.timeout:
+            pass
         xd.close()
-        print("PASS: default terminal, Wayland identity, seat typing, Super+T, multiple instances, XR texture bridge, maximize/minimize/focus/close, socket cleanup")
+        print("PASS: desktop terminal independent of suspended XR overlay, Wayland identity, seat typing, Super+T, multiple instances, XR texture bridge, maximize/minimize/focus/close, socket cleanup")
 finally:
+    overlay.close()
     for child in reversed(processes):
         if child.poll() is None:
             child.terminate()

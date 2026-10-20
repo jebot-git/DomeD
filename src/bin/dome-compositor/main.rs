@@ -156,7 +156,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     eprintln!("Control and spatial preview: http://127.0.0.1:{port}");
     if args.first().is_some_and(|s| s == "--terminal") {
-        dome::terminal::launch(&data.state.socket_name.to_string_lossy())?;
+        dome::terminal::launch(&data.state.socket_name.to_string_lossy(), dome::Realm::Desktop)?;
     } else if args.first().is_some_and(|s| s == "--command" || s == "-c") {
         if let Some(program) = args.get(1) {
             std::process::Command::new(program)

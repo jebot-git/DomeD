@@ -1,15 +1,18 @@
-//! Ghostty keeps its independent XR overlay; Wayland mode is an explicit diagnostic option.
+//! XR launches reuse the overlay; desktop launches have independent Wayland windows.
 use std::{io, process::Command};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Mode { Overlay, Wayland }
 impl Mode {
+    pub fn for_realm(self, realm: crate::Realm) -> Self {
+        if realm == crate::Realm::Desktop { Self::Wayland } else { self }
+    }
     pub fn configured() -> Self {
         if std::env::var("DOME_TERMINAL_MODE").as_deref() == Ok("wayland") { Self::Wayland } else { Self::Overlay }
     }
 }
-pub fn command(socket: &str) -> Command {
-    let mode = Mode::configured();
+pub fn command(socket: &str, realm: crate::Realm) -> Command {
+    let mode = Mode::configured().for_realm(realm);
     let binary = std::env::var_os("DOME_TERMINAL").unwrap_or_else(||
         if mode == Mode::Wayland { "ghostty-xr".into() } else { "ghostty-xr-launch".into() });
     command_for(socket, binary, mode)
@@ -22,17 +25,22 @@ pub fn command_for(socket: &str, binary: std::ffi::OsString, mode: Mode) -> Comm
     command
 }
 
-pub fn launch(socket: &str) -> io::Result<()> {
-    let mut command = command(socket);
-    if Mode::configured() == Mode::Overlay {
-        use std::os::unix::fs::FileTypeExt;
-        let running = std::env::var_os("XDG_RUNTIME_DIR").map(std::path::PathBuf::from)
-            .and_then(|dir| std::fs::symlink_metadata(dir.join("ghostty-xr/control.sock")).ok())
-            .is_some_and(|meta| meta.file_type().is_socket());
-        if running {
-            let sibling = std::path::Path::new(command.get_program()).parent().unwrap_or(std::path::Path::new(".")).join("ghostty-xrctl");
-            let controller = if sibling.is_file() { sibling.into_os_string() } else { "ghostty-xrctl".into() };
-            if Command::new(controller).arg("show").status()?.success() { return Ok(()); }
+// Send both requests through one socket so the new tab is selected before focus.
+fn reuse_overlay(path: &std::path::Path) -> io::Result<()> {
+    let socket = std::os::unix::net::UnixDatagram::unbound()?;
+    socket.connect(path)?;
+    socket.send(b"tab-new")?;
+    socket.send(b"show")?;
+    Ok(())
+}
+
+pub fn launch(socket: &str, realm: crate::Realm) -> io::Result<()> {
+    let mut command = command(socket, realm);
+    if Mode::configured().for_realm(realm) == Mode::Overlay {
+        if let Some(dir) = std::env::var_os("XDG_RUNTIME_DIR") {
+            if reuse_overlay(&std::path::PathBuf::from(dir).join("ghostty-xr/control.sock")).is_ok() {
+                return Ok(());
+            }
         }
     }
     let mut child = command.spawn()?;
@@ -44,6 +52,31 @@ pub fn launch(socket: &str) -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn desktop_is_wayland_even_with_an_overlay_configured() {
+        use super::Mode;
+        use crate::Realm;
+        assert_eq!(Mode::Overlay.for_realm(Realm::Desktop), Mode::Wayland);
+        assert_eq!(Mode::Overlay.for_realm(Realm::Xr), Mode::Overlay);
+        assert_eq!(Mode::Wayland.for_realm(Realm::Xr), Mode::Wayland);
+    }
+    #[test]
+    fn repeated_overlay_launch_creates_tab_then_shows_it() {
+        use std::os::unix::net::UnixDatagram;
+        let unique = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let path = std::env::temp_dir().join(format!("dome-terminal-{}-{unique}.sock", std::process::id()));
+        let receiver = UnixDatagram::bind(&path).unwrap();
+        receiver.set_read_timeout(Some(std::time::Duration::from_secs(1))).unwrap();
+        super::reuse_overlay(&path).unwrap();
+        let mut message = [0; 32];
+        for expected in [b"tab-new".as_slice(), b"show".as_slice()] {
+            let size = receiver.recv(&mut message).unwrap();
+            assert_eq!(&message[..size], expected);
+        }
+        drop(receiver);
+        assert!(super::reuse_overlay(&path).is_err());
+        std::fs::remove_file(path).unwrap();
+    }
     #[test]
     fn overlay_keeps_native_input_layout_and_independent_layer_submission() {
         let command = super::command_for("dome-xr-test", "ghostty-xr-launch".into(), super::Mode::Overlay);

@@ -52,8 +52,10 @@ loopback URL; the development API intentionally rejects foreign origins/hosts.
 ## Run real Wayland clients
 
 Ghostty XR is DomeD's default terminal and retains its independent native XR
-overlay, input focus and positioning controls. **Super+T** opens it or reveals
-its existing overlay. **F12** hides Ghostty and releases keyboard input back to
+overlay, input focus and positioning controls. In the XR input realm, **Super+T**
+opens it or creates and selects a new tab in its existing overlay. In the desktop
+realm, including while XR is suspended, it opens an independent Wayland terminal
+without changing the XR terminal. **F12** hides Ghostty and releases keyboard input back to
 Dome. The overlay uses placement 20, above Dome's placement 10.
 
 ```sh
@@ -64,7 +66,7 @@ Dome. The overlay uses placement 20, above Dome's placement 10.
 `DOME_TERMINAL` selects the executable (a path without arguments). The local
 runner prefers `/usr/local/bin/ghostty-xr-launch`, with the sibling build as a
 fallback. `DOME_TERMINAL_MODE=wayland` explicitly selects the separate Wayland
-terminal mode for compositor integration diagnostics.
+terminal mode in the XR realm as well. Desktop launches always use Wayland.
 `dome-compositor --terminal` requests an initial terminal; launching without
 arguments leaves an empty desktop. `--command PROGRAM ARGS...` still launches a
 custom client. The local runner forwards explicit arguments unchanged.
