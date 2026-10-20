@@ -265,7 +265,11 @@ fn reopen(restarts: Vec<Restart>, desktop: String, xr: String) -> mpsc::Receiver
                 .envs(restart.env)
                 .env("WAYLAND_DISPLAY", socket)
                 .env_remove("WAYLAND_SOCKET")
-                .env("XDG_CURRENT_DESKTOP", "Dome")
+                .envs(
+                    dome::desktop_entries::launch_environment(Path::new(
+                        restart.desktop_id.as_deref().unwrap_or(&restart.argv[0]),
+                    )).iter().copied(),
+                )
                 .env("GDK_BACKEND", "wayland,x11")
                 .env("QT_QPA_PLATFORM", "wayland;xcb")
                 .env("SDL_VIDEODRIVER", "wayland,x11")

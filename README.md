@@ -280,6 +280,13 @@ requires PAM login credentials; passwordless login can still require a wallet
 password. The tests use a separate bus, HOME and encrypted disposable wallet and
 verify the real password dialog, Secret Service write/read, and KWallet API.
 
+Vivaldi launches (including desktop actions, PATH launches and session restore)
+receive `XDG_CURRENT_DESKTOP=Dome:KDE` and `KDE_SESSION_VERSION=6` so Chromium
+automatically selects the system's KWallet 6 backend without `--password-store`.
+This compatibility environment is scoped to Vivaldi; the session and other apps
+keep the Dome desktop identity. Dome remains first for portal selection. An
+already running Vivaldi must be fully closed before relaunching to pick it up.
+
 KDE Connect's indicator starts automatically at login when `kdeconnect-indicator`
 is installed, after the session's Wayland display is ready. Set
 `DOME_START_KDECONNECT=0` to disable this startup. Its daemon/CLI and graphical

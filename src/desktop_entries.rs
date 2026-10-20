@@ -136,11 +136,22 @@ pub fn find_executable(name: &str) -> Option<PathBuf> {
             .and_then(|p| std::path::absolute(p).ok())
     }
 }
+/// Vivaldi's Chromium backend detects KWallet 6 from the desktop environment.
+/// Keep Dome first for portal selection, and scope KDE compatibility to Vivaldi.
+pub fn launch_environment(identity: &Path) -> &'static [(&'static str, &'static str)] {
+    match identity.file_name().and_then(|name| name.to_str()) {
+        Some(
+            "vivaldi" | "vivaldi-bin" | "vivaldi-stable" | "vivaldi-snapshot"
+            | "vivaldi.desktop" | "vivaldi-stable.desktop" | "vivaldi-snapshot.desktop",
+        ) => &[("XDG_CURRENT_DESKTOP", "Dome:KDE"), ("KDE_SESSION_VERSION", "6")],
+        _ => &[("XDG_CURRENT_DESKTOP", "Dome")],
+    }
+}
 pub fn launch_executable(path: &Path, socket: &str) -> Result<(), String> {
     let mut child = std::process::Command::new(path)
         .env("WAYLAND_DISPLAY", socket)
         .env_remove("WAYLAND_SOCKET")
-        .env("XDG_CURRENT_DESKTOP", "Dome")
+        .envs(launch_environment(path).iter().copied())
         .env("GDK_BACKEND", "wayland,x11")
         .env("QT_QPA_PLATFORM", "wayland;xcb")
         .env("SDL_VIDEODRIVER", "wayland,x11")
@@ -286,7 +297,7 @@ pub fn launch(app: &App, socket: &str) -> Result<(), String> {
         .arg(&app.path)
         .env("WAYLAND_DISPLAY", socket)
         .env_remove("WAYLAND_SOCKET")
-        .env("XDG_CURRENT_DESKTOP", "Dome")
+        .envs(launch_environment(Path::new(&app.desktop_id)).iter().copied())
         .env("GDK_BACKEND", "wayland,x11")
         .env("QT_QPA_PLATFORM", "wayland;xcb")
         .env("SDL_VIDEODRIVER", "wayland,x11")
@@ -330,11 +341,13 @@ pub fn launch_action(app: &App, action: &str, socket: &str) -> Result<(), String
         let ctx = context();
         for (key, value) in [
             ("WAYLAND_DISPLAY", socket),
-            ("XDG_CURRENT_DESKTOP", "Dome"),
             ("GDK_BACKEND", "wayland,x11"),
             ("QT_QPA_PLATFORM", "wayland;xcb"),
             ("SDL_VIDEODRIVER", "wayland,x11"),
-        ] {
+        ]
+        .into_iter()
+        .chain(launch_environment(Path::new(&app.desktop_id)).iter().copied())
+        {
             let k = CString::new(key).unwrap();
             let v = CString::new(value).map_err(|e| e.to_string())?;
             set(ctx, k.as_ptr(), v.as_ptr());
