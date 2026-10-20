@@ -50,6 +50,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut capture = None;
     let mut report = None;
     let mut standalone = false;
+    let mut music_floor_only = false;
+    let mut floor_size: Option<[f32; 2]> = None;
     let mut placement = 10u32;
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
@@ -59,6 +61,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             "--capture" => capture = args.next(),
             "--report" => report = args.next(),
             "--standalone" => standalone = true,
+            "--music-floor-only" => music_floor_only = true,
+            "--floor-size" => {
+                let value = args.next().ok_or("missing floor width x depth in metres")?;
+                let (width, depth) = value.split_once('x').ok_or("floor size must be WIDTHxDEPTH")?;
+                let size = [width.parse::<f32>()?, depth.parse::<f32>()?];
+                if size.iter().any(|v| !v.is_finite() || *v <= 0. || *v > 100.) {
+                    return Err("floor dimensions must be finite and within 0..100 metres".into());
+                }
+                floor_size = Some(size);
+            }
             "--placement" => {
                 placement = args.next().ok_or("missing placement")?.parse()?;
                 if placement == 0 {
@@ -66,7 +78,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             "--help" => {
-                println!("dome-xr [--server http://127.0.0.1:PORT] [--frames N] [--capture DIR] [--report FILE] [--standalone] [--placement N]\nDefault: transparent overlay, or passthrough blending when overlay sessions are unavailable.");
+                println!("dome-xr [--server http://127.0.0.1:PORT] [--frames N] [--capture DIR] [--report FILE] [--standalone] [--placement N] [--music-floor-only] [--floor-size WIDTHxDEPTH]\nMusic-floor-only runs a passive audio-reactive overlay without a desktop server.\nFloor-size explicitly supplies the STAGE floor extent when the runtime does not expose bounds.\nDefault: transparent overlay, or passthrough blending when overlay sessions are unavailable.");
                 return Ok(());
             }
             _ => return Err(format!("unknown argument {a}").into()),
@@ -90,6 +102,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let n = network.clone();
     let r = running.clone();
     let worker = std::thread::spawn(move || {
+        if music_floor_only { return; }
         let agent = ureq::AgentBuilder::new()
             .timeout(Duration::from_millis(250))
             .build();
@@ -333,6 +346,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             environment.overlay,
             placement,
         )?;
+        let floor_stage_available = session
+            .create_reference_space(xr::ReferenceSpaceType::STAGE, xr::Posef::IDENTITY).is_ok();
+        let mut music_floor = dome::music_floor::MusicFloor::default();
+        let mut floor_bounds = None;
+        let mut floor_announced = false;
+        let mut floor_uploaded = false;
+        let mut floor_bounds_read = Instant::now() - Duration::from_secs(2);
         let stage = session
             .create_reference_space(xr::ReferenceSpaceType::STAGE, xr::Posef::IDENTITY)
             .or_else(|_| {
@@ -538,6 +558,27 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 );
                 geometry.push(beam);
             }
+            // Added after input processing so the floor never captures a pointer.
+            if floor_stage_available && floor_bounds_read.elapsed() >= Duration::from_secs(1) {
+                floor_bounds_read = Instant::now();
+                let bounds = floor_size.or_else(dome::music_floor::configured_bounds).or_else(|| session.reference_space_bounds_rect(xr::ReferenceSpaceType::STAGE)
+                    .ok().flatten().map(|b| [b.width, b.height]));
+                if bounds != floor_bounds || !floor_announced {
+                    eprintln!("Music floor STAGE bounds: {bounds:?}");
+                    floor_announced = true;
+                }
+                floor_bounds = bounds;
+            }
+            if let Some(floor) = music_floor.frame(floor_bounds) {
+                const FLOOR_ID: u64 = u64::MAX - 32;
+                images.insert(FLOOR_ID, Image { width:128, height:128, rgba:floor.rgba, serial:floor.serial });
+                geometry.push(dome::xr_input::Quad {
+                    id:FLOOR_ID,
+                    pose:Pose { position_m:[0.,0.005,0.],
+                        orientation_xyzw:glam::Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2).to_array() },
+                    size:floor.size, dome:None,
+                });
+            }
             chains.retain(|id, _| geometry.iter().any(|q| q.id == *id));
             if frame.should_render {
                 for q in geometry.iter().take(max_layers) {
@@ -577,6 +618,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             p.serial = image.serial;
                             p.opacity = opacity;
                             uploaded += 1;
+                            if q.id == u64::MAX - 32 && !floor_uploaded {
+                                eprintln!("Music floor active: audio-reactive texture submitted to STAGE overlay");
+                                floor_uploaded = true;
+                            }
                             if let Some(dir) = &capture {
                                 if captured.insert(q.id) {
                                     std::fs::create_dir_all(dir)?;
@@ -605,14 +650,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .filter_map(|q| chains.get(&q.id).map(|p| (q, p)))
                 .collect();
             visible.sort_by_key(|(q, _)| {
-                let group = if dome::xr_transport::is_shell(q.id) || q.id >= u64::MAX - 1 {
-                    3
-                } else if popup_ids.contains(&q.id) {
-                    2
-                } else if q.id & dome::spatial_popup::BEAM_ID_BASE != 0 {
-                    1
-                } else {
+                let group = if q.id == u64::MAX - 32 {
                     0
+                } else if dome::xr_transport::is_shell(q.id) || q.id >= u64::MAX - 1 {
+                    4
+                } else if popup_ids.contains(&q.id) {
+                    3
+                } else if q.id & dome::spatial_popup::BEAM_ID_BASE != 0 {
+                    2
+                } else {
+                    1
                 };
                 (group, q.dome.is_none())
             });
