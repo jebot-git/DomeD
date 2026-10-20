@@ -21,10 +21,33 @@ impl Dome {
                 self.keyboard_draft = None;
                 self.appearance_open = false;
             }
-            0xff09 => self.keyboard_field = (self.keyboard_field + 1) % 3,
-            0xff0d => {
-                self.keyboard_apply = true;
+            0xff09 => self.keyboard_field = (self.keyboard_field + 1) % 7,
+            0xfe20 | 0xff52 => self.keyboard_field = self.keyboard_field.saturating_sub(1),
+            0xff54 => self.keyboard_field = (self.keyboard_field + 1).min(6),
+            0xff50 => self.keyboard_field = 0,
+            0xff57 => self.keyboard_field = 6,
+            0xff51 | 0xff53 | 0xff0d | 0xff8d | 0x20 if self.keyboard_field >= 3 => {
+                match self.keyboard_field {
+                    3 => {
+                        let steps = if sym == 0xff51 { 2 } else { 1 };
+                        for _ in 0..steps { draft.switch_shortcut = draft.switch_shortcut.next(); }
+                    }
+                    4 => draft.ime = !draft.ime,
+                    5 | 6 => {
+                        if sym == 0xff51 || sym == 0xff53 {
+                            self.keyboard_field = if sym == 0xff51 { 5 } else { 6 };
+                        } else if self.keyboard_field == 5 {
+                            self.keyboard_apply = true;
+                        } else {
+                            self.keyboard_draft = None;
+                            self.appearance_open = false;
+                        }
+                    }
+                    _ => (),
+                }
             }
+            0xff0d | 0xff8d => self.keyboard_apply = true,
+            _ if self.keyboard_field >= 3 => (),
             _ => {
                 let field = match self.keyboard_field {
                     0 => &mut draft.layout,
@@ -56,10 +79,12 @@ impl Dome {
         if y >= top + 60. && y < top + 204. && x >= left + 180. {
             self.keyboard_field = row as usize;
         } else if row == 3 && x >= left + 180. {
+            self.keyboard_field = 3;
             if let Some(d) = self.keyboard_draft.as_mut() {
                 d.switch_shortcut = d.switch_shortcut.next();
             }
         } else if y >= top + 252. && y < top + 288. {
+            self.keyboard_field = 4;
             if let Some(d) = self.keyboard_draft.as_mut() {
                 d.ime = !d.ime;
             }

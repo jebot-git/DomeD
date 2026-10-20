@@ -99,18 +99,19 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut initial = Network::default();
     initial.session.id = session_id;
     let network = Arc::new(Mutex::new(initial));
-    let n = network.clone();
-    let r = running.clone();
-    let worker = std::thread::spawn(move || {
+    // Cursor/pose traffic must not queue behind full window texture downloads.
+    let input_network = network.clone();
+    let input_running = running.clone();
+    let input_base = base.clone();
+    let input_worker = std::thread::spawn(move || {
         if music_floor_only { return; }
-        let agent = ureq::AgentBuilder::new()
-            .timeout(Duration::from_millis(250))
-            .build();
-        let mut serial = 0;
-        let mut last_server = Instant::now();
+        let n = input_network;
+        let r = input_running;
+        let base = input_base;
+        let agent = ureq::AgentBuilder::new().timeout(Duration::from_millis(250)).build();
         let mut last_heartbeat = Instant::now() - Duration::from_secs(1);
         while r.load(Ordering::Relaxed) {
-            if last_heartbeat.elapsed() >= Duration::from_millis(100) {
+            if last_heartbeat.elapsed() >= Duration::from_millis(5) {
                 let mut status = {
                     let state = n.lock().unwrap();
                     let mut status = state.session.clone();
@@ -132,6 +133,26 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 last_heartbeat = Instant::now();
             }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        let _ = agent.post(&format!("{base}/api/xr-session")).send_json(
+            serde_json::to_value(dome::xr_transport::Session {
+                id: session_id,
+                ..Default::default()
+            })
+            .unwrap(),
+        );
+    });
+    let n = network.clone();
+    let r = running.clone();
+    let worker = std::thread::spawn(move || {
+        if music_floor_only { return; }
+        let agent = ureq::AgentBuilder::new()
+            .timeout(Duration::from_millis(250))
+            .build();
+        let mut serial = 0;
+        let mut last_server = Instant::now();
+        while r.load(Ordering::Relaxed) {
             if let Ok(response) = agent.get(&format!("{base}/api/state")).call() {
                 last_server = Instant::now();
                 if let Ok(value) = response.into_json::<serde_json::Value>() {
@@ -217,13 +238,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             std::thread::sleep(Duration::from_millis(10));
         }
-        let _ = agent.post(&format!("{base}/api/xr-session")).send_json(
-            serde_json::to_value(dome::xr_transport::Session {
-                id: session_id,
-                ..Default::default()
-            })
-            .unwrap(),
-        );
     });
     let entry = unsafe {
         xr::Entry::load()
@@ -466,7 +480,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let mut popup_beams = vec![];
             let mut popup_ids = std::collections::HashSet::new();
             let mut stereo_windows = std::collections::HashSet::new();
-            if let Some(scene) = scene {
+            if let Some(ref scene) = scene {
                 stereo_windows.extend(scene.windows.iter().filter(|w| w.stereo == dome::stereo::Stereo::SideBySide).map(|w| w.id));
                 presentation = scene.presentation;
                 if !presentation_initialized {
@@ -483,7 +497,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 geometry = dome::xr_input::quads(&scene, head_pose);
                 popup_ids.extend(scene.popups.iter().map(|p| p.id));
                 popup_beams = dome::spatial_popup::beams(&scene, &geometry, head_pose);
-                let mut hud_scene = scene.clone();
+                let hud_scene = scene.clone();
                 let (_, views) =
                     session.locate_views(VIEW_TYPE, frame.predicted_display_time, &stage)?;
                 let horizontal = views
@@ -491,14 +505,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     .map(|v| (v.fov.angle_right - v.fov.angle_left).to_degrees())
                     .fold(160f32, f32::min)
                     - 8.;
-                hud_scene.config.upper_bar_max_width_deg = hud_scene
-                    .config
-                    .upper_bar_max_width_deg
-                    .min(horizontal.max(30.));
-                hud_scene.config.taskbar_max_width_deg = hud_scene
-                    .config
-                    .taskbar_max_width_deg
-                    .min(horizontal.max(30.));
+                let mouse_viewport = views.iter().map(|v| [
+                    v.fov.angle_left, v.fov.angle_right,
+                    v.fov.angle_down, v.fov.angle_up,
+                ]).reduce(|a, b| [
+                    a[0].max(b[0]), a[1].min(b[1]),
+                    a[2].max(b[2]), a[3].min(b[3]),
+                ]);
                 {
                     let mut state = network.lock().unwrap();
                     state.session = dome::xr_transport::Session {
@@ -507,38 +520,35 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         focused,
                         head: head_pose,
                         horizontal_fov_deg: horizontal.max(30.),
+                        mouse_viewport,
                     };
                     state.sampled = Some(Instant::now());
                 }
-                let hud = dome::xr_input::shell_quads(&hud_scene, head_pose, &shell);
+                let hud = dome::xr_input::shell_quads_in_view(&hud_scene, head_pose, &shell, horizontal.max(30.));
                 geometry.extend(hud);
                 transition.apply(&mut geometry, head_pose, &hud_scene.config);
             }
             // Only the physical mouse supplies a cursor; the compositor owns its hit UV.
             if control.mouse && focused && head_valid && transition.opacity >= 1. {
-                if let Some(angles) = control.mouse_angles {
+                if let (Some(angles), Some(scene)) = (control.mouse_angles, scene.as_ref()) {
                     let cursor = control.cursor.as_ref()
                         .filter(|c| transition.interactive(presentation, c.id));
                     let reticle = dome::xr_input::mouse_cursor_reticle(
-                        &geometry, cursor, head_pose, angles,
+                        &geometry, cursor, head_pose, angles, &scene,
                     );
+                    let viewport = network.lock().unwrap().session.mouse_viewport;
+                    let reticle = if let Some(viewport) = viewport {
+                        dome::xr_input::confine_mouse_reticle(reticle, head_pose, viewport)
+                    } else {
+                        reticle
+                    };
                     let id = reticle.id;
-                    let mut rgba = vec![0; 16 * 16 * 4];
-                    for y in 0..16 {
-                        for x in 0..16 {
-                            let d = (x as f32 - 7.5).powi(2) + (y as f32 - 7.5).powi(2);
-                            if (20. ..=50.).contains(&d) || x == 7 || y == 7 {
-                                rgba[(y * 16 + x) * 4..(y * 16 + x) * 4 + 4].copy_from_slice(
-                                    &[245, 245, 245, 255],
-                                );
-                            }
-                        }
-                    }
+                    let rgba = dome::xr_input::cursor_pixels();
                     images.insert(
                         id,
                         Image {
-                            width: 16,
-                            height: 16,
+                            width: 32,
+                            height: 32,
                             rgba,
                             serial: 1,
                         },
@@ -661,7 +671,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 } else {
                     1
                 };
-                (group, q.dome.is_none())
+                let order = scene.as_ref().map(|s| dome::xr_input::window_order(s, q.id)).unwrap_or(1);
+                (group, order, q.dome.is_none())
             });
             let mut layer_budget = 0;
             visible.retain(|(q, _)| {
@@ -732,7 +743,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     .filter(|(q, _)| dome::xr_transport::is_shell(q.id))
                     .count(),
             );
-            peak_curved = peak_curved.max(visible.iter().filter(|(q, _)| q.dome.is_some()).count());
+            peak_curved = peak_curved.max(visible.iter().filter(|(q, _)| q.dome.is_some() && !dome::xr_transport::is_shell(q.id)).count());
             peak_flat = peak_flat.max(
                 visible
                     .iter()
@@ -754,6 +765,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         running.store(false, Ordering::Relaxed);
         let _ = worker.join();
+        let _ = input_worker.join();
         let summary = serde_json::json!({"runtime":runtime,"system":properties.system_name,"overlay":environment.overlay,"environment_blend":format!("{blend:?}"),"overlay_placement":placement,"frames":count,"peak_window_layers":peak,"peak_curved_layers":peak_curved,"peak_flat_layers":peak_flat,"peak_stereo_windows":peak_stereo,"peak_shell_layers":peak_shell,"uploads":uploaded,"input_methods":["mouse","keyboard"],"presentation_hidden_frames":hidden_frames,"presentation_fade_frames":fade_frames,"presentation_slide_frames":slide_frames,"clean_exit":true});
         println!("{summary}");
         if let Some(path) = report {

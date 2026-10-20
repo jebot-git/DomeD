@@ -26,6 +26,8 @@ pub enum Command {
     MoveWorkspace(usize),
     CycleWorkspace(i32),
     MoveLane(i32),
+    CycleLane(i32),
+    MoveHorizontal(i32),
     NewWorkspace,
     ResetSpatial,
     PullOut,
@@ -127,14 +129,6 @@ pub fn defaults() -> Vec<Binding> {
                 ..Default::default()
             },
         );
-        add(
-            Cycle(reverse),
-            0xff09,
-            Mods {
-                shift: reverse,
-                ..logo
-            },
-        );
     }
     for (command, key, mods) in [
         (
@@ -189,14 +183,12 @@ pub fn defaults() -> Vec<Binding> {
         (FileManager, 'e'),
         (Terminal, 't'),
         (HideApp, 'h'),
-        (Close, 'w'),
         (QuitApp, 'q'),
         (Minimize, 'm'),
         (Copy, 'c'),
         (Paste, 'v'),
         (SelectAll, 'a'),
         (Scale(1.1), '='),
-        (Scale(1.1), '+'),
         (Scale(1. / 1.1), '-'),
     ] {
         add(
@@ -212,8 +204,6 @@ pub fn defaults() -> Vec<Binding> {
     for (command, key) in [
         (CycleWorkspace(-1), 0xff51),
         (CycleWorkspace(1), 0xff53),
-        (MoveLane(-1), 0xff52),
-        (MoveLane(1), 0xff54),
     ] {
         add(command, key, Mods { ctrl: true, ..logo });
     }
@@ -231,13 +221,20 @@ pub fn defaults() -> Vec<Binding> {
     for (id, command, key) in [
         ("window-lane-up", MoveLane(-1), 0xff52),
         ("window-lane-down", MoveLane(1), 0xff54),
-        ("window-grow", Scale(1.1), 0xff53),
-        ("window-shrink", Scale(1. / 1.1), 0xff51),
+        ("window-right", MoveHorizontal(1), 0xff53),
+        ("window-left", MoveHorizontal(-1), 0xff51),
     ] {
         bindings.push(Binding {
             id: Some(id.into()), command, key,
             mods: Mods { alt: true, ..logo }, enabled: true,
         });
+    }
+    for (id, command, key) in [
+        ("focus-lane-up", CycleLane(-1), 0xff52),
+        ("focus-lane-down", CycleLane(1), 0xff54),
+    ] {
+        bindings.push(Binding { id: Some(id.into()), command, key,
+            mods: Mods { ctrl: true, alt: true, ..Default::default() }, enabled: true });
     }
     bindings
 }
@@ -321,12 +318,14 @@ pub fn action_label(command: Command) -> String {
             "Next desktop"
         }
         .into(),
+        CycleLane(n) => if n < 0 { "Focus previous dome lane" } else { "Focus next dome lane" }.into(),
         MoveLane(n) => if n < 0 {
             "Move up a lane"
         } else {
             "Move down a lane"
         }
         .into(),
+        MoveHorizontal(n) => if n < 0 { "Move left in lane" } else { "Move right in lane" }.into(),
         Workspace(n) => format!("Switch to desktop {}", n + 1),
         MoveWorkspace(n) => format!("Move to desktop {}", n + 1),
         NewWorkspace => "New desktop".into(),
@@ -395,7 +394,8 @@ mod tests {
             logo: true,
             ..Mods::default()
         };
-        assert_eq!(resolve('w' as u32, m), Some(Command::Close));
+        assert_eq!(resolve('w' as u32, m), None);
+        assert_eq!(resolve(0xffc1, Mods { alt: true, ..Default::default() }), Some(Command::Close));
         assert_eq!(resolve('e' as u32, m), Some(Command::FileManager));
         assert_eq!(resolve('3' as u32, m), Some(Command::Workspace(2)));
         assert_eq!(
@@ -536,6 +536,29 @@ pub fn deserialize_bindings<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Vec<Binding>, D::Error> {
     let mut bindings = <Vec<Binding> as serde::Deserialize>::deserialize(deserializer)?;
+    // Retire stock aliases. Custom remaps keep their chord and replace the
+    // canonical entry for the same action rather than producing another alias.
+    let logo = Mods { logo: true, ..Default::default() };
+    let alt = Mods { alt: true, ..logo };
+    let ctrl = Mods { ctrl: true, ..logo };
+    let canonical = defaults();
+    let disabled: Vec<_> = bindings.iter().filter(|b| !bindings.iter().any(|other| other.command == b.command && other.enabled)).map(|b| b.command).collect();
+    bindings.retain(|b| !(
+        (b.command == Command::Close && b.key == 'w' as u32 && b.mods == logo)
+        || (matches!(b.command, Command::Cycle(_)) && b.key == 0xff09 && b.mods.logo && !b.mods.ctrl && !b.mods.alt)
+        || (matches!(b.command, Command::MoveLane(_)) && b.mods == ctrl && [0xff52, 0xff54].contains(&b.key))
+        || (matches!(b.id.as_deref(), Some("window-grow" | "window-shrink")) && b.mods == alt && [0xff51, 0xff53].contains(&b.key))
+        || (b.command == Command::Scale(1.1) && b.key == '+' as u32 && b.mods == Mods { shift: true, ..logo })
+    ));
+    let mut unique: Vec<Binding> = Vec::new();
+    for mut binding in bindings {
+        if let Some(default) = canonical.iter().find(|b| b.command == binding.command) { binding.id = default.id.clone(); }
+        if let Some(index) = unique.iter().position(|b| b.command == binding.command) {
+            let stock = canonical.iter().any(|b| b.command == unique[index].command && b.key == unique[index].key && b.mods == unique[index].mods);
+            if stock { unique[index] = binding; }
+        } else { unique.push(binding); }
+    }
+    let mut bindings = unique;
     for mut binding in defaults().into_iter().filter(|b| b.id.is_some() || b.command == Command::PullOut) {
         let present = bindings.iter().any(|b| match &binding.id {
             Some(id) => b.id.as_ref() == Some(id),
@@ -544,7 +567,7 @@ pub fn deserialize_bindings<'de, D: serde::Deserializer<'de>>(
         if present { continue; }
         let action_disabled = bindings.iter().any(|b| b.command == binding.command)
             && !bindings.iter().any(|b| b.command == binding.command && b.enabled);
-        binding.enabled = !action_disabled && !bindings.iter().any(|b| {
+        binding.enabled = !disabled.contains(&binding.command) && !action_disabled && !bindings.iter().any(|b| {
             b.enabled && normalized_key(b.key) == normalized_key(binding.key) && b.mods == binding.mods
         });
         bindings.push(binding);
@@ -564,10 +587,10 @@ mod window_binding_tests {
     fn window_arrows_and_existing_chords_resolve() {
         let alt = Mods { logo: true, alt: true, ..Default::default() };
         for (key, command) in [(0xff52, Command::MoveLane(-1)), (0xff54, Command::MoveLane(1)),
-            (0xff53, Command::Scale(1.1)), (0xff51, Command::Scale(1. / 1.1))] {
+            (0xff53, Command::MoveHorizontal(1)), (0xff51, Command::MoveHorizontal(-1))] {
             assert_eq!(resolve(key, alt), Some(command));
         }
-        assert_eq!(resolve(0xff52, Mods { logo: true, ctrl: true, ..Default::default() }), Some(Command::MoveLane(-1)));
+        assert_eq!(resolve(0xff52, Mods { logo: true, ctrl: true, ..Default::default() }), None);
         assert_eq!(resolve('=' as u32, Mods { logo: true, ..Default::default() }), Some(Command::Scale(1.1)));
         validate(&defaults()).unwrap();
     }
@@ -579,16 +602,16 @@ mod window_binding_tests {
         menu.mods = Mods { logo: true, alt: true, ..Default::default() };
         let old = restored(old);
         let added: Vec<_> = old.iter().filter(|b| b.id.is_some()).collect();
-        assert_eq!(added.len(), 4);
+        assert_eq!(added.len(), 6);
         assert!(!added.iter().find(|b| b.command == Command::MoveLane(-1)).unwrap().enabled);
-        assert!(added.iter().find(|b| b.command == Command::Scale(1.1)).unwrap().enabled);
+        assert!(added.iter().find(|b| b.command == Command::MoveHorizontal(1)).unwrap().enabled);
     }
     #[test]
     fn migration_preserves_remapped_and_disabled_window_bindings() {
         let mut bindings = defaults();
         let up = bindings.iter_mut().find(|b| b.id.as_deref() == Some("window-lane-up")).unwrap();
         up.key = 'u' as u32;
-        let grow = bindings.iter_mut().find(|b| b.id.as_deref() == Some("window-grow")).unwrap();
+        let grow = bindings.iter_mut().find(|b| b.id.as_deref() == Some("window-right")).unwrap();
         grow.enabled = false;
         let restored = restored(restored(bindings.clone()));
         assert_eq!(restored, bindings);
@@ -596,8 +619,25 @@ mod window_binding_tests {
     }
     #[test]
     fn migration_does_not_revive_a_disabled_action() {
-        let mut old: Vec<_> = defaults().into_iter().filter(|b| b.id.is_none()).collect();
+        let mut old = defaults();
         old.iter_mut().filter(|b| b.command == Command::MoveLane(-1)).for_each(|b| b.enabled = false);
         assert!(!restored(old).iter().find(|b| b.id.as_deref() == Some("window-lane-up")).unwrap().enabled);
+    }
+}
+
+#[cfg(test)]
+mod retired_alias_tests {
+    use super::*;
+    #[test]
+    fn defaults_have_one_chord_per_action_and_old_aliases_are_reclaimed() {
+        let mut old = defaults();
+        for i in 0..old.len() { assert!(!old[..i].iter().any(|b| b.command == old[i].command)); }
+        old.push(Binding { id: Some("window-grow".into()), command: Command::Scale(1.1),
+            key: 0xff53, mods: Mods { logo: true, alt: true, ..Default::default() }, enabled: true });
+        old.push(Binding { id: None, command: Command::Close, key: 'w' as u32,
+            mods: Mods { logo: true, ..Default::default() }, enabled: true });
+        let config: crate::Config = serde_json::from_value(serde_json::json!({"keybindings":old})).unwrap();
+        validate(&config.keybindings).unwrap();
+        assert_eq!(config.keybindings, defaults());
     }
 }

@@ -119,18 +119,24 @@ pub struct Config {
     #[serde(deserialize_with = "crate::shortcuts::deserialize_bindings")]
     pub keybindings: Vec<crate::shortcuts::Binding>,
     pub anchor_mode: AnchorMode,
-    pub upper_bar_x_deg: f32,
-    pub taskbar_x_deg: f32,
+    #[serde(rename = "upper_bar_x_deg", deserialize_with = "discard_retired_setting", skip_serializing)]
+    pub retired_upper_bar_x_deg: (),
+    #[serde(rename = "taskbar_x_deg", deserialize_with = "discard_retired_setting", skip_serializing)]
+    pub retired_taskbar_x_deg: (),
     pub bar_distance_m: f32,
     pub dome_vertical_span_deg: f32,
     pub dome_upper_tilt_deg: f32,
     pub vertical_fov_deg: f32,
     pub upper_bar_height_deg: f32,
     pub taskbar_height_deg: f32,
-    pub upper_bar_max_width_deg: f32,
-    pub taskbar_max_width_deg: f32,
-    pub upper_inset_deg: f32,
-    pub lower_inset_deg: f32,
+    #[serde(rename = "upper_bar_max_width_deg", deserialize_with = "discard_retired_setting", skip_serializing)]
+    pub retired_upper_bar_max_width_deg: (),
+    #[serde(rename = "taskbar_max_width_deg", deserialize_with = "discard_retired_setting", skip_serializing)]
+    pub retired_taskbar_max_width_deg: (),
+    #[serde(rename = "upper_inset_deg", deserialize_with = "discard_retired_setting", skip_serializing)]
+    pub retired_upper_inset_deg: (),
+    #[serde(rename = "lower_inset_deg", deserialize_with = "discard_retired_setting", skip_serializing)]
+    pub retired_lower_inset_deg: (),
     pub radius_m: f32,
     pub pullout_distance_m: f32,
     pub center_m: [f32; 3],
@@ -150,18 +156,18 @@ impl Default for Config {
             retired_pointer_smoothing: (),
             keybindings: crate::shortcuts::defaults(),
             anchor_mode: AnchorMode::Room,
-            upper_bar_x_deg: 0.,
-            taskbar_x_deg: 0.,
+            retired_upper_bar_x_deg: (),
+            retired_taskbar_x_deg: (),
             bar_distance_m: 0.6,
             dome_vertical_span_deg: 110.,
             dome_upper_tilt_deg: 8.,
             vertical_fov_deg: 100.,
             upper_bar_height_deg: 5.,
             taskbar_height_deg: 7.,
-            upper_bar_max_width_deg: 110.,
-            taskbar_max_width_deg: 100.,
-            upper_inset_deg: 8.,
-            lower_inset_deg: 8.,
+            retired_upper_bar_max_width_deg: (),
+            retired_taskbar_max_width_deg: (),
+            retired_upper_inset_deg: (),
+            retired_lower_inset_deg: (),
             radius_m: 2.2,
             pullout_distance_m: 2.0,
             center_m: [0., 1.4, 0.],
@@ -192,18 +198,12 @@ impl Config {
             }
         }
         let numbers = [
-            self.upper_bar_x_deg,
-            self.taskbar_x_deg,
             self.bar_distance_m,
             self.dome_vertical_span_deg,
             self.dome_upper_tilt_deg,
             self.vertical_fov_deg,
             self.upper_bar_height_deg,
             self.taskbar_height_deg,
-            self.upper_bar_max_width_deg,
-            self.taskbar_max_width_deg,
-            self.upper_inset_deg,
-            self.lower_inset_deg,
             self.radius_m,
             self.pullout_distance_m,
             self.yaw_deg,
@@ -211,13 +211,8 @@ impl Config {
             self.window_gap_deg,
             self.window_gap_px,
         ];
-        if self.upper_bar_x_deg.abs() > 40.
-            || self.taskbar_x_deg.abs() > 40.
-            || !(0.3..=2.).contains(&self.bar_distance_m)
-        {
-            return Err(
-                "Bar horizontal offsets must be within ±40°; distance must be 0.3–2 m".into(),
-            );
+        if !(0.3..=2.).contains(&self.bar_distance_m) {
+            return Err("XR notification distance must be 0.3–2 m".into());
         }
         if !(0. ..=8.).contains(&self.window_gap_px) || self.window_border_px > 2 {
             return Err("XR spacing must be 0–8 logical pixels; border must be 0–2 pixels".into());
@@ -252,25 +247,15 @@ impl Config {
         {
             return Err("Bar heights must be 1–20 degrees".into());
         }
-        if !(10. ..=360.).contains(&self.upper_bar_max_width_deg)
-            || !(10. ..=360.).contains(&self.taskbar_max_width_deg)
-        {
-            return Err("Bar widths must be 10–360 degrees".into());
-        }
-        if self.upper_inset_deg < 0.
-            || self.lower_inset_deg < 0.
-            || !(0. ..=8.).contains(&self.lane_gap_deg)
+        if !(0. ..=8.).contains(&self.lane_gap_deg)
             || !(0. ..=12.).contains(&self.window_gap_deg)
         {
-            return Err(
-                "Insets and gaps must be nonnegative; lane/window gaps are limited to 8/12 degrees"
-                    .into(),
-            );
+            return Err("Lane/window gaps are limited to 8/12 degrees".into());
         }
-        let (bottom, top) = self.view_lane_extent();
+        let (bottom, top) = self.lane_extent();
         if top - bottom - 2. * self.lane_gap_deg < 18. {
             return Err(
-                "FOV, bar heights and insets must leave at least 18 degrees for three lanes".into(),
+                "Projection height and lane gaps must leave at least 18 degrees for three lanes".into(),
             );
         }
         Ok(())
@@ -285,8 +270,8 @@ impl Config {
     }
     pub fn view_lane_extent(&self) -> (f32, f32) {
         (
-            -self.vertical_fov_deg / 2. + self.lower_inset_deg + self.taskbar_height_deg,
-            self.vertical_fov_deg / 2. - self.upper_inset_deg - self.upper_bar_height_deg,
+            -self.vertical_fov_deg / 2. + self.taskbar_height_deg,
+            self.vertical_fov_deg / 2. - self.upper_bar_height_deg,
         )
     }
     pub fn lane_spans(&self, shares: [f32; 3]) -> [[f32; 2]; 3] {
@@ -455,6 +440,7 @@ pub enum Action {
         lane: usize,
         workspace: usize,
     },
+    Reorder { id: WindowId, delta: i32 },
     Swap {
         a: WindowId,
         b: WindowId,
@@ -815,6 +801,15 @@ impl Scene {
                     self.choose_focus();
                 }
             }
+            Action::Reorder { id, delta } => {
+                let w = self.window(id).ok_or("Unknown window")?.clone();
+                if w.pullout_slot.is_some() { return Err("Return window to dome before arranging its lane".into()); }
+                let windows = &mut self.workspaces[w.workspace].lanes[w.lane].windows;
+                let index = windows.iter().position(|i| *i == id).ok_or("Window missing from lane")?;
+                let next = (index as i64 + i64::from(delta)).clamp(0, windows.len() as i64 - 1) as usize;
+                let id = windows.remove(index);
+                windows.insert(next, id);
+            }
             Action::Swap { a, b } => {
                 let wa = self.window(a).ok_or("Unknown first window")?.clone();
                 let wb = self.window(b).ok_or("Unknown second window")?.clone();
@@ -1009,6 +1004,52 @@ impl Scene {
             }
         }
     }
+    /// Packed lane boundaries shared by window and shell geometry.
+    pub fn packed_lane_spans(&self, workspace: usize) -> [[f32; 2]; 3] {
+        let space = &self.workspaces[workspace];
+        let rank = if workspace == self.active_workspace { 0 } else {
+            1 + (workspace + self.workspaces.len() - self.active_workspace) % self.workspaces.len()
+        };
+        let radius = self.config.radius_m + rank as f32 * 0.55;
+        let raw_spans = self.config.lane_spans(space.shares);
+        // Pixels mean Wayland logical content pixels, independent of headset resolution.
+        let height_at = |bottom: f32, top: f32| {
+            let angular = top - bottom;
+            {
+                angular * (2.2 / radius).min(1.)
+            }
+        };
+        let heights = raw_spans.map(|[b, t]| height_at(b, t));
+        let pixel_pitch = (0..3)
+            .flat_map(|lane| {
+                space.lanes[lane]
+                    .windows
+                    .iter()
+                    .filter_map(|id| self.window(*id))
+                    .filter(|w| !w.minimized && self.popup(w.id).is_none())
+                    .map(move |w| heights[lane] / w.desktop.h)
+            })
+            .fold(f32::INFINITY, f32::min);
+        let pixel_pitch = if pixel_pitch.is_finite() {
+            pixel_pitch
+        } else {
+            heights.iter().copied().fold(f32::INFINITY, f32::min) / 460.
+        };
+        let lane_gap = self
+            .config
+            .lane_gap_deg
+            .min(self.config.window_gap_px * pixel_pitch);
+        let mut mid = (raw_spans[1][0] + raw_spans[1][1]) / 2.;
+        if radius > 2.2 {
+            mid *= 2.2 / radius;
+        }
+        let middle = [mid - heights[1] / 2., mid + heights[1] / 2.];
+        [
+            [middle[1] + lane_gap, middle[1] + lane_gap + heights[0]],
+            middle,
+            [middle[0] - lane_gap - heights[2], middle[0] - lane_gap],
+        ]
+    }
     pub fn panels(&self) -> Vec<Panel> {
         let mut panels = vec![];
         for (ws, space) in self.workspaces.iter().enumerate() {
@@ -1018,44 +1059,8 @@ impl Scene {
                 1 + (ws + self.workspaces.len() - self.active_workspace) % self.workspaces.len()
             };
             let radius = self.config.radius_m + rank as f32 * 0.55;
-            let raw_spans = self.config.lane_spans(space.shares);
-            // Pixels mean Wayland logical content pixels, independent of headset resolution.
-            let height_at = |bottom: f32, top: f32| {
-                let angular = top - bottom;
-                {
-                    angular * (2.2 / radius).min(1.)
-                }
-            };
-            let heights = raw_spans.map(|[b, t]| height_at(b, t));
-            let pixel_pitch = (0..3)
-                .flat_map(|lane| {
-                    space.lanes[lane]
-                        .windows
-                        .iter()
-                        .filter_map(|id| self.window(*id))
-                        .filter(|w| !w.minimized && self.popup(w.id).is_none())
-                        .map(move |w| heights[lane] / w.desktop.h)
-                })
-                .fold(f32::INFINITY, f32::min);
-            let pixel_pitch = if pixel_pitch.is_finite() {
-                pixel_pitch
-            } else {
-                heights.iter().copied().fold(f32::INFINITY, f32::min) / 460.
-            };
-            let lane_gap = self
-                .config
-                .lane_gap_deg
-                .min(self.config.window_gap_px * pixel_pitch);
-            let mut mid = (raw_spans[1][0] + raw_spans[1][1]) / 2.;
-            if radius > 2.2 {
-                mid *= 2.2 / radius;
-            }
-            let middle = [mid - heights[1] / 2., mid + heights[1] / 2.];
-            let spans = [
-                [middle[1] + lane_gap, middle[1] + lane_gap + heights[0]],
-                middle,
-                [middle[0] - lane_gap - heights[2], middle[0] - lane_gap],
-            ];
+            let spans = self.packed_lane_spans(ws);
+            let height_at = |bottom: f32, top: f32| (top - bottom) * (2.2 / radius).min(1.);
             for (lane, band) in space.lanes.iter().enumerate() {
                 let windows: Vec<_> = band
                     .windows

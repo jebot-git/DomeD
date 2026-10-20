@@ -15,12 +15,22 @@ pub struct Notice {
     pub app: String,
     pub summary: String,
     pub body: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image: Option<NoticeImage>,
+    #[serde(skip)]
+    source: Option<u64>,
     actions: Vec<[String; 2]>,
     critical: bool,
     #[serde(skip)]
     resident: bool,
     #[serde(skip)]
     deadline: Option<Instant>,
+}
+#[derive(Clone, Serialize)]
+pub struct NoticeImage {
+    pub width: u32,
+    pub height: u32,
+    pub rgba: String,
 }
 #[derive(Default)]
 struct State {
@@ -29,6 +39,8 @@ struct State {
     notices: Vec<Notice>,
     history: Vec<Notice>,
     unread: bool,
+    dismissed_surfaces: std::collections::HashSet<u64>,
+    surface_clicks: Vec<(u64, [f64; 2])>,
 }
 #[derive(Clone, Serialize)]
 pub struct Toast {
@@ -117,6 +129,8 @@ impl Server {
             app: app_name,
             summary,
             body,
+            image: None,
+            source: None,
             actions: actions
                 .chunks_exact(2)
                 .map(|p| [p[0].clone(), p[1].clone()])
@@ -166,6 +180,9 @@ impl Server {
 fn remove(state: &Mutex<State>, id: u32) -> bool {
     let mut s = state.lock().unwrap();
     let old = s.notices.len();
+    if let Some(source) = s.notices.iter().find(|n| n.id == id).and_then(|n| n.source) {
+        s.dismissed_surfaces.insert(source);
+    }
     s.notices.retain(|n| n.id != id);
     if old == s.notices.len() {
         return false;
@@ -192,6 +209,95 @@ impl Notifications {
             }
         });
         Self { state, send }
+    }
+    /// Keep Steam's rendered notification content in the same stack and history
+    /// as D-Bus notices. It never becomes a normal desktop or XR application.
+    pub fn surface(&self, source: u64, width: u32, height: u32, rgba: &[u8]) {
+        use base64::Engine;
+        if width == 0
+            || height == 0
+            || width > 1024
+            || height > 512
+            || rgba.len() != width as usize * height as usize * 4
+        {
+            return;
+        }
+        let mut s = self.state.lock().unwrap();
+        if s.dismissed_surfaces.contains(&source) {
+            return;
+        }
+        let image = NoticeImage {
+            width,
+            height,
+            rgba: base64::engine::general_purpose::STANDARD.encode(rgba),
+        };
+        let existing = s.notices.iter().find(|n| n.source == Some(source)).cloned();
+        let notice = if let Some(mut n) = existing {
+            if n.image.as_ref().is_some_and(|old| {
+                old.width == width && old.height == height && old.rgba == image.rgba
+            }) {
+                return;
+            }
+            n.image = Some(image);
+            n
+        } else {
+            if s.notices.len() >= 128 {
+                return;
+            }
+            loop {
+                s.next = s.next.wrapping_add(1).max(1);
+                if !s.notices.iter().any(|n| n.id == s.next) {
+                    break;
+                }
+            }
+            Notice {
+                id: s.next,
+                timestamp: crate::clipboard::now(),
+                app: "Steam".into(),
+                summary: "Steam notification".into(),
+                body: String::new(),
+                image: Some(image),
+                source: Some(source),
+                actions: Vec::new(),
+                critical: false,
+                resident: true,
+                deadline: None,
+            }
+        };
+        s.notices.retain(|n| n.id != notice.id);
+        s.notices.push(notice.clone());
+        // Images are bounded independently of the 200 text-history entries.
+        if let Some(n) = s.history.iter_mut().find(|n| n.id == notice.id) {
+            *n = notice;
+        } else {
+            s.history.push(notice);
+        }
+        while s.history.iter().filter(|n| n.image.is_some()).count() > 16 {
+            let i = s.history.iter().position(|n| n.image.is_some()).unwrap();
+            s.history.remove(i);
+        }
+        if s.history.len() > 200 {
+            s.history.remove(0);
+        }
+        s.unread = true;
+        s.revision = s.revision.wrapping_add(1);
+    }
+    pub fn withdraw_surface(&self, source: u64) {
+        let mut s = self.state.lock().unwrap();
+        let len = s.notices.len();
+        s.notices.retain(|n| n.source != Some(source));
+        s.dismissed_surfaces.remove(&source);
+        if s.notices.len() != len {
+            s.revision = s.revision.wrapping_add(1);
+        }
+    }
+    pub fn next_surface_click(&self) -> Option<(u64, [f64; 2])> {
+        let mut state = self.state.lock().unwrap();
+        if state.surface_clicks.is_empty() {
+            None
+        } else {
+            Some(state.surface_clicks.remove(0))
+        }
     }
     pub fn history(&self) -> Vec<Notice> {
         self.state
@@ -232,7 +338,13 @@ impl Notifications {
         let mut result = vec![];
         for n in s.notices.iter().rev().take(3) {
             let count = n.actions.iter().filter(|a| a[0] != "default").count() as i32;
-            let h = 100 + ((count + 1) / 2) * 32;
+            let h = if let Some(image) = &n.image {
+                36 + ((w - 16) as f64 * image.height as f64 / image.width as f64)
+                    .round()
+                    .min(256.) as i32
+            } else {
+                100 + ((count + 1) / 2) * 32
+            };
             if y + h > height - 72 {
                 break;
             }
@@ -249,6 +361,21 @@ impl Notifications {
     }
     pub fn click(&self, toast: &Toast, x: f64, y: f64) {
         let n = &toast.notice;
+        if let Some(source) = n.source {
+            if x >= (toast.x + toast.w - 32) as f64 && y < (toast.y + 32) as f64 {
+                let _ = self.send.send(Request::Dismiss(n.id));
+            } else if y >= (toast.y + 32) as f64 {
+                let uv = [
+                    ((x - toast.x as f64 - 8.) / (toast.w - 16) as f64).clamp(0., 1.),
+                    ((y - toast.y as f64 - 32.) / (toast.h - 36) as f64).clamp(0., 1.),
+                ];
+                let mut s = self.state.lock().unwrap();
+                if s.surface_clicks.len() < 32 {
+                    s.surface_clicks.push((source, uv));
+                }
+            }
+            return;
+        }
         let request = if x >= (toast.x + toast.w - 32) as f64 && y < (toast.y + 32) as f64 {
             Request::Dismiss(n.id)
         } else if y >= (toast.y + 100) as f64 {
@@ -347,6 +474,28 @@ fn run(state: Arc<Mutex<State>>, receive: mpsc::Receiver<Request>) -> zbus::Resu
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn surface_notifications_replace_dismiss_and_bound_image_history() {
+        let (send, _) = mpsc::channel();
+        let notices = Notifications {
+            state: Arc::new(Mutex::new(State::default())),
+            send,
+        };
+        notices.surface(5, 2, 1, &[255; 8]);
+        notices.surface(5, 2, 1, &[128; 8]);
+        assert_eq!(notices.history().len(), 1);
+        let id = notices.history()[0].id;
+        assert!(remove(&notices.state, id));
+        notices.surface(5, 2, 1, &[64; 8]);
+        assert!(notices.layout(1024, 768).is_empty());
+        notices.withdraw_surface(5);
+        notices.surface(5, 2, 1, &[32; 8]);
+        assert_eq!(notices.layout(1024, 768).len(), 1);
+        for id in 10..30 {
+            notices.surface(id, 2, 1, &[0; 8]);
+        }
+        assert_eq!(notices.history().len(), 16);
+    }
     #[test]
     fn replacement_expiry_and_dismissal_keep_a_bounded_notification_history() {
         let state = Arc::new(Mutex::new(State::default()));

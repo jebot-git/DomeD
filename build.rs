@@ -8,6 +8,13 @@ fn main() {
     if std::env::var_os("CARGO_FEATURE_NESTED").is_none() {
         return;
     }
+    println!("cargo:rerun-if-changed=native/screencast.c");
+    println!("cargo:rerun-if-changed=native/portal_picker.cpp");
+    let pipewire = pkg_config::Config::new().probe("libpipewire-0.3")
+        .expect("PipeWire development files are required for screen sharing");
+    let mut capture = cc::Build::new();
+    for path in pipewire.include_paths { capture.include(path); }
+    capture.file("native/screencast.c").flag("-std=gnu11").compile("dome_screencast");
     let gio = pkg_config::Config::new().cargo_metadata(false).probe("gio-2.0").expect("GIO development files are required");
     let module = std::path::PathBuf::from(std::env::var_os("OUT_DIR").unwrap()).join("libdome-appearance.so");
     let mut compiler = cc::Build::new().get_compiler().to_command();
@@ -28,6 +35,7 @@ fn main() {
         .std("c++17")
         .file("native/qt_chrome.cpp")
         .file("native/default_apps.cpp")
+        .file("native/portal_picker.cpp")
         .flag("-fPIC");
     if let Some(prefix) = std::env::var_os("DOME_QT6_PREFIX") {
         // Optional extracted development headers; runtime libraries remain on the host.

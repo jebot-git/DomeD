@@ -8,10 +8,11 @@ description = "Experimental shared desktop and spatial Wayland compositor"
 [features]
 default = []
 xr = ["dep:openxr","dep:ash","dep:ureq","dep:ctrlc","dep:image"]
-nested = ["dep:smithay", "dep:tracing-subscriber", "dep:bitflags", "dep:zbus", "dep:wayland-protocols-plasma", "dep:wayland-server", "dep:wayland-scanner"]
+nested = ["dep:async-channel", "dep:smithay", "dep:tracing-subscriber", "dep:bitflags", "dep:zbus", "dep:wayland-protocols-plasma", "dep:wayland-server", "dep:wayland-scanner"]
 standalone = ["nested", "dep:calloop", "smithay/backend_drm", "smithay/backend_gbm", "smithay/backend_libinput", "smithay/backend_udev", "smithay/backend_session_libseat"]
 
 [dependencies]
+async-channel = { version = "2", optional = true }
 wayland-server = { version = "0.31", optional = true }
 wayland-scanner = { version = "0.31", optional = true }
 wayland-protocols-plasma = { version = "0.3", features = ["server"], optional = true }
@@ -52,3 +53,8 @@ debug = 0
 name="dome-xr"
 path="src/bin/dome-xr.rs"
 required-features=["xr"]
+
+[[bin]]
+name = "dome-portal-picker"
+path = "src/bin/dome-portal-picker.rs"
+required-features = ["nested"]

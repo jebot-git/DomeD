@@ -45,17 +45,27 @@ pub fn show(socket: &str, realm: crate::Realm) -> io::Result<()> {
     Ok(())
 }
 
-fn show_overlay(path: &std::path::Path) -> io::Result<()> {
+fn overlay_socket(path: &std::path::Path) -> io::Result<std::os::unix::net::UnixDatagram> {
     let socket = std::os::unix::net::UnixDatagram::unbound()?;
-    socket.connect(path)?;
-    socket.send(b"show")?;
+    if let Err(error) = socket.connect(path) {
+        // A killed session leaves the pathname behind. Only ECONNREFUSED
+        // establishes that the datagram endpoint has no live owner.
+        if error.kind() == io::ErrorKind::ConnectionRefused {
+            let _ = std::fs::remove_file(path);
+        }
+        return Err(error);
+    }
+    Ok(socket)
+}
+
+fn show_overlay(path: &std::path::Path) -> io::Result<()> {
+    overlay_socket(path)?.send(b"show")?;
     Ok(())
 }
 
 // Send both requests through one socket so the new tab is selected before focus.
 fn reuse_overlay(path: &std::path::Path) -> io::Result<()> {
-    let socket = std::os::unix::net::UnixDatagram::unbound()?;
-    socket.connect(path)?;
+    let socket = overlay_socket(path)?;
     socket.send(b"tab-new")?;
     socket.send(b"show")?;
     Ok(())
@@ -122,7 +132,7 @@ mod tests {
         assert!(receiver.recv(&mut message).is_err(), "show must not create a new tab");
         drop(receiver);
         assert!(super::reuse_overlay(&path).is_err());
-        std::fs::remove_file(path).unwrap();
+        assert!(!path.exists(), "dead overlay socket must be removed before respawning");
     }
     #[test]
     fn overlay_keeps_native_input_layout_and_independent_layer_submission() {

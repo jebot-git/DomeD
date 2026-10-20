@@ -31,6 +31,7 @@ pub struct DesktopRenderer {
 }
 impl DesktopRenderer {
     pub fn prepare(&mut self, state: &mut Dome, size: Size<i32, Physical>) {
+        state.notification_surface_clicks();
         state.update_keyboard();
         state.sync_spatial_popups();
         state.xr_input();
@@ -56,7 +57,7 @@ impl DesktopRenderer {
                         )
                     )
                 ),
-                state.session_confirm,
+                (state.session_confirm, state.shell_selection),
                 format!("{:?}:{:?}", state.appearance, state.session.state()),
                 state.about,
                 state.task_popup,
@@ -157,6 +158,7 @@ impl DesktopRenderer {
         software_cursor: bool,
         origin: smithay::utils::Point<i32, smithay::utils::Logical>,
     ) -> Result<SyncPoint, Box<dyn std::error::Error>> {
+        state.export_notification_windows(renderer);
         state.export_xr_surface(renderer);
         let shell = MemoryRenderBufferRenderElement::from_buffer(
             renderer,
@@ -312,12 +314,21 @@ impl DesktopRenderer {
             .unwrap();
             elements.push(deco.into());
         }
-        if software_cursor && !state.input_xr_active {
-            let mut cursors = Vec::new();
-            self.cursor_elements(state, renderer, &mut cursors);
-            cursors.extend(elements);
-            elements = cursors;
+        let capture_output = state.space.outputs().find(|o|
+            state.space.output_geometry(o).is_some_and(|g| g.loc == origin)).cloned();
+        let background = [state.appearance.background[0], state.appearance.background[1], state.appearance.background[2], 1.];
+        if let Some(output) = &capture_output {
+            crate::screencast::render(renderer, output, origin, &elements, 1, background);
         }
+        let mut cursors = Vec::new();
+        if !state.input_xr_active { self.cursor_elements(state, renderer, &mut cursors); }
+        let cursor_count = cursors.len();
+        cursors.extend(elements);
+        elements = cursors;
+        if let Some(output) = &capture_output {
+            crate::screencast::render(renderer, output, origin, &elements, 2, background);
+        }
+        if !software_cursor { elements.drain(..cursor_count); }
         let elements: Vec<_> = elements
             .into_iter()
             .map(|e| {

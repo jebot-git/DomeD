@@ -141,9 +141,9 @@ pub fn launch_executable(path: &Path, socket: &str) -> Result<(), String> {
         .env("WAYLAND_DISPLAY", socket)
         .env_remove("WAYLAND_SOCKET")
         .env("XDG_CURRENT_DESKTOP", "Dome")
-        .env("GDK_BACKEND", "wayland")
-        .env("QT_QPA_PLATFORM", "wayland")
-        .env("SDL_VIDEODRIVER", "wayland")
+        .env("GDK_BACKEND", "wayland,x11")
+        .env("QT_QPA_PLATFORM", "wayland;xcb")
+        .env("SDL_VIDEODRIVER", "wayland,x11")
         .spawn()
         .map_err(|e| format!("Cannot launch {}: {e}", path.display()))?;
     std::thread::spawn(move || { let _ = child.wait(); });
@@ -287,9 +287,9 @@ pub fn launch(app: &App, socket: &str) -> Result<(), String> {
         .env("WAYLAND_DISPLAY", socket)
         .env_remove("WAYLAND_SOCKET")
         .env("XDG_CURRENT_DESKTOP", "Dome")
-        .env("GDK_BACKEND", "wayland")
-        .env("QT_QPA_PLATFORM", "wayland")
-        .env("SDL_VIDEODRIVER", "wayland")
+        .env("GDK_BACKEND", "wayland,x11")
+        .env("QT_QPA_PLATFORM", "wayland;xcb")
+        .env("SDL_VIDEODRIVER", "wayland,x11")
         .spawn()
         .map(|_| ())
         .map_err(|e| format!("Cannot start gio: {e}"))
@@ -331,9 +331,9 @@ pub fn launch_action(app: &App, action: &str, socket: &str) -> Result<(), String
         for (key, value) in [
             ("WAYLAND_DISPLAY", socket),
             ("XDG_CURRENT_DESKTOP", "Dome"),
-            ("GDK_BACKEND", "wayland"),
-            ("QT_QPA_PLATFORM", "wayland"),
-            ("SDL_VIDEODRIVER", "wayland"),
+            ("GDK_BACKEND", "wayland,x11"),
+            ("QT_QPA_PLATFORM", "wayland;xcb"),
+            ("SDL_VIDEODRIVER", "wayland,x11"),
         ] {
             let k = CString::new(key).unwrap();
             let v = CString::new(value).map_err(|e| e.to_string())?;

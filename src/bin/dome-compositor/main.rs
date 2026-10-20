@@ -5,6 +5,7 @@ mod file_manager;
 mod global_menu;
 mod handlers;
 mod rendering;
+mod screencast;
 
 mod audio;
 mod default_apps;
@@ -22,7 +23,9 @@ mod input;
 mod input_routing;
 mod keyboard;
 mod launcher;
+mod menu_navigation;
 mod notifications;
+mod notification_windows;
 mod outputs;
 mod qt;
 mod session;
@@ -147,6 +150,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         display_handle,
     };
 
+    let screencast = screencast::start()?;
     match backend.as_str() {
         "nested" => crate::winit::init_winit(&mut event_loop, &mut data)?,
         "drm" => {
@@ -200,11 +204,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         data.state.socket_name.to_string_lossy()
     );
     eprintln!("Control and spatial preview: http://127.0.0.1:{port}");
+    screencast::update(&data.state, &screencast);
     data.state.start_session_restore();
     if args.first().is_some_and(|s| s == "--terminal") {
         dome::terminal::launch(
             &data.state.socket_name.to_string_lossy(),
-            dome::Realm::Desktop,
+            if std::env::var("DOME_START_XR").as_deref() == Ok("1") {
+                dome::Realm::Xr
+            } else {
+                dome::Realm::Desktop
+            },
         )?;
     } else if args.first().is_some_and(|s| s == "--command" || s == "-c") {
         if let Some(program) = args.get(1) {
@@ -217,11 +226,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         data.state.start_xr();
     }
 
-    event_loop.run(None, &mut data, move |_| {
-        // Dome is running
+    event_loop.run(None, &mut data, move |data| {
+        screencast::update(&data.state, &screencast);
     })?;
 
     data.state.save_session_on_exit();
+    if let Some(mut child) = data.state.xwayland_child.take() {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
     data.state.xr_bridge.lock().unwrap().exit_requested = true;
     if let Some(mut child) = data.state.xr_child.take() {
         if child.try_wait()?.is_none() {
@@ -232,9 +245,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn activate_client_socket(state: &Dome) {
+fn activate_client_socket(state: &mut Dome) {
     std::env::set_var("WAYLAND_DISPLAY", &state.socket_name);
     if std::env::var("DOME_LOGIN_SESSION").as_deref() == Ok("1") {
+        // An Xwayland process attached to another compositor cannot serve this
+        // login. Keep our bridge in the session's process group for logout.
+        if std::env::var("DOME_START_XWAYLAND").as_deref() != Ok("0") {
+            if let Some(program) = dome::desktop_entries::find_executable("xwayland-satellite") {
+                if let Some(number) = (100..200).find(|n| {
+                    !std::path::Path::new(&format!("/tmp/.X{n}-lock")).exists()
+                        && !std::path::Path::new(&format!("/tmp/.X11-unix/X{n}")).exists()
+                }) {
+                    let display = format!(":{number}");
+                    match std::process::Command::new(program).arg(&display).spawn() {
+                        Ok(child) => {
+                            eprintln!("Dome Xwayland bridge: {display}");
+                            std::env::set_var("DISPLAY", display);
+                            state.xwayland_child = Some(child);
+                        }
+                        Err(error) => eprintln!("Dome Xwayland startup: {error}"),
+                    }
+                }
+            } else {
+                eprintln!("X11 apps require xwayland-satellite and Xwayland; bridge is not installed");
+            }
+        }
         gtk_menu::enable_legacy_module();
         std::env::set_var("QT_IM_MODULE", "wayland");
         std::env::set_var("GTK_IM_MODULE", "fcitx");
@@ -263,11 +298,16 @@ fn activate_client_socket(state: &Dome) {
                 "GTK_THEME=",
                 "UBUNTU_MENUPROXY",
                 "LD_LIBRARY_PATH",
-                "DISPLAY=",
+                "DISPLAY",
             ])
             .status();
     }
     if std::env::var("DOME_LOGIN_SESSION").as_deref() == Ok("1") {
+        // Fedora's portal has Requisite=graphical-session.target. Publish the
+        // ready display before starting that target and its session services.
+        let status = std::process::Command::new("systemctl")
+            .args(["--user", "start", "graphical-session.target"]).status();
+        if !status.is_ok_and(|s| s.success()) { eprintln!("Could not start graphical-session.target"); }
         session_services::start();
     }
 }

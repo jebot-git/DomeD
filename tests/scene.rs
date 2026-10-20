@@ -15,22 +15,20 @@ fn room_carousel_height_is_independent_of_trays() {
     let mut c = Config::default();
     let before = c.lane_spans([0.23, 0.54, 0.23]);
     c.vertical_fov_deg = 120.;
-    c.upper_inset_deg = 12.;
     c.taskbar_height_deg = 12.;
-    c.upper_bar_max_width_deg = 180.;
     assert_eq!(before, c.lane_spans([0.23, 0.54, 0.23]));
     c.dome_vertical_span_deg = 130.;
     assert_ne!(before, c.lane_spans([0.23, 0.54, 0.23]));
 }
 #[test]
-fn upper_and_lower_widths_are_independent_and_dont_change_lanes() {
+fn bar_heights_are_independent_and_dont_change_lanes() {
     let mut c = Config {
         projection: Projection::RoomDome,
         ..Config::default()
     };
     let before = c.lane_extent();
-    c.upper_bar_max_width_deg = 50.;
-    c.taskbar_max_width_deg = 160.;
+    c.upper_bar_height_deg = 20.;
+    c.taskbar_height_deg = 20.;
     c.validate().unwrap();
     assert_eq!(before, c.lane_extent());
 }
@@ -39,14 +37,14 @@ fn invalid_geometry_is_atomic() {
     let mut s = Scene::demo();
     let old = s.config.clone();
     let mut c = old.clone();
-    c.upper_inset_deg = 100.;
+    c.upper_bar_height_deg = 100.;
     assert!(s.apply(Action::Configure { config: c }).is_err());
     assert_eq!(s.config, old);
     let mut c = old.clone();
     c.radius_m = f32::NAN;
     assert!(c.validate().is_err());
     let mut c = old;
-    c.upper_bar_max_width_deg = 361.;
+    c.taskbar_height_deg = 21.;
     assert!(c.validate().is_err());
 }
 #[test]
@@ -361,4 +359,22 @@ fn display_profiles_migrate_and_reject_invalid_coordinates_without_mutation() {
     assert_eq!(serde_json::from_str::<Config>(&encoded).unwrap(), config);
     config.displays.push(config.displays[0].clone());
     assert!(config.validate().is_err());
+}
+
+#[test]
+fn horizontal_arrangement_reorders_only_its_lane_and_stops_at_edges() {
+    let mut s = Scene::new("test");
+    let a = s.add("a", "app");
+    let b = s.add("b", "app");
+    let c = s.add("c", "app");
+    s.workspaces[0].lanes[1].windows = vec![a, b, c];
+    let before = s.windows.clone();
+    s.apply(Action::Reorder { id: b, delta: -1 }).unwrap();
+    assert_eq!(s.workspaces[0].lanes[1].windows, vec![b, a, c]);
+    s.apply(Action::Reorder { id: b, delta: -1 }).unwrap();
+    assert_eq!(s.workspaces[0].lanes[1].windows, vec![b, a, c]);
+    s.apply(Action::Reorder { id: b, delta: 1 }).unwrap();
+    assert_eq!(s.workspaces[0].lanes[1].windows, vec![a, b, c]);
+    assert_eq!(serde_json::to_value(&s.windows).unwrap(), serde_json::to_value(&before).unwrap());
+    assert_eq!(s.focused, Some(c));
 }

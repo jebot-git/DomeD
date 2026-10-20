@@ -690,7 +690,7 @@ pub fn init(event_loop: &mut EventLoop<CalloopData>, data: &mut CalloopData) -> 
             TimeoutAction::ToDuration(Duration::from_millis(16))
         },
     )?;
-    crate::activate_client_socket(&data.state);
+    crate::activate_client_socket(&mut data.state);
     Ok(())
 }
 

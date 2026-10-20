@@ -174,6 +174,12 @@ try:
     xr_shortcut(['Control_L'],'a');text('us');key('comma');text('cz');key('Return')
     wait(lambda:json.loads(keyboard_file.read_text())['layout']=='us,cz')
     check(True,'Keyboard settings recover from an invalid layout and apply corrected input')
+    saved_keyboard=keyboard_file.read_text();before=len(events('b'))
+    click(20,18);click(100,40+17*28+14)
+    key('Home');[key('Down') for _ in range(3)];key('Right');key('Left')
+    key('Down');key('Right');key('Left');key('End');key('Return')
+    check(keyboard_file.read_text()==saved_keyboard and not any(e['kind']=='key_press' and e['key'] in [16777235,16777237,16777234,16777236,16777220] for e in events('b')[before:]),
+        'Keyboard settings support cursor navigation, adjustment and Cancel without leaking keys')
 
     (out/'tray.jsonl').unlink(missing_ok=True)
     tray=start([sys.executable,'scripts/tray-client.py',str(out/'tray.jsonl')],'tray-client',env)
@@ -181,6 +187,10 @@ try:
     click(1046,18);wait(lambda:any(e['kind']=='layout'for e in events('tray')));capture('01-classic-status-menu')
     click(1040,54);wait(lambda:any(e['kind']=='event'and e['id']==10 and e['event']=='clicked'for e in events('tray')))
     check(True,'Classic right-side status menu invokes a real StatusNotifier DBusMenu action')
+    click(1046,18);wait(lambda:len([e for e in events('tray') if e['kind']=='layout'])>=2)
+    before=len(events('tray'));key('Home');key('Down');key('Return')
+    wait(lambda:any(e['kind']=='event' and e['id']==10 for e in events('tray')[before:]))
+    check(True,'Tray cursor navigation skips disabled rows and Enter activates the selected action')
     tray.terminate();tray.wait(timeout=3);time.sleep(.3)
     check(all(abs(a-b)<2 for a,b in zip(pixel(300,2),pixel(1260,742))),'Global menu and taskbar share their background colour and opacity')
     inactive=win(aid)['desktop'];active=win(bid)['desktop']
@@ -223,9 +233,9 @@ try:
     check(True,'Session lock and switch-user commands reach private D-Bus fixtures')
     for row,kind in [(13,'suspend'),(15,'restart'),(16,'shutdown')]:
         click(20,18);click(100,40+row*28+14);capture('01-confirm-'+kind)
-        before=len(events('session'));click(500,460);time.sleep(.15)
+        before=len(events('session'));key('Return');time.sleep(.15)
         check(not any(e['kind']==kind for e in events('session')[before:]),kind+' cancellation sends no session request')
-        click(20,18);click(100,40+row*28+14);click(760,460)
+        click(20,18);click(100,40+row*28+14);key('Right');key('Return')
         wait(lambda:any(e['kind']==kind and e['interactive'] for e in events('session')))
     check(True,'Confirmed sleep/restart/shutdown reach private logind fixtures only')
     # Function keys are application-owned, including qimgvr/mpvr/fsv/Ghostty controls.
@@ -238,7 +248,7 @@ try:
     check('xr_pointer_mode' not in state()['config'] and 'gaze_smoothing' not in state()['config'],'XR configuration exposes no tracked input modes')
     # Record a menu binding in the real settings UI, verify it, then restore it.
     old_bindings=state()['config']['keybindings']
-    xr_shortcut(['Super_L'],'comma');key('Home');[key('Down') for _ in range(21)];key('Return')
+    xr_shortcut(['Super_L'],'comma');key('Home');[key('Down') for _ in range(15)];key('Return')
     xr_shortcut(['Super_L'],'F8')
     wait(lambda:state()['config']['keybindings'][1]['key']==65477)
     key('Escape');xr_shortcut(['Super_L'],'F8');time.sleep(.2)
@@ -247,7 +257,7 @@ try:
     check(json.loads((runtime/'config/dome/xr.json').read_text())['keybindings'][1]['key']==65477,'Keybinding recorded by settings is persisted')
     config=state()['config'];config['keybindings']=old_bindings;action({'op':'configure','config':config})
     # Settings keep readable rows and scroll instead of squeezing all rows into the panel.
-    xr_shortcut(['Super_L'],'comma');key('Home');[key('Down') for _ in range(19)];time.sleep(.2)
+    xr_shortcut(['Super_L'],'comma');key('Home');[key('Down') for _ in range(13)];time.sleep(.2)
     tilt=state()['config']['dome_upper_tilt_deg'];key('Left')
     wait(lambda:state()['config']['dome_upper_tilt_deg']==tilt-1)
     capture('01-settings-scrolled-desktop')
@@ -266,7 +276,7 @@ try:
         except urllib.error.HTTPError as error:
             if error.code==409:return None
             raise
-    xr_shortcut(['Super_L'],'comma');key('Home');[key('Down') for _ in range(19)];time.sleep(.2)
+    xr_shortcut(['Super_L'],'comma');key('Home');[key('Down') for _ in range(13)];time.sleep(.2)
     layout=json.load(urllib.request.urlopen(base+'/api/xr-shell'))
     check(layout['width']==1024 and layout['height']==768 and layout['top']==layout['height'],'XR settings use a stable view-pane canvas independent of monitor size')
     with urllib.request.urlopen(base+'/api/xr-frame/0') as response:
@@ -320,6 +330,14 @@ try:
     check(abs(next(p['yaw_deg'] for p in json.load(urllib.request.urlopen(base+'/api/state'))['panels'] if p['id']==bid))<.001,'Alt+Tab stays in the XR lane and recenters its selected window')
     xr_shortcut(['Alt_L','Shift_L'],'Tab');wait(lambda:state()['focused']==xid)
     check(True,'Alt+Shift+Tab reverses within the same XR lane')
+    xr_shortcut(['Control_L','Alt_L'],'Up');wait(lambda:state()['focused']==aid)
+    check(win(aid)['lane']==0 and win(xid)['lane']==1,'Ctrl+Alt+Up focuses the upper lane without moving windows')
+    xr_shortcut(['Control_L','Alt_L'],'Up');wait(lambda:state()['focused'] in [bid,xid])
+    check(True,'Lane navigation wraps and skips empty lanes')
+    xr_shortcut(['Control_L','Alt_L'],'Up');wait(lambda:state()['focused']==aid)
+    xr_shortcut(['Control_L','Alt_L'],'Down');wait(lambda:state()['focused'] in [bid,xid])
+    selected=state()['focused'];xr_shortcut(['Alt_L'],'Tab');wait(lambda:state()['focused'] in [bid,xid] and state()['focused']!=selected)
+    check(True,'Alt+Tab cycles within the lane selected by Ctrl+Alt+Down')
     action({'op':'move','id':aid,'lane':1,'workspace':0});action({'op':'focus','id':xid})
     before=len(events('xr-only'));xr_packet([{'kind':'motion','id':xid,'uv':[.5,.5]}],[{'op':'focus','id':xid}]);key('x')
     wait(lambda:any(e['kind']=='key_press'and e.get('text')=='x'for e in events('xr-only')[before:]))
@@ -381,33 +399,65 @@ try:
     wait(lambda:shell()['top']>36);layout=shell()
     xr_packet([{'kind':'motion','id':0,'uv':[100/layout['width'],222/layout['top']]},{'kind':'button','button':0x110,'pressed':True},{'kind':'button','button':0x110,'pressed':False}])
     wait(lambda:shell()['top']==shell()['height'])
+    layout=shell();before={name:len(events(name)) for name in ['a','b','xr-only']};focus=state()['focused']
+    xr_packet([{'kind':'motion','id':bid,'uv':[.5,.5]},
+        {'kind':'button','button':0x110,'pressed':True},{'kind':'button','button':0x110,'pressed':False},
+        {'kind':'scroll','horizontal':0,'vertical':15}], [{'op':'focus','id':bid}])
+    time.sleep(.3)
+    check(state()['focused']==focus and not any(e['kind'] in ['press','release','wheel'] for name,start in before.items() for e in events(name)[start:]),
+        'XR appearance modal blocks client clicks, scroll and focus actions')
+    old_light=json.loads(settings.read_text())['light'];key('Home');key('Right')
+    wait(lambda:json.loads(settings.read_text())['light']!=old_light)
+    key('Left');wait(lambda:json.loads(settings.read_text())['light']==old_light)
+    key('Down');old_accent=json.loads(settings.read_text())['accent'];key('Right')
+    wait(lambda:json.loads(settings.read_text())['accent']!=old_accent)
+    key('Left');wait(lambda:json.loads(settings.read_text())['accent']==old_accent)
+    check(not any(e['kind']=='key_press' for name,start in before.items() for e in events(name)[start:]),
+        'Appearance cursor keys select and adjust values without reaching XR clients')
+    # Closing with a shell press must consume its release even after the target changes.
+    xr_packet([{'kind':'motion','id':0,'uv':[5/layout['width'],100/layout['height']]},
+        {'kind':'button','button':0x110,'pressed':True},{'kind':'motion','id':bid,'uv':[.5,.5]},
+        {'kind':'button','button':0x110,'pressed':False}])
+    wait(lambda:shell()['top']==36)
+    check(not any(e['kind']=='release' for name,start in before.items() for e in events(name)[start:]),
+        'Closing an XR modal never forwards an orphan mouse release to a client')
+    layout=shell();xr_packet([{'kind':'motion','id':0,'uv':[20/layout['width'],18/layout['top']]},{'kind':'button','button':0x110,'pressed':True},{'kind':'button','button':0x110,'pressed':False}])
+    wait(lambda:shell()['top']>36);layout=shell()
+    xr_packet([{'kind':'motion','id':0,'uv':[100/layout['width'],222/layout['top']]},{'kind':'button','button':0x110,'pressed':True},{'kind':'button','button':0x110,'pressed':False}])
+    wait(lambda:shell()['top']==shell()['height'])
     xr_shortcut(['Super_L','Shift_L'],'d');wait(lambda:control()['input_realm']=='desktop')
     check(wait(lambda:shell()['top']==36),'Desktop handoff dismisses XR modal input capture')
     xr_shortcut(['Super_L','Shift_L'],'d');wait(lambda:control()['input_realm']=='xr');time.sleep(.3)
     # Both shortcut families operate on the focused XR window and keep it visible.
     action({'op':'focus','id':xid})
-    xr_shortcut(['Super_L','Control_L'],'Up');wait(lambda:win(xid)['lane']==0)
+    xr_shortcut(['Super_L','Alt_L'],'Up');wait(lambda:win(xid)['lane']==0)
     xr_shortcut(['Super_L','Alt_L'],'Up')
     check(win(xid)['lane']==0,'Lane-up shortcut stops at the upper lane')
     xr_shortcut(['Super_L','Alt_L'],'Down');wait(lambda:win(xid)['lane']==1)
     xr_shortcut(['Super_L','Alt_L'],'Down');wait(lambda:win(xid)['lane']==2)
     xr_shortcut(['Super_L','Alt_L'],'Down')
     check(win(xid)['lane']==2,'Lane-down shortcut stops at the lower lane')
-    xr_shortcut(['Super_L','Control_L'],'Up');wait(lambda:win(xid)['lane']==1)
+    xr_shortcut(['Super_L','Alt_L'],'Up');wait(lambda:win(xid)['lane']==1)
     panels=json.load(urllib.request.urlopen(base+'/api/state'))['panels']
     check(abs(next(p for p in panels if p['id']==xid)['yaw_deg'])<.001,'Lane shortcuts recenter the focused window in its destination lane')
-    for modifiers,grow,shrink in [(['Super_L','Alt_L'],'Right','Left'),(['Super_L'],'equal','minus')]:
+    for modifiers,grow,shrink in [(['Super_L'],'equal','minus')]:
         before=win(xid)['xr_scale'];xr_shortcut(modifiers,grow)
         wait(lambda:abs(win(xid)['xr_scale']-before*1.1)<.0001)
         xr_shortcut(modifiers,shrink);wait(lambda:abs(win(xid)['xr_scale']-before)<.0001)
-    check(True,'Arrow and plus/minus shortcuts expand and shrink the focused XR window')
+    check(True,'Equals/minus shortcuts expand and shrink the focused XR window')
     action({'op':'spatial_transform','id':xid,'pose':None,'scale':4})
-    xr_shortcut(['Super_L','Alt_L'],'Right')
+    xr_shortcut(['Super_L'],'equal')
     check(win(xid)['xr_scale']==4,'Expand shortcut respects the maximum XR size')
     action({'op':'spatial_transform','id':xid,'pose':None,'scale':.25})
-    xr_shortcut(['Super_L','Alt_L'],'Left')
+    xr_shortcut(['Super_L'],'minus')
     check(win(xid)['xr_scale']==.25,'Shrink shortcut respects the minimum XR size')
     action({'op':'spatial_transform','id':xid,'pose':None,'scale':1})
+    original_lane=state()['workspaces'][0]['lanes'][1]['windows']
+    index=original_lane.index(xid);direction='Left' if index else 'Right'
+    xr_shortcut(['Super_L','Alt_L'],direction)
+    wait(lambda:state()['workspaces'][0]['lanes'][1]['windows']!=original_lane)
+    xr_shortcut(['Super_L','Alt_L'],'Right' if direction=='Left' else 'Left')
+    check(state()['workspaces'][0]['lanes'][1]['windows']==original_lane,'Horizontal shortcuts reorder the focused lane and restore its order')
     xr_shortcut(['Super_L'],'p');wait(lambda:win(xid)['pullout_slot'] is not None)
     xr_shortcut(['Super_L','Alt_L'],'Up')
     wait(lambda:win(xid)['pullout_slot'] is None and win(xid)['lane']==0)
@@ -436,10 +486,15 @@ try:
     # Renew mouse ownership after the keyboard-only slot tests and let the
     # final return rebase angular coordinates before testing empty-space motion.
     motion(452,600);motion(451,600)
-    initial=control()['mouse_angles'];motion(451,40)
-    wait(lambda:control()['cursor'] is None)
-    gap=control()['mouse_angles'];time.sleep(.12)
-    check(control()['mouse_angles']==gap and gap!=initial,'XR mouse retains angular cursor in empty space between surfaces')
+    initial=control()['mouse_angles']
+    # Stop in the first visible gap rather than overshooting into the top bar
+    # or viewport edge; shell overlays correctly win application hit testing.
+    for gap_y in range(596,40,-4):
+        motion(451,gap_y)
+        if control()['cursor'] is not None and control()['cursor']['id']==2**64-5:break
+    wait(lambda:control()['cursor'] is not None and control()['cursor']['id']==2**64-5)
+    gap=control()['mouse_angles'];background_cursor=control()['cursor'];time.sleep(.12)
+    check(control()['mouse_angles']==gap and gap!=initial and control()['cursor']==background_cursor,'XR mouse remains anchored to the full dome in empty space between surfaces')
     motion(451,600)
     wait(lambda:control()['cursor'] is not None)
     check(all(abs(a-b)<.00001 for a,b in zip(control()['mouse_angles'],initial)),'XR mouse crosses depths and returns without snapping or resetting')
@@ -644,6 +699,9 @@ try:
     chord(['Super_L','Shift_L'],'1');wait(lambda:win(selected)['workspace']==0)
     chord(['Super_L'],'1');wait(lambda:state()['active_workspace']==0)
     check(True,'Super+number switches desktops and Shift+Super+number moves clients')
+    click(1120,770);key('Home');key('Down');key('Return');wait(lambda:state()['active_workspace']==1)
+    click(1120,770);key('Home');key('Return');wait(lambda:state()['active_workspace']==0)
+    check(True,'Desktop switcher supports cursor selection and Enter activation')
     action({'op':'focus','id':aid});rect=win(aid)['desktop'];drag(rect['x']+100,rect['y']-15,24,-12)
     check(abs(win(aid)['desktop']['x']-rect['x']-24)<4,'Qt6 server title bar drags the native window')
     before=len(events('a'));chord(['Super_L'],'c');wait(lambda:any(e['kind']=='clipboard_set'for e in events('a')[before:]))
@@ -668,6 +726,9 @@ try:
     check(wait(lambda:color_at(170,600,first_color)),'Grouped task hover displays a live Wayland window thumbnail');capture('08-grouped-task-previews')
     click(290,600);wait(lambda:focused_title()==order[0])
     check(True,'Clicking grouped task preview activates its selected window')
+    motion(160,770);key('Home');key('Down');key('Return');wait(lambda:focused_title()==order[1])
+    motion(161,770);key('Home');key('Return');wait(lambda:focused_title()==order[0])
+    check(True,'Grouped task previews support cursor selection and Enter activation')
     motion(160,770);button(code=4);wait(lambda:focused_title()==order[1]);button(False,code=4)
     check(True,'Wheel over grouped task cycles its windows')
     click(130,18);capture('09-xdg-application-menu');click(150,110)

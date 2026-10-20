@@ -125,7 +125,10 @@ impl crate::Dome {
                 self.xr_bridge.lock().unwrap().exit_requested = true;
                 self.session.request(action);
             }
-            _ => self.session_confirm = Some(action),
+            _ => {
+                self.shell_selection = 0;
+                self.session_confirm = Some(action);
+            }
         }
     }
     pub fn confirm_session(&mut self) {
@@ -173,50 +176,42 @@ impl crate::Dome {
             return;
         }
         if y >= top + 452. {
-            if x >= left+24. && x < left+300. { self.default_apps_open(); return; }
-            self.appearance_open = false;
+            self.appearance_activate(if x < left+300. { 7 } else { 8 }, 1);
             return;
         }
         if x < left + 300. || y < top + 60. {
             return;
         }
-        match ((y - top - 60.) / 48.) as usize {
+        self.appearance_activate(((y - top - 60.) / 48.) as usize, 1);
+    }
+    pub fn appearance_activate(&mut self, row: usize, direction: i32) {
+        self.shell_selection = row;
+        match row {
             0 => self.appearance.light = !self.appearance.light,
             1 => {
-                self.appearance.accent = if self.appearance.accent == "#6babff" {
-                    "#61cfa5"
-                } else if self.appearance.accent == "#61cfa5" {
-                    "#e7ac69"
-                } else {
-                    "#6babff"
-                }
-                .into();
+                self.appearance.accent = crate::menu_navigation::cycle(
+                    &["#6babff".to_owned(), "#61cfa5".to_owned(), "#e7ac69".to_owned()],
+                    &self.appearance.accent, direction,
+                ).unwrap();
             }
             2 => {
-                self.appearance.background = if self.appearance.background[0] < 0.1 {
-                    [0.16, 0.18, 0.22]
-                } else if self.appearance.background[0] < 0.3 {
-                    [0.52, 0.56, 0.62]
-                } else {
-                    [0.025, 0.045, 0.06]
-                }
+                self.appearance.background = crate::menu_navigation::cycle(
+                    &[[0.025, 0.045, 0.06], [0.16, 0.18, 0.22], [0.52, 0.56, 0.62]],
+                    &self.appearance.background, direction,
+                ).unwrap();
             }
             3 => {
-                self.appearance.opacity = if self.appearance.opacity == 255 {
-                    208
-                } else if self.appearance.opacity < 240 {
-                    248
-                } else {
-                    255
-                }
+                self.appearance.opacity = crate::menu_navigation::cycle(
+                    &[208, 248, 255], &self.appearance.opacity, direction,
+                ).unwrap();
             }
             4 => {
                 let fonts = crate::qt::bitmap_fonts();
                 if fonts.is_empty() { return; }
                 // An old font name falls back to the first face when painting;
                 // cycling must advance from that effective face too.
-                let next = fonts.iter().position(|f| f.id == self.appearance.font)
-                    .map_or(1 % fonts.len(), |index| (index + 1) % fonts.len());
+                let next = (fonts.iter().position(|f| f.id == self.appearance.font)
+                    .unwrap_or(0) as i32 + direction).rem_euclid(fonts.len() as i32) as usize;
                 self.appearance.font = fonts[next].id.clone();
                 if !fonts[next].sizes.contains(&self.appearance.font_size) {
                     self.appearance.font_size = fonts[next].sizes[0];
@@ -225,11 +220,13 @@ impl crate::Dome {
             5 => {
                 let fonts = crate::qt::bitmap_fonts();
                 let Some(font) = fonts.iter().find(|f| f.id == self.appearance.font) else { return; };
-                let next = font.sizes.iter().position(|size| *size == self.appearance.font_size)
-                    .map_or(0, |index| (index + 1) % font.sizes.len());
-                self.appearance.font_size = font.sizes[next];
+                if let Some(size) = crate::menu_navigation::cycle(
+                    &font.sizes, &self.appearance.font_size, direction,
+                ) { self.appearance.font_size = size; }
             }
             6 => self.appearance = Default::default(),
+            7 => { self.default_apps_open(); return; }
+            8 => { self.appearance_open = false; return; }
             _ => return,
         }
         if let Err(e) = self.appearance.save() {

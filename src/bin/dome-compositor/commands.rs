@@ -119,8 +119,12 @@ impl Dome {
                 ("Displays, XR & Keybindings…", "⌘,", XrSettings),
                 ("Anchor Dome at Headset", "⌃⌘R", AnchorHere),
                 ("", "", Separator),
-                ("Move Window Up a Lane", "⌃⌘↑", MoveLane(-1)),
-                ("Move Window Down a Lane", "⌃⌘↓", MoveLane(1)),
+                ("Focus Previous Lane", "⌃⌥↑", CycleLane(-1)),
+                ("Focus Next Lane", "⌃⌥↓", CycleLane(1)),
+                ("Move Window Up a Lane", "⌥⌘↑", MoveLane(-1)),
+                ("Move Window Down a Lane", "⌥⌘↓", MoveLane(1)),
+                ("Move Window Left in Lane", "⌥⌘←", MoveHorizontal(-1)),
+                ("Move Window Right in Lane", "⌥⌘→", MoveHorizontal(1)),
             ],
             5 => vec![
                 ("Minimize", "⌘M", Minimize),
@@ -160,8 +164,15 @@ impl Dome {
                         .and_then(|id| s.window(id))
                         .is_some_and(|w| !w.minimized)
             }
+            CycleLane(delta) => dome::input_routing::lane_navigation_available(&s, self.input_realm)
+                && dome::input_routing::cycle_lane(&s, delta).is_some(),
             MoveLane(delta) => s.focused.and_then(|id| s.window(id)).is_some_and(|w| {
                 !w.minimized && (0..3).contains(&(w.lane as i32 + delta))
+            }),
+            MoveHorizontal(delta) => s.focused.and_then(|id| s.window(id)).is_some_and(|w| {
+                let lane = &s.workspaces[w.workspace].lanes[w.lane].windows;
+                !w.minimized && w.pullout_slot.is_none() && lane.iter().position(|id| *id == w.id)
+                    .is_some_and(|i| (0..lane.len() as i64).contains(&(i as i64 + i64::from(delta))))
             }),
             Separator => false,
             Close | QuitApp | Minimize | Maximize | Scale(_) | ResetSpatial | Copy | Paste
@@ -209,6 +220,7 @@ impl Dome {
             }
             DefaultApplications => self.default_apps_open(),
             Appearance => {
+                self.shell_selection = 0;
                 self.default_apps_open = false;
                 self.keyboard_draft = None;
                 self.appearance_open = true;
@@ -287,6 +299,7 @@ impl Dome {
                 self.open_launcher();
             }
             Desktops => {
+                self.shell_selection = self.scene.lock().unwrap().active_workspace;
                 self.desktop_manager = true;
             }
             Menu => {
@@ -351,6 +364,17 @@ impl Dome {
                         workspace,
                     });
                 }
+            }
+            CycleLane(delta) => {
+                if dome::input_routing::lane_navigation_available(&s, self.input_realm) {
+                    if let Some(id) = dome::input_routing::cycle_lane(&s, delta) {
+                        self.action(Action::Focus { id });
+                        self.action(Action::Recenter { id });
+                    }
+                }
+            }
+            MoveHorizontal(delta) => {
+                if let Some(id) = id { self.action(Action::Reorder { id, delta }); }
             }
             MoveLane(delta) => {
                 if let Some(w) = id.and_then(|i| s.window(i)) {

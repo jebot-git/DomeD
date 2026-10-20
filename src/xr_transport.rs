@@ -71,6 +71,8 @@ pub struct Session {
     pub focused: bool,
     pub head: crate::Pose,
     pub horizontal_fov_deg: f32,
+    /// Shared eye viewport angles in radians: left, right, down, up.
+    pub mouse_viewport: Option<[f32; 4]>,
 }
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Cursor {
@@ -115,6 +117,13 @@ impl Bridge {
         {
             return Err("Invalid headset FOV".into());
         }
+        if let Some([left, right, down, up]) = session.mouse_viewport {
+            if ![left, right, down, up].iter().all(|a| a.is_finite() && a.abs() < 1.57)
+                || left >= 0. || right <= 0. || down >= 0. || up <= 0.
+            {
+                return Err("Invalid mouse viewport".into());
+            }
+        }
         // A fresh running session acknowledges a previous stop request.
         if session.id != self.session.id || self.last_session.is_none() {
             self.exit_requested = false;
@@ -149,6 +158,25 @@ impl Bridge {
 mod tests {
     use super::*;
     use std::time::Duration;
+    #[test]
+    fn mouse_viewport_accepts_legacy_sessions_and_rejects_invalid_bounds() {
+        let legacy: Session = serde_json::from_str("{}").unwrap();
+        assert!(legacy.mouse_viewport.is_none());
+        let mut b = Bridge::default();
+        b.heartbeat(legacy).unwrap();
+        for bounds in [
+            [-0.7, 0.9, -0.6, 0.8],
+            [0.2, 0.9, -0.6, 0.8],
+            [-0.7, 0.9, 0.8, -0.6],
+            [-0.7, f32::NAN, -0.6, 0.8],
+            [-0.7, 1.6, -0.6, 0.8],
+        ] {
+            assert_eq!(b.heartbeat(Session {
+                mouse_viewport: Some(bounds),
+                ..Default::default()
+            }).is_ok(), bounds == [-0.7, 0.9, -0.6, 0.8]);
+        }
+    }
     #[test]
     fn stop_request_belongs_to_its_renderer_generation() {
         let mut b = Bridge::default();

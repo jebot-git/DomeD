@@ -1,5 +1,41 @@
 use crate::Dome;
 use dome::{geometry_settings, Action, Config};
+
+fn cycle_display_offset(current: i32, resolution: i32, direction: f32) -> i32 {
+    let step = if direction > 0. { 1 } else { -1 };
+    let next = (current.signum() + step + 1).rem_euclid(3) - 1;
+    next * resolution
+}
+
+#[cfg(test)]
+mod tests {
+    use super::cycle_display_offset;
+
+    #[test]
+    fn display_offsets_cycle_both_directions_at_each_axis_resolution() {
+        for resolution in [1920, 1080, 2560, 1440] {
+            for (direction, expected) in [
+                (1., [resolution, -resolution, 0]),
+                (-1., [-resolution, resolution, 0]),
+            ] {
+                let mut offset = 0;
+                for next in expected {
+                    offset = cycle_display_offset(offset, resolution, direction);
+                    assert_eq!(offset, next);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn legacy_and_automatic_positions_enter_the_resolution_cycle() {
+        assert_eq!(cycle_display_offset(100, 1920, -1.), 0);
+        assert_eq!(cycle_display_offset(-100, 1080, 1.), 0);
+        assert_eq!(cycle_display_offset(3840, 1920, 1.), -1920);
+        assert_eq!(cycle_display_offset(-2160, 1080, -1.), 1080);
+    }
+}
+
 impl Dome {
     pub fn persist_geometry(&mut self) {
         let config = self.scene.lock().unwrap().config.clone();
@@ -251,10 +287,22 @@ impl Dome {
             c.displays.len() - 1
         };
         let output = self.space.outputs().find(|o| o.name() == *name);
+        let profile = &c.displays[index];
+        let mode = output.and_then(|o| o.current_mode()).or_else(|| {
+            modes
+                .iter()
+                .find(|m| {
+                    m.size.w == profile.width
+                        && m.size.h == profile.height
+                        && (profile.refresh == 0 || m.refresh == profile.refresh)
+                })
+                .or_else(|| modes.first())
+                .copied()
+        });
         let pos = output
             .and_then(|o| self.space.output_geometry(o))
             .map(|g| g.loc)
-            .unwrap_or_default();
+            .unwrap_or_else(|| (profile.x.unwrap_or(0), profile.y).into());
         match row % 6 {
             0 => {
                 if c.displays[index].enabled && self.space.outputs().count() <= 1 {
@@ -266,7 +314,6 @@ impl Dome {
                 if modes.is_empty() {
                     return Err("No display modes".into());
                 }
-                let mode = output.and_then(|o| o.current_mode());
                 let current = mode
                     .and_then(|m| modes.iter().position(|v| *v == m))
                     .unwrap_or(0);
@@ -277,11 +324,19 @@ impl Dome {
                 d.width = m.size.w;
                 d.height = m.size.h;
                 d.refresh = m.refresh;
+                if d.x.is_some() {
+                    d.x = Some(pos.x.signum() * m.size.w);
+                    d.y = pos.y.signum() * m.size.h;
+                }
             }
-            2 => c.displays[index].x = Some(pos.x + (direction * 100.) as i32),
+            2 => {
+                let mode = mode.ok_or("No display modes")?;
+                c.displays[index].x = Some(cycle_display_offset(pos.x, mode.size.w, direction));
+            }
             3 => {
+                let mode = mode.ok_or("No display modes")?;
                 c.displays[index].x = Some(pos.x);
-                c.displays[index].y = pos.y + (direction * 100.) as i32;
+                c.displays[index].y = cycle_display_offset(pos.y, mode.size.h, direction);
             }
             4 => {
                 let d = &mut c.displays[index];
@@ -307,7 +362,11 @@ impl Dome {
         key: u32,
         mods: dome::shortcuts::Mods,
     ) -> Option<dome::shortcuts::Command> {
-        dome::shortcuts::resolve_with(&self.scene.lock().unwrap().config.keybindings, key, mods)
+        let scene = self.scene.lock().unwrap();
+        dome::shortcuts::resolve_with(&scene.config.keybindings, key, mods).filter(|command| {
+            !matches!(command, dome::shortcuts::Command::CycleLane(_))
+                || dome::input_routing::lane_navigation_available(&scene, self.input_realm)
+        })
     }
     pub fn capture_binding(&mut self, key: u32, mods: dome::shortcuts::Mods) -> bool {
         let Some(index) = self.binding_capture.filter(|_| self.xr_settings_open) else {

@@ -10,7 +10,7 @@ impl Dome {
     fn history_rows(&self) -> Vec<serde_json::Value> {
         match self.history_panel {
             Some(Kind::Clipboard)=>self.clipboard.entries.iter().map(|e|serde_json::json!({"id":e.id,"text":e.text(),"detail":e.description(),"timestamp":e.timestamp})).collect(),
-            Some(Kind::Notifications)=>self.notifications.history().iter().map(|e|serde_json::json!({"id":e.id,"text":format!("{}\n{}",e.summary,e.body),"detail":e.app,"timestamp":e.timestamp})).collect(),
+            Some(Kind::Notifications)=>self.notifications.history().iter().map(|e|serde_json::json!({"id":e.id,"text":format!("{}\n{}",e.summary,e.body),"detail":e.app,"timestamp":e.timestamp,"image":e.image})).collect(),
             None=>vec![],
         }
     }

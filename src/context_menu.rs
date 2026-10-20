@@ -77,11 +77,11 @@ pub fn rect(parent: Rect, click: [f32; 2], size: [f32; 2], work: Rect) -> Rect {
 /// Keep context panels between the view-relative shell bars, including tilted parents.
 pub fn fit_xr(panel: &mut crate::xr_input::Quad, head: crate::Pose, config: &crate::Config) {
     let upper =
-        (config.vertical_fov_deg / 2. - config.upper_inset_deg - config.upper_bar_height_deg)
+        (config.vertical_fov_deg / 2. - config.upper_bar_height_deg)
             .to_radians()
             .tan();
     let lower =
-        (-config.vertical_fov_deg / 2. + config.lower_inset_deg + config.taskbar_height_deg)
+        (-config.vertical_fov_deg / 2. + config.taskbar_height_deg)
             .to_radians()
             .tan();
     for _ in 0..8 {

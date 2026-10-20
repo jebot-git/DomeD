@@ -124,17 +124,20 @@ try:
                 xd.sync()
                 time.sleep(.02)
 
-        # Real host input -> Dome's Wayland seat -> SDL text -> PTY shell.
-        for char in "echo domed > " + directory + "/typed":
-            code, level = next(iter(xd.keysym_to_keycodes(ord(char))))
-            if level & 1:
-                key("Shift_L", True)
-            xtest.fake_input(xd, X.KeyPress, code)
-            xtest.fake_input(xd, X.KeyRelease, code)
-            xd.sync()
-            if level & 1:
-                key("Shift_L", False)
-            time.sleep(.02)
+        def type_text(text):
+            for char in text:
+                code, level = next(iter(xd.keysym_to_keycodes(ord(char))))
+                if level & 1:
+                    key("Shift_L", True)
+                xtest.fake_input(xd, X.KeyPress, code)
+                xtest.fake_input(xd, X.KeyRelease, code)
+                xd.sync()
+                if level & 1:
+                    key("Shift_L", False)
+                time.sleep(.02)
+
+        # Real host input -> Dome Wayland seat -> SDL text -> PTY shell.
+        type_text("echo domed > " + directory + "/typed")
         key("Return")
         wait(lambda: (runtime / "typed").exists())
         assert (runtime / "typed").read_text().strip() == "domed"
@@ -157,6 +160,44 @@ try:
         key("Shift_L", False); key("Control_L", False)
         copied = subprocess.check_output(["wl-paste", "--no-newline"], env=clipboard_env, timeout=3).decode()
         assert "domed" in copied, copied
+        # Exercise the real Wayland event path into Bash readline, rather than
+        # injecting control bytes at the terminal's automation socket.
+        ready, edited = runtime / "readline-ready", runtime / "readline-result"
+        control_env = {**clipboard_env, "QT_QPA_PLATFORM": "wayland"}
+        start([env["DOME_TERMINAL"], "--wayland", "--", "/bin/bash", "--noprofile", "--norc", "-c",
+               'set -o emacs; printf ready > "$1"; IFS= read -er line; printf "%s" "$line" > "$2"',
+               "tty-test", str(ready), str(edited)], "tty-controls", control_env)
+        control_window = wait(lambda: next((w for w in state()["windows"] if w["id"] != first), None))
+        action({"op": "focus", "id": control_window["id"]})
+        wait(ready.exists)
+        time.sleep(.2)
+        def control(letter):
+            key("Control_L", True); key(letter); key("Control_L", False)
+        type_text("discard this line"); control("u")
+        type_text("right"); control("a"); type_text("left-"); control("e")
+        type_text(" wrong"); control("w"); type_text("end")
+        key("Return")
+        wait(edited.exists)
+        assert edited.read_text() == "left-right end", edited.read_text()
+        wait(lambda: len(state()["windows"]) == 1)
+        action({"op": "focus", "id": first})
+        print("PASS: Wayland Ctrl+U/A/E/W respect Bash readline editing")
+        raw_ready, raw_result = runtime / "raw-ready", runtime / "raw-controls"
+        raw_code = ('import os,sys,tty; from pathlib import Path; tty.setraw(0); '
+                    'Path(sys.argv[1]).write_text("ready"); data=b""\n'
+                    'while len(data)<26: data+=os.read(0,26-len(data))\n'
+                    'Path(sys.argv[2]).write_bytes(data)')
+        start([env["DOME_TERMINAL"], "--wayland", "--", sys.executable, "-c", raw_code,
+               str(raw_ready), str(raw_result)], "tty-raw-controls", control_env)
+        raw_window = wait(lambda: next((w for w in state()["windows"] if w["id"] != first), None))
+        action({"op": "focus", "id": raw_window["id"]})
+        wait(raw_ready.exists)
+        for letter in "abcdefghijklmnopqrstuvwxyz": control(letter)
+        wait(raw_result.exists)
+        assert raw_result.read_bytes() == bytes(range(1, 27)), raw_result.read_bytes()
+        wait(lambda: len(state()["windows"]) == 1)
+        action({"op": "focus", "id": first})
+        print("PASS: real Wayland Ctrl+A..Z deliver exactly the standard TTY bytes")
         # Exercise the windowless overlay backend without opening a headset or input device.
         helper = root / "../ghostty-xr/build/clipboard-test"
         subprocess.run([str(helper)], env={**clipboard_env, "GHOSTTY_CLIPBOARD_INTEGRATION": "1"},

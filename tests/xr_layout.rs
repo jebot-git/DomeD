@@ -8,6 +8,32 @@ fn scene() -> Scene {
     s.add("First", "app");
     s
 }
+
+#[test]
+fn xr_shell_hits_match_overlay_order_and_modals_override_application_capture() {
+    let app = xr_input::Quad {
+        id: 1,
+        pose: Pose { position_m: [0., 0., -0.5], ..Pose::default() },
+        size: [4., 4.], dome: None,
+    };
+    for id in [dome::xr_transport::TOP_BAR, dome::xr_transport::TASK_BAR,
+        dome::xr_transport::NOTIFICATIONS]
+    {
+        let overlay = xr_input::Quad {
+            id, pose: Pose { position_m: [0., 0., -2.], ..Pose::default() },
+            size: [1., 1.], dome: None,
+        };
+        let surfaces = [app.clone(), overlay];
+        assert_eq!(xr_input::mouse_target(&surfaces, Vec3::ZERO, -Vec3::Z, None, false).unwrap().0, id);
+        assert_eq!(xr_input::mouse_target(&surfaces, Vec3::ZERO, -Vec3::Z, Some(1), false).unwrap().0, 1);
+        if id == dome::xr_transport::TOP_BAR {
+            assert_eq!(xr_input::mouse_target(&surfaces, Vec3::ZERO, -Vec3::Z, Some(1), true).unwrap().0, id);
+            let outside = Vec3::new(1., 0., -1.).normalize();
+            assert!(xr_input::mouse_target(&surfaces, Vec3::ZERO, outside, None, true).is_none());
+            assert_eq!(xr_input::mouse_target(&surfaces, Vec3::ZERO, outside, None, false).unwrap().0, 1);
+        }
+    }
+}
 #[test]
 fn dome_curvature_and_mouse_uv_use_identical_open_cylinder() {
     let s = scene();
@@ -492,10 +518,13 @@ fn dome_bars_border_lanes_and_orbit_with_horizontal_head_yaw() {
     let center = Vec3::from_array(s.config.center_m);
     s.config.dome_upper_tilt_deg = 0.;
     let original = xr_input::shell_quads(&s, head, &layout);
-    let (bottom, top) = s.config.lane_extent();
+    let spans = s.packed_lane_spans(s.active_workspace);
+    let (bottom, top) = (spans[2][0], spans[0][1]);
     for (i, uv, angle) in [(0, [0.5, 1.], top), (1, [0.5, 0.], bottom)] {
         let p = original[i].point(uv) - center;
-        assert!((p.y / s.config.radius_m - angle.to_radians()).abs() < 0.001);
+        let gap = (p.y / s.config.radius_m - angle.to_radians()).abs();
+        let pitch = (spans[if i == 0 { 0 } else { 2 }][1] - spans[if i == 0 { 0 } else { 2 }][0]).to_radians() / 460.;
+        assert!(gap > 0. && gap / pitch <= 8.001);
         assert!((p.x.hypot(p.z) - s.config.radius_m).abs() < 0.001);
     }
     for yaw in [-170_f32, -90., 45., 170.] {
@@ -557,6 +586,85 @@ fn dome_bars_border_lanes_and_orbit_with_horizontal_head_yaw() {
 }
 
 #[test]
+fn bars_follow_rendered_lane_edges_with_at_most_eight_logical_pixels_of_clearance() {
+    let layout = dome::xr_transport::ShellLayout {
+        width: 1024, height: 768, top: 36, bottom: 60, notifications: None,
+    };
+    for radius in [0.6, 2.2, 4.4, 8.] {
+        for count in [1, 3, 20] {
+            for lean in [0., 8., 20.] {
+                let mut s = Scene::new("bar gaps");
+                s.config.radius_m = radius;
+                s.config.dome_vertical_span_deg = if count == 1 { 30. } else if count == 3 { 110. } else { 170. };
+                s.config.upper_bar_height_deg = if count == 1 { 1. } else if count == 3 { 5. } else { 20. };
+                s.config.taskbar_height_deg = if count == 1 { 20. } else if count == 3 { 7. } else { 1. };
+                s.config.dome_upper_tilt_deg = lean;
+                s.workspaces[0].shares = [0.3, 0.45, 0.25];
+                for lane in [0, 1, 2] {
+                    for n in 0..count {
+                        let id = s.add("window", "fixture");
+                        s.apply(Action::Move { id, workspace: 0, lane }).unwrap();
+                        s.apply(Action::DesktopResize { id, w: 480. + n as f32 * 100., h: 480. + n as f32 * 20. }).unwrap();
+                    }
+                }
+                let head = Pose { position_m: s.config.center_m, ..Pose::default() };
+                for focused in [None, Some(s.workspaces[0].lanes[0].windows[0])] {
+                    s.focused = focused;
+                    let windows = xr_input::quads(&s, head);
+                    let bars = xr_input::shell_quads_in_view(&s, head, &layout, 92.);
+                    for (bar, lane, edge_v, nominal) in [(&bars[0], 0, 1., 36.), (&bars[1], 2, 0., 60.)] {
+                        let adjacent = windows.iter()
+                            .filter(|q| s.window(q.id).unwrap().lane == lane)
+                            .min_by(|a, b| {
+                                let yaw = |q: &xr_input::Quad| {
+                                    let p = q.point([0.5, 0.5]) - Vec3::from_array(head.position_m);
+                                    p.x.atan2(-p.z).abs()
+                                };
+                                yaw(a).total_cmp(&yaw(b))
+                            }).unwrap();
+                        let d = adjacent.dome.as_ref().unwrap();
+                        let lane_pixel = d.radius * (d.top - d.bottom) / s.window(adjacent.id).unwrap().desktop.h;
+                        let bar_pixel = bar.size[1] / nominal;
+                        for u in [0., 0.25, 0.5, 0.75, 1.] {
+                            let p = bar.point([u, edge_v]);
+                            let local = d.frame.inverse_rotate((p - Vec3::from_array(d.frame.position_m)).to_array());
+                            let edge = if lane == 0 { d.top } else { d.bottom } * d.radius;
+                            let gap = if lane == 0 { local[1] - edge } else { edge - local[1] };
+                            assert!(gap >= -0.00001 && gap / lane_pixel <= 8.01,
+                                "radius {radius}, windows {count}, lean {lean}, lane {lane}, gap {}px", gap / lane_pixel);
+                            assert!(gap / bar_pixel <= 8.01);
+                            assert!((local[0].hypot(local[2]) - d.radius).abs() < 0.00001);
+                            let ray = (p - Vec3::from_array(head.position_m)).normalize();
+                            let hit = bar.hit(Vec3::from_array(head.position_m), ray, false).unwrap_or_else(|| panic!("miss radius {radius}, count {count}, lean {lean}, lane {lane}, uv {u}/{edge_v}, raw {:?}", bar.hit(Vec3::from_array(head.position_m), ray, true)));
+                            assert!((hit[0] - u).abs() < 0.0001 && (hit[1] - edge_v).abs() < 0.0001);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn legacy_bar_position_settings_are_ignored_and_no_longer_saved_or_exposed() {
+    let config: Config = serde_json::from_str(r#"{
+        "upper_bar_x_deg":30,"taskbar_x_deg":-30,
+        "upper_inset_deg":100,"lower_inset_deg":100,
+        "upper_bar_max_width_deg":45,"taskbar_max_width_deg":160
+    }"#).unwrap();
+    assert_eq!(config, Config::default());
+    config.validate().unwrap();
+    let saved = serde_json::to_value(&config).unwrap();
+    for key in ["upper_bar_x_deg", "taskbar_x_deg", "upper_inset_deg", "lower_inset_deg",
+        "upper_bar_max_width_deg", "taskbar_max_width_deg"] {
+        assert!(saved.get(key).is_none());
+    }
+    let labels: Vec<_> = geometry_settings::rows(&config).into_iter().map(|(label, _)| label).collect();
+    assert!(!labels.iter().any(|s| s.contains("inset") || s.contains("horizontal") || s.contains("bar width")));
+    assert!(labels.contains(&"Upper tray height") && labels.contains(&"Taskbar height"));
+}
+
+#[test]
 fn mouse_crosses_bars_empty_space_and_lanes_without_depth_or_size_jumps() {
     for projection in [Projection::RoomDome] {
         let mut s = scene();
@@ -585,7 +693,7 @@ fn mouse_crosses_bars_empty_space_and_lanes_without_depth_or_size_jumps() {
                 Vec3::from_array(reticle.pose.position_m) - Vec3::from_array(head.position_m);
             assert!((offset.length() - 0.4).abs() < 0.00001);
             assert!(offset.normalize().distance(ray) < 0.00001);
-            assert_eq!(reticle.size, [0.006, 0.006]);
+            assert_eq!(reticle.size, [0.012, 0.012]);
             if let Some(p) = previous {
                 assert!(p.distance(offset) < 0.0011);
             }
@@ -616,7 +724,7 @@ fn mouse_crosses_bars_empty_space_and_lanes_without_depth_or_size_jumps() {
 }
 
 #[test]
-fn dome_bar_extreme_geometry_stays_finite_and_mouse_angles_wrap() {
+fn dome_bar_extreme_geometry_stays_finite_and_mouse_angles_stop_at_boundary() {
     let mut s = scene();
     let layout = dome::xr_transport::ShellLayout {
         width: 1280,
@@ -637,11 +745,59 @@ fn dome_bar_extreme_geometry_stays_finite_and_mouse_angles_wrap() {
     let mut angles = [3.14, 0.];
     let before = xr_input::mouse_ray(Pose::default(), angles);
     xr_input::move_mouse(&mut angles, 4., 0.);
-    assert!(angles[0] < 0.);
+    assert_eq!(angles[0], std::f32::consts::PI);
     assert!(before.distance(xr_input::mouse_ray(Pose::default(), angles)) < 0.011);
     let old = angles;
     xr_input::move_mouse(&mut angles, f64::NAN, 1.);
     assert_eq!(angles, old);
+}
+
+#[test]
+fn mouse_stays_inside_asymmetric_viewport_and_returns_from_edges_immediately() {
+    let viewport = [-0.7, 0.9, -0.6, 0.8];
+    for dx in [-1e9, 0., 1e9] {
+        for dy in [-1e9, 0., 1e9] {
+            let mut angles = [0., 0.];
+            xr_input::move_mouse(&mut angles, dx, dy);
+            xr_input::confine_mouse(&mut angles, viewport);
+            let ray = xr_input::mouse_ray(Pose::default(), angles);
+            let horizontal = ray.x.atan2(-ray.z);
+            let vertical = ray.y.atan2(-ray.z);
+            assert!((viewport[0]..viewport[1]).contains(&horizontal));
+            assert!((viewport[2]..viewport[3]).contains(&vertical));
+            let edge = angles;
+            xr_input::move_mouse(&mut angles, -dx.signum(), -dy.signum());
+            xr_input::confine_mouse(&mut angles, viewport);
+            if dx != 0. { assert!(angles[0].abs() < edge[0].abs()); }
+            if dy != 0. { assert!(angles[1].abs() < edge[1].abs()); }
+        }
+    }
+    // Rebasing a stationary cursor after a head turn must also recover it.
+    let mut angles = xr_input::mouse_angles_at(
+        Pose { orientation_xyzw: Quat::from_rotation_y(2.).to_array(), ..Pose::default() },
+        Vec3::new(0., 0., -2.),
+    );
+    xr_input::confine_mouse(&mut angles, viewport);
+    assert!((viewport[0]..viewport[1]).contains(&angles[0]));
+}
+
+#[test]
+fn rendered_mouse_recovers_when_captured_surface_or_new_head_pose_leaves_viewport() {
+    let viewport = [-0.7, 0.9, -0.6, 0.8];
+    let reticle = xr_input::mouse_reticle(Pose::default(), [0., 0.]);
+    let unchanged = xr_input::confine_mouse_reticle(reticle.clone(), Pose::default(), viewport);
+    assert_eq!(unchanged.pose.position_m, reticle.pose.position_m);
+    for head in [
+        Pose { orientation_xyzw: Quat::from_rotation_y(2.).to_array(), ..Pose::default() },
+        Pose { orientation_xyzw: Quat::from_rotation_x(-1.2).to_array(), ..Pose::default() },
+    ] {
+        let recovered = xr_input::confine_mouse_reticle(reticle.clone(), head, viewport);
+        let ray = Vec3::from_array(head.inverse_rotate(
+            (Vec3::from_array(recovered.pose.position_m) - Vec3::from_array(head.position_m)).to_array(),
+        ));
+        assert!((viewport[0]..viewport[1]).contains(&ray.x.atan2(-ray.z)));
+        assert!((viewport[2]..viewport[3]).contains(&ray.y.atan2(-ray.z)));
+    }
 }
 
 #[test]
@@ -758,7 +914,7 @@ fn cylinder_packing_preserves_texture_aspect_ratio_in_crowded_lanes() {
 fn upper_lean_configuration_is_compatible_and_bounded() {
     let old: Config = serde_json::from_str("{}").unwrap();
     assert_eq!(old.dome_upper_tilt_deg, 8.);
-    let adjusted = dome::geometry_settings::adjust(&old, 19, 1.).unwrap();
+    let adjusted = dome::geometry_settings::adjust(&old, 13, 1.).unwrap();
     assert_eq!(adjusted.dome_upper_tilt_deg, 9.);
     let mut c = old;
     for invalid in [-1., 21., f32::NAN, f32::INFINITY] {
@@ -999,13 +1155,16 @@ fn mouse_cursor_stays_on_compositor_surface_when_render_head_moves() {
     let cursor = dome::xr_transport::Cursor { id: surface.id, uv };
     let head = Pose { position_m: [1., 1., 0.],
         orientation_xyzw: Quat::from_rotation_y(2.).to_array() };
-    let reticle = xr_input::mouse_cursor_reticle(&surfaces, Some(&cursor), head, [0., 0.]);
+    let reticle = xr_input::mouse_cursor_reticle(&surfaces, Some(&cursor), head, [0., 0.], &s);
     let point = surface.point(uv);
     assert!((Vec3::from_array(reticle.pose.position_m) - point).length() < 0.003);
     let normal = Quat::from_array(reticle.pose.orientation_xyzw) * Vec3::Z;
     assert!(normal.dot(surface.dome.as_ref().unwrap().inward_normal(point)) > 0.999);
-    let fallback = xr_input::mouse_cursor_reticle(&[], Some(&cursor), head, [0., 0.]);
-    assert!(((Vec3::from_array(fallback.pose.position_m) - Vec3::from_array(head.position_m)).length() - 0.4).abs() < 0.0001);
+    let fallback = xr_input::mouse_cursor_reticle(&[], Some(&cursor), head, [0., 0.], &s);
+    let dome = xr_input::mouse_dome(&s, head);
+    let point = Vec3::from_array(fallback.pose.position_m);
+    let local = dome.dome.as_ref().unwrap().frame.inverse_rotate(point.to_array());
+    assert!((local[0].hypot(local[2]) - s.config.radius_m).abs() < 0.003);
 }
 
 #[test]
@@ -1015,5 +1174,40 @@ fn retired_tracking_settings_are_ignored_and_not_saved() {
     let saved = serde_json::to_value(&config).unwrap();
     assert!(saved.get("xr_pointer_mode").is_none());
     assert!(saved.get("gaze_smoothing").is_none());
-    assert_eq!(geometry_settings::rows(&config).len(), 20);
+    assert_eq!(geometry_settings::rows(&config).len(), 14);
+}
+
+#[test]
+fn empty_dome_mouse_cursor_remains_world_anchored_all_around() {
+    let s = scene();
+    let head = Pose::default();
+    let background = xr_input::mouse_dome(&s, head);
+    for yaw in [-3., -1.5, 0., 1.5, 3.] {
+        let uv = background.hit(Vec3::ZERO, xr_input::mouse_ray(head, [yaw, 0.2]), false).unwrap();
+        let cursor = dome::xr_transport::Cursor { id: background.id, uv };
+        let before = xr_input::mouse_cursor_reticle(&[], Some(&cursor), head, [yaw, 0.2], &s);
+        let moved = Pose { position_m: [0.2, 0.3, 0.1],
+            orientation_xyzw: Quat::from_rotation_y(0.5).to_array() };
+        let after = xr_input::mouse_cursor_reticle(&[], Some(&cursor), moved, [yaw, 0.2], &s);
+        assert_eq!(before.pose, after.pose);
+        assert!((Vec3::from_array(after.pose.position_m).length() - s.config.radius_m).abs() < 0.1);
+    }
+}
+
+#[test]
+fn enlarged_windows_follow_focus_in_render_and_pointer_order() {
+    let mut s = scene();
+    let a = s.windows[0].id;
+    let b = s.add("Second", "app");
+    for panel in s.panels() {
+        s.apply(Action::DomeOffset { id: panel.id, yaw_deg: -panel.yaw_deg, pitch_deg: 0. }).unwrap();
+    }
+    s.apply(Action::SpatialTransform { id: a, pose: None, scale: 2. }).unwrap();
+    for focus in [a, b, a] {
+        s.apply(Action::Focus { id: focus }).unwrap();
+        let quads = xr_input::quads(&s, Pose::default());
+        assert_eq!(quads.last().unwrap().id, focus);
+        let point = quads.iter().find(|q| q.id == focus).unwrap().point([0.5, 0.5]);
+        assert_eq!(s.hit_test([0.; 3], point.normalize().to_array()).unwrap().id, focus);
+    }
 }

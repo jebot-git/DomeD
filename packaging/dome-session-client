@@ -28,6 +28,8 @@ try:
     print(f"DomeD compositor PID: {child.pid}", flush=True)
     result = child.wait()
 finally:
+    # Only a real Dome login owns this target; nested/test sessions never do.
+    subprocess.run(["systemctl", "--user", "stop", "graphical-session.target"], check=False)
     if child is not None:
         terminate(None, None)
         deadline = time.monotonic() + 3

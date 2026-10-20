@@ -29,6 +29,7 @@ def done():
     app.exit(1 if errors else 0)
 def start():
     check("Boolean($('tasks').children.length && $('radius_m').value && $('scene').width)")
+    check("!$('upper_inset_deg') && !$('lower_inset_deg') && !$('upper_bar_max_width_deg') && !$('taskbar_max_width_deg') && snapshot.shell_bars.length===2 && snapshot.shell_bars.every(bar=>bar.dome)")
     capture('dome-preview.png')
     js("$('toggle-view').click()")
     steps.extend([

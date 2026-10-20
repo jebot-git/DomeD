@@ -171,7 +171,8 @@ impl Dome {
             .default_apps_choice
             .as_mut()
             .unwrap_or(&mut self.default_apps_row);
-        *selected = (*selected as i32 + delta).clamp(0, count.saturating_sub(1) as i32) as usize;
+        *selected = (*selected as i32).saturating_add(delta)
+            .clamp(0, count.saturating_sub(1) as i32) as usize;
     }
     pub fn default_apps_key(&mut self, key: u32) -> bool {
         if !self.default_apps_open {
@@ -196,7 +197,9 @@ impl Dome {
                     self.default_apps_row = 0
                 }
             }
-            0xff0d => self.default_apps_activate(),
+            0xff57 => self.default_apps_move(i32::MAX),
+            0xff51 => self.default_apps_choice = None,
+            0xff53 | 0xff0d | 0xff8d => self.default_apps_activate(),
             _ => (),
         }
         true

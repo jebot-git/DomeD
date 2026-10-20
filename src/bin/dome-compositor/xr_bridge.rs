@@ -35,14 +35,7 @@ impl Dome {
         if self.launcher {
             top = 456.min(height);
         }
-        if self.audio_open
-            || self.history_panel.is_some()
-            || self.about
-            || self.default_apps_open
-            || self.appearance_open
-            || self.xr_settings_open
-            || self.session_confirm.is_some()
-        {
+        if self.shell_modal_open() {
             top = height;
         }
         if self.desktop_manager {
@@ -51,7 +44,7 @@ impl Dome {
         if let Some(index) = self.task_popup {
             bottom = bottom.max((height as f64 - self.popup_rect(index, width, height).1) as i32);
         }
-        let toasts = if self.audio_open || self.history_panel.is_some() {
+        let toasts = if self.shell_modal_open() {
             vec![]
         } else {
             self.notifications.layout(width, height)
@@ -231,12 +224,17 @@ impl Dome {
         self.input_realm = dome::Realm::Xr;
         for a in p.actions {
             let presentation = self.scene.lock().unwrap().presentation;
-            if presentation.desktop && self.xr_animation.opacity >= 1. {
+            if presentation.desktop && self.xr_animation.opacity >= 1. && !self.shell_modal_open() {
                 self.action(a);
             }
         }
         self.sync_scene();
         for e in p.events {
+            let e = if self.shell_modal_open()
+                && matches!(&e, SeatEvent::Motion { id, .. } if !dome::xr_transport::is_shell(*id))
+            {
+                SeatEvent::Leave
+            } else { e };
             let pointer = self.seat.get_pointer().unwrap();
             let time = self.start_time.elapsed().as_millis() as u32;
             match e {
@@ -353,6 +351,15 @@ impl Dome {
                     if !pressed && button == 0x110 {
                         self.audio_drag = None;
                     }
+                    if !pressed && self.xr_shell_buttons.remove(&button) {
+                        self.xr_buttons.remove(&button);
+                        continue;
+                    }
+                    if pressed && self.shell_modal_open() && self.xr_shell_pos.is_none() {
+                        self.xr_shell_buttons.insert(button);
+                        self.xr_buttons.insert(button);
+                        continue;
+                    }
                     if !pressed && self.context_scroll_buttons.remove(&button) {
                         continue;
                     }
@@ -373,9 +380,10 @@ impl Dome {
                     {
                         continue;
                     }
-                    if let Some([x, y]) = self.xr_shell_pos {
+                    if let Some([x, y]) = self.xr_shell_pos.filter(|_| pressed) {
                         if pressed {
                             self.xr_buttons.insert(button);
+                            self.xr_shell_buttons.insert(button);
                             if self.xr_target == Some(dome::xr_transport::NOTIFICATIONS)
                                 && button != 0x110
                             {
@@ -384,7 +392,9 @@ impl Dome {
                             let layout = self.xr_bridge.lock().unwrap().shell.clone();
                             let tray = self.visible_tray(layout.width as i32);
                             let tx = layout.width as f64 - 220. - tray.items.len() as f64 * 28.;
-                            if y < 36.
+                            if self.shell_modal_open() {
+                                self.shell_click(x, y);
+                            } else if y < 36.
                                 && x >= tx
                                 && x < layout.width as f64 - 220.
                                 && tray.menu.is_none()
@@ -403,11 +413,11 @@ impl Dome {
                             } else {
                                 self.shell_click(x, y);
                             }
-                        } else {
-                            self.xr_buttons.remove(&button);
                         }
                         continue;
                     }
+
+                    if !pressed && !self.xr_buttons.contains(&button) { continue; }
 
                     if pressed && self.xr_target.is_none() && !pointer.is_grabbed() {
                         continue;
@@ -449,6 +459,7 @@ impl Dome {
                     if self.xr_shell_pos.is_some() && self.xr_settings_scroll(vertical) {
                         continue;
                     }
+                    if self.shell_modal_open() { continue; }
                     if let Some(id) = self.xr_target {
                         if self.scroll_context(id, vertical as f32 * 3.) {
                             continue;
@@ -493,12 +504,9 @@ impl Dome {
                 SeatEvent::Reset => {
                     self.audio_drag = None;
                     self.context_scroll_hover = None;
-                    if self.xr_shell_pos.take().is_some() {
-                        self.xr_buttons.clear();
-                        self.xr_target = None;
-                        continue;
-                    }
+                    self.xr_shell_pos = None;
                     for button in self.xr_buttons.drain().collect::<Vec<_>>() {
+                        if self.xr_shell_buttons.remove(&button) { continue; }
                         pointer.button(
                             self,
                             &ButtonEvent {
@@ -509,6 +517,7 @@ impl Dome {
                             },
                         );
                     }
+                    self.xr_shell_buttons.clear();
                     self.xr_target = None;
                 }
             }
@@ -554,18 +563,11 @@ impl Dome {
                 !b.mouse_buttons.is_empty(),
             )
         };
-        let mut scene = self.scene.lock().unwrap().clone();
-        scene.config.upper_bar_max_width_deg = scene
-            .config
-            .upper_bar_max_width_deg
-            .min(session.horizontal_fov_deg.max(30.));
-        scene.config.taskbar_max_width_deg = scene
-            .config
-            .taskbar_max_width_deg
-            .min(session.horizontal_fov_deg.max(30.));
+        let scene = self.scene.lock().unwrap().clone();
         let mut surfaces = dome::xr_input::quads(&scene, session.head);
-        surfaces.extend(dome::xr_input::shell_quads(&scene, session.head, &layout));
+        surfaces.extend(dome::xr_input::shell_quads_in_view(&scene, session.head, &layout, session.horizontal_fov_deg));
         surfaces.retain(|q| self.xr_animation.interactive(scene.presentation, q.id));
+        let background = dome::xr_input::mouse_dome(&scene, session.head);
         let head = glam::Vec3::from_array(session.head.position_m);
         // Rebase from the last surface UV as the head or carousel moves. A
         // stationary mouse stays on its panel instead of drifting with head movement.
@@ -576,25 +578,32 @@ impl Dome {
                 .and_then(|c| {
                     surfaces
                         .iter()
+                        .chain(std::iter::once(&background))
                         .find(|q| q.id == c.id)
                         .map(|q| q.point(c.uv))
                 })
                 .map(|p| dome::xr_input::mouse_angles_at(session.head, p))
                 .unwrap_or(previous)
         };
+        let viewport = session.mouse_viewport.unwrap_or_else(|| {
+            let horizontal = session.horizontal_fov_deg.max(30.).to_radians() / 2.;
+            let vertical = scene.config.vertical_fov_deg.clamp(30., 160.).to_radians() / 2.;
+            [-horizontal, horizontal, -vertical, vertical]
+        });
+        dome::xr_input::confine_mouse(&mut angles, viewport);
         dome::xr_input::move_mouse(&mut angles, dx, dy);
+        dome::xr_input::confine_mouse(&mut angles, viewport);
         self.mouse_angles = Some(angles);
         let ray = dome::xr_input::mouse_ray(session.head, angles);
         self.xr_bridge.lock().unwrap().mouse_angles = Some(angles);
-        let target = surfaces
-            .iter()
-            .filter(|q| !captured || cursor.as_ref().is_some_and(|c| c.id == q.id))
-            .filter_map(|q| {
-                q.hit(head, ray, captured)
-                    .map(|uv| (q.id, uv, q.point(uv).distance(head)))
-            })
-            .min_by(|a, b| a.2.total_cmp(&b.2));
-        self.mouse_cursor = target.map(|(id, uv, _)| dome::xr_transport::Cursor { id, uv });
+        let target = dome::xr_input::mouse_target(
+            &surfaces, head, ray,
+            if captured { cursor.as_ref().map(|c| c.id) } else { None },
+            self.shell_modal_open(),
+        );
+        self.mouse_cursor = target.map(|(id, uv, _)| dome::xr_transport::Cursor { id, uv })
+            .or_else(|| background.hit(head, ray, true)
+                .map(|uv| dome::xr_transport::Cursor { id: background.id, uv }));
         if let Some((id, uv, _)) = target {
             self.dispatch_xr(Packet {
                 events: vec![SeatEvent::Motion { id, uv }],
@@ -605,13 +614,13 @@ impl Dome {
                 events: vec![SeatEvent::Leave],
                 actions: vec![],
             });
-            self.xr_bridge.lock().unwrap().cursor = None;
         }
+        self.xr_bridge.lock().unwrap().cursor = self.mouse_cursor.clone();
     }
     pub fn xr_mouse_button(&mut self, button: u32, pressed: bool) {
         self.xr_mouse_motion(0., 0.);
         let mut actions = vec![];
-        if pressed {
+        if pressed && !self.shell_modal_open() {
             if let Some(id) = self
                 .xr_target
                 .filter(|id| !dome::xr_transport::is_shell(*id))

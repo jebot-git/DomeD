@@ -32,7 +32,8 @@ packages or network assets are required. The preview starts with sample windows.
 * Switch **XR carousel / Desktop** to see the same window identities in both views.
 * Use the room dome for an anchored cylindrical layout. Legacy **In view**
   profiles migrate to the dome; Ghostty XR owns its independent direct-view overlay.
-* Set bar widths, heights, independent lens-safe insets, FOV, room centre and radius.
+* Set projection height and bar heights; bars automatically sit within 8 logical
+  pixels of their adjacent lanes, with automatic centering and headset-fit widths.
 * Drag empty space to simulate looking around. **Unfold 360°** exposes the whole ring.
 * Select windows to minimize/maximize, recenter, move between lanes/desktops or swap.
 * **Launch** at left searches apps; layout mode adds a sample window instead of
@@ -119,7 +120,10 @@ The native shell supports click-to-focus, Qt6 title-bar controls/dragging, clien
 minimize/maximize/close, app launch (also Super+Shift+Space) and desktop switching/creation.
 Its local web panel controls the same live window/workspace model; its geometry
 preview still uses sample surface content. App launching requires `gio`, installed
-`.desktop` files and apps with native Wayland support. No Xwayland is provided.
+`.desktop` files. Login sessions start an optional `xwayland-satellite` bridge
+when installed alongside Xwayland, and export its `DISPLAY` for X11 apps such as Steam.
+Set `DOME_START_XWAYLAND=0` to disable it. A bridge attached to another compositor
+cannot serve the Dome session.
 Close the nested compositor window to end the experiment. The initial protocol
 handlers are adapted from Smithay's MIT-licensed Smallvil; see THIRD-PARTY.md.
 
@@ -160,6 +164,9 @@ GBM/EGL renderer; advertised DMA-BUF formats are supported by every initial GPU.
 Open **Displays & XR Configuration** (**Super+,**) to select each connector's
 resolution/refresh, enable it, choose a primary display, or position it explicitly
 (including negative coordinates). Automatic arrangement restores horizontal layout.
+The X/Y position buttons cycle between negative resolution, zero, and positive
+resolution, using the selected display's width for X and height for Y. Changing
+resolution updates nonzero manual offsets to the new width or height.
 Hold **Shift** while dragging either a client titlebar or a DomeD titlebar to tile
 a window into halves at monitor edges or quarters at corners. A translucent preview
 shows the destination; drop while holding Shift to apply it, or release Shift to
@@ -264,7 +271,8 @@ agent. This keeps administrative prompts available without Plasma autostart;
 runs the installed `pam_kwallet_init` helper. Current KWallet's `ksecretd` starts
 when no Secret Service provider already owns the session bus; KDE applications can
 activate `kwalletd6` normally. The Dome-specific portal configuration selects
-KWallet for the Secret portal and GTK for common desktop portals. Existing wallet
+KWallet for the Secret portal and KDE’s Qt6 backend for common desktop dialogs,
+with GTK as a fallback when a Qt6 implementation is unavailable. Existing wallet
 settings and login-manager PAM configuration are preserved. Automatic unlocking
 requires PAM login credentials; passwordless login can still require a wallet
 password. The tests use a separate bus, HOME and encrypted disposable wallet and
@@ -280,13 +288,51 @@ and action buttons used by KDE Connect, including pairing requests. Device pairi
 network file transfers and phone-side operation require a real-device test. The
 local audit starts KDE Connect in a private network namespace, so it never sends
 pairing, discovery or payload packets to existing devices. File chooser support is
-provided by the GTK portal; SSHFS and PipeWire remain external dependencies.
+provided by the Qt6 KDE portal; SSHFS and PipeWire remain external dependencies.
 
 To repeat the service checks (after preparing local Qt development dependencies):
 
 ```sh
 scripts/build-service-fixtures.sh
 uv run --no-project --with dbus-next --with python-xlib --with pillow python scripts/test-session-services.py
+```
+
+## Screen sharing and WayVR desktop capture
+
+DomeD implements the ScreenCast v3 portal on its own session bus name,
+`org.freedesktop.impl.portal.desktop.dome.screencast`. The installed
+`dome-portals.conf` selects it explicitly; general dialogs default to Qt6/KDE.
+The login publishes its ready display to D-Bus and systemd before starting
+`graphical-session.target`, and stops the target on logout. A Qt6 portal service
+override selects its native KDE platform theme to avoid startup recursion through
+the application GTK appearance bridge. Portal service
+units must inherit `XDG_CURRENT_DESKTOP=Dome` rather than forcing `KDE`.
+
+WayVR and other portal clients can share one or several monitors after choosing
+sources in a Qt6 dialog. Each chosen monitor has its own PipeWire node and logical
+position and size. Capture includes desktop windows, decorations and shell, with
+hidden or embedded cursors. A Qt6 sharing control stays visible until sharing
+ends; **Stop sharing**, closing that control, closing the portal session, output
+removal or resize, and a frontend exit all revoke the capture. Requests from
+arbitrary D-Bus peers cannot bypass the frontend. Permissions are per session;
+this first backend does not persist restore tokens or capture individual windows.
+Remote Desktop, InputCapture, GlobalShortcuts and Screenshot are not advertised
+through KDE's KWin-specific implementations.
+
+The initial transport uses RGBA shared-memory buffers and GPU readback, capped
+at 30 frames per second, only for monitors currently shared. It does not yet use
+DMA-BUF zero-copy transport. Building requires `libpipewire-0.3` development files;
+running requires PipeWire, a policy manager such as WirePlumber, the portal
+frontend, and the installed `dome-portal-picker` next to the compositor. Install
+the new compositor and log back into DomeD before using desktop capture.
+
+The integration test uses a private D-Bus, Xvfb display, PipeWire graph and
+WirePlumber policy profile. It checks the real frontend, Qt6 consent/cancellation,
+actual captured Wayland pixels, stream teardown and frontend access controls:
+
+```sh
+uv run --no-project --with dbus-next --with python-xlib --with pillow --with PySide6 python scripts/test-screencast.py
+DOME_TEST_RENDERER=vulkan DOME_TEST_PORTAL_DEFAULTS=1 uv run --no-project --with dbus-next --with python-xlib --with pillow --with PySide6 python scripts/test-screencast.py
 ```
 
 ## Notifications and keyboard layouts
@@ -302,6 +348,25 @@ Up to three toasts are displayed, with a bounded queue of 128 active notificatio
 Body text is plain text; sound, image hints, markup, inline reply, and persistent
 notification history are not advertised or implemented. Another desktop's existing
 notification daemon is never replaced by a nested DomeD test.
+
+Steam's `notificationtoasts_<number>_desktop` windows are captured when their
+app ID is `steam` or `steamwebhelper`. Their rendered content enters the same
+notification stack, desktop/XR toast surface and bounded image history as regular
+D-Bus notifications. They do not occupy a task, desktop lane or saved app layout,
+or take keyboard focus. Clicking the toast content forwards the click to Steam;
+its close control dismisses the captured notice until Steam hides or reuses the
+source window. Normal Steam windows and other applications are not intercepted.
+Steam does not provide message text over this route, so history retains the
+rendered notification image rather than inventing a text transcription.
+
+The regression uses real X11 windows through the session's Xwayland satellite,
+on private Xvfb and D-Bus instances, and checks captured pixels, focus, forwarded
+clicks, dismissal, reuse, destruction and ordinary D-Bus notifications:
+
+```sh
+uv run --no-project --with python-xlib --with pillow python scripts/test-steam-notifications.py
+```
+
 
 US English, **Anthy** Japanese, Czech, Korean **Hangul**, and Serbian Cyrillic
 input use the installed Fcitx5 framework. **Super+Space** cycles the available
@@ -395,10 +460,10 @@ case the new action starts disabled. A third pull leaves that window on the
 dome. Scaling grows panels outward from the central gap.
 
 The same Qt6 menu/tray/taskbar is rendered into two XR shell layers,
-with configurable angular sizes and lens-safe insets. Menu and preview expansion
+with adjustable bar heights and automatic lane attachment. Menu and preview expansion
 keeps the original top/bottom edges fixed. Mouse clicks invoke native shell
 commands, including application actions, task previews and status menus. Horizontal
-bar widths are capped to the runtime field of view as well as the configured cap.
+bar widths automatically fit the runtime field of view; no width or offset settings are needed.
 
 Real Wayland surfaces and shell images travel through a CPU bridge into Vulkan
 swapchains. The compositor thread owns input and Wayland resource lifetimes. This
@@ -409,13 +474,18 @@ Mouse and keyboard are the only input methods. The XR renderer requests no hand
 or eye tracking extensions and emits no tracked input. The mouse cursor follows
 the compositor's selected surface UV, including curved windows and captured drags.
 Use **Super+P** to pull/return a panel and **Shift+Super+R** to reset its layout.
-Move the focused window up/down a lane with **Ctrl+Super+Up/Down** or
-**Super+Alt+Up/Down**. Lane moves recenter the window; moving a pulled-out panel
-returns it to the dome. The first and last lanes stop further movement.
-**Super+Plus/Minus** (also **Super+Equals** to grow) or **Super+Alt+Right/Left**
-expands it by 10% or shrinks by the inverse factor, within 0.25–4× scale. These actions are also available
-in **View** and can be rebound in Settings. Saved profiles gain the arrow bindings
-without replacing occupied chords or reviving disabled actions.
+**Ctrl+Alt+Up/Down** focuses a central window in the previous/next populated dome
+lane, wrapping around and skipping empty lanes. It leaves window placement unchanged.
+**Alt+Tab / Alt+Shift+Tab** then cycles windows within the focused lane.
+Lane navigation applies in XR and passes through while Ghostty has focus.
+Move the focused window up/down a lane with **Super+Alt+Up/Down**. Lane moves
+recenter the window; moving a pulled-out panel returns it to the dome.
+**Super+Alt+Left/Right** reorders it horizontally within its lane, stopping at
+both ends. **Super+Equals/Minus** grows/shrinks it by 10% within 0.25–4× scale.
+The focused window renders over its neighbours; enlarged unfocused windows
+render underneath them. The larger cyan/white cursor has a dark outline for
+contrast over light and dark content. These actions can be rebound in Settings.
+Saved profiles retire stock duplicate shortcuts while preserving custom remaps.
 
 ### Spatial application popups
 
@@ -503,17 +573,23 @@ The nested backend and the initial native DRM backend expose one primary output.
 
 Physical mouse motion, button and wheel events control the XR pointer. Its position
 persists while idle, with no timeout or switch to another input source. The cursor
-follows the hit surface's curvature and lean; empty space uses a view cursor.
-Head and carousel movement preserve its surface UV. Held buttons capture the
+follows the hit surface's curvature and lean; empty space keeps the cursor anchored to the full dome cylinder.
+Head and carousel movement preserve its surface UV while it remains visible.
+The cursor stops inside the headset viewport edges, including after head movement.
+Held buttons capture the
 original target through a drag. Outside XR, the mouse uses desktop stacking.
 
-In dome mode the upper menu/tray bar borders the top lane and the taskbar borders
-the bottom lane, at the dome radius. Both orbit the dome anchor with horizontal
+In dome mode the upper menu/tray bar sits at most **8 Wayland logical pixels**
+above the rendered top lane, and the taskbar sits at most 8 logical pixels below
+the rendered bottom lane. Both share the lane cylinder and the upper lane’s lean,
+including fitted panel heights and focused outsets. Both orbit the dome anchor with horizontal
 headset yaw; pitching the headset lets you look up/down to reach the bars without
 moving them over the room-anchored lanes. Expanded menus keep the bar edge fixed and extend toward the lanes.
 For a dome taller than the headset's field of view, look up/down to see its bars.
-Dome bars use the configured dome radius and span. Adjust **Dome height / vertical
-span** and **Dome height / anchor Y** in settings to change the dome’s size and elevation.
+Adjust **Projection height / vertical span**, **Upper tray height** and **Taskbar
+height** to size this layout; **Dome height / anchor Y** controls its room elevation.
+Legacy bar offsets, insets and width caps are accepted when loading profiles but
+ignored and omitted when saving them.
 Older profiles with `in_view` automatically load as `room_dome`.
 
 The system menu includes **Start XR**, **Stop XR**, **Appearance**, **Lock Screen**,
@@ -544,6 +620,17 @@ Window titlebars and borders follow the selected theme, accent and chrome opacit
 existing windows repaint immediately, including inactive decorations. The global
 menu bar and taskbar use the same colours and opacity, in desktop and
 XR. Global menu and status dropdowns share that palette.
+
+Dome-owned menus support cursor-key selection, Enter activation and Escape to
+close in desktop and XR. Appearance uses Up/Down to select a setting and
+Left/Right to adjust it, with visible keyboard focus. Tray menus skip disabled
+items and use Right/Left to enter and leave submenus. Keyboard settings, desktop
+switching, grouped task previews and confirmation dialogs also accept cursor keys;
+confirmation dialogs initially select Cancel.
+
+XR shell overlays take input priority over application surfaces beneath them.
+Expanded settings and other modal panels block application clicks, scrolling and
+focus changes, including while an application previously held mouse capture.
 
 The global font applies to all Dome-owned menus, panels, dialogs, notifications
 and window captions in desktop and XR. The picker offers only fixed-strike fonts
@@ -646,6 +733,9 @@ commands drawn privately inside an application's content. Qt
 native menu export is discovered through the registrar; both the default Qt theme
 and the KDE platform theme work without changing Dome's desktop identity. The right side hosts StatusNotifier icons and a clock;
 Dome uses an existing status watcher when present and creates one only when absent.
+Its watcher retries unavailable item properties and retains registrations until
+their D-Bus owner disconnects. `scripts/test-tray.py` checks delayed startup,
+temporary property failures and disconnect cleanup on a private bus and display.
 
 GTK applications use the `gtk_shell1` Wayland handshake and `org.gtk.Menus` /
 `org.gtk.Actions` exports. DomeD announces that the shell owns application menus
@@ -766,15 +856,16 @@ show Ghostty XR; its own F12 handler hides it while it owns the keyboard. Alt+F4
 | Super+Shift+Space | Search and launch apps |
 | Super+T | Open Ghostty XR terminal in the active desktop/XR realm |
 | Alt+Tab / Shift+Alt+Tab | XR: next / previous window in the same lane, recentered; desktop: next / previous window |
-| Super+W or Alt+F4 | Close window |
+| Alt+F4 | Close window |
 | Super+Q | Close windows of active application |
 | Super+M / Super+Enter | Minimize / toggle maximize |
 | Super+1…8 / Shift+Super+1…8 | Switch desktop / move window to desktop |
 | Ctrl+Super+Left/Right | Previous / next desktop |
-| Ctrl+Super+Up/Down or Super+Alt+Up/Down | Move focused window between lanes |
-| Super+Plus/Minus or Super+Alt+Right/Left | Expand / shrink focused XR window (×1.1 / ÷1.1) |
+| Ctrl+Alt+Up/Down | Focus previous / next populated dome lane (XR; outside Ghostty) |
+| Super+Alt+Up/Down | Move focused window between lanes |
+| Super+Alt+Left/Right | Arrange focused window horizontally within its lane |
 | Shift+Super+N | Create desktop |
-| Super+Plus/Minus | Increase / decrease XR window scale |
+| Super+Equals/Minus | Increase / decrease XR window scale |
 | Shift+Super+R | Reset XR placement and scale |
 | Shift+Super+B | Slide both XR bars out / back in |
 | Alt+Super+T | Slide upper XR menu/tray bar out / back in |

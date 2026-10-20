@@ -100,6 +100,7 @@ impl Dome {
                 .get(i)
                 .is_some_and(|t| !t.windows.is_empty())
             {
+                if self.task_popup != Some(i) { self.shell_selection = 0; }
                 self.task_popup = Some(i);
             } else {
                 self.task_popup = None;
@@ -301,7 +302,7 @@ impl Dome {
             row["active"] = serde_json::json!(scene.focused == Some(*id));
             Some(row)
         }).collect();
-        serde_json::json!({"x":x,"y":y,"w":width,"h":height,"context":false,"rows":rows})
+        serde_json::json!({"x":x,"y":y,"w":width,"h":height,"context":false,"selected":self.shell_selection,"rows":rows})
     }
 }
 

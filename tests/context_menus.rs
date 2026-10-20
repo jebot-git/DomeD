@@ -142,10 +142,10 @@ fn large_xr_context_menu_stays_between_shell_bars() {
     };
     context_menu::fit_xr(&mut menu, head, &config);
     let upper =
-        (config.vertical_fov_deg / 2. - config.upper_inset_deg - config.upper_bar_height_deg)
+        (config.vertical_fov_deg / 2. - config.upper_bar_height_deg)
             .to_radians();
     let lower =
-        (-config.vertical_fov_deg / 2. + config.lower_inset_deg + config.taskbar_height_deg)
+        (-config.vertical_fov_deg / 2. + config.taskbar_height_deg)
             .to_radians();
     for uv in [[0., 0.], [1., 0.], [0., 1.], [1., 1.]] {
         let p = menu.point(uv) - Vec3::from_array(head.position_m);

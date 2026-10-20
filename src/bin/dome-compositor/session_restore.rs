@@ -266,9 +266,9 @@ fn reopen(restarts: Vec<Restart>, desktop: String, xr: String) -> mpsc::Receiver
                 .env("WAYLAND_DISPLAY", socket)
                 .env_remove("WAYLAND_SOCKET")
                 .env("XDG_CURRENT_DESKTOP", "Dome")
-                .env("GDK_BACKEND", "wayland")
-                .env("QT_QPA_PLATFORM", "wayland")
-                .env("SDL_VIDEODRIVER", "wayland")
+                .env("GDK_BACKEND", "wayland,x11")
+                .env("QT_QPA_PLATFORM", "wayland;xcb")
+                .env("SDL_VIDEODRIVER", "wayland,x11")
                 .stdin(std::process::Stdio::null());
             if let Some(cwd) = restart.cwd.filter(|path| path.is_dir()) {
                 command.current_dir(cwd);

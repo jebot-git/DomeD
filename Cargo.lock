@@ -578,6 +578,7 @@ name = "dome"
 version = "0.1.0"
 dependencies = [
  "ash",
+ "async-channel",
  "base64",
  "bitflags 2.13.2",
  "calloop 0.14.5",

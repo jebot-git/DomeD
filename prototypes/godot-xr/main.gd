@@ -39,7 +39,7 @@ func _ready() -> void:
 	origin.add_child(head)
 	add_child(frame_room)
 	head.add_child(frame_view)
-	head.add_child(trays)
+	add_child(trays)
 	var environment := WorldEnvironment.new()
 	var settings := Environment.new()
 	settings.background_mode = Environment.BG_COLOR
@@ -123,26 +123,31 @@ func rebuild() -> void:
 	make_tray(false, c)
 	print("DOME_XR_SCENE: revision=", revision, " projection=", c.projection, " panels=", snapshot.panels.size())
 
-func make_tray(upper: bool, c: Dictionary) -> void:
-	var height: float = c.upper_bar_height_deg if upper else c.taskbar_height_deg
-	var edge: float = float(c.vertical_fov_deg)/2.0-float(c.upper_inset_deg) if upper else -float(c.vertical_fov_deg)/2.0+float(c.lower_inset_deg)
-	var top: float = edge if upper else edge+height
-	var bottom: float = edge-height if upper else edge
-	var cap: float = c.upper_bar_max_width_deg if upper else c.taskbar_max_width_deg
-	var distance := 1.1
-	var half_width := distance * tan(deg_to_rad(minf(cap, 105.0))/2.0)
-	var y_top := distance*tan(deg_to_rad(top))
-	var y_bottom := distance*tan(deg_to_rad(bottom))
+func make_tray(upper: bool, _c: Dictionary) -> void:
+	var bars: Array = snapshot.get("shell_bars", [])
+	if bars.size() < 2: return
+	var d: Dictionary = bars[0 if upper else 1].dome
+	var q: Array = d.frame.orientation_xyzw
+	var rotation := Quaternion(float(q[0]), float(q[1]), float(q[2]), float(q[3]))
+	var pos: Array = d.frame.position_m
+	var center := Vector3(float(pos[0]), float(pos[1]), float(pos[2]))
+	var radius: float = d.radius
+	var vertices: Array[Vector3] = []
+	for i in range(33):
+		var yaw: float = (float(i)/32.0-0.5)*float(d.horizontal)
+		for y in [float(d.top), float(d.bottom)]:
+			vertices.append(center + rotation*Vector3(radius*sin(yaw), radius*y, -radius*cos(yaw)))
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for i in range(0, vertices.size()-2, 2):
+		for index in [i, i+1, i+2, i+1, i+3, i+2]: st.add_vertex(vertices[index])
 	var plate := MeshInstance3D.new()
-	var plane := QuadMesh.new()
-	plane.size = Vector2(half_width*2.0, y_top-y_bottom)
-	plate.mesh = plane
-	plate.position = Vector3(0,(y_top+y_bottom)/2.0,-distance)
+	plate.mesh = st.commit()
 	plate.material_override = material(Color(0.25,0.34,0.38,0.82))
 	trays.add_child(plate)
 	var label := Label3D.new()
 	label.text = "DOME    |    Window                             Tray pending" if upper else "Launch                         Tasks                         Desktops"
-	label.position = plate.position + Vector3(0,0,0.005)
+	label.position = center + rotation*Vector3(0, radius*(float(d.top)+float(d.bottom))/2.0, -radius+0.005)
 	label.font_size = 24
 	label.pixel_size = 0.0012
 	label.no_depth_test = false

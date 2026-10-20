@@ -276,7 +276,7 @@ pub fn serve_native(
                 ),
                 (&Method::Get, "/api/state") => {
                     let s = scene.lock().unwrap();
-                    (serde_json::json!({"scene":&*s,"panels":s.panels(),"spans":s.config.lane_spans(s.workspaces[s.active_workspace].shares)}).to_string(),"application/json",200)
+                    (serde_json::json!({"scene":&*s,"panels":s.panels(),"spans":s.packed_lane_spans(s.active_workspace),"shell_bars":crate::xr_input::shell_quads(&s,s.view_pose,&crate::xr_transport::ShellLayout{width:1024,height:768,top:36,bottom:60,notifications:None})}).to_string(),"application/json",200)
                 }
                 (&Method::Get, "/api/xr-scene") => {
                     let scene = scene.lock().unwrap();
@@ -286,7 +286,7 @@ pub fn serve_native(
                     let window=scene.window(p.id).unwrap();
                     serde_json::json!({"id":p.id,"workspace":p.workspace,"opacity":p.opacity,"vertices":vertices,"title":window.title,"app_id":window.app_id})
                 }).collect();
-                    (serde_json::json!({"revision":scene.revision,"config":scene.config,"source":scene.source,"active_workspace":scene.active_workspace,"panels":panels}).to_string(),"application/json",200)
+                    (serde_json::json!({"revision":scene.revision,"config":scene.config,"source":scene.source,"active_workspace":scene.active_workspace,"panels":panels,"shell_bars":crate::xr_input::shell_quads(&scene,scene.view_pose,&crate::xr_transport::ShellLayout{width:1024,height:768,top:36,bottom:60,notifications:None})}).to_string(),"application/json",200)
                 }
                 (&Method::Get, "/api/apps") => (
                     serde_json::to_string(

@@ -8,16 +8,20 @@ stage="${1:-$root/build/system-stage}"
 exec 9>/run/lock/domed-install.lock
 /usr/bin/flock -x 9
 files=(
+    etc/systemd/user/plasma-xdg-desktop-portal-kde.service.d/50-dome-qt6.conf
+    etc/systemd/user/xdg-desktop-portal-kde.service.d/50-dome-qt6.conf
     usr/local/share/man/man1/dome-compositor.1
     usr/local/share/man/man1/dome-xr.1
     usr/local/share/man/man1/dome-preview.1
     usr/local/bin/dome-compositor
     usr/local/bin/dome-xr
     usr/local/bin/dome-preview
+    usr/local/bin/dome-portal-picker
     usr/local/bin/dome-session
     usr/local/libexec/dome-session-client
     usr/share/xdg-desktop-portal/dome-portals.conf
     usr/share/xdg-desktop-portal/portals/dome-settings.portal
+    usr/share/xdg-desktop-portal/portals/dome-screencast.portal
     usr/share/wayland-sessions/dome.desktop
     usr/local/share/applications/org.domed.Compositor.desktop
     usr/local/share/doc/domed/README.md

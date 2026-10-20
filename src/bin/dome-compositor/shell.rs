@@ -31,6 +31,7 @@ impl Dome {
             scene.focused = previous_focus;
         }
         drop(scene);
+        self.notification_windows.previous_focus.insert(id, previous_focus);
         self.registry.push((id, window));
     }
     pub fn id_for(&self, surface: &WlSurface) -> Option<u64> {
@@ -49,6 +50,7 @@ impl Dome {
         }
     }
     pub fn metadata(&mut self, surface: &WlSurface) {
+        if self.capture_notification_window(surface) { return; }
         if let Some(id) = self.id_for(surface) {
             let (title, app) = with_states(surface, |s| {
                 let a = s
@@ -78,6 +80,7 @@ impl Dome {
         let popup_rects = self.desktop_popup_rects(&scene);
         let mut closed = vec![];
         for (id, window) in &self.registry {
+            if self.notification_windows.entries.contains_key(id) { continue; }
             let Some(w) = scene.window(*id) else {
                 window.toplevel().unwrap().send_close();
                 self.space.unmap_elem(window);
@@ -169,6 +172,7 @@ impl Dome {
         self.workbench_zoom
             .retain(|id, _| scene.window(*id).is_some());
         self.registry.retain(|(id, _)| !closed.contains(id));
+        self.notification_windows.previous_focus.retain(|id, _| !closed.contains(id));
         let focused = scene
             .focused
             .and_then(|id| self.registry.iter().find(|(i, _)| *i == id))
@@ -245,6 +249,11 @@ impl Dome {
             .cloned()
             .collect()
     }
+    pub fn shell_modal_open(&self) -> bool {
+        self.audio_open || self.history_panel.is_some() || self.about
+            || self.default_apps_open || self.appearance_open || self.xr_settings_open
+            || self.session_confirm.is_some()
+    }
     pub fn shell_at(&self, x: f64, y: f64) -> bool {
         let global = (x,y);
         let geometry = self.output_geometry_at((x, y).into());
@@ -301,6 +310,7 @@ impl Dome {
             .notifications
             .layout(size.w, size.h)
             .into_iter()
+            .filter(|_| !self.shell_modal_open())
             .find(|n| n.contains(x, y))
         {
             self.notifications.click(&toast, x, y);
@@ -311,7 +321,7 @@ impl Dome {
             self.keyboard_settings_click(x, y, size.w, size.h);
             return;
         }
-        if y < 36.
+        if !self.shell_modal_open() && y < 36.
             && x >= (self.shell_geometry().size.w - 220) as f64
             && x < (self.shell_geometry().size.w - 176) as f64
         {
@@ -427,6 +437,7 @@ impl Dome {
                 return;
             }
             if x >= width - 250. {
+                self.shell_selection = scene.active_workspace;
                 self.desktop_manager = true;
                 return;
             }
@@ -448,7 +459,7 @@ impl Dome {
         let items:Vec<_>=self.menu.map(|m|self.menu_items(m)).unwrap_or_default().iter().map(|(text,shortcut,command)|{let bindings=&scene.config.keybindings;let chord=if dome::shortcuts::defaults().iter().any(|b|b.command==*command){bindings.iter().find(|b|b.enabled&&b.command==*command).map(|b|b.label()).unwrap_or_default()}else{shortcut.to_string()};serde_json::json!({"text":text,"shortcut":chord,"enabled":self.command_enabled(*command),"separator":matches!(command,dome::shortcuts::Command::Separator)})}).collect();
         let popup = self.task_popup_json(width, height);
         crate::qt::paint(
-            serde_json::json!({"kind":"shell","menu_headers":self.menu_headers(),"appmenu_panels":self.appmenu_panels(width,height),"keyboard":if self.keyboard_config.ime {dome::keyboard::input_method_label(&self.ime.snapshot().method).map(str::to_owned).unwrap_or_else(||self.keyboard_config.label())}else{self.keyboard_config.label()},"keyboard_settings":self.keyboard_draft,"keyboard_field":self.keyboard_field,"keyboard_error":if self.keyboard_error.is_empty(){self.ime.snapshot().error}else{self.keyboard_error.clone()},"keyboard_shortcut":self.keyboard_draft.as_ref().map(|d|d.switch_shortcut.label()),"audio":self.audio_json(width,height),"history":self.history_json(width,height),"notifications": if !self.audio_open && self.history_panel.is_none() && self.input_realm == dome::Realm::Desktop {self.notifications.layout(width,height)} else {vec![]},"xr_settings":self.xr_settings_json(width,height),"default_apps":self.default_apps_json(width,height),"appearance":self.appearance,"appearance_open":self.appearance_open,"session_confirm":self.session_confirm.map(|s|s.label()),"session_error":self.session.state().error,"about":self.about,"about_is_app":self.shell_error=="@app-info","width":width,"height":height,"app":app,"app_info":entry,"menu":self.menu.map(|m|m as i32).unwrap_or(-1),"hover":self.menu_hover,"items":items,"tasks":tasks,"tray":self.visible_tray(width),"task_popup":popup,"launcher":self.launcher,"launch_index":self.launch_index.saturating_sub(self.launch_navigation.offset),"launch_offset":self.launch_navigation.offset,"launch_total":self.matching_apps().len(),"launch_error":self.launch_navigation.error,"xr_active":self.input_xr_active,"manager":self.desktop_manager,"query":self.launch_query,"apps":self.matching_apps().into_iter().skip(self.launch_navigation.offset).take(crate::launcher::ROWS).collect::<Vec<_>>(),"desktops":scene.workspaces.iter().map(|w|w.name.clone()).collect::<Vec<_>>()}),
+            serde_json::json!({"kind":"shell","menu_headers":self.menu_headers(),"appmenu_panels":self.appmenu_panels(width,height),"keyboard":if self.keyboard_config.ime {dome::keyboard::input_method_label(&self.ime.snapshot().method).map(str::to_owned).unwrap_or_else(||self.keyboard_config.label())}else{self.keyboard_config.label()},"keyboard_settings":self.keyboard_draft,"keyboard_field":self.keyboard_field,"keyboard_error":if self.keyboard_error.is_empty(){self.ime.snapshot().error}else{self.keyboard_error.clone()},"keyboard_shortcut":self.keyboard_draft.as_ref().map(|d|d.switch_shortcut.label()),"audio":self.audio_json(width,height),"history":self.history_json(width,height),"notifications": if !self.audio_open && self.history_panel.is_none() && self.input_realm == dome::Realm::Desktop {self.notifications.layout(width,height)} else {vec![]},"xr_settings":self.xr_settings_json(width,height),"default_apps":self.default_apps_json(width,height),"appearance":self.appearance,"appearance_open":self.appearance_open,"shell_selection":self.shell_selection,"session_confirm":self.session_confirm.map(|s|s.label()),"session_error":self.session.state().error,"about":self.about,"about_is_app":self.shell_error=="@app-info","width":width,"height":height,"app":app,"app_info":entry,"menu":self.menu.map(|m|m as i32).unwrap_or(-1),"hover":self.menu_hover,"items":items,"tasks":tasks,"tray":self.visible_tray(width),"task_popup":popup,"launcher":self.launcher,"launch_index":self.launch_index.saturating_sub(self.launch_navigation.offset),"launch_offset":self.launch_navigation.offset,"launch_total":self.matching_apps().len(),"launch_error":self.launch_navigation.error,"xr_active":self.input_xr_active,"manager":self.desktop_manager,"query":self.launch_query,"apps":self.matching_apps().into_iter().skip(self.launch_navigation.offset).take(crate::launcher::ROWS).collect::<Vec<_>>(),"desktops":scene.workspaces.iter().map(|w|w.name.clone()).collect::<Vec<_>>()}),
         )
     }
 }

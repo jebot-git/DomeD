@@ -47,12 +47,14 @@ pub struct Snapshot {
     pub items: Vec<Item>,
     pub menu: Option<usize>,
     pub rows: Vec<Row>,
+    pub selected: Option<usize>,
     pub error: String,
 }
 enum Request {
     Activate(usize, i32, i32, bool),
     Select(usize),
     Close,
+    Back,
 }
 pub struct Tray {
     snapshot: Arc<Mutex<Snapshot>>,
@@ -146,6 +148,28 @@ impl Tray {
     pub fn close(&self) {
         let _ = self.send.try_send(Request::Close);
     }
+    pub fn key(&self, key: u32) -> bool {
+        let mut state = self.snapshot.lock().unwrap();
+        if state.menu.is_none() { return false; }
+        let enabled: Vec<_> = state.rows.iter().enumerate()
+            .filter(|(_, row)| row.enabled && !row.separator).map(|(i, _)| i).collect();
+        let current = enabled.iter().position(|i| Some(*i) == state.selected).unwrap_or(0);
+        if let Some(next) = crate::menu_navigation::selection(current, enabled.len(), key) {
+            state.selected = enabled.get(next).copied();
+            state.revision += 1;
+        } else {
+            let request = match key {
+                0xff1b => Some(Request::Close),
+                0xff51 => Some(Request::Back),
+                0xff0d | 0xff8d | 0x20 | 0xff53 => state.selected.and_then(|i| {
+                    (key != 0xff53 || state.rows[i].submenu).then_some(Request::Select(i))
+                }),
+                _ => None,
+            };
+            if let Some(request) = request { let _ = self.send.try_send(request); }
+        }
+        true
+    }
 }
 type Node = (i32, HashMap<String, OwnedValue>, Vec<OwnedValue>);
 fn menu_rows(c: &Connection, item: &Item, parent: i32) -> zbus::Result<Vec<Row>> {
@@ -230,6 +254,7 @@ fn run(
         "RegisterStatusNotifierHost",
         &(connection.unique_name().unwrap().as_str(),),
     );
+    let mut parents = vec![0];
     loop {
         while let Ok(request) = receive.try_recv() {
             let snapshot = state.lock().unwrap().clone();
@@ -238,7 +263,28 @@ fn run(
                     let mut s = state.lock().unwrap();
                     s.menu = None;
                     s.rows.clear();
+                    s.selected = None;
+                    parents = vec![0];
                     s.revision += 1;
+                }
+                Request::Back => {
+                    if parents.len() > 1 {
+                        parents.pop();
+                        if let Some(item) = snapshot.menu.and_then(|i| snapshot.items.get(i)) {
+                            if let Ok(rows) = menu_rows(&connection, item, *parents.last().unwrap()) {
+                                let mut s = state.lock().unwrap();
+                                s.selected = rows.iter().position(|r| r.enabled && !r.separator);
+                                s.rows = rows;
+                                s.revision += 1;
+                            }
+                        }
+                    } else {
+                        let mut s = state.lock().unwrap();
+                        s.menu = None;
+                        s.rows.clear();
+                        s.selected = None;
+                        s.revision += 1;
+                    }
                 }
                 Request::Activate(index, x, y, context) => {
                     if let Some(item) = snapshot.items.get(index) {
@@ -250,6 +296,8 @@ fn run(
                                 Ok(rows) => {
                                     let mut s = state.lock().unwrap();
                                     s.menu = Some(index);
+                                    s.selected = rows.iter().position(|r| r.enabled && !r.separator);
+                                    parents = vec![0];
                                     s.rows = rows;
                                     s.revision += 1;
                                 }
@@ -288,7 +336,11 @@ fn run(
                                 let result = menu_rows(&connection, item, row.id);
                                 let mut s = state.lock().unwrap();
                                 match result {
-                                    Ok(rows) => s.rows = rows,
+                                    Ok(rows) => {
+                                        parents.push(row.id);
+                                        s.selected = rows.iter().position(|r| r.enabled && !r.separator);
+                                        s.rows = rows;
+                                    }
                                     Err(e) => {
                                         s.error = e.to_string();
                                         s.menu = None;
@@ -326,7 +378,6 @@ fn run(
         .get_property("RegisteredStatusNotifierItems")
         .unwrap_or_default();
         let mut items = vec![];
-        let mut alive = vec![];
         for key in keys {
             let Some((service, path)) = key.split_once('/') else {
                 continue;
@@ -343,7 +394,6 @@ fn run(
             let Ok(status) = proxy.get_property::<String>("Status") else {
                 continue;
             };
-            alive.push(key.clone());
             if status == "Passive" {
                 continue;
             }
@@ -406,7 +456,29 @@ fn run(
             });
         }
         if !owner {
-            own_items.lock().unwrap().retain(|key| alive.contains(key));
+            // An item may register before exporting its properties, and live
+            // applications can temporarily fail a property read. Only forget
+            // registrations whose bus name has actually disappeared.
+            let registered = own_items.lock().unwrap().clone();
+            let disconnected: Vec<_> = registered
+                .into_iter()
+                .filter(|key| {
+                    let Some((service, _)) = key.split_once('/') else {
+                        return false;
+                    };
+                    matches!(
+                        dbus.call_method("NameHasOwner", &(service,))
+                            .and_then(|reply| reply.body().deserialize::<bool>()),
+                        Ok(false)
+                    )
+                })
+                .collect();
+            // Remove only confirmed departures; preserve registrations added
+            // while this polling pass was reading properties.
+            own_items
+                .lock()
+                .unwrap()
+                .retain(|key| !disconnected.contains(key));
         }
         let mut s = state.lock().unwrap();
         let before = serde_json::to_string(&s.items)?;

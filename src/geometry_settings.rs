@@ -67,25 +67,7 @@ pub fn rows(c: &Config) -> Vec<(&'static str, String)> {
             }
             .into(),
         ),
-        ("Upper bar horizontal", format!("{:.0}°", c.upper_bar_x_deg)),
-        (
-            "Upper bar inset from view edge",
-            format!("{:.0}°", c.upper_inset_deg),
-        ),
-        (
-            "Upper bar width",
-            format!("{:.0}°", c.upper_bar_max_width_deg),
-        ),
-        (
-            "Upper bar height",
-            format!("{:.0}°", c.upper_bar_height_deg),
-        ),
-        ("Taskbar horizontal", format!("{:.0}°", c.taskbar_x_deg)),
-        (
-            "Taskbar inset from view edge",
-            format!("{:.0}°", c.lower_inset_deg),
-        ),
-        ("Taskbar width", format!("{:.0}°", c.taskbar_max_width_deg)),
+        ("Upper tray height", format!("{:.0}°", c.upper_bar_height_deg)),
         ("Taskbar height", format!("{:.0}°", c.taskbar_height_deg)),
         (
             "XR notification distance",
@@ -93,7 +75,7 @@ pub fn rows(c: &Config) -> Vec<(&'static str, String)> {
         ),
         ("Dome radius", format!("{:.1} m", c.radius_m)),
         (
-            "Dome height / vertical span",
+            "Projection height / vertical span",
             format!(
                 "{:.2} m ({:.0}°)",
                 c.radius_m * c.dome_vertical_span_deg.to_radians(),
@@ -126,23 +108,17 @@ pub fn adjust(config: &Config, row: usize, direction: f32) -> Result<Config, Str
                 AnchorMode::Room
             }
         }
-        1 => c.upper_bar_x_deg += direction,
-        2 => c.upper_inset_deg += direction,
-        3 => c.upper_bar_max_width_deg += direction * 5.,
-        4 => c.upper_bar_height_deg += direction,
-        5 => c.taskbar_x_deg += direction,
-        6 => c.lower_inset_deg += direction,
-        7 => c.taskbar_max_width_deg += direction * 5.,
-        8 => c.taskbar_height_deg += direction,
-        9 => c.bar_distance_m += direction * 0.05,
-        10 => c.radius_m += direction * 0.1,
-        11 => c.dome_vertical_span_deg += direction * 5.,
-        12..=14 => c.center_m[row - 12] += direction * 0.05,
-        15 => c.yaw_deg += direction * 5.,
-        16 => c.lane_gap_deg += direction * 0.5,
-        17 => c.pullout_distance_m += direction * 0.05,
-        18 => c.vertical_fov_deg += direction * 5.,
-        19 => c.dome_upper_tilt_deg += direction,
+        1 => c.upper_bar_height_deg += direction,
+        2 => c.taskbar_height_deg += direction,
+        3 => c.bar_distance_m += direction * 0.05,
+        4 => c.radius_m += direction * 0.1,
+        5 => c.dome_vertical_span_deg += direction * 5.,
+        6..=8 => c.center_m[row - 6] += direction * 0.05,
+        9 => c.yaw_deg += direction * 5.,
+        10 => c.lane_gap_deg += direction * 0.5,
+        11 => c.pullout_distance_m += direction * 0.05,
+        12 => c.vertical_fov_deg += direction * 5.,
+        13 => c.dome_upper_tilt_deg += direction,
         _ => return Err("Unknown XR setting".into()),
     }
     c.validate()?;

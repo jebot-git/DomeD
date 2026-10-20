@@ -66,6 +66,29 @@ pub fn cycle_windows(scene: &Scene, realm: Realm) -> Vec<u64> {
     }
 }
 
+/// Select the central visible dome window in the next populated lane.
+/// Focus is the active lane; empty/minimized/pulled-out-only lanes are skipped.
+pub fn cycle_lane(scene: &Scene, delta: i32) -> Option<u64> {
+    if delta == 0 { return None; }
+    let lane = scene.focused.and_then(|id| scene.window(id)).map(|w| w.lane).unwrap_or(1);
+    let panels = scene.panels();
+    for step in 1..3 {
+        let next = (lane as i32 + step * delta.signum()).rem_euclid(3) as usize;
+        if let Some(panel) = panels.iter().filter(|p| {
+            p.workspace == scene.active_workspace && p.lane == next
+                && scene.window(p.id).is_some_and(|w| !w.minimized && w.pullout_slot.is_none())
+        }).min_by(|a, b| a.yaw_deg.abs().total_cmp(&b.yaw_deg.abs())) {
+            return Some(panel.id);
+        }
+    }
+    None
+}
+
+pub fn lane_navigation_available(scene: &Scene, realm: Realm) -> bool {
+    realm == Realm::Xr && !scene.focused.and_then(|id| scene.window(id))
+        .is_some_and(|w| w.app_id.starts_with("org.ghostty.xr"))
+}
+
 #[cfg(test)]
 mod carousel_tests {
     use super::*;
@@ -103,5 +126,41 @@ mod carousel_tests {
         assert_eq!(cycle_windows(&s, Realm::Xr), vec![c]);
         s.apply(Action::Recenter { id: c }).unwrap();
         assert!(s.panels().iter().find(|p| p.id == c).unwrap().yaw_deg.abs() < 0.001);
+    }
+}
+
+#[cfg(test)]
+mod lane_navigation_tests {
+    use super::*;
+    use crate::{Action, Pose};
+    #[test]
+    fn lane_navigation_wraps_skips_empty_lanes_and_preserves_window_locations() {
+        let mut s = Scene::new("test");
+        let middle = s.add("middle", "app");
+        let upper = s.add("upper", "app");
+        s.apply(Action::Move { id: upper, lane: 0, workspace: 0 }).unwrap();
+        s.apply(Action::Focus { id: middle }).unwrap();
+        assert_eq!(cycle_lane(&s, -1), Some(upper));
+        assert_eq!(cycle_lane(&s, 1), Some(upper)); // lower lane is empty; wrap.
+        s.apply(Action::Focus { id: upper }).unwrap();
+        assert_eq!(cycle_lane(&s, 1), Some(middle));
+        assert_eq!(cycle_windows(&s, Realm::Xr), vec![upper]);
+        s.apply(Action::Minimize { id: middle }).unwrap();
+        assert_eq!(cycle_lane(&s, 1), None);
+        s.apply(Action::Focus { id: middle }).unwrap();
+        s.apply(Action::PullOut { id: middle, head: Pose::default() }).unwrap();
+        s.apply(Action::Focus { id: upper }).unwrap();
+        assert_eq!(cycle_lane(&s, 1), None);
+        assert_eq!(s.window(upper).unwrap().lane, 0);
+        assert_eq!(s.window(middle).unwrap().lane, 1);
+    }
+    #[test]
+    fn navigation_is_xr_only_and_preserves_terminal_control_chords() {
+        let mut s = Scene::new("test");
+        s.add("application", "app");
+        assert!(lane_navigation_available(&s, Realm::Xr));
+        assert!(!lane_navigation_available(&s, Realm::Desktop));
+        s.add("terminal", "org.ghostty.xr.wayland");
+        assert!(!lane_navigation_available(&s, Realm::Xr));
     }
 }

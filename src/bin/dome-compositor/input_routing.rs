@@ -66,11 +66,8 @@ impl Dome {
             .desktop_buttons
             .drain()
             .collect::<std::collections::HashSet<_>>();
-        if self.xr_shell_pos.is_none() {
-            buttons.extend(self.xr_buttons.drain());
-        } else {
-            self.xr_buttons.clear();
-        }
+        buttons.extend(self.xr_buttons.drain().filter(|b| !self.xr_shell_buttons.contains(b)));
+        self.xr_shell_buttons.clear();
         for button in buttons {
             pointer.button(
                 self,

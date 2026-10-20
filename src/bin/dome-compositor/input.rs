@@ -43,6 +43,13 @@ impl Dome {
                         dome::Realm::Desktop
                     };
                 }
+                // Wayland clients generate repeat themselves. Re-forwarding an
+                // already held key starts a second repeat/press in some clients.
+                let held = self.seat.get_keyboard().unwrap().pressed_keys()
+                    .contains(&event.key_code());
+                if held == (event.state() == smithay::backend::input::KeyState::Pressed) {
+                    return;
+                }
                 let serial = SERIAL_COUNTER.next_serial();
                 let time = Event::time_msec(&event);
 
@@ -154,6 +161,10 @@ impl Dome {
                                 return FilterResult::Intercept(());
                             }
                         }
+                        if pressed && state.shell_panel_key(sym.raw()) {
+                            state.shell_keys.insert(code);
+                            return FilterResult::Intercept(());
+                        }
                         if pressed && state.default_apps_key(sym.raw()) {
                             state.shell_keys.insert(code);
                             return FilterResult::Intercept(());
@@ -187,14 +198,6 @@ impl Dome {
                             state.task_popup = None;
                             state.task_context = false;
                             state.shell_keys.insert(code);
-                            return FilterResult::Intercept(());
-                        }
-                        if pressed && (state.appearance_open || state.session_confirm.is_some()) {
-                            state.shell_keys.insert(code);
-                            if sym.raw() == 0xff1b {
-                                state.appearance_open = false;
-                                state.session_confirm = None;
-                            }
                             return FilterResult::Intercept(());
                         }
                         if pressed && state.about {
@@ -244,12 +247,10 @@ impl Dome {
                                         ));
                                         state.menu_hover = 0;
                                     }
-                                    0xff52 => state.menu_hover = (state.menu_hover - 1).max(0),
-                                    0xff54 => {
-                                        state.menu_hover = (state.menu_hover + 1)
-                                            .min(state.menu_items(menu).len() as i32 - 1)
+                                    0xff52 | 0xff54 | 0xff50 | 0xff57 | 0xff55 | 0xff56 => {
+                                        state.move_menu_selection(sym.raw());
                                     }
-                                    0xff0d => {
+                                    0xff0d | 0xff8d | 0x20 => {
                                         let c = state
                                             .menu_items(menu)
                                             .get(state.menu_hover.max(0) as usize)
@@ -605,6 +606,7 @@ impl Dome {
         pos: smithay::utils::Point<f64, smithay::utils::Logical>,
         time: u32,
     ) {
+        let pos = self.clamp_desktop_pointer(pos);
         self.desktop_pointer = Some([pos.x, pos.y]);
         let size = self.output_geometry_at(pos).size;
         let serial = SERIAL_COUNTER.next_serial();

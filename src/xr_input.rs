@@ -108,8 +108,12 @@ impl Quad {
                 if clamp {
                     return Some(uv);
                 }
-                // Ray/cylinder reconstruction can put an exact edge a few ulps outside.
-                if uv.iter().all(|v| (-0.000001..=1.000001).contains(v)) {
+                // Compare in cylinder coordinates: converting a few ulps of
+                // edge error to UV magnifies it on thin one-degree bars.
+                let epsilon = 0.00001;
+                if yaw.abs() <= patch.horizontal / 2. + epsilon
+                    && pitch >= patch.bottom - epsilon && pitch <= patch.top + epsilon
+                {
                     return Some(uv.map(|v| v.clamp(0., 1.)));
                 }
             }
@@ -190,6 +194,7 @@ pub fn quads(scene: &Scene, head: Pose) -> Vec<Quad> {
             let half = (p.top_deg - p.bottom_deg) / 2. * scale;
             let pitch = mid + offset[1];
             let height = p.radius_m * (p.top_deg - p.bottom_deg).to_radians() * scale;
+            let radius = p.radius_m + if w.xr_scale > 1. && scene.focused != Some(w.id) { 0.004 } else { 0. };
             let dome = DomePatch {
                 frame: {
                     let frame = Pose {
@@ -208,7 +213,7 @@ pub fn quads(scene: &Scene, head: Pose) -> Vec<Quad> {
                         frame
                     }
                 },
-                radius: p.radius_m,
+                radius,
                 horizontal: (p.width_deg * scale).min(175.).to_radians(),
                 top: (pitch + half).to_radians(),
                 bottom: (pitch - half).to_radians(),
@@ -279,13 +284,42 @@ pub fn quads(scene: &Scene, head: Pose) -> Vec<Quad> {
             }
         }
     }
+    panels.sort_by_key(|q| window_order(scene, q.id));
     crate::spatial_popup::append_quads(scene, &mut panels, head);
     panels
 }
+/// Back-to-front order shared by layer submission and geometry.
+pub fn window_order(scene: &Scene, id: u64) -> u8 {
+    if scene.focused == Some(id) { 2 }
+    else if scene.window(id).is_some_and(|w| w.xr_scale > 1.) { 0 }
+    else { 1 }
+}
+
+/// Cyan/white reticle with an opaque dark outline on light and dark content.
+pub fn cursor_pixels() -> Vec<u8> {
+    let mut pixels = vec![0; 32 * 32 * 4];
+    for y in 0..32 {
+        for x in 0..32 {
+            let dx = (x as f32 - 15.5).abs();
+            let dy = (y as f32 - 15.5).abs();
+            let radius = dx.hypot(dy);
+            let ring = (9.5..=12.).contains(&radius);
+            let cross = (dx <= 1. && dy <= 6.) || (dy <= 1. && dx <= 6.);
+            let outline = (8.0..=13.5).contains(&radius)
+                || (dx <= 2.5 && dy <= 7.5) || (dy <= 2.5 && dx <= 7.5);
+            let color = if cross { [255, 255, 255, 255] }
+                else if ring { [40, 235, 255, 255] }
+                else if outline { [8, 12, 18, 255] } else { [0; 4] };
+            pixels[(y * 32 + x) * 4..(y * 32 + x) * 4 + 4].copy_from_slice(&color);
+        }
+    }
+    pixels
+}
+
 /// Dome bars sit outside the lane
 /// latitudes and orbit the dome anchor with the headset's horizontal yaw.
 /// Head pitch stays independent so looking up/down can reach either bar.
-fn bar_quads(scene: &Scene, head: Pose, shell: &crate::xr_transport::ShellLayout) -> Vec<Quad> {
+fn bar_quads(scene: &Scene, head: Pose, shell: &crate::xr_transport::ShellLayout, horizontal_fov_deg: f32) -> Vec<Quad> {
     if shell.width == 0 || shell.height == 0 {
         return vec![];
     }
@@ -311,88 +345,67 @@ fn bar_quads(scene: &Scene, head: Pose, shell: &crate::xr_transport::ShellLayout
             dome: None,
         }];
     }
-    {
-        let anchor = if c.anchor_mode == crate::AnchorMode::Head {
-            head
-        } else {
-            scene.frame_pose()
-        };
-        let forward = Vec3::from_array(head.rotate([0., 0., -1.]));
-        let yaw = if forward.x.hypot(forward.z) > 0.0001 {
-            forward.x.atan2(-forward.z)
-        } else {
-            let right = Vec3::from_array(head.rotate([1., 0., 0.]));
-            right.z.atan2(right.x)
-        };
-        let rotation = Quat::from_rotation_y(-yaw);
-        let frame = Pose {
-            position_m: anchor.position_m,
-            orientation_xyzw: rotation.to_array(),
-        };
-        let inner = c.dome_vertical_span_deg / 2.;
-        return [
-            (
-                crate::xr_transport::TOP_BAR,
-                c.upper_bar_x_deg,
-                c.upper_bar_max_width_deg,
-                c.upper_bar_height_deg,
-                shell.top,
-                36.,
-                1.,
-            ),
-            (
-                crate::xr_transport::TASK_BAR,
-                c.taskbar_x_deg,
-                c.taskbar_max_width_deg,
-                c.taskbar_height_deg,
-                shell.bottom,
-                60.,
-                -1.,
-            ),
-        ]
+    let spans = scene.packed_lane_spans(scene.active_workspace);
+    let surfaces = quads(scene, head);
+    let forward = Vec3::from_array(head.rotate([0., 0., -1.]));
+    let forward = Vec3::new(forward.x, 0., forward.z).normalize_or_zero();
+    let horizontal = if horizontal_fov_deg.is_finite() {
+        horizontal_fov_deg.clamp(30., 160.).to_radians()
+    } else { 100f32.to_radians() };
+    [(crate::xr_transport::TOP_BAR, 0, c.upper_bar_height_deg, shell.top, 36.),
+     (crate::xr_transport::TASK_BAR, 2, c.taskbar_height_deg, shell.bottom, 60.)]
         .into_iter()
-        .map(|(id, x, width, height, pixels, nominal, sign)| {
-            let bar_height = c.radius_m * height.to_radians();
-            let h = bar_height * pixels as f32 / nominal;
-            let edge = c.radius_m * inner.to_radians();
-            let bar_frame = if sign > 0. {
-                let bottom = scene
-                    .panels()
-                    .iter()
-                    .filter(|p| p.workspace == scene.active_workspace && p.lane == 0)
-                    .map(|p| p.bottom_deg)
-                    .reduce(f32::min)
-                    .unwrap_or(c.lane_spans(scene.workspaces[scene.active_workspace].shares)[0][0]);
-                upper_tilt_frame(
-                    frame,
-                    c.radius_m,
-                    bottom.to_radians(),
-                    c.dome_upper_tilt_deg,
-                    width.min(160.).to_radians(),
-                )
+        .map(|(id, lane, height, pixels, nominal)| {
+            // Follow the visible adjacent lane, including crowded/scaled panels,
+            // focused outsets and the upper lane's exact lean and cylinder.
+            let reference = surfaces.iter().filter(|q| scene.window(q.id)
+                .is_some_and(|w| w.lane == lane && w.pullout_slot.is_none()))
+                .filter(|q| q.dome.is_some())
+                .max_by(|a, b| {
+                    let score = |q: &Quad| {
+                        let p = q.point([0.5, 0.5]) - Vec3::from_array(head.position_m);
+                        Vec3::new(p.x, 0., p.z).normalize_or_zero().dot(forward)
+                    };
+                    score(a).total_cmp(&score(b))
+                });
+            let mut patch = reference.and_then(|q| q.dome.clone()).unwrap_or_else(|| {
+                let frame = if c.anchor_mode == crate::AnchorMode::Head { head } else { scene.frame_pose() };
+                DomePatch {
+                    frame: if lane == 0 {
+                        upper_tilt_frame(frame, c.radius_m, spans[0][0].to_radians(), c.dome_upper_tilt_deg, horizontal)
+                    } else { frame },
+                    radius: c.radius_m, horizontal,
+                    bottom: spans[lane][0].to_radians(), top: spans[lane][1].to_radians(),
+                }
+            });
+            let lane_pixel = (patch.top - patch.bottom)
+                / reference.and_then(|q| scene.window(q.id)).map_or(460., |w| w.desktop.h);
+            let bar_height = height.to_radians();
+            // At most eight logical pixels at either surface's pixel density.
+            let gap = 8. * lane_pixel.min(bar_height / nominal);
+            let texture_height = bar_height * pixels as f32 / nominal;
+            if lane == 0 {
+                patch.top += gap + bar_height;
+                patch.bottom = patch.top - texture_height;
             } else {
-                frame
-            };
-            Quad {
-                id,
-                pose: Pose {
-                    position_m: bar_frame.transform([
-                        c.radius_m * x.to_radians().tan(),
-                        sign * (edge + bar_height - h / 2.),
-                        -c.radius_m,
-                    ]),
-                    orientation_xyzw: bar_frame.orientation_xyzw,
-                },
-                size: [
-                    2. * c.radius_m * (width.min(160.) / 2.).to_radians().tan(),
-                    h,
-                ],
-                dome: None,
+                patch.bottom -= gap + bar_height;
+                patch.top = patch.bottom + texture_height;
             }
-        })
-        .collect();
-    }
+            // Orbit in the same cylinder frame rather than separating a flat
+            // bar from a curved/leaning lane at its horizontal edges.
+            let local = patch.frame.inverse_rotate(forward.to_array());
+            let yaw = local[0].atan2(-local[2]);
+            patch.frame.orientation_xyzw = (Quat::from_array(patch.frame.orientation_xyzw)
+                * Quat::from_rotation_y(-yaw)).to_array();
+            patch.horizontal = horizontal;
+            Quad {
+                id, pose: patch.layer_pose(),
+                size: [patch.radius * horizontal, patch.radius * texture_height],
+                dome: Some(patch),
+            }
+        }).collect()
 }
+
 /// Rebase a mouse cursor from its surface point after the head or panel moves.
 pub fn mouse_angles_at(head: Pose, point: Vec3) -> [f32; 2] {
     let d = Vec3::from_array(
@@ -415,17 +428,42 @@ pub fn surface_reticle(surface: &Quad, uv: [f32; 2], id: u64) -> Quad {
             position_m: (point + normal * 0.002).to_array(),
             orientation_xyzw: Quat::from_rotation_arc(Vec3::Z, normal).to_array(),
         },
-        size: [0.02, 0.02],
+        size: [0.04, 0.04],
         dome: None,
     }
 }
+/// Invisible full cylinder for the mouse between windows, including behind the user.
+/// It participates in cursor placement only, never application hit testing.
+pub const MOUSE_DOME: u64 = u64::MAX - 4;
+pub fn mouse_dome(scene: &Scene, head: Pose) -> Quad {
+    let frame = if scene.config.anchor_mode == crate::AnchorMode::Head {
+        head
+    } else {
+        scene.frame_pose()
+    };
+    let patch = DomePatch {
+        frame, radius: scene.config.radius_m,
+        horizontal: std::f32::consts::TAU, top: 1., bottom: -1.,
+    };
+    Quad { id: MOUSE_DOME, pose: patch.layer_pose(),
+        size: [patch.radius * patch.horizontal, patch.radius * 2.], dome: Some(patch) }
+}
+
 /// Render the compositor's authoritative mouse target even when the renderer's
 /// newer head pose would miss that surface. UVs also preserve captured drags.
 pub fn mouse_cursor_reticle(
     surfaces: &[Quad], cursor: Option<&crate::xr_transport::Cursor>, head: Pose, angles: [f32; 2],
+    scene: &Scene,
 ) -> Quad {
-    cursor.and_then(|c| surfaces.iter().find(|q| q.id == c.id).map(|q| surface_reticle(q, c.uv, u64::MAX)))
-        .unwrap_or_else(|| mouse_reticle(head, angles))
+    let background = mouse_dome(scene, head);
+    cursor.and_then(|c| surfaces.iter().chain(std::iter::once(&background))
+        .find(|q| q.id == c.id).map(|q| surface_reticle(q, c.uv, u64::MAX)))
+        .unwrap_or_else(|| {
+            let origin = Vec3::from_array(head.position_m);
+            background.hit(origin, mouse_ray(head, angles), true)
+                .map(|uv| surface_reticle(&background, uv, u64::MAX))
+                .unwrap_or_else(|| mouse_reticle(head, angles))
+        })
 }
 
 /// One angular pointer spans all depths and empty space without target snapping.
@@ -438,14 +476,65 @@ pub fn mouse_ray(head: Pose, angles: [f32; 2]) -> Vec3 {
     ]))
 }
 
+/// Shell layers render above applications, so they also win overlapping hits.
+/// Expanded modal panes suspend application capture until they close.
+pub fn mouse_target(
+    surfaces: &[Quad], origin: Vec3, ray: Vec3, captured: Option<u64>, modal: bool,
+) -> Option<(u64, [f32; 2], f32)> {
+    surfaces.iter()
+        .filter(|q| if modal {
+            q.id == crate::xr_transport::TOP_BAR
+        } else {
+            captured.is_none_or(|id| id == q.id)
+        })
+        .filter_map(|q| q.hit(origin, ray, captured.is_some() && !modal)
+            .map(|uv| (q.id, uv, q.point(uv).distance(origin))))
+        .min_by(|a, b| {
+            crate::xr_transport::is_shell(b.0).cmp(&crate::xr_transport::is_shell(a.0))
+                .then_with(|| a.2.total_cmp(&b.2))
+        })
+}
+
 pub fn move_mouse(angles: &mut [f32; 2], dx: f64, dy: f64) {
     if !dx.is_finite() || !dy.is_finite() {
         return;
     }
-    angles[0] = (angles[0] + dx as f32 * 0.0025 + std::f32::consts::PI)
-        .rem_euclid(std::f32::consts::TAU)
-        - std::f32::consts::PI;
+    angles[0] = (angles[0] + dx as f32 * 0.0025)
+        .clamp(-std::f32::consts::PI, std::f32::consts::PI);
     angles[1] = (angles[1] - dy as f32 * 0.0025).clamp(-1.5, 1.5);
+}
+
+/// Confine the mouse to the perspective viewport, including its corners.
+/// A small angular inset keeps the reticle clear of the visible edge.
+pub fn confine_mouse(angles: &mut [f32; 2], viewport: [f32; 4]) {
+    let [left, right, down, up] = viewport;
+    let inset = 0.025;
+    let left = (left + inset).min(0.);
+    let right = (right - inset).max(0.);
+    let down = (down + inset).min(0.);
+    let up = (up - inset).max(0.);
+    angles[0] = angles[0].clamp(left, right);
+    // Vertical FOV is measured against -Z, whereas pitch is an elevation.
+    let cos_yaw = angles[0].cos();
+    angles[1] = angles[1].clamp(
+        (down.tan() * cos_yaw).atan(),
+        (up.tan() * cos_yaw).atan(),
+    );
+}
+
+/// Recover visibility when a newer render pose or a captured surface moves
+/// outside the viewport before the compositor can update its target.
+pub fn confine_mouse_reticle(reticle: Quad, head: Pose, viewport: [f32; 4]) -> Quad {
+    let original = mouse_angles_at(head, Vec3::from_array(reticle.pose.position_m));
+    let mut angles = original;
+    confine_mouse(&mut angles, viewport);
+    if (angles[0] - original[0]).abs() > 0.0001
+        || (angles[1] - original[1]).abs() > 0.0001
+    {
+        mouse_reticle(head, angles)
+    } else {
+        reticle
+    }
 }
 
 /// The mouse is a view cursor: its apparent size and depth never depend on
@@ -458,7 +547,7 @@ pub fn mouse_reticle(head: Pose, angles: [f32; 2]) -> Quad {
             position_m: (Vec3::from_array(head.position_m) + ray * 0.4).to_array(),
             orientation_xyzw: Quat::from_rotation_arc(Vec3::Z, -ray).to_array(),
         },
-        size: [0.006, 0.006],
+        size: [0.012, 0.012],
         dome: None,
     }
 }
@@ -504,7 +593,14 @@ pub fn shell_quads(
     head: Pose,
     shell: &crate::xr_transport::ShellLayout,
 ) -> Vec<Quad> {
-    let mut quads = bar_quads(scene, head, shell);
+    shell_quads_in_view(scene, head, shell, 100.)
+}
+
+/// Renderer and input share the same automatically fitted headset width.
+pub fn shell_quads_in_view(
+    scene: &Scene, head: Pose, shell: &crate::xr_transport::ShellLayout, horizontal_fov_deg: f32,
+) -> Vec<Quad> {
+    let mut quads = bar_quads(scene, head, shell, horizontal_fov_deg);
     if let Some([x, y, w, h]) = shell
         .notifications
         .filter(|_| shell.width > 0 && shell.height > 0)
@@ -512,7 +608,7 @@ pub fn shell_quads(
         let depth = scene.config.bar_distance_m;
         let scale = (2.
             * depth
-            * (scene.config.upper_bar_max_width_deg.min(80.) / 2.)
+            * (horizontal_fov_deg.clamp(30., 80.) / 2.)
                 .to_radians()
                 .tan()
             / shell.width as f32)
