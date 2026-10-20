@@ -62,6 +62,9 @@ runtime's layer-squashing GPU work. Concurrent applications affect results.
 .PP
 WiVRn Pro builds containing the desktop-layer minification patch provide
 WIVRN_LAYER_FILTER=balanced or quality on the runtime server. Filtering is off
-by default and does not change gaze-driven encoding. See wivrn-layer-filter(7).
+by default and does not change gaze-driven encoding. It improves minification
+quality at additional GPU cost; it is not a performance optimization. Leave it
+off when current readability is acceptable. Synthetic shader timings do not
+establish full-headset performance. See wivrn-layer-filter(7).
 .SH SEE ALSO
 dome\-compositor(1), dome\-preview(1)

@@ -1117,9 +1117,12 @@ sampled gauges, not every frame; application GPU timings do not measure the
 runtime's layer-squashing GPU work. Other applications and head motion affect
 these live observations.
 
-Runtime-side minification filtering is implemented separately in WiVRn Pro's
-PC layer compositor. Its `WIVRN_LAYER_FILTER=balanced|quality` modes are opt-in;
+Experimental runtime-side minification filtering is implemented separately in
+[WiVRn Pro's desktop-layer filter branch](https://github.com/jebot-git/WiVRn-Pro/tree/codex/dome-minification). Its `WIVRN_LAYER_FILTER=balanced|quality` modes are opt-in;
 `off` remains the default because footprint estimation adds GPU work. Set the
 variable on the runtime server, not on `dome-xr`. It does not change gaze-driven
-encoding. See that runtime's `wivrn-layer-filter(7)` and shader smoke report before
-enabling it. DomeD does not apply a full-frame blur to bitmap fonts.
+encoding. Filtering is a quality option with additional GPU cost, not a speed
+optimization; leave it off when current readability is acceptable. The synthetic
+shader smoke does not establish full-headset performance. See that runtime's
+`wivrn-layer-filter(7)` and shader smoke report. DomeD does not apply a full-frame
+blur to bitmap fonts.
