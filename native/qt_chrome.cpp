@@ -36,6 +36,13 @@ static QImage trayImage(const QJsonObject &item,const QColor &foreground) {
     QImage result(22,22,QImage::Format_ARGB32_Premultiplied);result.fill(Qt::transparent);
     QPainter p(&result);p.setRenderHint(QPainter::Antialiasing);p.setRenderHint(QPainter::SmoothPixmapTransform);
     const auto key=item["key"].toString();
+    if(key=="dome.audio") {
+        QColor colour=foreground;if(item["icon"].toString()=="unavailable")colour.setAlpha(130);
+        p.setPen(QPen(colour,1.6));p.setBrush(Qt::NoBrush);p.drawPolygon(QPolygonF{QPointF(3,9),QPointF(7,9),QPointF(12,5),QPointF(12,17),QPointF(7,13),QPointF(3,13)});
+        if(item["icon"].toString()=="muted"||item["icon"].toString()=="unavailable"){p.drawLine(16,8,21,14);p.drawLine(16,14,21,8);}
+        else {p.drawArc(QRectF(10,7,8,8),-60*16,120*16);p.drawArc(QRectF(9,4,13,14),-60*16,120*16);}
+        return result;
+    }
     if(key=="dome.clipboard"||key=="dome.notifications") {
         p.setPen(QPen(foreground,1.6));p.setBrush(Qt::NoBrush);
         if(key=="dome.clipboard") {p.drawRoundedRect(QRectF(5,4,12,15),1.5,1.5);p.drawRoundedRect(QRectF(8,2,6,4),1,1);p.drawLine(8,10,14,10);p.drawLine(8,14,14,14);}
@@ -120,7 +127,7 @@ extern "C" int dome_qt_paint(const char *json,unsigned char *pixels,int length) 
     p.drawText(QRect(w-220,0,44,35),Qt::AlignCenter,o["keyboard"].toString());
     auto tray=o["tray"].toObject();auto extras=tray["items"].toArray();int tx=w-220-extras.size()*28;
     for(int index=0;index<extras.size();++index){auto item=extras[index].toObject();int x=tx+index*28;
-        if((!tray["menu"].isNull()&&tray["menu"].toInt(-1)==index)||(item["key"].toString()=="dome.clipboard"&&o["history"].toObject()["kind"].toString()=="clipboard")||(item["key"].toString()=="dome.notifications"&&o["history"].toObject()["kind"].toString()=="notifications"))p.fillRect(QRect(x,0,28,35),selection);
+        if((!tray["menu"].isNull()&&tray["menu"].toInt(-1)==index)||(item["key"].toString()=="dome.audio"&&o["audio"].isObject())||(item["key"].toString()=="dome.clipboard"&&o["history"].toObject()["kind"].toString()=="clipboard")||(item["key"].toString()=="dome.notifications"&&o["history"].toObject()["kind"].toString()=="notifications"))p.fillRect(QRect(x,0,28,35),selection);
         p.drawImage(x+3,7,trayImage(item,foreground));if(item["attention"].toBool()){p.setPen(accent);p.drawLine(x+10,32,x+18,32);}
     }
     p.fillRect(0,h-60,w,60,barBackground);p.setPen(foreground);p.drawText(QRect(12,h-60,86,60),Qt::AlignVCenter,"⌕  Launch");p.drawText(QRect(w-240,h-60,140,60),Qt::AlignVCenter,"▦  Desktops");p.drawText(QRect(w-90,h-60,86,60),Qt::AlignCenter,o["xr_active"].toBool()?"Desktop":"XR");
@@ -182,6 +189,22 @@ extern "C" int dome_qt_paint(const char *json,unsigned char *pixels,int length) 
         auto label=o["session_confirm"].toString();p.drawText(box.adjusted(24,20,-24,-110),Qt::AlignCenter,label+"?");
         p.setPen(muted);p.drawText(box.adjusted(24,70,-24,-60),Qt::AlignCenter|Qt::TextWordWrap,label=="Log Out of Dome"?"Close this Dome compositor session and its application connections.":"This action applies to the computer session.");
         p.fillRect(QRect(box.x()+24,box.y()+140,180,40),selection);p.fillRect(QRect(box.x()+230,box.y()+140,186,40),selection);p.setPen(foreground);p.drawText(QRect(box.x()+24,box.y()+140,180,40),Qt::AlignCenter,"Cancel");p.drawText(QRect(box.x()+230,box.y()+140,186,40),Qt::AlignCenter,label);
+    }
+    auto audio=o["audio"].toObject();
+    if(!audio.isEmpty()) {
+        int x=audio["x"].toInt(),y=audio["y"].toInt(),aw=audio["w"].toInt(),ah=audio["h"].toInt(),selected=audio["selected"].toInt();
+        p.save();p.setClipRect(QRect(x,y,aw,ah));p.fillRect(QRect(x,y,aw,ah),background);p.setPen(foreground);p.drawText(QRect(x+16,y+4,aw-60,32),Qt::AlignVCenter,"Audio");p.drawText(QRect(x+aw-36,y,36,36),Qt::AlignCenter,"×");
+        for(int index=0;index<2;++index){auto level=audio[index==0?"output":"input"].toObject();bool available=!level.isEmpty(),mutedLevel=level["muted"].toBool();double volume=level["volume"].toDouble();int offset=index==0?64:136;
+            if(selected==index)p.fillRect(QRect(x+10,y+offset-30,aw-20,64),selection);
+            p.setPen(available?foreground:muted);QString label=index==0?"Output":"Microphone";QString percentage=available?QString::number(qRound(volume*100))+"%":"Unavailable";
+            QString name=audio[index==0?"output_name":"input_name"].toString();p.drawText(QRect(x+16,y+offset-28,aw-32,24),Qt::AlignVCenter,p.fontMetrics().elidedText(label+"  "+percentage+" · "+name,Qt::ElideRight,aw-32));
+            p.fillRect(QRect(x+16,y+offset,32,30),barBackground);p.fillRect(QRect(x+aw-140,y+offset,32,30),barBackground);p.fillRect(QRect(x+aw-96,y+offset,80,30),barBackground);
+            p.drawText(QRect(x+16,y+offset,32,30),Qt::AlignCenter,"−");p.drawText(QRect(x+aw-140,y+offset,32,30),Qt::AlignCenter,"+");p.drawText(QRect(x+aw-96,y+offset,80,30),Qt::AlignCenter,mutedLevel?"Unmute":"Mute");
+            QRect track(x+60,y+offset+11,aw-216,8);p.fillRect(track,muted);if(available){p.fillRect(QRect(track.x(),track.y(),qRound(qBound(0.,volume,1.)*track.width()),track.height()),mutedLevel?muted:accent);p.setPen(available?foreground:muted);int thumb=track.x()+qRound(qBound(0.,volume,1.)*track.width());p.drawLine(thumb,track.y()-5,thumb,track.y()+12);}
+        }
+        p.setPen(muted);p.drawText(QRect(x+16,y+182,aw-32,28),Qt::AlignVCenter,"Default devices");auto rows=audio["rows"].toArray();int first=audio["first"].toInt(),visible=audio["visible"].toInt();
+        for(int index=first;index<qMin(rows.size(),first+visible);++index){auto device=rows[index].toObject();int ry=y+214+(index-first)*32;if(selected==index+2)p.fillRect(QRect(x+10,ry,aw-20,30),selection);p.setPen(device["active"].toBool()?accent:foreground);p.drawText(QRect(x+16,ry,22,30),Qt::AlignCenter,device["active"].toBool()?"●":"○");QString label=(device["target"].toString()=="output"?"Output · ":"Microphone · ")+device["label"].toString();p.drawText(QRect(x+44,ry,aw-60,30),Qt::AlignVCenter,p.fontMetrics().elidedText(label,Qt::ElideRight,aw-60));}
+        auto error=audio["error"].toString();p.setPen(error.isEmpty()?muted:accent);p.drawText(QRect(x+16,y+ah-30,aw-32,24),Qt::AlignCenter,p.fontMetrics().elidedText(error.isEmpty()?"Arrows select/adjust · Enter mutes or selects · Esc closes":error,Qt::ElideRight,aw-32));p.restore();
     }
     auto history=o["history"].toObject();
     if(!history.isEmpty()) {

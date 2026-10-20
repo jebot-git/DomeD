@@ -542,6 +542,28 @@ Close All. Pins use desktop-file IDs and persist in
 `$XDG_CONFIG_HOME/dome/taskbar.json`. Launcher search remains at the left and the
 virtual desktop manager at the right.
 
+## Audio tray controls
+
+Click the speaker in the right-side tray to control PipeWire audio in desktop or
+XR. Speaker and microphone volume each have a slider, 5% step buttons and a mute
+button. Select an output or microphone from **Default devices** to change the
+WirePlumber default. Changes made by other applications and device hotplug are
+reflected automatically; controls reconnect when the audio service returns.
+
+Wheel over the speaker icon to adjust output volume without opening the pane.
+Within the pane, Up/Down selects a control or device, Left/Right changes the
+selected volume, Enter/Space toggles mute or selects a device, and Escape closes.
+The tray controls cap volume changes at 100%; they leave application function
+keys available. `pw-dump` from PipeWire tools and `wpctl` from WirePlumber are
+required at runtime. Device policy and persistence remain with WirePlumber.
+
+The audio integration test uses its own PipeWire graph, virtual devices,
+policy-only WirePlumber, private D-Bus and Xvfb; it never accesses host audio:
+
+```sh
+uv run --no-project --with python-xlib --with pillow python scripts/test-audio.py
+```
+
 ## Notification and clipboard history
 
 The right-side tray includes a bell for **Notification history** and a clipboard

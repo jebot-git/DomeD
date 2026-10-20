@@ -71,7 +71,10 @@ impl DesktopRenderer {
                     state.clipboard.revision,
                     state.history_panel,
                     state.history_selected,
-                    state.launch_index
+                    state.launch_index,
+                    state.audio.state().revision,
+                    state.audio_open,
+                    state.audio_selected
                 ),
                 if state.task_popup.is_some() {
                     state.start_time.elapsed().as_millis() / 100

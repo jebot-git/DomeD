@@ -249,6 +249,7 @@ impl Dome {
             .any(|n| n.contains(x, y))
             || y < 36.
             || y >= (size.h - 60) as f64
+            || self.audio_open
             || self.history_panel.is_some()
             || self.launcher
             || self.desktop_manager
@@ -270,6 +271,9 @@ impl Dome {
         };
         let (x, y) = (x - origin.x as f64, y - origin.y as f64);
         let size = self.shell_geometry().size;
+        if self.audio_click(x, y, size.w, size.h) {
+            return;
+        }
         if self.history_click(x, y, size.w, size.h) {
             return;
         }
@@ -422,7 +426,7 @@ impl Dome {
         let items:Vec<_>=self.menu.map(|m|self.menu_items(m)).unwrap_or_default().iter().map(|(text,shortcut,command)|{let bindings=&scene.config.keybindings;let chord=if dome::shortcuts::defaults().iter().any(|b|b.command==*command){bindings.iter().find(|b|b.enabled&&b.command==*command).map(|b|b.label()).unwrap_or_default()}else{shortcut.to_string()};serde_json::json!({"text":text,"shortcut":chord,"enabled":self.command_enabled(*command),"separator":matches!(command,dome::shortcuts::Command::Separator)})}).collect();
         let popup = self.task_popup_json(width, height);
         crate::qt::paint(
-            serde_json::json!({"kind":"shell","keyboard":if self.keyboard_config.ime && self.ime.snapshot().method=="anthy" {"あ".to_owned()}else{self.keyboard_config.label()},"keyboard_settings":self.keyboard_draft,"keyboard_field":self.keyboard_field,"keyboard_error":if self.keyboard_error.is_empty(){self.ime.snapshot().error}else{self.keyboard_error.clone()},"keyboard_shortcut":self.keyboard_draft.as_ref().map(|d|d.switch_shortcut.label()),"history":self.history_json(width,height),"notifications": if self.history_panel.is_none() && self.input_realm == dome::Realm::Desktop {self.notifications.layout(width,height)} else {vec![]},"xr_settings":self.xr_settings_json(width,height),"appearance":self.appearance,"appearance_open":self.appearance_open,"session_confirm":self.session_confirm.map(|s|s.label()),"session_error":self.session.state().error,"about":self.about,"about_is_app":self.shell_error=="@app-info","width":width,"height":height,"app":app,"app_info":entry,"menu":self.menu.map(|m|m as i32).unwrap_or(-1),"hover":self.menu_hover,"items":items,"tasks":tasks,"tray":self.visible_tray(width),"task_popup":popup,"launcher":self.launcher,"launch_index":self.launch_index,"xr_active":self.input_xr_active,"manager":self.desktop_manager,"query":self.launch_query,"apps":self.matching_apps(),"desktops":scene.workspaces.iter().map(|w|w.name.clone()).collect::<Vec<_>>()}),
+            serde_json::json!({"kind":"shell","keyboard":if self.keyboard_config.ime && self.ime.snapshot().method=="anthy" {"あ".to_owned()}else{self.keyboard_config.label()},"keyboard_settings":self.keyboard_draft,"keyboard_field":self.keyboard_field,"keyboard_error":if self.keyboard_error.is_empty(){self.ime.snapshot().error}else{self.keyboard_error.clone()},"keyboard_shortcut":self.keyboard_draft.as_ref().map(|d|d.switch_shortcut.label()),"audio":self.audio_json(width,height),"history":self.history_json(width,height),"notifications": if !self.audio_open && self.history_panel.is_none() && self.input_realm == dome::Realm::Desktop {self.notifications.layout(width,height)} else {vec![]},"xr_settings":self.xr_settings_json(width,height),"appearance":self.appearance,"appearance_open":self.appearance_open,"session_confirm":self.session_confirm.map(|s|s.label()),"session_error":self.session.state().error,"about":self.about,"about_is_app":self.shell_error=="@app-info","width":width,"height":height,"app":app,"app_info":entry,"menu":self.menu.map(|m|m as i32).unwrap_or(-1),"hover":self.menu_hover,"items":items,"tasks":tasks,"tray":self.visible_tray(width),"task_popup":popup,"launcher":self.launcher,"launch_index":self.launch_index,"xr_active":self.input_xr_active,"manager":self.desktop_manager,"query":self.launch_query,"apps":self.matching_apps(),"desktops":scene.workspaces.iter().map(|w|w.name.clone()).collect::<Vec<_>>()}),
         )
     }
 }

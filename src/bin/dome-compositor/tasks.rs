@@ -78,7 +78,8 @@ impl Dome {
         x >= px && x < px + pw && y >= py && y < py + ph
     }
     pub fn task_motion(&mut self, x: f64, y: f64, w: i32, h: i32) {
-        if self.history_panel.is_some()
+        if self.audio_open
+            || self.history_panel.is_some()
             || self.launcher
             || self.menu.is_some()
             || self.desktop_manager

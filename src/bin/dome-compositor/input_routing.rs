@@ -102,6 +102,7 @@ impl Dome {
         self.session_confirm = None;
         self.tray.close();
         self.history_panel = None;
+        self.close_audio();
         self.input_xr_active = desired;
         self.input_realm = realm;
         {

@@ -4,6 +4,7 @@ mod handlers;
 mod file_manager;
 
 mod commands;
+mod audio;
 mod clipboard;
 mod histories;
 mod context_menus;

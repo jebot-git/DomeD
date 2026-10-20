@@ -32,7 +32,8 @@ impl Dome {
         if self.launcher {
             top = 456.min(height);
         }
-        if self.history_panel.is_some()
+        if self.audio_open
+            || self.history_panel.is_some()
             || self.about
             || self.appearance_open
             || self.xr_settings_open
@@ -46,7 +47,7 @@ impl Dome {
         if let Some(index) = self.task_popup {
             bottom = bottom.max((height as f64 - self.popup_rect(index, width, height).1) as i32);
         }
-        let toasts = if self.history_panel.is_some() {
+        let toasts = if self.audio_open || self.history_panel.is_some() {
             vec![]
         } else {
             self.notifications.layout(width, height)
@@ -265,6 +266,7 @@ impl Dome {
                         };
                         self.xr_target = Some(id);
                         self.xr_shell_pos = Some([x, y]);
+                        self.audio_motion(x, layout.width as i32, layout.height as i32);
                         self.task_motion(x, y, layout.width as i32, layout.height as i32);
                         if let Some(menu) = self.menu {
                             let x0 = [0., 46., 230., 280., 332., 390., 470.][menu];
@@ -343,6 +345,9 @@ impl Dome {
                     }
                 }
                 SeatEvent::Button { button, pressed } => {
+                    if !pressed && button == 0x110 {
+                        self.audio_drag = None;
+                    }
                     if !pressed && self.context_scroll_buttons.remove(&button) {
                         continue;
                     }
@@ -426,6 +431,13 @@ impl Dome {
                     horizontal,
                     vertical,
                 } => {
+                    if let Some([x, y]) = self.xr_shell_pos {
+                        let size = self.xr_bridge.lock().unwrap().shell.clone();
+                        if self.audio_scroll(x, y, vertical, size.width as i32, size.height as i32)
+                        {
+                            continue;
+                        }
+                    }
                     if self.xr_shell_pos.is_some() && self.history_scroll(vertical) {
                         continue;
                     }
@@ -458,6 +470,7 @@ impl Dome {
                     }
                 }
                 SeatEvent::Leave => {
+                    self.audio_drag = None;
                     self.context_scroll_hover = None;
                     self.xr_target = None;
                     self.xr_shell_pos = None;
@@ -473,6 +486,7 @@ impl Dome {
                     );
                 }
                 SeatEvent::Reset => {
+                    self.audio_drag = None;
                     self.context_scroll_hover = None;
                     if self.xr_shell_pos.take().is_some() {
                         self.xr_buttons.clear();

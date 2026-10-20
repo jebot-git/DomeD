@@ -33,6 +33,7 @@ impl Dome {
         serde_json::json!({"kind":kind,"title":if kind==Kind::Clipboard {"Clipboard history"}else{"Notification history"},"x":x,"y":y,"w":w,"h":h,"rows":rows,"first":first,"visible":visible,"selected":selected})
     }
     pub fn open_history(&mut self, kind: Kind) {
+        self.close_audio();
         self.history_panel = if self.history_panel == Some(kind) {
             None
         } else {
@@ -153,11 +154,14 @@ impl Dome {
     }
     pub fn activate_tray(&mut self, index: usize, x: i32, y: i32, context: bool) {
         match index {
-            0 => self.open_history(Kind::Clipboard),
-            1 => self.open_history(Kind::Notifications),
+            0 => self.toggle_audio(),
+            1 => self.open_history(Kind::Clipboard),
+            2 => self.open_history(Kind::Notifications),
             _ => {
                 self.history_panel = None;
-                self.tray.activate(index - 2, x, y, context);
+                self.close_audio();
+                self.tray
+                    .activate(index - crate::tray::BUILTIN_COUNT, x, y, context);
             }
         }
     }

@@ -23,7 +23,8 @@ impl Dome {
                 {
                     return;
                 }
-                if self.history_panel.is_none()
+                if !self.audio_open
+                    && self.history_panel.is_none()
                     && !self.launcher
                     && self.menu.is_none()
                     && !self.desktop_manager
@@ -130,6 +131,10 @@ impl Dome {
                                 state.command(command);
                                 return FilterResult::Intercept(());
                             }
+                        }
+                        if pressed && state.audio_key(sym.raw()) {
+                            state.shell_keys.insert(code);
+                            return FilterResult::Intercept(());
                         }
                         if pressed && state.history_key(sym.raw()) {
                             state.shell_keys.insert(code);
@@ -317,6 +322,9 @@ impl Dome {
             InputEvent::PointerButton { event, .. } => {
                 let code = event.button_code();
                 if event.state() == ButtonState::Released {
+                    if code == 0x110 {
+                        self.audio_drag = None;
+                    }
                     self.physical_buttons.remove(&code);
                     if self.ignored_buttons.remove(&code) {
                         return;
@@ -347,7 +355,11 @@ impl Dome {
                 {
                     return;
                 }
-                if button_state == ButtonState::Pressed && !pointer.is_grabbed() {
+                if button_state == ButtonState::Pressed
+                    && !pointer.is_grabbed()
+                    && !self.audio_open
+                    && self.history_panel.is_none()
+                {
                     let geometry = self.output_geometry_at(pos);
                     let local = pos - geometry.loc.to_f64();
                     if let Some(toast) = self
@@ -513,6 +525,18 @@ impl Dome {
                     });
                     return;
                 }
+                let audio_size = self.shell_geometry().size;
+                let audio_pos = self.seat.get_pointer().unwrap().current_location()
+                    - self.shell_geometry().loc.to_f64();
+                if self.audio_scroll(
+                    audio_pos.x,
+                    audio_pos.y,
+                    vertical_amount,
+                    audio_size.w,
+                    audio_size.h,
+                ) {
+                    return;
+                }
                 if self.history_scroll(vertical_amount) {
                     return;
                 }
@@ -575,6 +599,7 @@ impl Dome {
         let pointer = self.seat.get_pointer().unwrap();
 
         let local = pos - self.output_geometry_at(pos).loc.to_f64();
+        self.audio_motion(local.x, size.w, size.h);
         self.task_motion(local.x, local.y, size.w, size.h);
         if self.chrome_button_motion(pos.x, pos.y) || self.chrome_motion(pos.x, pos.y) {
             // Relative libinput deltas must continue from the dragged pointer's new position.

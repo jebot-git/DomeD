@@ -41,3 +41,5 @@ pub mod desktop_snap;
 pub mod launch_context;
 pub mod file_manager;
 pub mod stereo;
+
+pub mod audio;

@@ -1,4 +1,5 @@
 //! Session-bus StatusNotifier host. D-Bus calls run off the compositor thread.
+pub const BUILTIN_COUNT: usize = 3;
 use serde::Serialize;
 use std::{
     collections::HashMap,
@@ -425,7 +426,7 @@ impl crate::Dome {
     pub fn visible_tray(&self, width: i32) -> Snapshot {
         let mut state = self.tray.state();
         if let Some(index) = state.menu.as_mut() {
-            *index += 2;
+            *index += BUILTIN_COUNT;
         }
         let own = |key: &str, title: &str, attention: bool| Item {
             key: key.into(),
@@ -441,9 +442,23 @@ impl crate::Dome {
             menu: String::new(),
             item_is_menu: false,
         };
+        let audio = self.audio.state();
+        let mut speaker = own("dome.audio", "Audio", false);
+        speaker.icon = if audio
+            .output
+            .is_some_and(|level| level.muted || level.volume <= 0.)
+        {
+            "muted"
+        } else if audio.output.is_some() {
+            "volume"
+        } else {
+            "unavailable"
+        }
+        .into();
         state.items.splice(
             0..0,
             [
+                speaker,
                 own("dome.clipboard", "Clipboard history", false),
                 own(
                     "dome.notifications",
