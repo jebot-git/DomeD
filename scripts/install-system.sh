@@ -8,6 +8,9 @@ stage="${1:-$root/build/system-stage}"
 exec 9>/run/lock/domed-install.lock
 /usr/bin/flock -x 9
 files=(
+    usr/local/share/man/man1/dome-compositor.1
+    usr/local/share/man/man1/dome-xr.1
+    usr/local/share/man/man1/dome-preview.1
     usr/local/bin/dome-compositor
     usr/local/bin/dome-xr
     usr/local/bin/dome-preview

@@ -1,0 +1,36 @@
+.TH DOME-XR 1 "2026-10-20" "de-xr" "User Commands"
+.SH NAME
+dome\-xr \- present the DomeD desktop in OpenXR
+.SH SYNOPSIS
+.nf
+dome\-xr [\-\-server URL] [\-\-frames N] [\-\-capture DIR]
+        [\-\-report FILE] [\-\-standalone] [\-\-placement N]
+.fi
+.SH DESCRIPTION
+Connect to the local DomeD bridge and submit live Wayland client textures and shell surfaces to OpenXR. The default mode requests an overlay or transparent blend mode when supported.
+.SH OPTIONS
+.TP
+.B "\-\-server URL"
+DomeD bridge URL, normally http://127.0.0.1:49640.
+.TP
+.B "\-\-standalone"
+Request a primary XR session rather than the default overlay.
+.TP
+.B "\-\-placement N"
+Select the runtime overlay placement.
+.TP
+.B "\-\-frames N"
+Exit after N frames for a bounded diagnostic run.
+.TP
+.B "\-\-capture DIR"
+Save diagnostic client texture captures to DIR; these are not headset eye captures.
+.TP
+.B "\-\-report FILE"
+Write a diagnostic report.
+.TP
+.B "\-\-help"
+Show usage.
+.SH ENVIRONMENT
+XR_RUNTIME_JSON selects the OpenXR runtime manifest. Use a runtime that supports the required composition layers.
+.SH SEE ALSO
+dome\-compositor(1), dome\-preview(1)

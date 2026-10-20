@@ -1,0 +1,15 @@
+.TH DOME-PREVIEW 1 "2026-10-20" "de-xr" "User Commands"
+.SH NAME
+dome\-preview \- run the DomeD layout laboratory
+.SH SYNOPSIS
+.nf
+dome\-preview
+.fi
+.SH DESCRIPTION
+Serve an interactive layout laboratory with synthetic windows on http://127.0.0.1:49640. No headset or running compositor is required. Geometry edits are session\-local; export a JSON profile to reuse them.
+.SH ENVIRONMENT
+DOME_PREVIEW_PORT overrides port 49640. DOME_CONFIG selects an exported geometry JSON profile.
+.SH EXAMPLES
+DOME_PREVIEW_PORT=49641 dome\-preview
+.SH SEE ALSO
+dome\-compositor(1), dome\-xr(1)

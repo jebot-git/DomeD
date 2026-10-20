@@ -1,4 +1,4 @@
-# Dome
+# DomeD
 
 An experimental Wayland compositor with a classic stacking desktop and a shared
 spatial desktop model, based on the supplied three-lane dome design. This is an
@@ -10,7 +10,7 @@ and the OpenXR frontend are Rust; a small C++ FFI adapter calls Qt6 painting/sty
 
 **Current milestone:** a standalone DRM/KMS Wayland compositor with Qt6 decorations, a classic
 Mac-style global menu and a native Rust/OpenXR frontend displaying live Wayland
-window textures, open cylindrical dome surfaces, flat pulled-out panels and
+window textures, open cylindrical dome surfaces, curved pulled-out panels and
 shared XR shell bars. Application identity/actions use XDG desktop entries; the
 status area hosts StatusNotifier items and DBusMenu menus. Focused applications
 can export their real menu bars through KDE AppMenu and DBusMenu. WiVRn marker
@@ -30,8 +30,8 @@ Open **http://127.0.0.1:49640**. No headset, GPU development libraries, JavaScri
 packages or network assets are required. The preview starts with sample windows.
 
 * Switch **XR carousel / Desktop** to see the same window identities in both views.
-* Choose **Room carousel** for an anchored, full-circle layout independent of the
-  view trays, or **In view** to fit lanes between the upper tray and taskbar.
+* Use the room dome for an anchored cylindrical layout. Legacy **In view**
+  profiles migrate to the dome; Ghostty XR owns its independent direct-view overlay.
 * Set bar widths, heights, independent lens-safe insets, FOV, room centre and radius.
 * Drag empty space to simulate looking around. **Unfold 360°** exposes the whole ring.
 * Select windows to minimize/maximize, recenter, move between lanes/desktops or swap.
@@ -120,7 +120,7 @@ preview still uses sample surface content. App launching requires `gio`, install
 Close the nested compositor window to end the experiment. The initial protocol
 handlers are adapted from Smithay's MIT-licensed Smallvil; see THIRD-PARTY.md.
 
-## Local installation and login session
+## System installation and login session
 
 ```sh
 ./scripts/build-local.sh --release
@@ -628,7 +628,7 @@ unwrapped cylinder height: physical height is radius × span in radians. Upper
 lane lean rotates its screens about their lower centre edges and preserves
 texture aspect ratio; it does not add a ceiling.
 Enlarging the dome preserves reference card height while shrinking angular sizes.
-Direct-view windows remain flat. Focus changes the same geometry used by lasers
+Ghostty XR retains its independent flat overlay. Focus changes the same geometry used by lasers
 and mouse hit testing; its visual outset is not saved into gesture transforms.
 
 ## Application menus, global bar and taskbar
@@ -953,3 +953,18 @@ test also checks alpha-zero margins and exact premultiplied RGBA for existing SB
 and ordinary 2D conversion. Qt supplies premultiplied Wayland pixels, and the
 existing OpenXR layer flags blend them directly; no additional compositor alpha
 conversion is applied. The intermediate PNG uses straight alpha.
+
+## Command manuals and related projects
+
+Basic manuals: [dome-compositor.1](docs/man/dome-compositor.1), [dome-xr.1](docs/man/dome-xr.1), [dome-preview.1](docs/man/dome-preview.1). After installation, use `man dome-compositor`.
+
+Part of the [de-xr desktop](https://github.com/topics/de-xr):
+[DomeD](https://github.com/jebot-git/DomeD) provides the desktop/session,
+[Ghostty XR](https://github.com/jebot-git/ghostty-xr) the terminal,
+[mpvr](https://github.com/jebot-git/mpvr) video playback,
+[fsvr](https://github.com/jebot-git/fsv-xr) file browsing,
+[qimgvr](https://github.com/jebot-git/qimgvr) image viewing,
+[Arc SBS](https://github.com/jebot-git/arc-sbs) depth conversion, and
+[LightXR](https://github.com/jebot-git/LightXR) the optional login manager.
+Each application has its own dependencies and can be used independently where
+its selected backend permits.

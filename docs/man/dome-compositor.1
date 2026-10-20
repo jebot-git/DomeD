@@ -1,0 +1,35 @@
+.TH DOME-COMPOSITOR 1 "2026-10-20" "de-xr" "User Commands"
+.SH NAME
+dome\-compositor \- Wayland desktop and XR session compositor
+.SH SYNOPSIS
+.nf
+dome\-compositor [\-\-backend drm|nested] [\-\-renderer vulkan|gles]
+                [\-\-terminal | \-\-command PROGRAM ARGS...]
+.fi
+.SH DESCRIPTION
+DomeD manages a conventional desktop and a shared spatial desktop. Its native DRM backend owns the seat and displays; the nested backend opens a development window in an existing desktop. The dome\-xr process presents live client textures through OpenXR.
+.SH OPTIONS
+.TP
+.B "\-\-backend drm|nested"
+Select native DRM/KMS or nested development mode. Without an explicit choice, an existing DISPLAY or WAYLAND_DISPLAY selects nested mode; otherwise DRM is selected.
+.TP
+.B "\-\-renderer vulkan|gles"
+Select Vulkan through Mesa Zink (default), or GLES.
+.TP
+.B "\-\-check\-backend"
+Report compiled backend support without opening a seat. Combine with \-\-backend.
+.TP
+.B "\-\-terminal"
+Launch the configured terminal initially.
+.TP
+.B "\-\-command PROGRAM ARGS..."
+Launch a custom client. Remaining arguments belong to that client.
+.TP
+.B "\-\-help"
+Show usage.
+.SH ENVIRONMENT
+DOME_BACKEND and DOME_RENDERER select backend and renderer. DOME_CONFIG selects a geometry profile. DOME_PREVIEW_PORT selects the loopback bridge port (default 49640). DOME_TERMINAL selects a terminal executable without arguments.
+.SH INTERACTION
+XR uses cylindrical dome windows. Super+P pulls the focused window in front of the user or returns it to the dome; at most two windows can be pulled out. The default distance is 2 metres. Settings configure distance, dome height, bindings and hand or smoothed gaze input. Alt+Tab and Alt+Shift+Tab switch windows in the same lane.
+.SH SEE ALSO
+dome\-xr(1), dome\-preview(1), ghostty\-xr(1)

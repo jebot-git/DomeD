@@ -31,4 +31,8 @@ for name in LICENSE upstream.json; do
     install -D -m 0644 "$root/assets/fonts/cozette-v1.30.0/$name" "$stage/usr/local/share/doc/domed/fonts/cozette-v1.30.0/$name"
 done
 desktop-file-validate "$stage/usr/share/wayland-sessions/dome.desktop" "$stage/usr/local/share/applications/org.domed.Compositor.desktop"
+
+for page in "$root"/docs/man/*.1; do
+    install -D -m 0644 "$page" "$stage/usr/local/share/man/man1/$(basename -- "$page")"
+done
 echo "Staged DomeD installation: $stage"
