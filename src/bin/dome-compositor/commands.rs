@@ -15,10 +15,13 @@ impl Dome {
             .position(|h| x >= h.x as f64 && x < (h.x + h.width) as f64 && h.enabled)
     }
     pub fn menu_items(&self, m: usize) -> Vec<(String, &'static str, Command)> {
-        use Command::*;
-        if self.exported_menu(m) {
+        if self.panel_menu(m) {
             return Vec::new();
         }
+        self.shell_menu_items(m)
+    }
+    pub fn shell_menu_items(&self, m: usize) -> Vec<(String, &'static str, Command)> {
+        use Command::*;
         if m == 1 {
             let scene = self.shell_scene();
             let w = scene.focused.and_then(|id| scene.window(id));
@@ -102,6 +105,10 @@ impl Dome {
             1 => vec![("Close Application Windows", "⌘Q", QuitApp)],
             2 => vec![("Close Window", "⌘W", Close)],
             3 => vec![
+                ("Undo", "Ctrl+Z", Undo),
+                ("Redo", "Ctrl+Shift+Z", Redo),
+                ("", "", Separator),
+                ("Cut", "Ctrl+X", Cut),
                 ("Copy", "⌘C", Copy),
                 ("Paste", "⌘V", Paste),
                 ("Select All", "⌘A", SelectAll),
@@ -127,15 +134,10 @@ impl Dome {
                 ("Move Window Right in Lane", "⌥⌘→", MoveHorizontal(1)),
             ],
             5 => vec![
-                (
-                    if self.input_realm == dome::Realm::Xr {
-                        "Send Window to Desktop"
-                    } else {
-                        "Send Window to XR"
-                    },
-                    "⇧⌘X",
-                    SendToOtherRealm,
-                ),
+                ("Send Window to Desktop", "", PresentWindow { desktop: true, xr: false }),
+                ("Send Window to XR", "", PresentWindow { desktop: false, xr: true }),
+                ("Show Window on Both", "", PresentWindow { desktop: true, xr: true }),
+                ("", "", Separator),
                 ("Minimize", "⌘M", Minimize),
                 ("Zoom", "⌘Return", Maximize),
                 ("Next Window in Lane", "Alt Tab", Cycle(false)),
@@ -171,6 +173,9 @@ impl Dome {
                 s.focused.and_then(|id| s.window(id)).is_some_and(|w| !w.minimized)
                     && (self.input_realm == dome::Realm::Xr || self.xr_bridge.lock().unwrap().visible())
             }
+            PresentWindow { desktop, xr } => (desktop || xr)
+                && s.focused.and_then(|id| s.window(id)).is_some_and(|w| !w.minimized)
+                && (!xr || self.xr_bridge.lock().unwrap().visible()),
             PullOut => {
                 self.xr_bridge.lock().unwrap().visible()
                     && s.focused
@@ -188,7 +193,7 @@ impl Dome {
                     .is_some_and(|i| (0..lane.len() as i64).contains(&(i as i64 + i64::from(delta))))
             }),
             Separator => false,
-            Close | QuitApp | Minimize | Maximize | Scale(_) | ResetSpatial | Copy | Paste
+            Close | QuitApp | Minimize | Maximize | Scale(_) | ResetSpatial | Undo | Redo | Cut | Copy | Paste
             | SelectAll | HideApp | HideOthers | AppInfo => s.focused.is_some(),
             Cycle(_) => s
                 .windows
@@ -404,12 +409,11 @@ impl Dome {
             NewWorkspace => self.action(Action::AddWorkspace {
                 name: format!("Desktop {}", s.workspaces.len() + 1),
             }),
-            SendToOtherRealm => {
+            SendToOtherRealm | PresentWindow { .. } => {
                 if let Some(id) = id {
-                    let target = if self.input_realm == dome::Realm::Xr {
-                        dome::Realm::Desktop
-                    } else {
-                        dome::Realm::Xr
+                    let (desktop, xr) = match c {
+                        PresentWindow { desktop, xr } => (desktop, xr),
+                        _ => (self.input_realm == dome::Realm::Xr, self.input_realm != dome::Realm::Xr),
                     };
                     let root = s.popup_owner(id);
                     // Release held pointer buttons against the old surface before it disappears.
@@ -442,11 +446,12 @@ impl Dome {
                     self.xr_shell_pos = None;
                     self.task_popup = None;
                     self.menu = None;
-                    self.action(Action::SendToRealm { id, realm: target });
-                    self.focus_history[usize::from(target == dome::Realm::Xr)] = Some(Some(id));
+                    self.action(Action::WindowVisibility { id, desktop, xr });
+                    if desktop { self.focus_history[0] = Some(Some(id)); }
+                    if xr { self.focus_history[1] = Some(Some(id)); }
                     {
                         let mut scene = self.scene.lock().unwrap();
-                        scene.focused = dome::input_routing::restore_focus(&scene, None, self.input_realm);
+                        scene.focused = dome::input_routing::restore_focus(&scene, Some(Some(id)), self.input_realm);
                         scene.revision += 1;
                     }
                     let mut bridge = self.xr_bridge.lock().unwrap();
@@ -495,6 +500,9 @@ impl Dome {
                     });
                 }
             }
+            Undo => self.client_chord(52),
+            Redo => self.client_chord_with_shift(52, true),
+            Cut => self.client_chord(53),
             Copy => self.client_chord(54),
             Paste => self.client_chord(55),
             SelectAll => self.client_chord(38),
@@ -507,6 +515,9 @@ impl Dome {
         }
     }
     fn client_chord(&mut self, key: u32) {
+        self.client_chord_with_shift(key, false);
+    }
+    fn client_chord_with_shift(&mut self, key: u32, shift: bool) {
         if let Some(k) = self.seat.get_keyboard() {
             let time = self.start_time.elapsed().as_millis() as u32;
             let held = k.pressed_keys();
@@ -524,7 +535,9 @@ impl Dome {
             if !ctrl {
                 sequence.push((37, KeyState::Pressed));
             }
+            if shift { sequence.push((50, KeyState::Pressed)); }
             sequence.extend([(key, KeyState::Pressed), (key, KeyState::Released)]);
+            if shift { sequence.push((50, KeyState::Released)); }
             if !ctrl {
                 sequence.push((37, KeyState::Released));
             }

@@ -123,19 +123,26 @@ try:
     check(ImageChops.difference(before,after).getbbox() is not None,'Application menu label updates repaint in the global bar')
     key('Down');key('Return');wait(lambda:title(aid)=='first-activated-2')
     check(True,'Keyboard navigation activates the focused exported menu')
-    click(260,18);key('Up');key('Right');key('Left');key('Right');key('Return')
+    click(260,18);key('Home');key('Down');key('Right');key('Left');key('Right');key('Return')
     wait(lambda:title(aid)=='first-nested-activated')
-    check(True,'Up starts at the last enabled row; Right/Left enter and restore submenus')
+    check(True,'Right/Left enter and restore submenus in a merged File menu')
     click(260,18);key('Home');key('Down');key('Right');key('Left');key('Home');key('Return')
     wait(lambda:title(aid)=='first-activated-3')
     check(True,'Arrow navigation skips disabled rows and separators without losing the parent selection')
-    click(260,18);key('Home');key('Right');key('Right');key('Right');key('Right');key('Home');key('Return')
+    click(260,18);key('Home');key('Right');key('Right');key('Right');key('Right');key('Right');key('Home');key('Return')
     wait(lambda:title(aid)=='first-activated-4')
     check(True,'Left/Right traverse enabled menu headers and skip disabled top-level menus')
+    click(500,18);key('Home');key('Return');wait(lambda:title(aid)=='first-window-action')
+    check(True,'Native Window actions survive merging with compositor window controls')
+    click(500,18);key('Home');key('Down');key('Return');time.sleep(.3)
+    check(next(w for w in scene()['windows'] if w['id']==aid)['xr_visible']==False,
+        'Merged Window menu sends the focused exported client to Desktop using keyboard')
     p=start([str(fixture),'plain'],'plain',client_env)
     pid=wait(lambda:next((w['id'] for w in scene()['windows'] if w['title']=='plain'),None))
     action({'op':'focus','id':pid});time.sleep(.8);capture('04-no-exported-menu')
-    click(260,18);click(280,54);check(title(aid)=='first-activated-4' and title(bid)=='second-nested-activated','Non-exporting app does not expose stale application menus')
+    click(450,18);key('Home');key('Return');time.sleep(.3)
+    check(title(aid)=='first-window-action' and title(bid)=='second-nested-activated' and not next(w for w in scene()['windows'] if w['id']==pid)['xr_visible'],
+        'Non-exporting app has working Window controls without stale application actions')
     key('Escape')
     def chord(*names):
         codes=[xd.keysym_to_keycode(XK.string_to_keysym(name)) for name in names]
@@ -173,6 +180,23 @@ try:
     check(changed(before,during)>100 and changed(before,after)<50,'Double middle click renders contracting cursor rings and clears the effect after three short pulses')
     buttons=(runtime/'middle-buttons').read_text().splitlines()
     check(buttons==['press','release','press','release'],'Cursor finder preserves both normal middle-button press/release pairs')
+    for letter in ['a','b','c']:key(letter)
+    wait(lambda:title(pid)=='plain-key-abc')
+    click(310,18);key('End');key('Return') # Select All
+    click(310,18);key('Home');key('Down');key('Down');key('Return') # Cut
+    wait(lambda:title(pid)=='plain-key-')
+    click(310,18);key('Home');key('Down');key('Down');key('Down');key('Down');key('Return') # Paste
+    wait(lambda:title(pid)=='plain-key-abc')
+    check(True,'Fallback Edit Select All, Cut and Paste operate on the focused client text field')
+    click(310,18);key('Home');key('Return') # Undo paste
+    wait(lambda:title(pid)=='plain-key-')
+    # Qt's QLineEdit accepts Ctrl+Shift+Z as Redo on this platform.
+    click(310,18);key('Home');key('Down');key('Return')
+    wait(lambda:title(pid)=='plain-key-abc')
+    check(True,'Fallback Edit Undo and Redo forward balanced client shortcuts')
+    click(260,18);key('Home');key('Return')
+    wait(lambda:not any(w['id']==pid for w in scene()['windows']))
+    check(True,'Non-exporting app always has File > Close Window and receives native close')
     check(compositor.poll() is None,'Compositor remains responsive after focus and menu changes')
 finally:
     if xd is not None and host is not None:

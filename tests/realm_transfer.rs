@@ -181,3 +181,30 @@ fn shortcut_migration_preserves_conflicts_remaps_and_disabled_binding() {
     assert_eq!(binding.key, 'z' as u32);
     assert!(!binding.enabled);
 }
+
+#[test]
+fn explicit_both_restores_window_and_dialogs_without_changing_geometry() {
+    let mut scene = Scene::new("test");
+    let id = scene.add("owner", "app");
+    let dialog = scene.add("dialog", "app");
+    scene.popups.push(Popup { id: dialog, parent: id, root: id,
+        anchor: scene.window(dialog).unwrap().desktop, context_at: None, viewport: None });
+    let desktop = scene.window(id).unwrap().desktop;
+    let pose = scene.window(id).unwrap().xr_pose;
+    scene.apply(Action::SendToRealm { id, realm: Realm::Xr }).unwrap();
+    scene.apply(Action::WindowVisibility { id: dialog, desktop: true, xr: true }).unwrap();
+    for id in [id, dialog] {
+        let w = scene.window(id).unwrap();
+        assert!(w.desktop_visible && w.xr_visible);
+    }
+    assert_eq!(scene.window(id).unwrap().desktop, desktop);
+    assert_eq!(scene.window(id).unwrap().xr_pose, pose);
+    assert!(scene.desktop_scene().window(id).is_some());
+    assert!(scene.panels().iter().any(|p| p.id == id));
+    let before = scene.revision;
+    assert!(scene.apply(Action::WindowVisibility { id, desktop: false, xr: false }).is_err());
+    assert_eq!(scene.revision, before);
+    let layout = dome::session_state::Layout::capture(&scene, &Default::default());
+    let saved = serde_json::to_value(layout).unwrap();
+    assert!(saved["windows"].as_array().unwrap().iter().all(|w| w["desktop_visible"] == true && w["xr_visible"] == true));
+}

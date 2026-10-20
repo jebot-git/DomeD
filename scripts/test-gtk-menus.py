@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """GTK GMenu exports, legacy GTK module, and compositor popup policy on a private display.
 Run with uv --with python-xlib --with pillow; /usr/bin/python3 needs GTK3 introspection.
+DOME_TEST_SKIP_LEGACY=1 skips the optional appmenu-gtk-module fixture.
 """
 import json, os, re, signal, socket, subprocess, sys, tempfile, time, urllib.request, threading
 from pathlib import Path
@@ -65,14 +66,14 @@ try:
     def title(id):return next(w['title'] for w in scene()['windows']if w['id']==id)
     def shot(name):
         g=host.get_geometry();raw=host.get_image(0,0,g.width,g.height,X.ZPixmap,0xffffffff);Image.frombytes('RGB',(g.width,g.height),raw.data,'raw','BGRX').save(out/(name+'.png'))
-    time.sleep(1);click(370,18);time.sleep(.5);shot('gtk-global-menu')
-    click(390,54);wait(lambda:title(aid)=='GTK activate activated')
+    time.sleep(1);click(260,18);time.sleep(.5);shot('gtk-global-menu')
+    click(280,54);wait(lambda:title(aid)=='GTK activate activated')
     check(True,'Native GTK GMenu global menu invokes the exported GAction')
-    click(370,18);click(390,82);time.sleep(.3)
+    click(260,18);click(280,82);time.sleep(.3)
     check(title(aid)=='GTK activate activated','Disabled GTK menu action cannot activate')
-    key('Escape');click(370,18);click(390,110);wait(lambda:title(aid)=='GTK toggle True')
+    key('Escape');click(260,18);click(280,110);wait(lambda:title(aid)=='GTK toggle True')
     check(True,'Stateful GTK check action updates its state')
-    click(370,18);motion(390,138);time.sleep(.3);shot('gtk-global-submenu');click(740,150)
+    click(260,18);motion(280,138);time.sleep(.3);shot('gtk-global-submenu');click(740,150)
     wait(lambda:title(aid)=='GTK nested activated');check(True,'Nested GTK GMenu action works in universal menu')
     # MenuButton popups are not menubars and remain separate Wayland popup surfaces.
     w=next(w for w in scene()['windows']if w['id']==aid);r=w['desktop']
@@ -83,17 +84,21 @@ try:
     click(r['x']+popup['anchor']['x']+70,r['y']+popup['anchor']['y']+16)
     wait(lambda:title(aid)=='GTK popup activated');check(True,'GTK popup action accepts pointer input at DomeD placement')
     click(r['x']+100,r['y']+80);wait(lambda:scene()['popups'])
-    click(370,18);click(390,54);wait(lambda:title(aid)=='GTK activate activated')
+    click(260,18);click(280,54);wait(lambda:title(aid)=='GTK activate activated')
     check(True,'DomeD global menu takes priority over an active GTK popup grab')
-    native_before=title(aid)
-    post('/api/launch',{'id':next(a['id']for a in catalog if a['name']=='GTK Legacy fixture')})
-    bid=wait(lambda:next((w['id']for w in scene()['windows']if w['title']=='GTK legacy fixture'),None))
-    post('/api/action',{'op':'focus','id':bid});time.sleep(3);shot('gtk-legacy-before');click(260,18);time.sleep(.5);shot('gtk-legacy-global-menu');click(290,54)
-    wait(lambda:title(bid)=='GTK legacy activated');check(True,'Legacy GTK menu is exported by appmenu module and activated globally')
-    check(title(aid)==native_before,'Focus change keeps GTK actions routed to their own application')
-    post('/api/launch',{'id':next(a['id']for a in catalog if a['name']=='GTK Native fixture')})
-    wait(lambda:scene()['focused']==aid)
-    check(len(scene()['windows'])==2,'Launching an existing GTK application restores it through DomeD focus policy')
+    if os.environ.get('DOME_TEST_SKIP_LEGACY') != '1':
+        native_before=title(aid)
+        post('/api/launch',{'id':next(a['id']for a in catalog if a['name']=='GTK Legacy fixture')})
+        bid=wait(lambda:next((w['id']for w in scene()['windows']if w['title']=='GTK legacy fixture'),None))
+        post('/api/action',{'op':'focus','id':bid});time.sleep(3);shot('gtk-legacy-before');click(370,18);time.sleep(.5);shot('gtk-legacy-global-menu');click(370,54)
+        wait(lambda:title(bid)=='GTK legacy activated');check(True,'Legacy GTK menu is exported by appmenu module and activated globally')
+        check(title(aid)==native_before,'Focus change keeps GTK actions routed to their own application')
+        post('/api/launch',{'id':next(a['id']for a in catalog if a['name']=='GTK Native fixture')})
+        wait(lambda:scene()['focused']==aid)
+        check(len(scene()['windows'])==2,'Launching an existing GTK application restores it through DomeD focus policy')
+    else:
+        print('SKIP legacy GTK exporter: module unavailable in test environment',flush=True)
+        post('/api/action',{'op':'focus','id':aid})
     def heartbeat():
         while not heartbeat_stop.is_set():
             post('/api/xr-session',{'visible':True,'focused':True,'head':{'position_m':[0,1.4,0],'orientation_xyzw':[0,0,0,1]},'horizontal_fov_deg':100})
@@ -107,7 +112,7 @@ try:
         post('/api/xr-input',{'events':[{'kind':'button','button':272,'pressed':True},{'kind':'button','button':272,'pressed':False}],'actions':[]});time.sleep(.25)
     def xr_shell_click(x,y):
         layout=get('/api/xr-shell');xr_click(0,[x/layout['width'],y/layout['top']])
-    xr_shell_click(370,18);xr_shell_click(390,110)
+    xr_shell_click(260,18);xr_shell_click(280,110)
     wait(lambda:title(aid)=='GTK toggle False');check(True,'GTK global menu dispatch follows focused application in XR')
     r=next(w['desktop']for w in scene()['windows']if w['id']==aid)
     xr_click(aid,[100/r['w'],80/r['h']])

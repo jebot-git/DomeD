@@ -70,6 +70,33 @@ policy authoritative. Standard xdg-popup does not identify whether a surface is
 a tooltip, menu, or combo box; any future differentiated policy needs reliable
 client semantics rather than application-name heuristics.
 
+## Universal menu fallback (2026-10-20)
+
+DomeD now owns the minimum File/Edit/Window layout for every focused application,
+regardless of toolkit or whether a binary exposes a menu model. Native File, Edit and
+Window models are merged with local actions; native action IDs remain associated
+with their D-Bus exporter and local actions use an explicit command tag, so
+colliding IDs cannot dispatch a compositor action into another application.
+The layout uses the macOS application/File/Window division and Workbench's
+screen-wide menu strip, disabled rows, separators and mutually exclusive radio
+choices. This is a DomeD convention inspired by both systems, rather than an
+assertion that Amiga Workbench itself has a File menu.
+
+Window supplies explicit desktop, XR and shared presentation. Geometry, dialog
+ownership and input cleanup are preserved. File supplies a Wayland close request
+when the application has no exported Close action. Qt integration tests cover
+native and fallback actions, submenu navigation, focus changes and merged Window
+menus; scene tests cover restoring shared presentation and rejecting invisible
+windows. Full menu extraction remains conditional on the runtime: current
+Chromium advertises Wayland appmenu capability, while the reviewed Electron
+exporter still casts accelerated widgets to X11 window IDs and registers them
+with the canonical registrar. Its current Linux selection also consults the
+Ozone global-menu capability; this does not establish Wayland surface association. The
+compositor cannot synthesize private application commands from rendered pixels.
+Do not force all Electron apps to X11 or assume that a registrar proves surface
+association. Vivaldi's own editable horizontal/context menus are application
+settings, not proof of a Wayland export.
+
 ## Primary sources
 
 - [SDL3 popup API](https://wiki.libsdl.org/SDL3/SDL_CreatePopupWindow) and
@@ -107,3 +134,9 @@ coordinates was not needed for the cases exercised. SDL3 needed no backend patch
 
 These tests do not certify other toolkits, physical-headset operation, or global
 menu export from stock FLTK/SDL. Neither fixture exports an application menu model.
+
+- [Apple menu-bar guidelines](https://developer.apple.com/design/human-interface-guidelines/the-menu-bar),
+  [Workbench menu strip, ticks, dots and shortcuts](https://wiki.amigaos.net/wiki/Using_the_Workbench_menus).
+- [Electron Menu API](https://www.electronjs.org/docs/latest/api/menu) and
+  [X11 registrar](https://github.com/electron/electron/blob/main/shell/browser/ui/views/global_menu_bar_registrar_x11.cc).
+- [Vivaldi menu customization](https://help.vivaldi.com/desktop/appearance-customization/customize-application-and-context-menus/).

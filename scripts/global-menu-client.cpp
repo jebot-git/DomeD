@@ -27,7 +27,7 @@ int main(int argc,char **argv) {
     MiddleLog middleLog;if(qEnvironmentVariableIsSet("DOME_MENU_BUTTON_LOG"))input->installEventFilter(&middleLog);
     if(name=="plain"){window.show();return app.exec();}
     int activations=0;
-    auto *file=window.menuBar()->addMenu("&Fixture");
+    auto *file=window.menuBar()->addMenu("&File");
     auto *activate=file->addAction("&Activate fixture");activate->setShortcut(QKeySequence("Ctrl+Shift+F12"));
     QObject::connect(activate,&QAction::triggered,[&]{window.setWindowTitle(name+"-activated-"+QString::number(++activations));});
     auto *disabled=file->addAction("Disabled action");disabled->setEnabled(false);
@@ -35,8 +35,10 @@ int main(int argc,char **argv) {
     file->addSeparator();auto *submenu=file->addMenu("&Nested");
     auto *check=submenu->addAction("Checkable action");check->setCheckable(true);
     QObject::connect(check,&QAction::triggered,[&]{window.setWindowTitle(name+"-nested-activated");});
-    auto *edit=window.menuBar()->addMenu("&Changes");
+    auto *edit=window.menuBar()->addMenu("&Edit");
     edit->addAction("Change label",[&]{activate->setText("Updated action");});
     window.menuBar()->addMenu("Unavailable")->setEnabled(false);
+    auto *windows=window.menuBar()->addMenu("&Window");
+    windows->addAction("Native window action",[&]{window.setWindowTitle(name+"-window-action");});
     window.show();return app.exec();
 }

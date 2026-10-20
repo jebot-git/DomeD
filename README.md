@@ -799,6 +799,31 @@ Its watcher retries unavailable item properties and retains registrations until
 their D-Bus owner disconnects. `scripts/test-tray.py` checks delayed startup,
 temporary property failures and disconnect cleanup on a private bus and display.
 
+The universal menu always includes **File**, **Edit** and **Window**, even for Electron,
+Vivaldi, games and other binaries which do not publish an application menu.
+File and Edit come immediately after the application menu; Window precedes Help when
+Help is exported. Without an export, DomeD supplies File, Edit, View, Window and
+Help. Edit supplies Undo, Redo, Cut, Copy, Paste and Select All when missing from the
+export, forwarding client Ctrl shortcuts (Ctrl+Shift+Z for Redo). The application
+decides which operations apply to its current selection or document.
+File provides Close Window; the application menu holds About, Hide and
+Quit. Exported File, Edit and Window menus retain their application actions and gain
+missing compositor controls, separated from the application items. Window always
+includes **Send Window to Desktop**, **Send Window to XR** and **Show Window on
+Both**, with a radio marker for the current presentation. Window actions are
+disabled when no window is focused; XR destinations require an active session.
+This follows macOS's application/File/Window division and Workbench's shared
+screen menu strip, separators, radio choices and keyboard operation.
+
+Full application-specific menus still require an exporter. Recent Chromium
+Wayland builds can discover DomeD's KDE AppMenu protocol; Electron's own menu
+integration depends on its bundled runtime/backend (the reviewed exporter uses
+X11 window IDs). A registrar alone cannot associate those IDs with arbitrary
+Wayland surfaces. Custom HTML menus and `Menu.setApplicationMenu(null)` cannot
+be reconstructed by the compositor. DomeD supplies its standard controls without
+forcing X11, injecting code into applications or changing browser profiles.
+See [menu compatibility and sources](docs/TOOLKIT-INTEGRATION-AUDIT.md).
+
 GTK applications use the `gtk_shell1` Wayland handshake and `org.gtk.Menus` /
 `org.gtk.Actions` exports. DomeD announces that the shell owns application menus
 and menu bars, reads their live models, and dispatches actions on the focused
@@ -938,12 +963,13 @@ Its own F12 handler hides it while it owns the keyboard. Alt+F4 retains the stan
 | Super+C/V/A | Copy / paste / select all using client Ctrl bindings |
 | Super+F10, arrows, Enter, Escape | Navigate classic global menus |
 
-**Window → Send Window to XR / Desktop** transfers the focused DomeD-managed
+**Window → Send Window to XR / Send Window to Desktop** transfers the focused DomeD-managed
 Wayland or X11 window without restarting its application. Shift+Super+X is
 configurable in keybindings. Transfers are exclusive to the destination; normal
-launches retain their existing shared presentation. Desktop geometry and XR
+launches retain their existing shared presentation. **Show Window on Both**
+restores simultaneous presentation of that window and its dialogs. Desktop geometry and XR
 placement survive a round trip. Dialogs follow their parent, while other windows
-of the same application stay where they are. Focus stays in the source view;
+of the same application stay where they are. An exclusive transfer leaves focus in the source view;
 switch input with the taskbar’s Desktop / XR button to use the destination.
 Sending to XR requires an active XR session. If XR stops, its windows return to
 the desktop. Presentation is saved with the session layout. Native OpenXR

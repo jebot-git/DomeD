@@ -116,6 +116,9 @@ impl Dispatch<OrgKdeKwinAppmenu, WlSurface> for Dome {
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
 pub struct Node {
+    /// Local actions never travel through the application D-Bus dispatcher.
+    #[serde(skip)]
+    pub command: Option<dome::shortcuts::Command>,
     pub id: i32,
     pub text: String,
     pub enabled: bool,
@@ -296,6 +299,7 @@ fn decode((id, props, children): WireNode, depth: usize) -> Option<Node> {
         .unwrap_or_default()
         .join("+");
     Some(Node {
+        command: None,
         id,
         text: text("label")
             .replace("__", "\0")

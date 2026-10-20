@@ -28,11 +28,13 @@ Launch a custom client. Remaining arguments belong to that client.
 .B "\-\-help"
 Show usage.
 .SH WINDOW TRANSFER
-Super+Shift+X, or Window > Send Window to XR / Desktop, transfers the focused
+Super+Shift+X, or Window > Send Window to XR / Send Window to Desktop, transfers the focused
 Wayland or X11 window and its dialogs between DomeD's views without restarting
 the application. The window appears exclusively at its destination; other windows
 of the application stay in place. Both desktop geometry and XR placement are
-retained. Focus stays in the source view. Switch input with the taskbar's
+retained. Window > Show Window on Both restores simultaneous desktop and XR
+presentation, including dialogs. The three explicit choices show the current
+presentation with a radio marker. Focus stays in the source view after an exclusive transfer. Switch input with the taskbar's
 Desktop / XR button to use the destination. Sending to XR requires an active
 XR session. If XR stops, its windows return to the desktop. The shortcut can be
 changed in keybindings. Native OpenXR overlays and other compositors are not
@@ -43,6 +45,22 @@ DOME_BACKEND and DOME_RENDERER select backend and renderer. DOME_CONFIG selects 
 XR uses cylindrical dome windows. Super+P pulls the focused window in front of the user or returns it to the dome; at most two windows can be pulled out. The default distance is 2 metres. Settings configure distance, dome height and bindings. Mouse and keyboard are the only input methods. Alt+Tab and Alt+Shift+Tab switch windows in the same lane.
 .PP
 Super+Alt+Up/Down moves the focused window between lanes. Super+Alt+Left/Right reorders it horizontally within its lane, stopping at either edge. Moving a pulled-out window returns it to the dome. Super+Equals/Minus multiplies/divides the focused XR window size by 1.1, within 0.25\(en4 times scale. The View menu exposes lane and size actions; Settings allows rebinding.
+.SH UNIVERSAL MENUS
+File, Edit and Window are always present, including for Electron, Vivaldi and other
+applications without exported menus. File and Edit follow the application menu; Window
+precedes an exported Help menu. File supplies Close Window. Edit supplies Undo, Redo, Cut, Copy, Paste and
+Select All when those operations are missing from the export. Fallback operations
+forward the usual Ctrl shortcuts to the focused client, which decides whether
+the current selection or document supports them. The application
+menu supplies About, Hide and Quit. Exported File, Edit and Window menus keep their
+native actions and gain compositor controls separated from those actions.
+Without an exporter, File, Edit, View, Window and Help use compositor actions.
+Window offers Send Window to Desktop, Send Window to XR and Show Window on Both.
+Unfocused window actions are disabled; XR destinations require an active session.
+.PP
+Application-specific menus require KDE AppMenu/DBusMenu or GTK menu exports.
+Chromium/Electron support depends on the bundled version and backend. Private
+HTML menus and menus disabled by the application cannot be reconstructed.
 .SH MENU NAVIGATION
 Super+F10 opens the universal menu. Left/Right switch enabled headers.
 Up/Down wrap through enabled rows, skipping separators. Right enters a

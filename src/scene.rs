@@ -409,6 +409,7 @@ pub struct Scene {
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Action {
     SendToRealm { id: WindowId, realm: Realm },
+    WindowVisibility { id: WindowId, desktop: bool, xr: bool },
     XrPresentation {
         top: Option<bool>,
         bottom: Option<bool>,
@@ -671,6 +672,12 @@ impl Scene {
     pub fn apply(&mut self, action: Action) -> Result<(), String> {
         match action {
             Action::SendToRealm { id, realm } => {
+                return self.apply(Action::WindowVisibility {
+                    id, desktop: realm == Realm::Desktop, xr: realm == Realm::Xr,
+                });
+            }
+            Action::WindowVisibility { id, desktop, xr } => {
+                if !desktop && !xr { return Err("A window must remain visible in at least one realm".into()); }
                 let root = self.popup_owner(id);
                 self.window(root).ok_or("Unknown window")?;
                 let children: Vec<_> = self.popups.iter()
@@ -679,8 +686,8 @@ impl Scene {
                     .collect();
                 for w in &mut self.windows {
                     if w.id == root || children.contains(&w.id) {
-                        w.desktop_visible = realm == Realm::Desktop;
-                        w.xr_visible = realm == Realm::Xr;
+                        w.desktop_visible = desktop;
+                        w.xr_visible = xr;
                     }
                 }
             }

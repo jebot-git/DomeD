@@ -32,7 +32,83 @@ fn row_selection(rows: &[Node], current: i32, key: u32) -> Option<i32> {
     };
     Some(enabled[index])
 }
+/// Keep application menu identities and ordering; reserve File/Edit first and Window
+/// before Help. Missing categories use compositor actions, including for binaries
+/// which have no menu export. Local command tags avoid remote ID collisions.
+fn universal_menus(mut exported: Vec<Node>, shell: Vec<Node>) -> Vec<Node> {
+    exported.retain(|n| !n.separator);
+    if exported.is_empty() { return shell; }
+    let mut take = |name: &str| {
+        exported.iter().position(|n| n.text.eq_ignore_ascii_case(name))
+            .map(|i| exported.remove(i))
+    };
+    let file = take("File");
+    let edit = take("Edit");
+    let window = take("Window");
+    let help = take("Help");
+    let merge = |native: Option<Node>, category: usize| {
+        let local = &shell[category];
+        let Some(mut native) = native else { return local.clone(); };
+        if !native.enabled {
+            for child in &mut native.children { child.enabled = false; }
+        }
+        native.enabled = true;
+        native.submenu = true;
+        // Keep native actions and their enabled states; fill missing standard
+        // operations without replacing application-specific undo/redo behaviour.
+        let mut additions = local.children.clone();
+        if category <= 1 {
+            additions.retain(|row| !row.separator && !native.children.iter().any(|n|
+                n.text.eq_ignore_ascii_case(&row.text)
+                || (category == 0 && n.text.eq_ignore_ascii_case("Close"))
+                || (matches!(row.command, Some(dome::shortcuts::Command::Undo | dome::shortcuts::Command::Redo))
+                    && n.text.to_lowercase().starts_with(&(row.text.to_lowercase() + " ")))));
+        }
+        if additions.is_empty() { return native; }
+        if !native.children.is_empty() {
+            native.children.push(Node { separator: true, ..Default::default() });
+        }
+        native.children.extend(additions);
+        native
+    };
+    let mut menus = vec![merge(file, 0), merge(edit, 1)];
+    menus.extend(exported);
+    menus.push(merge(window, 3));
+    if let Some(help) = help { menus.push(help); }
+    menus
+}
 impl Dome {
+    fn universal_menus(&self) -> Vec<Node> {
+        let scene = self.shell_scene();
+        let shell = ["File", "Edit", "View", "Window", "Help"].into_iter().enumerate()
+            .map(|(i, text)| Node {
+                text: text.into(), enabled: true, submenu: true,
+                command: Some(dome::shortcuts::Command::Separator),
+                children: self.shell_menu_items(i + 2).into_iter().enumerate().map(|(id, (text, shortcut, command))| {
+                    let chord = if dome::shortcuts::defaults().iter().any(|b| b.command == command) {
+                        scene.config.keybindings.iter().find(|b| b.enabled && b.command == command)
+                            .map(|b| b.label()).unwrap_or_default()
+                    } else { shortcut.into() };
+                    let presentation = if let dome::shortcuts::Command::PresentWindow { desktop, xr } = command {
+                        Some(scene.focused.and_then(|id| scene.window(id))
+                            .is_some_and(|w| w.desktop_visible == desktop && w.xr_visible == xr))
+                    } else { None };
+                    Node { id: id as i32, text, shortcut: chord, enabled: self.command_enabled(command),
+                        separator: command == dome::shortcuts::Command::Separator,
+                        checked: presentation == Some(true), checkable: presentation.is_some(), radio: presentation.is_some(),
+                        command: Some(command), ..Default::default() }
+                }).collect(), ..Default::default()
+            }).collect();
+        universal_menus(self.appmenu_snapshot().root.children, shell)
+    }
+    fn activate_menu_node(&mut self, node: &Node) {
+        // Close first: commands may change focus or dismiss menus themselves.
+        let address = self.focused_menu_address();
+        self.open_menu(None);
+        if let Some(command) = node.command { self.command(command); }
+        else if let Some(address) = address { self.appmenus.activate(address, node.id); }
+    }
+
     pub fn menu_headers(&self) -> Vec<Header> {
         let scene = self.shell_scene();
         let focused = scene.focused.and_then(|id| scene.window(id));
@@ -56,44 +132,21 @@ impl Dome {
             },
         ];
         let mut x = 230;
-        if focused.is_some() {
-            for node in self.appmenu_snapshot().root.children {
-                if node.separator {
-                    continue;
-                }
-                let width = (node.text.chars().count() as i32 * 8 + 24).clamp(48, 200);
-                headers.push(Header {
-                    text: node.text,
-                    x,
-                    width,
-                    enabled: node.enabled,
-                });
-                x += width;
-            }
-        } else {
-            for (text, width) in [
-                ("File", 50),
-                ("Edit", 52),
-                ("View", 58),
-                ("Window", 80),
-                ("Help", 58),
-            ] {
-                headers.push(Header {
-                    text: text.into(),
-                    x,
-                    width,
-                    enabled: true,
-                });
-                x += width;
-            }
+        for node in self.universal_menus() {
+            let width = match node.text.as_str() {
+                "File" => 50, "Edit" => 52, "View" => 58, "Window" => 80, "Help" => 58,
+                _ => (node.text.chars().count() as i32 * 8 + 24).clamp(48, 200),
+            };
+            headers.push(Header { text: node.text, x, width, enabled: node.enabled });
+            x += width;
         }
         headers
     }
     pub fn menu_x(&self, index: usize) -> f64 {
         self.menu_headers().get(index).map_or(0., |h| h.x as f64)
     }
-    pub fn exported_menu(&self, index: usize) -> bool {
-        index >= 2 && self.shell_scene().focused.is_some()
+    pub fn panel_menu(&self, index: usize) -> bool {
+        index >= 2
     }
     pub fn open_menu(&mut self, index: Option<usize>) {
         // A focus action can precede the next render tick. Consume it before
@@ -105,22 +158,16 @@ impl Dome {
         self.menu = index;
         self.menu_hover = -1;
         self.appmenu_path.clear();
-        if let Some(index) = index.filter(|i| self.exported_menu(*i)) {
-            let snapshot = self.appmenu_snapshot();
-            if let (Some(address), Some(node)) = (
-                snapshot.address,
-                snapshot
-                    .root
-                    .children
-                    .iter()
-                    .filter(|n| !n.separator)
-                    .nth(index - 2),
-            ) {
-                self.appmenus.open(address, node.id);
-                if !node.submenu && node.children.is_empty() {
-                    self.appmenus
-                        .activate(self.focused_menu_address().unwrap(), node.id);
-                    self.menu = None;
+        if let Some(index) = index.filter(|i| self.panel_menu(*i)) {
+            if let Some(node) = self.universal_menus().get(index - 2) {
+                if node.command.is_none() {
+                    if let Some(address) = self.focused_menu_address() {
+                        self.appmenus.open(address.clone(), node.id);
+                        if !node.submenu && node.children.is_empty() {
+                            self.appmenus.activate(address, node.id);
+                            self.menu = None;
+                        }
+                    }
                 }
             }
         }
@@ -132,7 +179,7 @@ impl Dome {
             let next = (current as i32 + direction * step as i32).rem_euclid(headers.len() as i32) as usize;
             if headers[next].enabled {
                 self.open_menu(Some(next));
-                if self.exported_menu(next) {
+                if self.panel_menu(next) {
                     let size = self.shell_geometry().size;
                     self.menu_hover = self.appmenu_panels(size.w, size.h).first()
                         .and_then(|p| row_selection(&p.rows, -1, 0xff50)).unwrap_or(-1);
@@ -144,19 +191,11 @@ impl Dome {
         }
     }
     pub fn appmenu_panels(&self, width: i32, height: i32) -> Vec<Panel> {
-        let Some(index) = self.menu.filter(|i| self.exported_menu(*i)) else {
+        let Some(index) = self.menu.filter(|i| self.panel_menu(*i)) else {
             return vec![];
         };
-        let snapshot = self.appmenu_snapshot();
-        let Some(root) = snapshot
-            .root
-            .children
-            .iter()
-            .filter(|n| !n.separator)
-            .nth(index - 2)
-        else {
-            return vec![];
-        };
+        let menus = self.universal_menus();
+        let Some(root) = menus.get(index - 2) else { return vec![]; };
         let pw = 380.min(width.max(1));
         let mut x = (self.menu_x(index) as i32).clamp(0, (width - pw).max(0));
         let mut y = 36;
@@ -213,7 +252,7 @@ impl Dome {
             }
             return;
         }
-        if let Some(menu) = self.menu.filter(|m| !self.exported_menu(*m)) {
+        if let Some(menu) = self.menu.filter(|m| !self.panel_menu(*m)) {
             let x0 = self.menu_x(menu);
             self.menu_hover = if x >= x0 && x < x0 + 380. && y >= 40. { ((y-40.) / 28.) as i32 } else { -1 };
             return;
@@ -246,7 +285,7 @@ impl Dome {
         }
     }
     pub fn appmenu_click(&mut self, x: f64, y: f64, width: i32, height: i32) -> bool {
-        if !self.menu.is_some_and(|i| self.exported_menu(i)) {
+        if !self.menu.is_some_and(|i| self.panel_menu(i)) {
             return false;
         }
         for (level, panel) in self.appmenu_panels(width, height).iter().enumerate().rev() {
@@ -268,10 +307,7 @@ impl Dome {
                                 self.appmenus.open(a, node.id);
                             }
                         } else {
-                            if let Some(a) = self.focused_menu_address() {
-                                self.appmenus.activate(a, node.id);
-                            }
-                            self.open_menu(None);
+                            self.activate_menu_node(node);
                         }
                     }
                 }
@@ -282,7 +318,7 @@ impl Dome {
         true
     }
     pub fn appmenu_key(&mut self, sym: u32) -> bool {
-        if !self.menu.is_some_and(|i| self.exported_menu(i)) { return false; }
+        if !self.menu.is_some_and(|i| self.panel_menu(i)) { return false; }
         let size = self.shell_geometry().size;
         let panels = self.appmenu_panels(size.w, size.h);
         if sym == 0xff1b { self.open_menu(None); return true; }
@@ -312,8 +348,7 @@ impl Dome {
                 } else if sym == 0xff53 {
                     self.switch_menu(1);
                 } else {
-                    if let Some(address) = self.focused_menu_address() { self.appmenus.activate(address, node.id); }
-                    self.open_menu(None);
+                    self.activate_menu_node(node);
                 }
             } else if sym == 0xff53 { self.switch_menu(1); }
         }
@@ -324,6 +359,66 @@ impl Dome {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn shell() -> Vec<Node> {
+        ["File", "Edit", "View", "Window", "Help"].into_iter().map(|text| Node {
+            text: text.into(), enabled: true, submenu: true,
+            command: Some(dome::shortcuts::Command::Separator),
+            children: vec![Node { id: 7, text: "Shell action".into(), enabled: true,
+                command: Some(dome::shortcuts::Command::Close), ..Default::default() }],
+            ..Default::default()
+        }).collect()
+    }
+    #[test]
+    fn non_exporters_and_empty_desktop_have_standard_menus() {
+        let menus = universal_menus(vec![], shell());
+        assert_eq!(menus.iter().map(|n| n.text.as_str()).collect::<Vec<_>>(),
+            ["File", "Edit", "View", "Window", "Help"]);
+        assert!(menus.iter().all(|n| n.enabled && n.children[0].command.is_some()));
+    }
+    #[test]
+    fn native_window_merges_shell_actions_without_id_collisions_or_duplicate_headers() {
+        let native = |id, text: &str| Node { id, text: text.into(), enabled: true, submenu: true,
+            children: vec![Node { id: 7, text: "Native action".into(), enabled: true, ..Default::default() }],
+            ..Default::default() };
+        let menus = universal_menus(vec![native(1, "Tools"), native(2, "Help"),
+            native(3, "Window"), native(4, "File")], shell());
+        assert_eq!(menus.iter().map(|n| n.text.as_str()).collect::<Vec<_>>(), ["File", "Edit", "Tools", "Window", "Help"]);
+        assert_eq!(menus[0].id, 4);
+        let rows = &menus[3].children;
+        assert_eq!(rows[0].id, rows[2].id);
+        assert!(rows[0].command.is_none());
+        assert!(rows[1].separator);
+        assert_eq!(rows[2].command, Some(dome::shortcuts::Command::Close));
+    }
+    #[test]
+    fn edit_keeps_native_operations_and_fills_only_missing_basics() {
+        use dome::shortcuts::Command;
+        let mut fallback = shell();
+        fallback[1].children = [("Undo", Command::Undo), ("Copy", Command::Copy), ("Cut", Command::Cut)]
+            .into_iter().map(|(text, command)| Node { text: text.into(), command: Some(command),
+                enabled: true, ..Default::default() }).collect();
+        let menus = universal_menus(vec![Node { text: "Edit".into(), enabled: true,
+            children: vec![Node { id: 41, text: "Undo Typing".into(), enabled: false, ..Default::default() },
+                Node { id: 42, text: "Copy".into(), enabled: true, ..Default::default() }],
+            ..Default::default() }], fallback);
+        let rows = &menus[1].children;
+        assert_eq!(rows.len(), 4);
+        assert_eq!(rows[0].id, 41);
+        assert!(!rows[0].enabled);
+        assert!(rows[0].command.is_none() && rows[1].command.is_none());
+        assert!(rows[2].separator);
+        assert_eq!(rows[3].command, Some(Command::Cut));
+    }
+    #[test]
+    fn disabled_native_window_cannot_enable_its_actions_but_shell_controls_remain_available() {
+        let menus = universal_menus(vec![Node { text: "Window".into(), children: vec![Node {
+            enabled: true, ..Default::default()
+        }], ..Default::default() }], shell());
+        let window = menus.iter().find(|n| n.text == "Window").unwrap();
+        assert!(window.enabled);
+        assert!(!window.children[0].enabled);
+        assert!(window.children.last().unwrap().enabled);
+    }
     #[test]
     fn arrows_wrap_skip_disabled_and_separators_and_recover_stale_rows() {
         let rows = vec![Node { enabled: true, ..Default::default() }, Node::default(),

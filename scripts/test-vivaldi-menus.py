@@ -2,7 +2,7 @@
 """Real Vivaldi floating-menu navigation on an isolated display, bus and browser profile.
 Run with uv --with python-xlib --with pillow. Set DOME_XVFB and DOME_VIVALDI as needed.
 """
-import json,os,re,signal,socket,subprocess,sys,tempfile,time,urllib.request,shutil
+import json,os,re,signal,socket,subprocess,sys,tempfile,time,urllib.request,shutil,threading
 from pathlib import Path
 signal.pthread_sigmask(signal.SIG_SETMASK,[])
 if os.environ.get('DOME_VIVALDI_TEST_BUS')!='1':
@@ -12,7 +12,7 @@ from Xlib.ext import xtest
 from PIL import Image
 root=Path(__file__).resolve().parents[1]
 out=root/'artifacts/vivaldi-menus';out.mkdir(parents=True,exist_ok=True)
-procs=[];logs=[]
+procs=[];logs=[];heartbeat_stop=threading.Event();pulse=None
 def start(args,name,env,**kw):
  f=(out/(name+'.log')).open('w');logs.append(f);p=subprocess.Popen(args,env=env,stdout=f,stderr=f,start_new_session=True,**kw);procs.append(p);return p
 def wait(fn):
@@ -40,7 +40,8 @@ try:
  wl=re.search(r'Dome Wayland socket: (\S+)',(out/'compositor.log').read_text())[1]
  profile=Path(tmp)/'profile/Default';profile.mkdir(parents=True)
  (profile/'Preferences').write_text(json.dumps({'vivaldi':{'startup':{'has_seen_welcome_page':True},'welcome':{'version':'8.2'}}}))
- start([os.environ.get('DOME_VIVALDI',shutil.which('vivaldi')or'vivaldi'),'--user-data-dir='+tmp+'/profile','--ozone-platform=wayland','--no-first-run','--no-default-browser-check','--disable-background-networking','--disable-features=Vulkan','about:blank'],'vivaldi',{**env,'WAYLAND_DISPLAY':wl,'GDK_BACKEND':'wayland','QT_QPA_PLATFORM':'wayland'})
+ # The disposable profile must not wait for a new KWallet's password dialog.
+ start([os.environ.get('DOME_VIVALDI',shutil.which('vivaldi')or'vivaldi'),'--user-data-dir='+tmp+'/profile','--ozone-platform=wayland','--no-first-run','--no-default-browser-check','--disable-background-networking','--disable-features=Vulkan','--disable-gpu','--password-store=basic','about:blank'],'vivaldi',{**env,'WAYLAND_DISPLAY':wl,'GDK_BACKEND':'wayland','QT_QPA_PLATFORM':'wayland'})
  wait(lambda:len(scene()['windows'])>0);time.sleep(8)
  xd=display.Display(ds)
  host=wait(lambda:next((w for w in xd.screen().root.query_tree().children if str(w.get_wm_name()or'').startswith('Dome')),None))
@@ -62,8 +63,47 @@ try:
  for typ in [X.ButtonPress,X.ButtonRelease]:xtest.fake_input(xd,typ,1);xd.sync();time.sleep(.1)
  wait(lambda:len(scene()['windows'])==2)
  print('PASS Vivaldi: compositor-configured floating menus, pointer traversal into submenu, New Window action',flush=True)
+ def post(path,value):
+  urllib.request.urlopen(urllib.request.Request(base+path,data=json.dumps(value).encode(),headers={'Content-Type':'application/json'}),timeout=2).close()
+ def press(name):key(name,True);key(name,False)
+ def click(x,y):
+  move(x,y)
+  for typ in [X.ButtonPress,X.ButtonRelease]:xtest.fake_input(xd,typ,1);xd.sync();time.sleep(.1)
+ wid=scene()['focused']
+ click(430,18);press('Home');press('Return')
+ wait(lambda:not next(w for w in scene()['windows'] if w['id']==wid)['xr_visible'])
+ print('PASS Vivaldi: universal Window sends the focused binary window to Desktop',flush=True)
+ def heartbeat():
+  while not heartbeat_stop.is_set():
+   post('/api/xr-session',{'visible':True,'focused':False,'head':{'position_m':[0,1.4,0],'orientation_xyzw':[0,0,0,1]},'horizontal_fov_deg':100})
+   heartbeat_stop.wait(.1)
+ pulse=threading.Thread(target=heartbeat,daemon=True);pulse.start();time.sleep(.5)
+ # A visible simulated XR session owns physical input. Route shell clicks just
+ # like the real XR frontend, and start with an XR-only focused browser window.
+ post('/api/action',{'op':'window_visibility','id':wid,'desktop':False,'xr':True})
+ post('/api/action',{'op':'focus','id':wid});time.sleep(.5)
+ def xr_shell_click(x,y):
+  layout=json.load(urllib.request.urlopen(base+'/api/xr-shell',timeout=2))
+  post('/api/xr-input',{'events':[{'kind':'motion','id':0,'uv':[x/layout['width'],y/layout['top']]}],'actions':[]});time.sleep(.2)
+  post('/api/xr-input',{'events':[{'kind':'button','button':272,'pressed':True},{'kind':'button','button':272,'pressed':False}],'actions':[]});time.sleep(.3)
+ xr_shell_click(430,18);press('Home');press('Down');press('Down');press('Return')
+ wait(lambda:all(next(w for w in scene()['windows'] if w['id']==wid)[k] for k in ['desktop_visible','xr_visible']))
+ xr_shell_click(430,18);shot('universal-window-both');press('Escape')
+ print('PASS Vivaldi: universal Window restores Both with simulated XR availability',flush=True)
+ xr_shell_click(430,18);press('Home');press('Down');press('Return')
+ wait(lambda:not next(w for w in scene()['windows'] if w['id']==wid)['desktop_visible'])
+ print('PASS Vivaldi: universal Window sends the focused binary window to XR',flush=True)
+ post('/api/action',{'op':'window_visibility','id':wid,'desktop':True,'xr':True})
+ heartbeat_stop.set();pulse.join(timeout=3)
+ post('/api/xr-session',{'visible':False,'focused':False})
+ post('/api/action',{'op':'focus','id':wid});time.sleep(.5)
+ click(260,18);press('Home');press('Return')
+ wait(lambda:not any(w['id']==wid for w in scene()['windows']))
+ print('PASS Vivaldi: universal File closes its focused window through native client protocol',flush=True)
  print(out,flush=True)
 finally:
+ heartbeat_stop.set()
+ if pulse:pulse.join(timeout=3)
  for p in reversed(procs):
   try:os.killpg(p.pid,signal.SIGTERM)
   except ProcessLookupError:pass
