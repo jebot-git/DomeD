@@ -100,6 +100,8 @@ impl Dome {
         self.tray.close();
         self.history_panel = None;
         self.close_audio();
+        self.cursor_finder = Default::default();
+        self.xr_bridge.lock().unwrap().finder_started = None;
         self.input_xr_active = desired;
         self.input_realm = realm;
         {

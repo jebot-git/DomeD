@@ -89,7 +89,7 @@ extern "C" int dome_qt_paint(const char *json,unsigned char *pixels,int length) 
     }
     if(o["kind"].toString()=="frame") {
         bool active=o["active"].toBool();
-        QColor border=active?accent:muted;border.setAlpha(appearance["opacity"].toInt(248));
+        QColor border=active?accent:muted;border.setAlpha(active?96:64);
         p.fillRect(QRect(0,30,4,h-30),border);p.fillRect(QRect(w-4,30,4,h-30),border);p.fillRect(QRect(0,h-4,w,4),border);
         QColor caption=active?(light?accent.lighter(145):accent.darker(190)):background;
         p.setOpacity(appearance["opacity"].toInt(248)/255.0);
@@ -224,7 +224,7 @@ extern "C" int dome_qt_paint(const char *json,unsigned char *pixels,int length) 
         int opacity=barBackground.alpha();
         QString opacityPreset=opacity==208?"Translucent · 82% (1/3)":opacity==248?"Nearly opaque · 97% (2/3)":opacity==255?"Opaque · 100% (3/3)":QString("Custom · %1%").arg(qRound(opacity*100./255));
         QString fontName="No Unicode bitmap fonts available",fontSize="Unavailable";
-        QString chosen=appearance["font"].toString("GNU Unifont / Sans-Serif");
+        QString chosen=appearance["font"].toString("Unifont / Sans-Serif");
         for(int i=0;i<bitmapFonts.size();++i){auto f=bitmapFonts[i].toObject();if(f["id"].toString()!=chosen)continue;
             QString name=f["family"].toString();auto style=f["style"].toString();if(style!="Regular"&&style!="Sans-Serif")name+=" · "+style;
             fontName=p.fontMetrics().elidedText(name,Qt::ElideMiddle,200)+QString(" (%1/%2)").arg(i+1).arg(bitmapFonts.size());

@@ -30,17 +30,10 @@ files=(
     usr/local/share/doc/domed/dome.example.json
     usr/local/share/doc/domed/protocols/gtk-shell.xml
     usr/local/share/doc/domed/protocols/COPYING.gtk
-    usr/local/share/doc/domed/fonts/OFL-1.1.txt
-    usr/local/share/doc/domed/fonts/COPYING.unifont
-    usr/local/share/doc/domed/fonts/README.unifont
-    usr/local/share/doc/domed/fonts/upstream.json
-    usr/local/share/doc/domed/fonts/cozette-v1.30.0/LICENSE
-    usr/local/share/doc/domed/fonts/cozette-v1.30.0/upstream.json
-    usr/local/share/doc/domed/fonts/galmuri-v2.40.4/OFL.txt
-    usr/local/share/doc/domed/fonts/galmuri-v2.40.4/upstream.json
-    usr/local/share/doc/domed/fonts/denkichip-v1.213/OFL.txt
-    usr/local/share/doc/domed/fonts/denkichip-v1.213/upstream.json
 )
+while IFS= read -r name; do
+    files+=("usr/local/share/doc/domed/fonts/$name")
+done < "$root/packaging/font-notices.list"
 for file in "${files[@]}"; do
     [[ -f "$stage/$file" && ! -L "$stage/$file" ]] || { echo "Missing staged file: $file" >&2; exit 1; }
 done

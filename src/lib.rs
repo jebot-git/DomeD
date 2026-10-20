@@ -47,3 +47,6 @@ pub mod audio;
 
 
 pub mod music_floor;
+
+pub mod bundled_fonts;
+pub mod visual_feedback;

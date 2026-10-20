@@ -284,14 +284,7 @@ impl Dome {
                         self.audio_motion(x, layout.width as i32, layout.height as i32);
                         self.task_motion(x, y, layout.width as i32, layout.height as i32);
                         self.appmenu_motion(x, y, layout.width as i32, layout.height as i32);
-                        if let Some(menu) = self.menu.filter(|m| !self.exported_menu(*m)) {
-                            let x0 = self.menu_x(menu);
-                            self.menu_hover = if x >= x0 && x < x0 + 380. && y >= 40. {
-                                ((y - 40.) / 28.) as i32
-                            } else {
-                                -1
-                            };
-                        }
+
                         pointer.motion(
                             self,
                             None,

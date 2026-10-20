@@ -27,9 +27,11 @@ impl crate::Dome {
             .map(|(index, _)| index).collect();
         if enabled.is_empty() { self.menu_hover = -1; return; }
         let index = enabled.iter().position(|i| *i as i32 == self.menu_hover);
-        let next = if index.is_none() && key == 0xff54 { 0 }
-            else if index.is_none() && key == 0xff52 { enabled.len() - 1 }
-            else { selection(index.unwrap_or(0), enabled.len(), key).unwrap_or(0) };
+        let next = match key {
+            0xff54 => index.map_or(0, |i| (i + 1) % enabled.len()),
+            0xff52 => index.map_or(enabled.len() - 1, |i| (i + enabled.len() - 1) % enabled.len()),
+            _ => selection(index.unwrap_or(0), enabled.len(), key).unwrap_or(0),
+        };
         self.menu_hover = enabled[next] as i32;
     }
     pub fn shell_panel_key(&mut self, key: u32) -> bool {

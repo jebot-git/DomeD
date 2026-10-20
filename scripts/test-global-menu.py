@@ -60,7 +60,7 @@ try:
     if not includes.exists():includes=prefix/'include/qt6'
     fixture=runtime/'menu-client'
     subprocess.run(['g++','-std=c++17','-fPIC','-I'+str(includes),str(root/'scripts/global-menu-client.cpp'),
-        '/usr/lib/x86_64-linux-gnu/libQt6Widgets.so.6','/usr/lib/x86_64-linux-gnu/libQt6Gui.so.6','/usr/lib/x86_64-linux-gnu/libQt6Core.so.6','-o',str(fixture)],check=True)
+        '-l:libQt6Widgets.so.6','-l:libQt6Gui.so.6','-l:libQt6Core.so.6','-o',str(fixture)],check=True)
     rd,wr=os.pipe();start([os.environ.get('DOME_XVFB','Xvfb'),'-displayfd',str(wr),'-screen','0','1600x1000x24','-nolisten','tcp','-noreset'],'xvfb',os.environ.copy(),pass_fds=(wr,));os.close(wr)
     with os.fdopen(rd) as pipe:display_name=':'+pipe.readline().strip()
     with socket.socket() as sock:sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
@@ -82,7 +82,7 @@ try:
     log=(out/'compositor.log').read_text()
     check('Dome compositor renderer: vulkan (zink Vulkan' in log,'Compositor uses Vulkan through Mesa Zink')
     wayland=re.search(r'Dome Wayland socket: (\S+)',log)[1]
-    client_env={**env,'WAYLAND_DISPLAY':wayland,'QT_QPA_PLATFORM':'wayland','QT_WAYLAND_CLIENT_BUFFER_INTEGRATION':'shm'}
+    client_env={**env,'WAYLAND_DISPLAY':wayland,'QT_QPA_PLATFORM':'wayland','QT_WAYLAND_CLIENT_BUFFER_INTEGRATION':'shm','DOME_MENU_BUTTON_LOG':str(runtime/'middle-buttons')}
     client_env.pop('QT_QPA_PLATFORMTHEME',None)
     a=start([str(fixture),'first'],'first',client_env)
     aid=wait(lambda:next((w['id'] for w in scene()['windows'] if w['title']=='first'),None))
@@ -123,10 +123,56 @@ try:
     check(ImageChops.difference(before,after).getbbox() is not None,'Application menu label updates repaint in the global bar')
     key('Down');key('Return');wait(lambda:title(aid)=='first-activated-2')
     check(True,'Keyboard navigation activates the focused exported menu')
+    click(260,18);key('Up');key('Right');key('Left');key('Right');key('Return')
+    wait(lambda:title(aid)=='first-nested-activated')
+    check(True,'Up starts at the last enabled row; Right/Left enter and restore submenus')
+    click(260,18);key('Home');key('Down');key('Right');key('Left');key('Home');key('Return')
+    wait(lambda:title(aid)=='first-activated-3')
+    check(True,'Arrow navigation skips disabled rows and separators without losing the parent selection')
+    click(260,18);key('Home');key('Right');key('Right');key('Right');key('Right');key('Home');key('Return')
+    wait(lambda:title(aid)=='first-activated-4')
+    check(True,'Left/Right traverse enabled menu headers and skip disabled top-level menus')
     p=start([str(fixture),'plain'],'plain',client_env)
     pid=wait(lambda:next((w['id'] for w in scene()['windows'] if w['title']=='plain'),None))
     action({'op':'focus','id':pid});time.sleep(.8);capture('04-no-exported-menu')
-    click(260,18);click(280,54);check(title(aid)=='first-activated-2' and title(bid)=='second-nested-activated','Non-exporting app does not expose stale application menus')
+    click(260,18);click(280,54);check(title(aid)=='first-activated-4' and title(bid)=='second-nested-activated','Non-exporting app does not expose stale application menus')
+    key('Escape')
+    def chord(*names):
+        codes=[xd.keysym_to_keycode(XK.string_to_keysym(name)) for name in names]
+        for code in codes:xtest.fake_input(xd,X.KeyPress,code);xd.sync();time.sleep(.06)
+        for code in reversed(codes):xtest.fake_input(xd,X.KeyRelease,code);xd.sync();time.sleep(.06)
+    def lane_order():
+        s=scene();w=next(w for w in s['windows'] if w['id']==pid)
+        return s['workspaces'][w['workspace']]['lanes'][w['lane']]['windows']
+    action({'op':'focus','id':pid})
+    order=lane_order();index=order.index(pid)
+    check(index>0,'Shortcut fixture has a window to its left in the lane')
+    chord('Super_L','Alt_L','Left')
+    wait(lambda:lane_order().index(pid)==index-1)
+    check(True,'Super+Alt+Left reaches the compositor and moves the focused window left in its lane')
+    chord('Super_L','Alt_L','Right')
+    wait(lambda:lane_order()==order)
+    check(True,'Super+Alt+Right restores the lane order')
+    action({'op':'desktop_move','id':aid,'x':10,'y':90})
+    action({'op':'desktop_move','id':pid,'x':670,'y':180})
+    action({'op':'focus','id':pid});time.sleep(.4)
+    active=capture('05-focus-border')
+    action({'op':'focus','id':aid});time.sleep(.4)
+    inactive=capture('06-focus-border-inactive')
+    check(active.getpixel((710,180)) != inactive.getpixel((710,180)), 'Focused client content gains a subtle accent border, which clears on focus change')
+    action({'op':'focus','id':pid});motion(820,340);time.sleep(.4)
+    before=capture('07-finder-before')
+    for event in [X.ButtonPress,X.ButtonRelease,X.ButtonPress,X.ButtonRelease]:
+        xtest.fake_input(xd,event,2);xd.sync();time.sleep(.025)
+    time.sleep(.12)
+    during=capture('08-cursor-finder')
+    time.sleep(.85);after=capture('09-finder-expired')
+    region=(756,276,884,404)
+    changed=lambda a,b:sum(pixel!=(0,0,0) for pixel in ImageChops.difference(a.crop(region),b.crop(region)).getdata())
+    (out/'finder-measurements.json').write_text(json.dumps({'during':changed(before,during),'after':changed(before,after),'buttons':(runtime/'middle-buttons').read_text() if (runtime/'middle-buttons').exists() else None}))
+    check(changed(before,during)>100 and changed(before,after)<50,'Double middle click renders contracting cursor rings and clears the effect after three short pulses')
+    buttons=(runtime/'middle-buttons').read_text().splitlines()
+    check(buttons==['press','release','press','release'],'Cursor finder preserves both normal middle-button press/release pairs')
     check(compositor.poll() is None,'Compositor remains responsive after focus and menu changes')
 finally:
     if xd is not None and host is not None:

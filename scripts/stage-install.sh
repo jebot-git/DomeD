@@ -23,17 +23,9 @@ done
 for name in gtk-shell.xml COPYING.gtk; do
     install -D -m 0644 "$root/protocols/$name" "$stage/usr/local/share/doc/domed/protocols/$name"
 done
-for name in OFL-1.1.txt COPYING.unifont README.unifont upstream.json; do
+while IFS= read -r name; do
     install -D -m 0644 "$root/assets/fonts/$name" "$stage/usr/local/share/doc/domed/fonts/$name"
-done
-for font in galmuri-v2.40.4 denkichip-v1.213; do
-    for name in OFL.txt upstream.json; do
-        install -D -m 0644 "$root/assets/fonts/$font/$name" "$stage/usr/local/share/doc/domed/fonts/$font/$name"
-    done
-done
-for name in LICENSE upstream.json; do
-    install -D -m 0644 "$root/assets/fonts/cozette-v1.30.0/$name" "$stage/usr/local/share/doc/domed/fonts/cozette-v1.30.0/$name"
-done
+done < "$root/packaging/font-notices.list"
 desktop-file-validate "$stage/usr/share/wayland-sessions/dome.desktop" "$stage/usr/local/share/applications/org.domed.Compositor.desktop"
 
 for page in "$root"/docs/man/*.1; do

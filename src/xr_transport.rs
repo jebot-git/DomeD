@@ -37,6 +37,8 @@ pub struct Bridge {
     pub exit_requested: bool,
     pub xr_socket: String,
     pub cursor: Option<Cursor>,
+    pub finder_started: Option<Instant>,
+    pub accent: [u8; 3],
     pub mouse_angles: Option<[f32; 2]>,
     pub last_mouse: Option<Instant>,
     pub mouse_buttons: std::collections::HashSet<u32>,
@@ -55,6 +57,8 @@ impl Default for Bridge {
             exit_requested: false,
             xr_socket: String::new(),
             cursor: None,
+            finder_started: None,
+            accent: crate::visual_feedback::ACCENT,
             mouse_angles: None,
             last_mouse: None,
             mouse_buttons: Default::default(),
@@ -81,6 +85,10 @@ pub struct Cursor {
 }
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct Control {
+    #[serde(default)]
+    pub finder_seconds: Option<f32>,
+    #[serde(default = "default_accent")]
+    pub accent: [u8; 3],
     pub input_realm: crate::Realm,
     pub visible: bool,
     pub mouse: bool,
@@ -89,6 +97,7 @@ pub struct Control {
     pub mouse_angles: Option<[f32; 2]>,
     pub exit_requested: bool,
 }
+fn default_accent() -> [u8; 3] { crate::visual_feedback::ACCENT }
 impl Bridge {
     pub fn visible(&self) -> bool {
         self.session.visible
@@ -102,6 +111,9 @@ impl Bridge {
     }
     pub fn control(&self) -> Control {
         Control {
+            finder_seconds: self.finder_started.map(|t| t.elapsed().as_secs_f32())
+                .filter(|t| self.input_realm == crate::Realm::Xr && *t < crate::visual_feedback::FINDER_DURATION),
+            accent: self.accent,
             input_realm: self.input_realm,
             visible: self.visible(),
             mouse: self.mouse_owned(),

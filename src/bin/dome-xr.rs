@@ -27,6 +27,7 @@ struct Network {
     session: dome::xr_transport::Session,
     sampled: Option<Instant>,
     control: dome::xr_transport::Control,
+    control_received: Option<Instant>,
     shell: dome::xr_transport::ShellLayout,
     images: HashMap<u64, Image>,
 }
@@ -128,7 +129,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     .send_json(serde_json::to_value(status).unwrap());
                 if let Ok(response) = agent.get(&format!("{base}/api/xr-control")).call() {
                     if let Ok(control) = response.into_json::<dome::xr_transport::Control>() {
-                        n.lock().unwrap().control = control;
+                        let mut state = n.lock().unwrap();
+                        state.control = control;
+                        state.control_received = Some(Instant::now());
                     }
                 }
                 last_heartbeat = Instant::now();
@@ -160,7 +163,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         let mut ids: Vec<_> = scene
                             .windows
                             .iter()
-                            .filter(|w| w.xr_visible && w.workspace == scene.active_workspace && !w.minimized)
+                            .filter(|w| w.xr_visible && !w.minimized)
                             .map(|w| w.id)
                             .collect();
                         if let Ok(response) = agent.get(&format!("{base}/api/xr-shell")).call() {
@@ -216,6 +219,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                                                 &mut rgba, width, height, border,
                                             );
                                         }
+                                        let state = n.lock().unwrap();
+                                        if !dome::xr_transport::is_shell(id) && state.scene.as_ref().is_some_and(|s| s.focused == Some(id)) {
+                                            dome::visual_feedback::focus_border(&mut rgba, width, height, state.control.accent, stereo);
+                                        }
+                                        drop(state);
                                         serial += 1;
                                         n.lock().unwrap().images.insert(
                                             id,
@@ -469,14 +477,19 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let head_pose = last_head;
             let (scene, mut images, shell, control) = {
                 let state = network.lock().unwrap();
+                let mut control = state.control.clone();
+                if let Some(age) = control.finder_seconds.as_mut() {
+                    *age += state.control_received.map_or(0., |t| t.elapsed().as_secs_f32());
+                }
                 (
                     state.scene.clone(),
                     state.images.clone(),
                     state.shell.clone(),
-                    state.control.clone(),
+                    control,
                 )
             };
             let mut geometry = vec![];
+            let mut layer_opacities = HashMap::new();
             let mut popup_beams = vec![];
             let mut popup_ids = std::collections::HashSet::new();
             let mut stereo_windows = std::collections::HashSet::new();
@@ -494,7 +507,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     (transition.top > 0. && transition.top < 1.)
                         || (transition.bottom > 0. && transition.bottom < 1.),
                 );
-                geometry = dome::xr_input::quads(&scene, head_pose);
+                geometry = dome::xr_input::render_quads(&scene, head_pose);
+                layer_opacities.extend(scene.panels().into_iter().map(|p| (p.id, p.opacity)));
                 popup_ids.extend(scene.popups.iter().map(|p| p.id));
                 popup_beams = dome::spatial_popup::beams(&scene, &geometry, head_pose);
                 let hud_scene = scene.clone();
@@ -542,6 +556,17 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     } else {
                         reticle
                     };
+                    if let Some(age) = control.finder_seconds.filter(|age| *age < dome::visual_feedback::FINDER_DURATION) {
+                        let mut finder = reticle.clone();
+                        finder.id = u64::MAX - 1;
+                        finder.size = finder.size.map(|v| v * 4.);
+                        images.insert(finder.id, Image {
+                            width: 128, height: 128,
+                            rgba: dome::visual_feedback::finder_pixels(age, control.accent),
+                            serial: count + 2,
+                        });
+                        geometry.push(finder);
+                    }
                     let id = reticle.id;
                     let rgba = dome::xr_input::cursor_pixels();
                     images.insert(
@@ -589,6 +614,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     size:floor.size, dome:None,
                 });
             }
+            // Keep interactive surfaces ahead of background domes when layer limits apply.
+            geometry.sort_by_key(|q| {
+                let background = scene.as_ref().and_then(|s| s.window(q.id))
+                    .filter(|w| scene.as_ref().is_some_and(|s| w.workspace != s.active_workspace));
+                (background.is_some(), background.map_or(0, |w| {
+                    let s = scene.as_ref().unwrap();
+                    (w.workspace + s.workspaces.len() - s.active_workspace) % s.workspaces.len()
+                }))
+            });
             chains.retain(|id, _| geometry.iter().any(|q| q.id == *id));
             if frame.should_render {
                 for q in geometry.iter().take(max_layers) {
@@ -606,12 +640,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             );
                         }
                         let p = chains.get_mut(&q.id).unwrap();
-                        let opacity = (transition.opacity.clamp(0., 1.) * 255.).round() as u8;
+                        let fade = (transition.opacity * layer_opacities.get(&q.id).copied().unwrap_or(1.)).clamp(0., 1.);
+                        let opacity = (fade * 255.).round() as u8;
                         if p.serial != image.serial || p.opacity != opacity {
                             let mut faded;
                             let uploaded_image = if opacity < 255 {
                                 faded = image.clone();
-                                transition.fade_rgba(&mut faded.rgba);
+                                for channel in &mut faded.rgba {
+                                    *channel = ((*channel as u16 * opacity as u16 + 127) / 255) as u8;
+                                }
                                 &faded
                             } else {
                                 image
@@ -659,6 +696,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .take(max_layers)
                 .filter_map(|q| chains.get(&q.id).map(|p| (q, p)))
                 .collect();
+            let mut layer_budget = 0;
+            visible.retain(|(q, _)| {
+                let cost = if stereo_windows.contains(&q.id) { 2 } else { 1 };
+                if layer_budget + cost > max_layers { return false; }
+                layer_budget += cost; true
+            });
             visible.sort_by_key(|(q, _)| {
                 let group = if q.id == u64::MAX - 32 {
                     0
@@ -672,13 +715,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     1
                 };
                 let order = scene.as_ref().map(|s| dome::xr_input::window_order(s, q.id)).unwrap_or(1);
-                (group, order, q.dome.is_none())
-            });
-            let mut layer_budget = 0;
-            visible.retain(|(q, _)| {
-                let cost = if stereo_windows.contains(&q.id) { 2 } else { 1 };
-                if layer_budget + cost > max_layers { return false; }
-                layer_budget += cost; true
+                let depth = scene.as_ref().and_then(|s| s.window(q.id).map(|w| {
+                    (w.workspace + s.workspaces.len() - s.active_workspace) % s.workspaces.len()
+                })).unwrap_or(0);
+                (group, std::cmp::Reverse(depth), order, q.dome.is_none())
             });
             peak_stereo = peak_stereo.max(visible.iter().filter(|(q, _)| stereo_windows.contains(&q.id)).count());
             let stage_ref = &stage;

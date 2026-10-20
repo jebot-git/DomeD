@@ -154,44 +154,7 @@ fn write_theme(root: &Path, appearance: Appearance) -> std::io::Result<Snapshot>
     Ok(Snapshot { appearance, theme })
 }
 fn write_fonts(root: &Path) -> std::io::Result<PathBuf> {
-    let fonts: &[(&str, &[u8])] = &[
-        (
-            "cozette.otb",
-            include_bytes!("../../../assets/fonts/cozette-v1.30.0/cozette.otb"),
-        ),
-        (
-            "unifont.pcf",
-            include_bytes!("../../../assets/fonts/unifont-17.0.04.pcf"),
-        ),
-        (
-            "DenkiChipHangul.bdf",
-            include_bytes!("../../../assets/fonts/denkichip-v1.213/DenkiChipHangul.bdf"),
-        ),
-        (
-            "Galmuri11.ttf",
-            include_bytes!(
-                "../../../assets/fonts/galmuri-v2.40.4/Galmuri11Bitmap-Regular-2.40.4.ttf"
-            ),
-        ),
-        (
-            "Galmuri14.ttf",
-            include_bytes!(
-                "../../../assets/fonts/galmuri-v2.40.4/Galmuri14Bitmap-Regular-2.40.4.ttf"
-            ),
-        ),
-        (
-            "Galmuri9.ttf",
-            include_bytes!(
-                "../../../assets/fonts/galmuri-v2.40.4/Galmuri9Bitmap-Regular-2.40.4.ttf"
-            ),
-        ),
-        (
-            "Galmuri7.ttf",
-            include_bytes!(
-                "../../../assets/fonts/galmuri-v2.40.4/Galmuri7Bitmap-Regular-2.40.4.ttf"
-            ),
-        ),
-    ];
+    let fonts = dome::bundled_fonts::FONTS;
     let directory = root.join("fonts");
     for (name, bytes) in fonts {
         atomic_write(&directory.join(name), bytes)?;
@@ -337,7 +300,7 @@ mod tests {
             .unwrap(),
             1
         );
-        assert_eq!(font_name(&appearance), "GNU Unifont 12");
+        assert_eq!(font_name(&appearance), "Unifont 12");
         appearance.light = true;
         appearance.font_size = 24;
         let light = settings(&Snapshot {

@@ -6,11 +6,25 @@
 #include <QtWidgets/QLineEdit>
 #include <QtCore/QFile>
 #include <QtCore/QTimer>
+#include <QtCore/QFile>
+#include <QtGui/QMouseEvent>
+class MiddleLog : public QObject {
+public:
+    bool eventFilter(QObject *object,QEvent *event) override {
+        if((event->type()==QEvent::MouseButtonPress||event->type()==QEvent::MouseButtonDblClick||event->type()==QEvent::MouseButtonRelease)
+            &&static_cast<QMouseEvent*>(event)->button()==Qt::MiddleButton) {
+            QFile output(qEnvironmentVariable("DOME_MENU_BUTTON_LOG"));
+            if(output.open(QIODevice::Append))output.write(event->type()!=QEvent::MouseButtonRelease?"press\n":"release\n");
+        }
+        return QObject::eventFilter(object,event);
+    }
+};
 int main(int argc,char **argv) {
     QApplication app(argc,argv);app.setApplicationName("Dome Menu Fixture");app.setDesktopFileName("dome-menu-fixture");
     QMainWindow window;QString name=argc>1?QString::fromLocal8Bit(argv[1]):"fixture";window.setWindowTitle(name);window.resize(640,420);
     auto *input=new QLineEdit(&window);input->setPlaceholderText("Keypad input");window.setCentralWidget(input);input->setFocus();
     QObject::connect(input,&QLineEdit::textEdited,[&](const QString &text){window.setWindowTitle(name+"-key-"+text);});
+    MiddleLog middleLog;if(qEnvironmentVariableIsSet("DOME_MENU_BUTTON_LOG"))input->installEventFilter(&middleLog);
     if(name=="plain"){window.show();return app.exec();}
     int activations=0;
     auto *file=window.menuBar()->addMenu("&Fixture");
@@ -23,5 +37,6 @@ int main(int argc,char **argv) {
     QObject::connect(check,&QAction::triggered,[&]{window.setWindowTitle(name+"-nested-activated");});
     auto *edit=window.menuBar()->addMenu("&Changes");
     edit->addAction("Change label",[&]{activate->setText("Updated action");});
+    window.menuBar()->addMenu("Unavailable")->setEnabled(false);
     window.show();return app.exec();
 }

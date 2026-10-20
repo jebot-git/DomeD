@@ -22,19 +22,19 @@ static void addBitmapFont(FT_Face face, const QByteArray &data, const QString &p
         FT_Select_Charmap(face, FT_ENCODING_UNICODE) ||
         !FT_Get_Char_Index(face, 'A') ||
         !(FT_Get_Char_Index(face, 0x00e9) || FT_Get_Char_Index(face, 0x3042) || FT_Get_Char_Index(face, 0xac00))) return;
-    int id = data.isEmpty() ? QFontDatabase::addApplicationFont(path)
-                           : QFontDatabase::addApplicationFontFromData(data);
-    if (id < 0) return;
     QJsonArray sizes;
     QList<int> strikes;
     for (int i=0; i<face->num_fixed_sizes; ++i) {
         int size=qRound(face->available_sizes[i].y_ppem/64.);
         // Keep desktop text within the existing controls' usable range.
-        if(size>=8 && size<=24 && !strikes.contains(size)) strikes.append(size);
+        if(size>=12 && size<=24 && !strikes.contains(size)) strikes.append(size);
     }
     std::sort(strikes.begin(),strikes.end());
     for(int size:strikes) sizes.append(size);
     if(sizes.isEmpty())return;
+    int id = data.isEmpty() ? QFontDatabase::addApplicationFont(path)
+                           : QFontDatabase::addApplicationFontFromData(data);
+    if (id < 0) return;
     for(const auto &family:QFontDatabase::applicationFontFamilies(id)) {
         QString style=QString::fromUtf8(face->style_name ? face->style_name : "Regular");
         QString key=family+" / "+style;
@@ -104,7 +104,7 @@ extern "C" const char *dome_qt_font_catalog(const unsigned char *bundled, int le
     return json.constData();
 }
 static QFont interfaceFont(const QJsonObject &appearance) {
-    QString selected=appearance["font"].toString("GNU Unifont / Sans-Serif");
+    QString selected=appearance["font"].toString("Unifont / Sans-Serif");
     QJsonObject choice;
     for(const auto &font:bitmapFonts)if(font.toObject()["id"].toString()==selected){choice=font.toObject();break;}
     if(choice.isEmpty() && !bitmapFonts.isEmpty())choice=bitmapFonts.first().toObject();

@@ -97,7 +97,7 @@ try:
         config = runtime / 'config'
         (config / 'dome').mkdir(parents=True)
         (config / 'dome/keyboard.json').write_text(json.dumps({'ime': False, 'layout': 'us'}))
-        (config / 'dome/appearance.json').write_text(json.dumps({'light': False, 'font': 'GNU Unifont / Sans-Serif', 'font_size': 16}))
+        (config / 'dome/appearance.json').write_text(json.dumps({'light': False, 'font': 'Unifont / Sans-Serif', 'font_size': 16}))
         (config / 'xdg-desktop-portal').mkdir()
         (config / 'xdg-desktop-portal/dome-portals.conf').write_text((root / 'packaging/dome-portals.conf').read_text())
         apps = runtime / 'data/applications'
@@ -154,9 +154,9 @@ try:
             return all(abs(channel - int(colour[index:index+2], 16) / 255) < .001
                        for channel, index in zip(rgb, [1, 3, 5]))
         gtk_names = ['gtk3', 'gtk4', 'gtk3-native']
-        assert dark['qt']['family'] == 'GNU Unifont' and dark['qt']['pixels'] == 16, dark
+        assert dark['qt']['family'] == 'Unifont' and dark['qt']['pixels'] == 16, dark
         assert dark['qt']['window'] == '#1f252d', dark
-        assert all(dark[name]['font'] == 'GNU Unifont 12' and colour_matches(dark[name]['window'], '#1f252d')
+        assert all(dark[name]['font'] == 'Unifont 12' and colour_matches(dark[name]['window'], '#1f252d')
                    and colour_matches(dark[name]['accent'], '#6babff') for name in gtk_names), dark
         xd = display.Display(ds)
         host = wait(lambda: next((w for w in xd.screen().root.query_tree().children if str(w.get_wm_name() or '').startswith('Dome')), None))

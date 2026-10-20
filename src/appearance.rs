@@ -20,7 +20,7 @@ mod font_tests {
         let old = r##"{"light":true,"accent":"#61cfa5","background":[0.1,0.2,0.3],"opacity":208,"hand_resume_ms":800}"##;
         let appearance: Appearance = serde_json::from_str(old).unwrap();
         assert!(appearance.light);
-        assert_eq!(appearance.font, "GNU Unifont / Sans-Serif");
+        assert_eq!(appearance.font, "Unifont / Sans-Serif");
         assert_eq!(appearance.font_size, 16);
         assert!(appearance.validate().is_ok());
         let restored: Appearance = serde_json::from_slice(&serde_json::to_vec(&appearance).unwrap()).unwrap();
@@ -28,10 +28,30 @@ mod font_tests {
         assert_eq!(restored.font_size, appearance.font_size);
     }
     #[test]
+    fn retired_strikes_migrate_without_resetting_other_preferences() {
+        for (name, size) in [("Galmuri7Bitmap / Regular", 10), ("Fixed / Regular", 11), ("GNU Unifont / Sans-Serif", 16)] {
+            let mut appearance = Appearance::default();
+            appearance.font = name.into();
+            appearance.font_size = size;
+            appearance.light = true;
+            appearance.accent = "#123456".into();
+            appearance.migrate_font();
+            assert_eq!(appearance.font, Appearance::default().font);
+            assert_eq!(appearance.font_size, 16);
+            assert!(appearance.light);
+            assert_eq!(appearance.accent, "#123456");
+            assert!(appearance.validate().is_ok());
+        }
+    }
+    #[test]
     fn invalid_font_settings_are_rejected() {
         let mut appearance = Appearance::default();
         appearance.font_size = 0;
         assert!(appearance.validate().is_err());
+        appearance.font_size = 11;
+        assert!(appearance.validate().is_err());
+        appearance.font_size = 12;
+        assert!(appearance.validate().is_ok());
         appearance.font_size = 16;
         appearance.font = "bad\nfont".into();
         assert!(appearance.validate().is_err());
@@ -44,7 +64,7 @@ impl Default for Appearance {
             accent: "#6babff".into(),
             background: [0.025, 0.045, 0.06],
             opacity: 248,
-            font: "GNU Unifont / Sans-Serif".into(),
+            font: "Unifont / Sans-Serif".into(),
             font_size: 16,
             retired_pointer_delay: (),
         }
@@ -59,7 +79,7 @@ impl Appearance {
             || self.font.is_empty()
             || self.font.len() > 256
             || self.font.chars().any(char::is_control)
-            || !(8..=24).contains(&self.font_size)
+            || !(12..=24).contains(&self.font_size)
             || self
                 .background
                 .iter()
@@ -78,10 +98,21 @@ impl Appearance {
             });
         root.join("dome/appearance.json")
     }
+    fn migrate_font(&mut self) {
+        // Earlier versions used the project name rather than the font's real family.
+        if self.font == "GNU Unifont / Sans-Serif" {
+            self.font = Self::default().font;
+        }
+        if (8..12).contains(&self.font_size) || self.font.starts_with("Galmuri7Bitmap / ") {
+            self.font = Self::default().font;
+            self.font_size = Self::default().font_size;
+        }
+    }
     pub fn load() -> Self {
         std::fs::read(Self::path())
             .ok()
             .and_then(|bytes| serde_json::from_slice::<Self>(&bytes).ok())
+            .map(|mut settings| { settings.migrate_font(); settings })
             .filter(|s| s.validate().is_ok())
             .unwrap_or_default()
     }

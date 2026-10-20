@@ -14,18 +14,10 @@ unsafe extern "C" {
 pub fn bitmap_fonts() -> &'static [BitmapFont] {
     static FONTS: std::sync::OnceLock<Vec<BitmapFont>> = std::sync::OnceLock::new();
     FONTS.get_or_init(|| {
-        let extras: &[&[u8]] = &[
-            include_bytes!("../../../assets/fonts/cozette-v1.30.0/cozette.otb"),
-            include_bytes!("../../../assets/fonts/denkichip-v1.213/DenkiChipHangul.bdf"),
-            include_bytes!("../../../assets/fonts/galmuri-v2.40.4/Galmuri11Bitmap-Regular-2.40.4.ttf"),
-            include_bytes!("../../../assets/fonts/galmuri-v2.40.4/Galmuri14Bitmap-Regular-2.40.4.ttf"),
-            include_bytes!("../../../assets/fonts/galmuri-v2.40.4/Galmuri9Bitmap-Regular-2.40.4.ttf"),
-            include_bytes!("../../../assets/fonts/galmuri-v2.40.4/Galmuri7Bitmap-Regular-2.40.4.ttf"),
-        ];
-        for font in extras {
+        for (_, font) in dome::bundled_fonts::FONTS.iter().skip(1) {
             unsafe { dome_qt_queue_bitmap_font(font.as_ptr(), font.len() as i32); }
         }
-        let font = include_bytes!("../../../assets/fonts/unifont-17.0.04.pcf");
+        let font = dome::bundled_fonts::FONTS[0].1;
         let json = unsafe { std::ffi::CStr::from_ptr(dome_qt_font_catalog(font.as_ptr(), font.len() as i32)) };
         serde_json::from_slice(json.to_bytes()).expect("Qt bitmap font catalog")
     })

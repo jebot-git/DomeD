@@ -496,6 +496,11 @@ render underneath them. The larger cyan/white cursor has a dark outline for
 contrast over light and dark content. These actions can be rebound in Settings.
 Saved profiles retire stock duplicate shortcuts while preserving custom remaps.
 
+Inactive desktops with XR windows remain visible as progressively deeper, faded
+dome layers behind the active desktop. Background layers do not accept mouse or
+keyboard input; switching desktops brings the selected layer to the front.
+Minimized windows and windows assigned only to the physical desktop are omitted.
+
 ### Spatial application popups
 
 Wayland `xdg_popup` menus, nested menus and parented `xdg_toplevel` dialogs are
@@ -637,6 +642,30 @@ items and use Right/Left to enter and leave submenus. Keyboard settings, desktop
 switching, grouped task previews and confirmation dialogs also accept cursor keys;
 confirmation dialogs initially select Cancel.
 
+**Super+F10** opens the universal menu bar from the keyboard. Left/Right switch
+between enabled headers; Up/Down wrap through enabled items and skip separators.
+Right opens a submenu and Left returns to its parent, retaining the selected
+parent row. Home/End select the first/last enabled item; Enter, keypad Enter or
+Space opens/activates it, and Escape dismisses the menu. Keyboard selection stays
+in place while the XR mouse ray is stationary; moving the pointer resumes mouse
+selection. Exported application menus and Dome-owned menus use the same seat in
+desktop and XR.
+
+Double-click the **middle mouse button** within 400 ms, with no more than eight
+logical pixels of desktop movement (a nearby ray position in XR), to find the pointer. Three short accent-coloured
+rings contract towards the live cursor hotspot over 660 ms, with a dark outline
+for visibility on light content. The effect works on desktop and on the XR view
+reticle, follows pointer motion, and clears automatically. Both ordinary middle
+button press/release pairs still reach the target, including middle-click paste
+and application-specific actions. Switching input realms cancels the gesture.
+
+The focused window has a subtle accent-coloured one-pixel inner border with a
+fainter second pixel. It follows the current Appearance accent and covers
+client-decorated and maximized desktop windows as well as XR windows. Stereo
+XR windows receive a separate inner border for each eye. Borders and cursor
+finder rings do not resize windows or change pointer hit testing.
+
+
 XR shell overlays take input priority over application surfaces beneath them.
 Expanded settings and other modal panels block application clicks, scrolling and
 focus changes, including while an application previously held mouse capture.
@@ -644,14 +673,38 @@ focus changes, including while an application previously held mouse capture.
 The global font applies to all Dome-owned menus, panels, dialogs, notifications
 and window captions in desktop and XR. The picker offers only fixed-strike fonts
 with a Unicode character map and Latin text coverage, with each font's available
-native pixel sizes from 8–24 px. Outline and symbol-only fonts are excluded.
-GNU Unifont's 16 px Unicode bitmap face is embedded as the default, including
-Japanese glyphs. DenkiChip Hangul at 12 px and Galmuri 7/9/11/14 bitmap-only faces are
-also embedded as Japanese/Korean options; their native strikes are offered
-without substituting their outline versions. Cozette 1.30.0 is also embedded
-as a native 13 px bitmap option. Installed PCF, BDF and OTB fonts are discovered at compositor
-startup, including user fonts in the usual data directories. No system Fontconfig
-policy is changed. Settings save automatically; existing chrome repaints when
+native pixel sizes from 12–24 px. Fonts smaller than 12 px are excluded even
+when installed on the host. GNU Unifont remains the 16 px default (its actual
+font family is `Unifont`). The distribution bundles these true bitmap faces:
+
+| Family | Native sizes (px) | Coverage and terminal symbols |
+| --- | --- | --- |
+| [GNU Unifont](https://unifoundry.com/unifont/) | 16 | All requested script samples: Cyrillic, Japanese, Korean, simplified/traditional Chinese, Thai, Arabic, Czech and German |
+| [kirsch](https://github.com/molarmanful/kirsch) | 16 | Latin, Cyrillic and hand-drawn Nerd Font/Powerline glyphs; Nerd Font coverage is partial |
+| [Cozette](https://github.com/the-moonwitch/Cozette) | 13 | Czech, German, Cyrillic, Japanese sample glyphs, partial Nerd Font coverage and Powerline |
+| [UW ttyp0](https://people.mpi-inf.mpg.de/~uwe/misc/uw-ttyp0/) | 12, 13, 14, 15, 16, 17, 18, 22 | Czech, German, Cyrillic, Thai and Powerline; regular/bold, plus italic at 15–18 |
+| [Tamzen for Powerline](https://github.com/sunaku/tamzen-font) | 12, 13, 14, 15, 16, 20 | Latin-1 and Powerline; regular/bold; use other faces for broader language coverage |
+| [Spleen](https://github.com/fcambus/spleen) | 12, 16, 24 | Latin-1; Czech and Powerline at 16/24; the 12 px strike has a smaller repertoire |
+| [Fusion Pixel](https://github.com/TakWolf/fusion-pixel-font) | 12 | Chinese, Japanese and Korean, with zh-Hans, zh-Hant, ja and ko regional variants; Czech/German sample coverage |
+| [DungGeunMo + Fixedsys](https://cactus.tistory.com/193) | 16 | All 11,172 modern Hangul syllables; also passes Cyrillic, Czech, Thai and Arabic samples; reproducible monochrome BDF conversion of the public-domain original |
+| [DenkiChip Hangul](https://quiple.dev/font/denkichip-hangul) | 12 | Japanese and Korean |
+| [Galmuri](https://quiple.dev/font/galmuri) | 12, 16, 21 | Japanese/Korean; the names Galmuri9/11/14 refer to these actual native strikes |
+
+Galmuri7's 10 px face is removed. Existing smaller saved selections migrate to
+Unifont 16 px while preserving colours and opacity. Bitmap files, Unicode
+sample coverage, native strikes and source checksums are audited with
+`uv run --no-project --with freetype-py python scripts/audit-bitmap-fonts.py`;
+the report is written to `artifacts/bitmap-fonts/coverage.json`. Sample coverage
+does not imply complete coverage of every language or Unicode block. Arabic
+joining and Thai mark positioning also depend on the application's shaping engine.
+
+Font sources, licenses and reproducible build/conversion details are retained
+under `assets/fonts/`; notices are installed with the distribution. Fusion
+Pixel uses upstream PCF files because its current OTB release is missing tables
+required by FreeType. Outline-only Nerd Font patches are excluded; terminal
+symbol compatibility does not mean every Nerd Font icon is available.
+Installed PCF, BDF and OTB fonts are discovered at compositor startup, including
+user fonts in the usual data directories. No system Fontconfig policy is changed. Settings save automatically; existing chrome repaints when
 the font changes. Qt and GTK application controls inherit the session font, size,
 light/dark mode and accent. Existing toolkit windows update when these settings
 change; application-specific editor and document preferences still apply.

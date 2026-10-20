@@ -32,5 +32,23 @@ Write a diagnostic report.
 Show usage.
 .SH ENVIRONMENT
 XR_RUNTIME_JSON selects the OpenXR runtime manifest. Use a runtime that supports the required composition layers.
+.SH INTERACTION FEEDBACK
+Double-clicking the physical mouse's middle button shows three short
+accent-coloured rings contracting onto the current view cursor. The animation
+lasts 660 milliseconds and preserves ordinary middle-button events.
+The focused window receives a subtle inner accent border, including a separate
+edge in each eye for side-by-side stereo windows. Neither effect changes hit
+regions or window placement.
+.PP
+The universal menu accepts keyboard navigation in XR. Super+F10 opens it;
+Up/Down select enabled rows, Left/Right switch headers or navigate submenus,
+Enter or Space activates, and Escape closes. A stationary mouse ray does not
+replace the keyboard selection.
+.SH LAYERED DESKTOPS
+Inactive desktops with XR windows appear on deeper, faded dome layers behind
+the active desktop. More distant layers are fainter. Only the active desktop
+accepts input. Switching desktops brings the selected desktop to the front.
+Minimized windows and windows assigned only to the physical desktop are omitted.
+
 .SH SEE ALSO
 dome\-compositor(1), dome\-preview(1)

@@ -1263,3 +1263,33 @@ fn enlarged_windows_follow_focus_in_render_and_pointer_order() {
         assert_eq!(s.hit_test([0.; 3], point.normalize().to_array()).unwrap().id, focus);
     }
 }
+
+#[test]
+fn inactive_workspaces_render_as_deeper_faded_domes_without_accepting_input() {
+    let mut s = Scene::default();
+    let a = s.add("active", "app");
+    let b = s.add("background", "app");
+    s.apply(Action::Move { id: b, lane: 1, workspace: 1 }).unwrap();
+    s.apply(Action::AddWorkspace { name: "Third".into() }).unwrap();
+    let c = s.add("farther", "app");
+    let third = s.workspaces.len() - 1;
+    s.apply(Action::Move { id: c, lane: 1, workspace: third }).unwrap();
+    s.apply(Action::SwitchWorkspace { workspace: 0 }).unwrap();
+    let render = xr_input::render_quads(&s, Pose::default());
+    let radius = |id| render.iter().find(|q| q.id == id).unwrap().dome.as_ref().unwrap().radius;
+    assert!(radius(a) < radius(b) && radius(b) < radius(c));
+    let input = xr_input::quads(&s, Pose::default());
+    assert_eq!(serde_json::to_value(render.iter().find(|q| q.id == a).unwrap()).unwrap(),
+        serde_json::to_value(input.iter().find(|q| q.id == a).unwrap()).unwrap());
+    let panels = s.panels();
+    let opacity = |id| panels.iter().find(|p| p.id == id).unwrap().opacity;
+    assert_eq!(opacity(a), 1.);
+    assert!(opacity(b) > opacity(c) && opacity(c) > 0.);
+    assert_eq!(xr_input::quads(&s, Pose::default()).iter().map(|q| q.id).collect::<Vec<_>>(), vec![a]);
+    s.apply(Action::SwitchWorkspace { workspace: 1 }).unwrap();
+    assert_eq!(xr_input::quads(&s, Pose::default()).iter().map(|q| q.id).collect::<Vec<_>>(), vec![b]);
+    s.apply(Action::Minimize { id: c }).unwrap();
+    assert!(!xr_input::render_quads(&s, Pose::default()).iter().any(|q| q.id == c));
+    s.windows.iter_mut().find(|w| w.id == a).unwrap().xr_visible = false;
+    assert!(!xr_input::render_quads(&s, Pose::default()).iter().any(|q| q.id == a));
+}

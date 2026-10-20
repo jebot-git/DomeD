@@ -9,8 +9,12 @@
   "files": {
     "Galmuri11Bitmap-Regular-2.40.4.ttf": "0d7e7e8652d8cf666c4501b1dfe8d4ccaee97f068edff4cc4e90f14266ed4a49",
     "Galmuri14Bitmap-Regular-2.40.4.ttf": "480da440d5ce7a6232c6ea3765959bd66ec17340aa2463ac60e4f08aada50e14",
-    "Galmuri7Bitmap-Regular-2.40.4.ttf": "c093a0288bb5f73a49b42275468e2ad8be0c7e7356283d7d78d89b0489e3b615",
     "Galmuri9Bitmap-Regular-2.40.4.ttf": "897c621bb33ba77ed5645d87137bc3dcdcf153e61ccf1ee75d239a079590485a",
     "OFL.txt": "86a3ee9495f942f0243f18c103da9faca27adb88142613edb8bb852e56c892c1"
+  },
+  "native_pixel_sizes": {
+    "Galmuri9Bitmap-Regular-2.40.4.ttf": 12,
+    "Galmuri11Bitmap-Regular-2.40.4.ttf": 16,
+    "Galmuri14Bitmap-Regular-2.40.4.ttf": 21
   }
 }

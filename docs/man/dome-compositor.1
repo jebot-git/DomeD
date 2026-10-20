@@ -42,6 +42,45 @@ DOME_BACKEND and DOME_RENDERER select backend and renderer. DOME_CONFIG selects 
 .SH INTERACTION
 XR uses cylindrical dome windows. Super+P pulls the focused window in front of the user or returns it to the dome; at most two windows can be pulled out. The default distance is 2 metres. Settings configure distance, dome height and bindings. Mouse and keyboard are the only input methods. Alt+Tab and Alt+Shift+Tab switch windows in the same lane.
 .PP
-Ctrl+Super+Up/Down or Super+Alt+Up/Down moves the focused window between lanes. Moving a pulled-out window returns it to the dome. Super+Plus/Minus (Equals also grows) or Super+Alt+Right/Left multiplies/divides the focused XR window size by 1.1, within 0.25\(en4 times scale. The View menu exposes lane and size actions; Settings allows rebinding.
+Super+Alt+Up/Down moves the focused window between lanes. Super+Alt+Left/Right reorders it horizontally within its lane, stopping at either edge. Moving a pulled-out window returns it to the dome. Super+Equals/Minus multiplies/divides the focused XR window size by 1.1, within 0.25\(en4 times scale. The View menu exposes lane and size actions; Settings allows rebinding.
+.SH MENU NAVIGATION
+Super+F10 opens the universal menu. Left/Right switch enabled headers.
+Up/Down wrap through enabled rows, skipping separators. Right enters a
+submenu; Left returns to its parent and restores the selected parent row.
+Home/End select the first/last enabled row. Enter, keypad Enter and Space
+activate or open it. Escape dismisses the menu. Moving the pointer resumes
+mouse selection; a stationary XR mouse ray does not replace keyboard selection.
+.PP
+Inactive desktops containing XR windows remain visible as deeper, faded dome
+layers. Only the active desktop accepts input; switching desktops brings the
+selected desktop to the front. Minimized and desktop-only windows are omitted.
+.SH CURSOR FINDER
+Double-click the middle mouse button within 400 milliseconds, with at most
+eight logical pixels of desktop pointer movement (a nearby ray position in XR),
+to show three short circular pulses
+contracting towards the live cursor hotspot. The accent-coloured effect lasts
+660 milliseconds on desktop and XR. Both normal middle-button press/release
+pairs continue to the target. Changing input realms cancels the gesture.
+.SH FOCUS FEEDBACK
+The focused window receives a subtle accent-coloured one-pixel inner border
+and a faint second pixel. It also applies to client-decorated and maximized
+windows. The effect follows the Appearance accent without changing window
+geometry or input regions. XR stereo windows receive an edge in each eye.
+.SH BITMAP FONTS
+The font picker offers native bitmap strikes from 12 through 24 pixels.
+Smaller installed fonts are excluded. The distribution includes GNU Unifont,
+Cozette, kirsch, UW ttyp0, Tamzen for Powerline, Spleen, Fusion Pixel,
+DungGeunMo + Fixedsys, DenkiChip Hangul and Galmuri.
+.PP
+DungGeunMo is provided as a reproducible 16-pixel monochrome bitmap conversion
+and covers all 11,172 modern Hangul syllables. Cozette and kirsch provide partial
+Nerd Font coverage; several other faces provide Powerline symbols. Coverage
+varies by face. GNU Unifont covers the tested Arabic, Thai, CJK, Cyrillic and
+European samples. The actual default family name is Unifont.
+.PP
+Galmuri7's 10-pixel strike is removed. Existing smaller saved selections
+migrate to Unifont at 16 pixels without resetting colours and opacity.
+Font licenses and provenance are installed under
+/usr/local/share/doc/domed/fonts.
 .SH SEE ALSO
 dome\-xr(1), dome\-preview(1), ghostty\-xr(1)

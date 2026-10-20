@@ -28,6 +28,7 @@ pub struct DesktopRenderer {
     shell_buffer: Option<(String, MemoryRenderBuffer)>,
     cursor: Option<MemoryRenderBuffer>,
     snap_buffer: Option<SolidColorBuffer>,
+    focus_buffers: std::collections::HashMap<u64, Vec<SolidColorBuffer>>,
 }
 impl DesktopRenderer {
     pub fn prepare(&mut self, state: &mut Dome, size: Size<i32, Physical>) {
@@ -122,6 +123,7 @@ impl DesktopRenderer {
         }
         {
             let mut bridge = state.xr_bridge.lock().unwrap();
+            bridge.accent = dome::visual_feedback::accent(&state.appearance.accent);
             for (id, f) in &mut bridge.frames {
                 if dome::xr_transport::is_shell(*id) {
                     f.stamp = std::time::Instant::now();
@@ -171,6 +173,7 @@ impl DesktopRenderer {
         )
         .unwrap();
         let scene = state.scene.lock().unwrap().clone();
+        self.focus_buffers.retain(|id, _| scene.focused == Some(*id) && scene.window(*id).is_some());
         self.decoration_buffers
             .retain(|id, _| scene.window(*id).is_some());
         let mut elements: Vec<DesktopElement> = vec![shell.into()];
@@ -243,6 +246,22 @@ impl DesktopRenderer {
                 continue;
             };
             let geo = window.geometry();
+            if scene.focused == Some(id) && geo.size.w >= 4 && geo.size.h >= 4 {
+                let color = dome::visual_feedback::accent(&state.appearance.accent);
+                let buffers = self.focus_buffers.entry(id).or_default();
+                for (inset, alpha) in [(0, 0.60f32), (1, 0.16)] {
+                    let w = geo.size.w - 2 * inset;
+                    let h = geo.size.h - 2 * inset;
+                    for (edge, (x, y, width, height)) in [(inset,inset,w,1),(inset,inset+h-1,w,1),(inset,inset+1,1,h-2),(inset+w-1,inset+1,1,h-2)].into_iter().enumerate() {
+                        if width <= 0 || height <= 0 { continue; }
+                        let index = inset as usize * 4 + edge;
+                        let rgba = [color[0] as f32 / 255. * alpha, color[1] as f32 / 255. * alpha, color[2] as f32 / 255. * alpha, alpha];
+                        while buffers.len() <= index { buffers.push(SolidColorBuffer::new((1,1), rgba)); }
+                        buffers[index].update((width,height), rgba);
+                        elements.push(SolidColorRenderElement::from_buffer(&buffers[index], (pos.x+x,pos.y+y), 1., 1., Kind::Unspecified).into());
+                    }
+                }
+            }
             elements.extend(
                 smithay::backend::renderer::element::surface::render_elements_from_surface_tree::<
                     GlesRenderer,
@@ -319,6 +338,16 @@ impl DesktopRenderer {
         let background = [state.appearance.background[0], state.appearance.background[1], state.appearance.background[2], 1.];
         if let Some(output) = &capture_output {
             crate::screencast::render(renderer, output, origin, &elements, 1, background);
+        }
+        if !state.input_xr_active {
+            if let Some(age) = state.cursor_finder.elapsed(dome::Realm::Desktop, std::time::Instant::now()) {
+                let rgba = dome::visual_feedback::finder_pixels(age, dome::visual_feedback::accent(&state.appearance.accent));
+                let buffer = MemoryRenderBuffer::from_slice(&rgba, smithay::backend::allocator::Fourcc::Abgr8888, (128,128), 1, Transform::Normal, None);
+                let p = state.seat.get_pointer().unwrap().current_location();
+                if let Ok(effect) = MemoryRenderBufferRenderElement::from_buffer(renderer, (p.x-64.,p.y-64.), &buffer, None, None, None, Kind::Unspecified) {
+                    elements.insert(0, effect.into());
+                }
+            }
         }
         let mut cursors = Vec::new();
         if !state.input_xr_active { self.cursor_elements(state, renderer, &mut cursors); }

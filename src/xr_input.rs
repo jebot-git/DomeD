@@ -141,6 +141,13 @@ impl Quad {
     }
 }
 pub fn quads(scene: &Scene, head: Pose) -> Vec<Quad> {
+    window_quads(scene, head, false)
+}
+/// Include faded background workspaces for rendering, while input uses `quads`.
+pub fn render_quads(scene: &Scene, head: Pose) -> Vec<Quad> {
+    window_quads(scene, head, true)
+}
+fn window_quads(scene: &Scene, head: Pose, backgrounds: bool) -> Vec<Quad> {
     let old = scene.frame_pose();
     let frame = if scene.config.anchor_mode == crate::AnchorMode::Head {
         head
@@ -151,10 +158,10 @@ pub fn quads(scene: &Scene, head: Pose) -> Vec<Quad> {
     let mut panels: Vec<Quad> = scene
         .panels()
         .into_iter()
-        .filter(|p| p.workspace == scene.active_workspace)
+        .filter(|p| backgrounds || p.workspace == scene.active_workspace)
         .filter_map(|p| {
             let w = scene.window(p.id)?;
-            if let Some(slot) = w.pullout_slot {
+            if let Some(slot) = w.pullout_slot.filter(|_| w.workspace == scene.active_workspace) {
                 let anchor = scene.pullout_anchor?;
                 let radius = scene.config.pullout_distance_m;
                 // Preserve a readable angular size and cap individual arcs below 90°.
@@ -242,6 +249,7 @@ pub fn quads(scene: &Scene, head: Pose) -> Vec<Quad> {
     let mut pullout_pitch = [f32::INFINITY; 2];
     for q in &panels {
         let w = scene.window(q.id).unwrap();
+        if w.workspace != scene.active_workspace { continue; }
         if let Some(d) = &q.dome {
             if w.pullout_slot.is_some() {
                 pullout_pitch[0] = pullout_pitch[0].min(d.horizontal / w.desktop.w);

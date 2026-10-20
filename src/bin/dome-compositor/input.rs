@@ -234,19 +234,8 @@ impl Dome {
                                 }
                                 match sym.raw() {
                                     0xff1b => state.menu = None,
-                                    0xff51 => {
-                                        state.open_menu(Some(
-                                            (menu + state.menu_headers().len() - 1)
-                                                % state.menu_headers().len(),
-                                        ));
-                                        state.menu_hover = 0;
-                                    }
-                                    0xff53 => {
-                                        state.open_menu(Some(
-                                            (menu + 1) % state.menu_headers().len(),
-                                        ));
-                                        state.menu_hover = 0;
-                                    }
+                                    0xff51 => state.switch_menu(-1),
+                                    0xff53 => state.switch_menu(1),
                                     0xff52 | 0xff54 | 0xff50 | 0xff57 | 0xff55 | 0xff56 => {
                                         state.move_menu_selection(sym.raw());
                                     }
@@ -337,7 +326,18 @@ impl Dome {
                     self.ignored_buttons.remove(&code);
                     self.physical_buttons.insert(code);
                 }
-                if self.mouse_takeover() {
+                let xr_mouse = self.mouse_takeover();
+                let realm = if xr_mouse { dome::Realm::Xr } else { dome::Realm::Desktop };
+                let position = if xr_mouse {
+                    // Angular mouse coordinates are stable across XR surfaces.
+                    self.mouse_angles.map(|p| [p[0] as f64 * 1000., p[1] as f64 * 1000.]).unwrap_or([0., 0.])
+                } else {
+                    let p = self.seat.get_pointer().unwrap().current_location();
+                    [p.x, p.y]
+                };
+                self.cursor_finder.button(code, event.state() == ButtonState::Pressed, realm, position, std::time::Instant::now());
+                self.xr_bridge.lock().unwrap().finder_started = self.cursor_finder.started(dome::Realm::Xr);
+                if xr_mouse {
                     self.xr_mouse_button(
                         event.button_code(),
                         event.state() == ButtonState::Pressed,
@@ -631,14 +631,7 @@ impl Dome {
             return;
         }
         self.appmenu_motion(local.x, local.y, size.w, size.h);
-        if let Some(menu) = self.menu.filter(|m| !self.exported_menu(*m)) {
-            let x0 = self.menu_x(menu);
-            self.menu_hover = if local.x >= x0 && local.x < x0 + 380. && local.y >= 40. {
-                ((local.y - 40.) / 28.) as i32
-            } else {
-                -1
-            };
-        }
+
         let under = if self.shell_at(pos.x, pos.y) {
             None
         } else {
