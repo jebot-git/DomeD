@@ -14,6 +14,48 @@ use std::{
     },
     time::{Duration, Instant},
 };
+/// Optional OpenXR eye action. Runtimes without it retain head-gaze pointing.
+struct EyeInput {
+    set: xr::ActionSet,
+    action: xr::Action<xr::Posef>,
+    space: xr::Space,
+}
+impl EyeInput {
+    fn new(instance: &xr::Instance, session: &xr::Session<xr::Vulkan>) -> xr::Result<Self> {
+        let set = instance.create_action_set("gaze", "Gaze pointer", 0)?;
+        let action = set.create_action::<xr::Posef>("eye_pose", "Eye gaze", &[])?;
+        instance.suggest_interaction_profile_bindings(
+            instance.string_to_path("/interaction_profiles/ext/eye_gaze_interaction")?,
+            &[xr::Binding::new(
+                &action,
+                instance.string_to_path("/user/eyes_ext/input/gaze_ext/pose")?,
+            )],
+        )?;
+        session.attach_action_sets(&[&set])?;
+        let space = action.create_space(session, xr::Path::NULL, xr::Posef::IDENTITY)?;
+        Ok(Self { set, action, space })
+    }
+    fn sample(
+        &self,
+        session: &xr::Session<xr::Vulkan>,
+        stage: &xr::Space,
+        time: xr::Time,
+    ) -> Option<Pose> {
+        session.sync_actions(&[(&self.set).into()]).ok()?;
+        if !self.action.is_active(session, xr::Path::NULL).ok()? {
+            return None;
+        }
+        let location = self.space.locate(stage, time).ok()?;
+        if !location.location_flags.contains(
+            xr::SpaceLocationFlags::POSITION_VALID
+                | xr::SpaceLocationFlags::ORIENTATION_VALID
+                | xr::SpaceLocationFlags::ORIENTATION_TRACKED,
+        ) {
+            return None;
+        }
+        Some(pose(location.pose))
+    }
+}
 const VIEW_TYPE: xr::ViewConfigurationType = xr::ViewConfigurationType::PRIMARY_STEREO;
 #[derive(Clone)]
 struct Image {
@@ -250,6 +292,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     extensions.extx_overlay = available.extx_overlay && !standalone;
     extensions.khr_vulkan_enable2 = true;
     extensions.ext_hand_tracking = available.ext_hand_tracking;
+    extensions.ext_eye_gaze_interaction = available.ext_eye_gaze_interaction;
     extensions.khr_composition_layer_cylinder = available.khr_composition_layer_cylinder;
     let xr_instance = entry.create_instance(
         &xr::ApplicationInfo {
@@ -376,6 +419,19 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             } else {
                 [None, None]
             };
+        let eyes = if extensions.ext_eye_gaze_interaction {
+            match EyeInput::new(&xr_instance, &session) {
+                Ok(input) => Some(input),
+                Err(error) => {
+                    eprintln!("Eye gaze unavailable ({error}); using head gaze");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        let mut gaze_pointer = dome::xr_gaze::GazePointer::default();
+        let mut pointer_settings = None;
         let mut detectors = [Detector::default(), Detector::default()];
         let mut interaction = Interaction::default();
         let mut animator = dome::xr_presentation::Animator::default();
@@ -438,6 +494,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             }
                             _ => (),
                         }
+                    }
+                    xr::Event::ReferenceSpaceChangePending(_) => {
+                        gaze_pointer = dome::xr_gaze::GazePointer::default();
+                        pointer_settings = None;
                     }
                     xr::Event::InstanceLossPending(_) => break 'main,
                     _ => (),
@@ -507,6 +567,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     );
                 }
             }
+            let mut gaze_cursor = Hand::default();
             let mut geometry = vec![];
             let mut popup_beams = vec![];
             let mut popup_ids = std::collections::HashSet::new();
@@ -561,14 +622,56 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     .filter(|q| transition.interactive(presentation, q.id))
                     .cloned()
                     .collect();
-                let p = interaction.update_surfaces(
-                    start.elapsed().as_secs_f64(),
-                    focused && head_valid && !exiting && !control.mouse && transition.opacity >= 1.,
-                    hands,
-                    &scene,
-                    head_pose,
-                    &interactive_hud,
-                );
+                let time = start.elapsed().as_secs_f64();
+                let allowed =
+                    focused && head_valid && !exiting && !control.mouse && transition.opacity >= 1.;
+                let settings = (scene.config.xr_pointer_mode, scene.config.gaze_smoothing);
+                let mut reset = pointer_settings != Some(settings);
+                pointer_settings = Some(settings);
+                if reset || !allowed {
+                    gaze_pointer = dome::xr_gaze::GazePointer::default();
+                }
+                let mut p = if scene.config.xr_pointer_mode == dome::XrPointerMode::Gaze {
+                    let eye_pose = if allowed {
+                        eyes.as_ref()
+                            .and_then(|e| e.sample(&session, &stage, frame.predicted_display_time))
+                    } else {
+                        None
+                    };
+                    let (pointer, changed) =
+                        gaze_pointer.sample(time, head_pose, eye_pose, scene.config.gaze_smoothing);
+                    reset |= changed;
+                    if allowed {
+                        gaze_cursor = pointer;
+                    }
+                    if reset {
+                        interaction.reset();
+                    }
+                    interaction.update_gaze_surfaces(
+                        time,
+                        allowed,
+                        hands,
+                        &scene,
+                        head_pose,
+                        &interactive_hud,
+                        pointer,
+                    )
+                } else {
+                    if reset {
+                        interaction.reset();
+                    }
+                    interaction.update_surfaces(
+                        time,
+                        allowed,
+                        hands,
+                        &scene,
+                        head_pose,
+                        &interactive_hud,
+                    )
+                };
+                if reset {
+                    p.events.insert(0, dome::xr_input::SeatEvent::Reset);
+                }
                 geometry.extend(hud);
                 transition.apply(&mut geometry, head_pose, &hud_scene.config);
                 let mut state = network.lock().unwrap();
@@ -590,8 +693,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     cursor[0].ray = dome::xr_input::mouse_ray(head_pose, angles).to_array();
                 }
                 cursor
-            } else if !control.mouse && focused && head_valid {
-                hands
+            } else if !control.mouse && focused && head_valid && transition.opacity >= 1. {
+                if pointer_settings.is_some_and(|s| s.0 == dome::XrPointerMode::Gaze) {
+                    gaze_cursor.pinch =
+                        std::array::from_fn(|b| hands.iter().any(|h| h.valid && h.pinch[b]));
+                    [gaze_cursor, Hand::default()]
+                } else {
+                    hands
+                }
             } else {
                 [Hand::default(); 2]
             };
@@ -617,9 +726,26 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     });
                 let reticle = hit
                     .map(|(q, uv)| dome::xr_input::surface_reticle(q, uv, u64::MAX - i as u64))
-                    .or_else(|| if control.mouse {
-                        control.mouse_angles.map(|angles| dome::xr_input::mouse_reticle(head_pose, angles))
-                    } else { None });
+                    .or_else(|| {
+                        if control.mouse {
+                            control
+                                .mouse_angles
+                                .map(|angles| dome::xr_input::mouse_reticle(head_pose, angles))
+                        } else if gaze_cursor.valid {
+                            let ray = glam::Vec3::from_array(gaze_cursor.ray);
+                            Some(dome::xr_input::Quad {
+                                id: u64::MAX,
+                                pose: Pose {
+                                    position_m: (glam::Vec3::from_array(gaze_cursor.position) + ray * 0.4).to_array(),
+                                    orientation_xyzw: glam::Quat::from_rotation_arc(glam::Vec3::Z, -ray).to_array(),
+                                },
+                                size: [0.006, 0.006],
+                                dome: None,
+                            })
+                        } else {
+                            None
+                        }
+                    });
                 if let Some(reticle) = reticle {
                     let id = reticle.id;
                     let pressed = hand.grip || hand.pinch.iter().any(|p| *p);
@@ -831,7 +957,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         running.store(false, Ordering::Relaxed);
         let _ = worker.join();
-        let summary = serde_json::json!({"runtime":runtime,"system":properties.system_name,"overlay":environment.overlay,"environment_blend":format!("{blend:?}"),"overlay_placement":placement,"frames":count,"peak_window_layers":peak,"peak_curved_layers":peak_curved,"peak_flat_layers":peak_flat,"peak_stereo_windows":peak_stereo,"peak_shell_layers":peak_shell,"uploads":uploaded,"hand_tracking_extension":extensions.ext_hand_tracking,"hand_trackers":trackers.iter().filter(|t|t.is_some()).count(),"presentation_hidden_frames":hidden_frames,"presentation_fade_frames":fade_frames,"presentation_slide_frames":slide_frames,"clean_exit":true});
+        let summary = serde_json::json!({"runtime":runtime,"system":properties.system_name,"overlay":environment.overlay,"environment_blend":format!("{blend:?}"),"overlay_placement":placement,"frames":count,"peak_window_layers":peak,"peak_curved_layers":peak_curved,"peak_flat_layers":peak_flat,"peak_stereo_windows":peak_stereo,"peak_shell_layers":peak_shell,"uploads":uploaded,"eye_gaze_extension":extensions.ext_eye_gaze_interaction,"eye_gaze_action":eyes.is_some(),"hand_tracking_extension":extensions.ext_hand_tracking,"hand_trackers":trackers.iter().filter(|t|t.is_some()).count(),"presentation_hidden_frames":hidden_frames,"presentation_fade_frames":fade_frames,"presentation_slide_frames":slide_frames,"clean_exit":true});
         println!("{summary}");
         if let Some(path) = report {
             std::fs::write(path, serde_json::to_vec_pretty(&summary)?)?;

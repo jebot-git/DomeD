@@ -87,7 +87,10 @@ pub fn rows(c: &Config) -> Vec<(&'static str, String)> {
         ),
         ("Taskbar width", format!("{:.0}°", c.taskbar_max_width_deg)),
         ("Taskbar height", format!("{:.0}°", c.taskbar_height_deg)),
-        ("XR notification distance", format!("{:.2} m", c.bar_distance_m)),
+        (
+            "XR notification distance",
+            format!("{:.2} m", c.bar_distance_m),
+        ),
         ("Dome radius", format!("{:.1} m", c.radius_m)),
         (
             "Dome height / vertical span",
@@ -110,6 +113,19 @@ pub fn rows(c: &Config) -> Vec<(&'static str, String)> {
         (
             "Upper dome inward lean",
             format!("{:.0}°", c.dome_upper_tilt_deg),
+        ),
+        (
+            "XR pointer",
+            if c.xr_pointer_mode == crate::scene::XrPointerMode::Gaze {
+                "Gaze + pinch clicks"
+            } else {
+                "Hand rays"
+            }
+            .into(),
+        ),
+        (
+            "Gaze smoothing",
+            if c.gaze_smoothing { "On" } else { "Off" }.into(),
         ),
     ]
 }
@@ -140,6 +156,14 @@ pub fn adjust(config: &Config, row: usize, direction: f32) -> Result<Config, Str
         17 => c.pullout_distance_m += direction * 0.05,
         18 => c.vertical_fov_deg += direction * 5.,
         19 => c.dome_upper_tilt_deg += direction,
+        20 => {
+            c.xr_pointer_mode = if c.xr_pointer_mode == crate::scene::XrPointerMode::Gaze {
+                crate::scene::XrPointerMode::HandRay
+            } else {
+                crate::scene::XrPointerMode::Gaze
+            }
+        }
+        21 => c.gaze_smoothing = !c.gaze_smoothing,
         _ => return Err("Unknown XR setting".into()),
     }
     c.validate()?;

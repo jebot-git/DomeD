@@ -542,6 +542,29 @@ Close All. Pins use desktop-file IDs and persist in
 `$XDG_CONFIG_HOME/dome/taskbar.json`. Launcher search remains at the left and the
 virtual desktop manager at the right.
 
+## Gaze pointer and click gestures
+
+In **XR settings**, set **XR pointer** to **Gaze + pinch clicks** to look at
+windows and shell controls instead of aiming a hand ray. **Gaze smoothing**
+controls the adaptive eye filter. These preferences persist in
+`~/.config/dome/xr.json` as `xr_pointer_mode` (`hand_ray` or `gaze`) and
+`gaze_smoothing`. Existing profiles keep hand rays by default.
+
+The interaction follows the local KWin VR build: tracked eye gaze points when
+available through `XR_EXT_eye_gaze_interaction`; otherwise the headset's forward
+direction points. Eye movement is smoothed relative to the head, so turning your
+head stays immediate. Invalid eye tracking falls back immediately and requires
+80 ms of stable samples before resuming. The cursor follows the same curved or
+flat surface used for input.
+
+Either hand can pinch thumb + index for left click, thumb + middle for middle
+click, or thumb + ring for right click. Hold a pinch to drag; the drag remains
+on its original surface until released. Both hands can hold the same button;
+it releases when the last hand releases or loses tracking. Fists retain the
+existing window move and two-hand resize gestures, targeting the gaze point.
+Physical mouse takeover, focus loss, tracking-source changes and interaction
+mode changes release held input; open your hand before clicking again.
+
 ## Audio tray controls
 
 Click the speaker in the right-side tray to control PipeWire audio in desktop or

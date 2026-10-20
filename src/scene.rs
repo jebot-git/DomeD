@@ -10,6 +10,14 @@ pub enum Projection {
     #[serde(alias = "in_view")]
     RoomDome,
 }
+/// XR pointing source; click gestures use the same tracked hands in either mode.
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum XrPointerMode {
+    #[default]
+    HandRay,
+    Gaze,
+}
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Pose {
     pub position_m: [f32; 3],
@@ -107,6 +115,8 @@ impl Default for DisplayConfig {
 pub struct Config {
     pub displays: Vec<DisplayConfig>,
     pub projection: Projection,
+    pub xr_pointer_mode: XrPointerMode,
+    pub gaze_smoothing: bool,
     pub keybindings: Vec<crate::shortcuts::Binding>,
     pub anchor_mode: AnchorMode,
     pub upper_bar_x_deg: f32,
@@ -136,6 +146,8 @@ impl Default for Config {
         Self {
             displays: Vec::new(),
             projection: Projection::RoomDome,
+            xr_pointer_mode: XrPointerMode::HandRay,
+            gaze_smoothing: true,
             keybindings: crate::shortcuts::defaults(),
             anchor_mode: AnchorMode::Room,
             upper_bar_x_deg: 0.,

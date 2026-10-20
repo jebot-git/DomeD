@@ -1082,3 +1082,20 @@ fn settings_persist_height_and_bindings_and_reject_conflicts_atomically() {
     assert_eq!(std::fs::read(&path).unwrap(), saved);
     std::fs::remove_dir_all(folder).unwrap();
 }
+
+#[test]
+fn gaze_settings_keep_old_profiles_compatible_and_roundtrip() {
+    use dome::{geometry_settings, Config, XrPointerMode};
+    let old: Config = serde_json::from_str("{}").unwrap();
+    assert_eq!(old.xr_pointer_mode, XrPointerMode::HandRay);
+    assert!(old.gaze_smoothing);
+    let gaze = geometry_settings::adjust(&old, 20, 1.).unwrap();
+    assert_eq!(gaze.xr_pointer_mode, XrPointerMode::Gaze);
+    let gaze = geometry_settings::adjust(&gaze, 21, 1.).unwrap();
+    assert!(!gaze.gaze_smoothing);
+    assert_eq!(
+        serde_json::from_slice::<Config>(&serde_json::to_vec(&gaze).unwrap()).unwrap(),
+        gaze
+    );
+    assert!(serde_json::from_str::<Config>(r#"{"xr_pointer_mode":"invalid"}"#).is_err());
+}

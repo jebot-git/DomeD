@@ -221,9 +221,16 @@ try:
         wait(lambda:any(e['kind']=='key_press' and e['key']==qt_key for e in events('b')[before:]))
         wait(lambda:any(e['kind']=='key_release' and e['key']==qt_key for e in events('b')[before:]))
     check(True,'Application F2/F5/F8/F9/F10/F11/F12 presses and releases pass through the compositor')
+    # Persist the alternative XR interaction mode using the real settings panel.
+    xr_shortcut(['Super_L'],'comma');key('Home');[key('Down') for _ in range(20)];key('Right')
+    wait(lambda:state()['config']['xr_pointer_mode']=='gaze')
+    check(json.loads((runtime/'config/dome/xr.json').read_text())['xr_pointer_mode']=='gaze','Gaze pointer mode is selectable and persisted from XR settings')
+    key('Down');key('Right');wait(lambda:not state()['config']['gaze_smoothing'])
+    check(not json.loads((runtime/'config/dome/xr.json').read_text())['gaze_smoothing'],'Gaze smoothing is configurable and persisted')
+    key('Right');key('Up');key('Left');key('Escape')
     # Record a menu binding in the real settings UI, verify it, then restore it.
     old_bindings=state()['config']['keybindings']
-    xr_shortcut(['Super_L'],'comma');key('Home');[key('Down') for _ in range(21)];key('Return')
+    xr_shortcut(['Super_L'],'comma');key('Home');[key('Down') for _ in range(23)];key('Return')
     xr_shortcut(['Super_L'],'F8')
     wait(lambda:state()['config']['keybindings'][1]['key']==65477)
     key('Escape');xr_shortcut(['Super_L'],'F8');time.sleep(.2)

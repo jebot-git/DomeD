@@ -1,5 +1,7 @@
 {
   "displays": [],
+  "xr_pointer_mode": "hand_ray",
+  "gaze_smoothing": true,
   "center_m": [
     0.0,
     1.4,

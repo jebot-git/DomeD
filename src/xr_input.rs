@@ -533,6 +533,40 @@ impl Interaction {
         head: Pose,
         extra: &[Quad],
     ) -> Packet {
+        self.update_pointer(time, focused, hands, scene, head, extra, None)
+    }
+    /// Gaze owns pointing; either hand supplies buttons and physical fist motion.
+    pub fn update_gaze_surfaces(
+        &mut self,
+        time: f64,
+        focused: bool,
+        hands: [Hand; 2],
+        scene: &Scene,
+        head: Pose,
+        extra: &[Quad],
+        gaze: Hand,
+    ) -> Packet {
+        if !gaze.valid
+            || gaze
+                .position
+                .iter()
+                .chain(gaze.ray.iter())
+                .any(|v| !v.is_finite())
+        {
+            return self.reset();
+        }
+        self.update_pointer(time, focused, hands, scene, head, extra, Some(gaze))
+    }
+    fn update_pointer(
+        &mut self,
+        time: f64,
+        focused: bool,
+        hands: [Hand; 2],
+        scene: &Scene,
+        head: Pose,
+        extra: &[Quad],
+        gaze: Option<Hand>,
+    ) -> Packet {
         if !scene.presentation.desktop
             || !time.is_finite()
             || !focused
@@ -578,10 +612,10 @@ impl Interaction {
             return self.reset();
         }
         let hit = |i: usize| -> Option<(u64, [f32; 2])> {
-            let h = hands[i];
-            if !h.valid {
+            if !hands[i].valid {
                 return None;
             }
+            let h = gaze.unwrap_or(hands[i]);
             quads
                 .iter()
                 .filter_map(|p| {
@@ -745,6 +779,57 @@ impl Interaction {
             return out;
         }
         self.scale = None;
+        if let Some(gaze) = gaze {
+            let origin = Vec3::from_array(gaze.position);
+            let ray = Vec3::from_array(gaze.ray);
+            let target = if let Some(id) = self.target {
+                let Some(q) = quads.iter().find(|q| q.id == id) else {
+                    return self.reset();
+                };
+                q.hit(origin, ray, true).map(|uv| (id, uv))
+            } else {
+                quads
+                    .iter()
+                    .filter_map(|q| {
+                        q.hit(origin, ray, false)
+                            .map(|uv| (q.id, uv, q.point(uv).distance_squared(origin)))
+                    })
+                    .min_by(|a, b| a.2.total_cmp(&b.2))
+                    .map(|(id, uv, _)| (id, uv))
+            };
+            out.events.push(
+                target
+                    .map(|(id, uv)| SeatEvent::Motion { id, uv })
+                    .unwrap_or(SeatEvent::Leave),
+            );
+            for b in 0..3 {
+                let down = (0..2).any(|i| {
+                    self.armed[i] && hands[i].valid && !hands[i].grip && hands[i].pinch[b]
+                });
+                let pressed =
+                    down && (target.is_some() || self.buttons[b] || !scene.popups.is_empty());
+                if pressed != self.buttons[b] {
+                    if pressed {
+                        if let Some((id, _)) = target {
+                            self.target = Some(id);
+                            let owner = scene.popup_owner(id);
+                            if scene.window(owner).is_some() {
+                                out.actions.push(Action::Focus { id: owner });
+                            }
+                        }
+                    }
+                    out.events.push(SeatEvent::Button {
+                        button: [0x110, 0x112, 0x111][b],
+                        pressed,
+                    });
+                    self.buttons[b] = pressed;
+                }
+            }
+            if !self.buttons.iter().any(|v| *v) {
+                self.target = None;
+            }
+            return out;
+        }
         let owner = self.owner.or_else(|| {
             [1usize, 0]
                 .into_iter()
@@ -956,6 +1041,86 @@ mod tests {
         }
     }
     #[test]
+    fn gaze_points_without_hands_and_ignores_hand_ray_for_all_mouse_buttons() {
+        for b in 0..3 {
+            let (s, head, gaze) = setup();
+            let mut input = Interaction::default();
+            let hover =
+                input.update_gaze_surfaces(1., true, [Hand::default(); 2], &s, head, &[], gaze);
+            assert!(hover
+                .events
+                .iter()
+                .any(|e| matches!(e, SeatEvent::Motion { .. })));
+            let mut hand = gaze;
+            hand.ray = [0., 1., 0.];
+            input.update_gaze_surfaces(1.01, true, [hand; 2], &s, head, &[], gaze);
+            hand.pinch[b] = true;
+            let press = input.update_gaze_surfaces(1.02, true, [hand; 2], &s, head, &[], gaze);
+            assert_eq!(
+                press
+                    .events
+                    .iter()
+                    .filter(|e| matches!(e, SeatEvent::Button { pressed: true, .. }))
+                    .count(),
+                1
+            );
+            assert!(press.events.iter().any(|e| matches!(e, SeatEvent::Button { button, pressed: true } if *button == [0x110, 0x112, 0x111][b])));
+            // Either hand may release without releasing the other's held button.
+            let still = input.update_gaze_surfaces(
+                1.03,
+                true,
+                [Hand::default(), hand],
+                &s,
+                head,
+                &[],
+                gaze,
+            );
+            assert!(!still
+                .events
+                .iter()
+                .any(|e| matches!(e, SeatEvent::Button { .. })));
+            let release =
+                input.update_gaze_surfaces(1.04, true, [Hand::default(); 2], &s, head, &[], gaze);
+            assert!(release
+                .events
+                .iter()
+                .any(|e| matches!(e, SeatEvent::Button { pressed: false, .. })));
+        }
+    }
+    #[test]
+    fn gaze_drag_keeps_surface_until_release_and_requires_neutral_after_reset() {
+        let (s, head, mut gaze) = setup();
+        let mut hand = gaze;
+        let mut input = Interaction::default();
+        input.update_gaze_surfaces(1., true, [hand; 2], &s, head, &[], gaze);
+        hand.pinch[0] = true;
+        let first = input.update_gaze_surfaces(1.01, true, [hand; 2], &s, head, &[], gaze);
+        let id = first
+            .events
+            .iter()
+            .find_map(|e| {
+                if let SeatEvent::Motion { id, .. } = e {
+                    Some(*id)
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        gaze.ray = [0.8, 0., -1.];
+        let drag = input.update_gaze_surfaces(1.02, true, [hand; 2], &s, head, &[], gaze);
+        assert!(drag
+            .events
+            .iter()
+            .any(|e| matches!(e, SeatEvent::Motion { id: target, .. } if *target == id)));
+        let lost = input.update_gaze_surfaces(1.03, false, [hand; 2], &s, head, &[], gaze);
+        assert!(matches!(lost.events[0], SeatEvent::Reset));
+        let resumed = input.update_gaze_surfaces(1.04, true, [hand; 2], &s, head, &[], gaze);
+        assert!(!resumed
+            .events
+            .iter()
+            .any(|e| matches!(e, SeatEvent::Button { pressed: true, .. })));
+    }
+    #[test]
     fn three_pinches_map_to_linux_buttons_and_release() {
         for b in 0..3 {
             let (s, h, mut hand) = setup();
@@ -993,6 +1158,53 @@ mod tests {
             .update(1.04, true, [hand, Hand::default()], &s, h)
             .events
             .is_empty());
+    }
+    #[test]
+    fn gaze_fist_targets_gaze_but_moves_with_the_wrist() {
+        let (mut scene, head, gaze) = setup();
+        let mut hand = gaze;
+        hand.ray = [0., 1., 0.];
+        let mut input = Interaction::default();
+        input.update_gaze_surfaces(1., true, [hand, Hand::default()], &scene, head, &[], gaze);
+        hand.grip = true;
+        hand.pinch = [true; 3];
+        let packet = input.update_gaze_surfaces(
+            1.01,
+            true,
+            [hand, Hand::default()],
+            &scene,
+            head,
+            &[],
+            gaze,
+        );
+        apply(&mut scene, &packet);
+        let before = scene.windows[0].dome_offset_deg;
+        hand.position[0] += 0.1;
+        let packet = input.update_gaze_surfaces(
+            1.02,
+            true,
+            [hand, Hand::default()],
+            &scene,
+            head,
+            &[],
+            gaze,
+        );
+        assert!(!packet
+            .events
+            .iter()
+            .any(|e| matches!(e, SeatEvent::Button { pressed: true, .. })));
+        apply(&mut scene, &packet);
+        assert!(scene.windows[0].dome_offset_deg[0] > before[0]);
+        let lost = input.update_gaze_surfaces(
+            1.03,
+            true,
+            [hand, Hand::default()],
+            &scene,
+            head,
+            &[],
+            Hand::default(),
+        );
+        assert!(matches!(lost.events[0], SeatEvent::Reset));
     }
     #[test]
     fn grip_moves_window_and_suppresses_fist_pinches() {
