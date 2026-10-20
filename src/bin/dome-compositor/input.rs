@@ -70,6 +70,20 @@ impl Dome {
                         if pressed && state.shell_keys.contains(&code) {
                             return FilterResult::Intercept(());
                         }
+                        if pressed && dome::terminal::show_shortcut(
+                            sym.raw(),
+                            dome::shortcuts::Mods {
+                                logo: mods.logo, ctrl: mods.ctrl, alt: mods.alt, shift: mods.shift,
+                            },
+                            state.input_realm,
+                            dome::terminal::Mode::configured(),
+                        ) {
+                            state.shell_keys.insert(code);
+                            if let Err(e) = dome::terminal::show(&state.launch_socket(), state.input_realm) {
+                                state.shell_error = format!("Cannot show Ghostty XR: {e}");
+                            }
+                            return FilterResult::Intercept(());
+                        }
                         if pressed
                             && state.capture_binding(
                                 if mods.shift && mods.logo {

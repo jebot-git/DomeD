@@ -231,8 +231,8 @@ extern "C" int dome_qt_paint(const char *json,unsigned char *pixels,int length) 
             auto sizes=f["sizes"].toArray();int size=app()->font().pixelSize(),sizeIndex=0;for(int n=0;n<sizes.size();++n)if(sizes[n].toInt()==size)sizeIndex=n;
             fontSize=QString("%1 px · native (%2/%3)").arg(size).arg(sizeIndex+1).arg(sizes.size());break;}
         if(!bitmapFonts.isEmpty()&&fontSize=="Unavailable"){fontName="Saved font unavailable";fontSize=QString("%1 px · fallback").arg(app()->font().pixelSize());}
-        QStringList names={"Colour scheme","Accent colour","Desktop background","Chrome opacity · 3 presets","Global font · bitmap only","Font size","Resume hand cursor after","Reset settings"};
-        QStringList values={light?"Light":"Dark",accent.name(),"Change",opacityPreset,fontName,fontSize,QString::number(appearance["hand_resume_ms"].toInt(800))+" ms","Reset"};
+        QStringList names={"Colour scheme","Accent colour","Desktop background","Chrome opacity · 3 presets","Global font · bitmap only","Font size","Reset settings"};
+        QStringList values={light?"Light":"Dark",accent.name(),"Change",opacityPreset,fontName,fontSize,"Reset"};
         for(int n=0;n<names.size();++n){int y=box.y()+60+n*48;p.setPen(foreground);p.drawText(QRect(box.x()+24,y,270,40),Qt::AlignVCenter,p.fontMetrics().elidedText(names[n],Qt::ElideRight,270));p.fillRect(QRect(box.x()+300,y,276,40),selection);p.drawText(QRect(box.x()+308,y,260,40),Qt::AlignCenter,p.fontMetrics().elidedText(values[n],Qt::ElideRight,260));}
         p.fillRect(QRect(box.x()+24,box.y()+452,260,36),selection);p.fillRect(QRect(box.x()+316,box.y()+452,260,36),selection);
         p.setPen(foreground);p.drawText(QRect(box.x()+24,box.y()+452,260,36),Qt::AlignCenter,"Default applications…");p.drawText(QRect(box.x()+316,box.y()+452,260,36),Qt::AlignCenter,"Close · Esc");

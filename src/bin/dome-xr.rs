@@ -1,7 +1,6 @@
 //! Native OpenXR quad compositor. Window content and seat input remain owned by Smithay.
 use ash::vk::{self, Handle};
 use dome::{
-    xr_input::{Detector, Hand, Interaction, Packet},
     Pose, Scene,
 };
 use openxr as xr;
@@ -14,48 +13,6 @@ use std::{
     },
     time::{Duration, Instant},
 };
-/// Optional OpenXR eye action. Runtimes without it retain head-gaze pointing.
-struct EyeInput {
-    set: xr::ActionSet,
-    action: xr::Action<xr::Posef>,
-    space: xr::Space,
-}
-impl EyeInput {
-    fn new(instance: &xr::Instance, session: &xr::Session<xr::Vulkan>) -> xr::Result<Self> {
-        let set = instance.create_action_set("gaze", "Gaze pointer", 0)?;
-        let action = set.create_action::<xr::Posef>("eye_pose", "Eye gaze", &[])?;
-        instance.suggest_interaction_profile_bindings(
-            instance.string_to_path("/interaction_profiles/ext/eye_gaze_interaction")?,
-            &[xr::Binding::new(
-                &action,
-                instance.string_to_path("/user/eyes_ext/input/gaze_ext/pose")?,
-            )],
-        )?;
-        session.attach_action_sets(&[&set])?;
-        let space = action.create_space(session, xr::Path::NULL, xr::Posef::IDENTITY)?;
-        Ok(Self { set, action, space })
-    }
-    fn sample(
-        &self,
-        session: &xr::Session<xr::Vulkan>,
-        stage: &xr::Space,
-        time: xr::Time,
-    ) -> Option<Pose> {
-        session.sync_actions(&[(&self.set).into()]).ok()?;
-        if !self.action.is_active(session, xr::Path::NULL).ok()? {
-            return None;
-        }
-        let location = self.space.locate(stage, time).ok()?;
-        if !location.location_flags.contains(
-            xr::SpaceLocationFlags::POSITION_VALID
-                | xr::SpaceLocationFlags::ORIENTATION_VALID
-                | xr::SpaceLocationFlags::ORIENTATION_TRACKED,
-        ) {
-            return None;
-        }
-        Some(pose(location.pose))
-    }
-}
 const VIEW_TYPE: xr::ViewConfigurationType = xr::ViewConfigurationType::PRIMARY_STEREO;
 #[derive(Clone)]
 struct Image {
@@ -72,7 +29,6 @@ struct Network {
     control: dome::xr_transport::Control,
     shell: dome::xr_transport::ShellLayout,
     images: HashMap<u64, Image>,
-    out: std::collections::VecDeque<Packet>,
 }
 fn scene_border(n: &Arc<Mutex<Network>>) -> u8 {
     n.lock()
@@ -162,23 +118,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
                 last_heartbeat = Instant::now();
-            }
-            let packets: Vec<_> = n.lock().unwrap().out.drain(..).collect();
-            for p in packets {
-                if agent
-                    .post(&format!("{base}/api/xr-input"))
-                    .send_json(serde_json::to_value(p).unwrap())
-                    .is_err()
-                {
-                    n.lock().unwrap().out.clear();
-                    let _ = agent.post(&format!("{base}/api/xr-input")).send_json(
-                        serde_json::to_value(Packet {
-                            events: vec![dome::xr_input::SeatEvent::Reset],
-                            actions: vec![],
-                        })
-                        .unwrap(),
-                    );
-                }
             }
             if let Ok(response) = agent.get(&format!("{base}/api/state")).call() {
                 last_server = Instant::now();
@@ -272,13 +211,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             })
             .unwrap(),
         );
-        let _ = agent.post(&format!("{base}/api/xr-input")).send_json(
-            serde_json::to_value(Packet {
-                events: vec![dome::xr_input::SeatEvent::Reset],
-                actions: vec![],
-            })
-            .unwrap(),
-        );
     });
     let entry = unsafe {
         xr::Entry::load()
@@ -291,8 +223,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut extensions = xr::ExtensionSet::default();
     extensions.extx_overlay = available.extx_overlay && !standalone;
     extensions.khr_vulkan_enable2 = true;
-    extensions.ext_hand_tracking = available.ext_hand_tracking;
-    extensions.ext_eye_gaze_interaction = available.ext_eye_gaze_interaction;
     extensions.khr_composition_layer_cylinder = available.khr_composition_layer_cylinder;
     let xr_instance = entry.create_instance(
         &xr::ApplicationInfo {
@@ -410,30 +340,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             })?;
         let view =
             session.create_reference_space(xr::ReferenceSpaceType::VIEW, xr::Posef::IDENTITY)?;
-        let trackers =
-            if extensions.ext_hand_tracking && xr_instance.supports_hand_tracking(system)? {
-                [
-                    session.create_hand_tracker(xr::Hand::LEFT).ok(),
-                    session.create_hand_tracker(xr::Hand::RIGHT).ok(),
-                ]
-            } else {
-                [None, None]
-            };
-        let eyes = if extensions.ext_eye_gaze_interaction {
-            match EyeInput::new(&xr_instance, &session) {
-                Ok(input) => Some(input),
-                Err(error) => {
-                    eprintln!("Eye gaze unavailable ({error}); using head gaze");
-                    None
-                }
-            }
-        } else {
-            None
-        };
-        let mut gaze_pointer = dome::xr_gaze::GazePointer::default();
-        let mut pointer_settings = None;
-        let mut detectors = [Detector::default(), Detector::default()];
-        let mut interaction = Interaction::default();
         let mut animator = dome::xr_presentation::Animator::default();
         let mut presentation_initialized = false;
         let mut presentation = dome::xr_presentation::Presentation::default();
@@ -495,10 +401,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             _ => (),
                         }
                     }
-                    xr::Event::ReferenceSpaceChangePending(_) => {
-                        gaze_pointer = dome::xr_gaze::GazePointer::default();
-                        pointer_settings = None;
-                    }
                     xr::Event::InstanceLossPending(_) => break 'main,
                     _ => (),
                 }
@@ -540,34 +442,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     state.control.clone(),
                 )
             };
-            let mut hands = [Hand::default(); 2];
-            for i in 0..2 {
-                if let Some(t) = &trackers[i] {
-                    let joints = stage.locate_hand_joints(t, frame.predicted_display_time)?;
-                    let tracked = joints.as_ref().is_some_and(|j| {
-                        j.iter().all(|p| {
-                            p.location_flags
-                                .contains(xr::SpaceLocationFlags::POSITION_VALID)
-                        }) && j[1]
-                            .location_flags
-                            .contains(xr::SpaceLocationFlags::POSITION_TRACKED)
-                    });
-                    hands[i] = detectors[i].sample(
-                        start.elapsed().as_secs_f64(),
-                        joints.map(|j| {
-                            std::array::from_fn(|k| {
-                                [
-                                    j[k].pose.position.x,
-                                    j[k].pose.position.y,
-                                    j[k].pose.position.z,
-                                ]
-                            })
-                        }),
-                        tracked,
-                    );
-                }
-            }
-            let mut gaze_cursor = Hand::default();
             let mut geometry = vec![];
             let mut popup_beams = vec![];
             let mut popup_ids = std::collections::HashSet::new();
@@ -617,149 +491,25 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     state.sampled = Some(Instant::now());
                 }
                 let hud = dome::xr_input::shell_quads(&hud_scene, head_pose, &shell);
-                let interactive_hud: Vec<_> = hud
-                    .iter()
-                    .filter(|q| transition.interactive(presentation, q.id))
-                    .cloned()
-                    .collect();
-                let time = start.elapsed().as_secs_f64();
-                let allowed =
-                    focused && head_valid && !exiting && !control.mouse && transition.opacity >= 1.;
-                let settings = (scene.config.xr_pointer_mode, scene.config.gaze_smoothing);
-                let mut reset = pointer_settings != Some(settings);
-                pointer_settings = Some(settings);
-                if reset || !allowed {
-                    gaze_pointer = dome::xr_gaze::GazePointer::default();
-                }
-                let mut p = if scene.config.xr_pointer_mode == dome::XrPointerMode::Gaze {
-                    let eye_pose = if allowed {
-                        eyes.as_ref()
-                            .and_then(|e| e.sample(&session, &stage, frame.predicted_display_time))
-                    } else {
-                        None
-                    };
-                    let (pointer, changed) =
-                        gaze_pointer.sample(time, head_pose, eye_pose, scene.config.gaze_smoothing);
-                    reset |= changed;
-                    if allowed {
-                        gaze_cursor = pointer;
-                    }
-                    if reset {
-                        interaction.reset();
-                    }
-                    interaction.update_gaze_surfaces(
-                        time,
-                        allowed,
-                        hands,
-                        &scene,
-                        head_pose,
-                        &interactive_hud,
-                        pointer,
-                    )
-                } else {
-                    if reset {
-                        interaction.reset();
-                    }
-                    interaction.update_surfaces(
-                        time,
-                        allowed,
-                        hands,
-                        &scene,
-                        head_pose,
-                        &interactive_hud,
-                    )
-                };
-                if reset {
-                    p.events.insert(0, dome::xr_input::SeatEvent::Reset);
-                }
                 geometry.extend(hud);
                 transition.apply(&mut geometry, head_pose, &hud_scene.config);
-                let mut state = network.lock().unwrap();
-                if state.out.len() >= 8 {
-                    state.out.clear();
-                    state.out.push_back(interaction.reset());
-                } else {
-                    state.out.push_back(p);
-                }
             }
-            // Mouse and hand cursors follow the hit surface; empty space has a view cursor.
-            // Tracked hands continue to use physical ray intersections.
-            let cursor_hands = if control.mouse && focused && head_valid && transition.opacity >= 1.
-            {
-                let mut cursor = [Hand::default(); 2];
+            // Only the physical mouse supplies a cursor; the compositor owns its hit UV.
+            if control.mouse && focused && head_valid && transition.opacity >= 1. {
                 if let Some(angles) = control.mouse_angles {
-                    cursor[0].valid = true;
-                    cursor[0].position = head_pose.position_m;
-                    cursor[0].ray = dome::xr_input::mouse_ray(head_pose, angles).to_array();
-                }
-                cursor
-            } else if !control.mouse && focused && head_valid && transition.opacity >= 1. {
-                if pointer_settings.is_some_and(|s| s.0 == dome::XrPointerMode::Gaze) {
-                    gaze_cursor.pinch =
-                        std::array::from_fn(|b| hands.iter().any(|h| h.valid && h.pinch[b]));
-                    [gaze_cursor, Hand::default()]
-                } else {
-                    hands
-                }
-            } else {
-                [Hand::default(); 2]
-            };
-            for (i, hand) in cursor_hands.iter().enumerate().filter(|(_, h)| h.valid) {
-                let hit = geometry
-                    .iter()
-                    .filter(|q| transition.interactive(presentation, q.id))
-                    .filter_map(|q| {
-                        q.hit(
-                            glam::Vec3::from_array(hand.position),
-                            glam::Vec3::from_array(hand.ray),
-                            false,
-                        )
-                        .map(|uv| (q, uv))
-                    })
-                    .min_by(|(a, ua), (b, ub)| {
-                        a.point(*ua)
-                            .distance_squared(glam::Vec3::from_array(hand.position))
-                            .total_cmp(
-                                &b.point(*ub)
-                                    .distance_squared(glam::Vec3::from_array(hand.position)),
-                            )
-                    });
-                let reticle = hit
-                    .map(|(q, uv)| dome::xr_input::surface_reticle(q, uv, u64::MAX - i as u64))
-                    .or_else(|| {
-                        if control.mouse {
-                            control
-                                .mouse_angles
-                                .map(|angles| dome::xr_input::mouse_reticle(head_pose, angles))
-                        } else if gaze_cursor.valid {
-                            let ray = glam::Vec3::from_array(gaze_cursor.ray);
-                            Some(dome::xr_input::Quad {
-                                id: u64::MAX,
-                                pose: Pose {
-                                    position_m: (glam::Vec3::from_array(gaze_cursor.position) + ray * 0.4).to_array(),
-                                    orientation_xyzw: glam::Quat::from_rotation_arc(glam::Vec3::Z, -ray).to_array(),
-                                },
-                                size: [0.006, 0.006],
-                                dome: None,
-                            })
-                        } else {
-                            None
-                        }
-                    });
-                if let Some(reticle) = reticle {
+                    let cursor = control.cursor.as_ref()
+                        .filter(|c| transition.interactive(presentation, c.id));
+                    let reticle = dome::xr_input::mouse_cursor_reticle(
+                        &geometry, cursor, head_pose, angles,
+                    );
                     let id = reticle.id;
-                    let pressed = hand.grip || hand.pinch.iter().any(|p| *p);
                     let mut rgba = vec![0; 16 * 16 * 4];
                     for y in 0..16 {
                         for x in 0..16 {
                             let d = (x as f32 - 7.5).powi(2) + (y as f32 - 7.5).powi(2);
                             if (20. ..=50.).contains(&d) || x == 7 || y == 7 {
                                 rgba[(y * 16 + x) * 4..(y * 16 + x) * 4 + 4].copy_from_slice(
-                                    if pressed {
-                                        &[255, 190, 40, 255]
-                                    } else {
-                                        &[245, 245, 245, 255]
-                                    },
+                                    &[245, 245, 245, 255],
                                 );
                             }
                         }
@@ -770,7 +520,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             width: 16,
                             height: 16,
                             rgba,
-                            serial: if pressed { 2 } else { 1 },
+                            serial: 1,
                         },
                     );
                     geometry.push(reticle);
@@ -957,14 +707,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         running.store(false, Ordering::Relaxed);
         let _ = worker.join();
-        let summary = serde_json::json!({"runtime":runtime,"system":properties.system_name,"overlay":environment.overlay,"environment_blend":format!("{blend:?}"),"overlay_placement":placement,"frames":count,"peak_window_layers":peak,"peak_curved_layers":peak_curved,"peak_flat_layers":peak_flat,"peak_stereo_windows":peak_stereo,"peak_shell_layers":peak_shell,"uploads":uploaded,"eye_gaze_extension":extensions.ext_eye_gaze_interaction,"eye_gaze_action":eyes.is_some(),"hand_tracking_extension":extensions.ext_hand_tracking,"hand_trackers":trackers.iter().filter(|t|t.is_some()).count(),"presentation_hidden_frames":hidden_frames,"presentation_fade_frames":fade_frames,"presentation_slide_frames":slide_frames,"clean_exit":true});
+        let summary = serde_json::json!({"runtime":runtime,"system":properties.system_name,"overlay":environment.overlay,"environment_blend":format!("{blend:?}"),"overlay_placement":placement,"frames":count,"peak_window_layers":peak,"peak_curved_layers":peak_curved,"peak_flat_layers":peak_flat,"peak_stereo_windows":peak_stereo,"peak_shell_layers":peak_shell,"uploads":uploaded,"input_methods":["mouse","keyboard"],"presentation_hidden_frames":hidden_frames,"presentation_fade_frames":fade_frames,"presentation_slide_frames":slide_frames,"clean_exit":true});
         println!("{summary}");
         if let Some(path) = report {
             std::fs::write(path, serde_json::to_vec_pretty(&summary)?)?;
         }
         vk_device.device_wait_idle()?;
         drop(chains);
-        drop(trackers);
         drop((stage, view, stream, waiter, session));
         vk_device.destroy_command_pool(pool, None);
         vk_device.destroy_device(None);

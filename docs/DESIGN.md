@@ -97,10 +97,8 @@ synchronization remain future work.
 Two near slots are available globally. The first pull stores a world-space,
 yaw-only head frame; near panels anchor at configurable depth (default 1 m),
 centred either side of a maximum eight-logical-pixel gap. Slot depth stays fixed until returned.
-An 18 cm inward grip displacement detaches, and an 18 cm outward displacement on
-a subsequent grip returns the panel to its dome offset and original scale. The
-third pull cannot evict an occupied slot. Lateral grip displacement adjusts dome
-angles. Scaling near panels grows away from the central gap; both remain flat.
+Super+P detaches or returns the focused panel. The third pull cannot evict an
+occupied slot. Scaling grows the near panels away from their central gap.
 Slots are released on return/close; they are session state, not persistent anchors.
 
 The menu/tray and taskbar are independent planar shell layers in the current head
@@ -109,13 +107,10 @@ stay fixed. Their hit UVs map back to the desktop shell coordinates. Runtime hea
 validity gates interaction; the configured lens insets and bar heights determine
 vertical placement. The horizontal runtime FOV limits configured maximum widths.
 
-Native `EXT_hand_tracking` joints feed a shared Rust gesture policy. Index, middle
-and ring pinch send LMB/MMB/RMB; grip moves a window and a second hand gripping the
-same window scales it. One- and two-hand pull/push gestures share the same slot policy. Hand and window ownership persist
-during a pinch drag. Neutral arming, debounce, hysteresis, target disappearance,
-tracking/focus loss, position discontinuities and an input lease prevent stuck
-buttons and accidental reacquisition. The simulator validates textures/lifecycle;
-Rust and real Wayland client tests validate gesture policy and seat delivery.
+Mouse and keyboard are the only input sources. OpenXR supplies headset pose for
+projection, with no eye actions, hand trackers or gesture processing. The physical
+mouse cursor uses the compositor's surface UV, preserving captured drags and idle
+position. Rust and real Wayland client tests validate geometry and seat delivery.
 
 A WiVRn marker adapter will resolve a persistent marker ID to a room-from-marker
 pose, combine the stored marker-from-dome offset, and update room geometry without
@@ -138,18 +133,16 @@ A dedicated renderer status lease records its generation, visibility, focus,
 head pose and FOV. A two-second expiry or loss of visible/tracked presentation
 promotes hidden clients to the primary desktop, unminimizes them and cascades them
 inside the work area. Focus loss alone does not promote visible content. The
-separate 250 ms hand-input lease releases stuck hand buttons. Recovery is one-way
+separate 250 ms automation-input lease releases stale synthetic buttons. Recovery is one-way
 until a later explicit launch: resuming XR does not hide recovered desktop clients.
 Renderer-generation changes clear stale stop requests.
 
-Physical mouse input preempts hand packets immediately. A held mouse button keeps
-ownership beyond the idle delay; after release the default 800 ms delay restores
-hand pointing. The XR frontend resets and requires neutral hand poses after handoff.
-The compositor maps mouse movement through the current head pose and the same
-curved/flat hit geometry as hand lasers, with captured UVs for drags. Wheel input
-uses the same hovered surface. Control status carries the mouse cursor for native
+Physical mouse ownership persists across idle periods until the input realm
+changes. The renderer uses the compositor's selected curved/flat surface and UV,
+so a newer renderer head pose cannot move the cursor back to the view plane.
+Wheel input targets the hovered surface. Control status carries the mouse cursor for native
 XR reticle rendering. Focus adds a four-logical-pixel outset on each edge and a 1 mm depth bias.
-The same raised bounds drive rendering and hit testing; gesture transforms remove
+The same raised bounds drive rendering and hit testing; window transforms remove
 the depth bias before saving poses. A configurable 0–2 pixel border is drawn inside
 the texture extent, defaulting to one pixel. It adds no layout or input extent.
 
@@ -159,7 +152,7 @@ transitions. Bars translate along head-local Y beyond the configured top/bottom
 view edges, including their expanded menus. Whole-desktop fading attenuates
 premultiplied RGB and alpha together; fully hidden layers are not submitted.
 Visibility shortcuts stay reserved while launchers/modal shell panels are open.
-Render target flags gate gestures immediately; restored pointer targeting waits
+Render target flags gate pointer input immediately; restored pointer targeting waits
 until the relevant transition completes. Existing input is released on visibility
 changes, and pre-existing key releases remain balanced. Physical mouse and
 keyboard ownership follows the visible XR composition: panels or either tray keep
@@ -188,7 +181,7 @@ Implemented: real nested Wayland client rendering and input, desktop stacking,
 minimize/maximize/restore, shared workspace/window actions, full layout policy,
 configurable geometry, two reference frames, curved mesh/ray math and an interactive
 local geometry preview, Qt6 decorations/classic menus, keyboard shortcuts and
-native Rust OpenXR window layers with hand input. The preview uses synthetic content even when attached to
+native Rust OpenXR window layers with mouse and keyboard input. The preview uses synthetic content even when attached to
 the live compositor; it is not a screen capture or an XR renderer.
 
 The optional `prototypes/godot-xr/` now validates the shared curved meshes through native

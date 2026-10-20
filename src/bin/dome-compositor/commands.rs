@@ -118,6 +118,9 @@ impl Dome {
                 ("Show / Hide XR Desktop", "⇧⌘D", ToggleXrDesktop),
                 ("Displays, XR & Keybindings…", "⌘,", XrSettings),
                 ("Anchor Dome at Headset", "⌃⌘R", AnchorHere),
+                ("", "", Separator),
+                ("Move Window Up a Lane", "⌃⌘↑", MoveLane(-1)),
+                ("Move Window Down a Lane", "⌃⌘↓", MoveLane(1)),
             ],
             5 => vec![
                 ("Minimize", "⌘M", Minimize),
@@ -157,6 +160,9 @@ impl Dome {
                         .and_then(|id| s.window(id))
                         .is_some_and(|w| !w.minimized)
             }
+            MoveLane(delta) => s.focused.and_then(|id| s.window(id)).is_some_and(|w| {
+                !w.minimized && (0..3).contains(&(w.lane as i32 + delta))
+            }),
             Separator => false,
             Close | QuitApp | Minimize | Maximize | Scale(_) | ResetSpatial | Copy | Paste
             | SelectAll | HideApp | HideOthers | AppInfo => s.focused.is_some(),
@@ -348,6 +354,9 @@ impl Dome {
             }
             MoveLane(delta) => {
                 if let Some(w) = id.and_then(|i| s.window(i)) {
+                    if w.pullout_slot.is_some() {
+                        self.action(Action::ReturnToDome { id: w.id });
+                    }
                     self.action(Action::Move {
                         id: w.id,
                         lane: (w.lane as i32 + delta).clamp(0, 2) as usize,

@@ -121,6 +121,7 @@ pub struct Dome {
     pub xr_animator: dome::xr_presentation::Animator,
     pub xr_animation: dome::xr_presentation::Frame,
     pub mouse_angles: Option<[f32; 2]>,
+    pub mouse_cursor: Option<dome::xr_transport::Cursor>,
     pub mouse_last_absolute: Option<[f64; 2]>,
     pub display_handle: DisplayHandle,
 
@@ -346,6 +347,7 @@ impl Dome {
             xr_animator: Default::default(),
             xr_animation: Default::default(),
             mouse_angles: None,
+            mouse_cursor: None,
             mouse_last_absolute: None,
 
             compositor_state,

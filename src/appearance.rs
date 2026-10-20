@@ -1,4 +1,4 @@
-//! Persistent shell colours and physical mouse / hand arbitration preferences.
+//! Persistent shell colours and font preferences.
 use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -9,7 +9,8 @@ pub struct Appearance {
     pub opacity: u8,
     pub font: String,
     pub font_size: u16,
-    pub hand_resume_ms: u64,
+    #[serde(rename = "hand_resume_ms", deserialize_with = "crate::scene::discard_retired_setting", skip_serializing)]
+    pub retired_pointer_delay: (),
 }
 #[cfg(test)]
 mod font_tests {
@@ -45,7 +46,7 @@ impl Default for Appearance {
             opacity: 248,
             font: "GNU Unifont / Sans-Serif".into(),
             font_size: 16,
-            hand_resume_ms: 800,
+            retired_pointer_delay: (),
         }
     }
 }
@@ -59,7 +60,6 @@ impl Appearance {
             || self.font.len() > 256
             || self.font.chars().any(char::is_control)
             || !(8..=24).contains(&self.font_size)
-            || !(300..=2000).contains(&self.hand_resume_ms)
             || self
                 .background
                 .iter()

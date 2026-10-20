@@ -30,6 +30,8 @@ Show usage.
 .SH ENVIRONMENT
 DOME_BACKEND and DOME_RENDERER select backend and renderer. DOME_CONFIG selects a geometry profile. DOME_PREVIEW_PORT selects the loopback bridge port (default 49640). DOME_TERMINAL selects a terminal executable without arguments.
 .SH INTERACTION
-XR uses cylindrical dome windows. Super+P pulls the focused window in front of the user or returns it to the dome; at most two windows can be pulled out. The default distance is 2 metres. Settings configure distance, dome height, bindings and hand or smoothed gaze input. Alt+Tab and Alt+Shift+Tab switch windows in the same lane.
+XR uses cylindrical dome windows. Super+P pulls the focused window in front of the user or returns it to the dome; at most two windows can be pulled out. The default distance is 2 metres. Settings configure distance, dome height and bindings. Mouse and keyboard are the only input methods. Alt+Tab and Alt+Shift+Tab switch windows in the same lane.
+.PP
+Ctrl+Super+Up/Down or Super+Alt+Up/Down moves the focused window between lanes. Moving a pulled-out window returns it to the dome. Super+Plus/Minus (Equals also grows) or Super+Alt+Right/Left multiplies/divides the focused XR window size by 1.1, within 0.25\(en4 times scale. The View menu exposes lane and size actions; Settings allows rebinding.
 .SH SEE ALSO
 dome\-xr(1), dome\-preview(1), ghostty\-xr(1)

@@ -1,5 +1,5 @@
 use dome::{
-    xr_input::{self, Hand, Interaction},
+    xr_input::{self},
     *,
 };
 use glam::{Quat, Vec3};
@@ -89,69 +89,6 @@ fn two_slots_are_world_anchored_and_third_pull_is_atomic() {
     s.apply(Action::Close { id: b }).unwrap();
     s.apply(Action::ReturnToDome { id: c }).unwrap();
     assert!(s.pullout_anchor.is_none());
-}
-fn apply(s: &mut Scene, p: xr_input::Packet) {
-    for a in p.actions {
-        s.apply(a).unwrap();
-    }
-}
-#[test]
-fn pulling_then_pushing_a_gripped_panel_returns_to_its_dome_home() {
-    let mut s = scene();
-    let head = Pose::default();
-    let id = s.windows[0].id;
-    let q = xr_input::quads(&s, head).remove(0);
-    let target = q.point([0.5, 0.5]);
-    let inward = (Vec3::from_array(head.position_m) - target).normalize();
-    let mut hand = Hand {
-        valid: true,
-        position: (target + inward * 0.5).to_array(),
-        ray: (-inward).to_array(),
-        ..Hand::default()
-    };
-    let mut i = Interaction::default();
-    let p = i.update(1., true, [hand, Hand::default()], &s, head);
-    apply(&mut s, p);
-    hand.grip = true;
-    let p = i.update(1.01, true, [hand, Hand::default()], &s, head);
-    apply(&mut s, p);
-    for t in 0..3 {
-        hand.position = (Vec3::from_array(hand.position) + inward * 0.075).to_array();
-        let p = i.update(
-            1.02 + t as f64 * 0.01,
-            true,
-            [hand, Hand::default()],
-            &s,
-            head,
-        );
-        apply(&mut s, p);
-    }
-    assert_eq!(s.window(id).unwrap().pullout_slot, Some(0));
-    let pulled = xr_input::quads(&s, head).remove(0);
-    hand.grip = false;
-    let p = i.update(1.05, true, [hand, Hand::default()], &s, head);
-    apply(&mut s, p);
-    let target = pulled.point([0.5, 0.5]);
-    let inward = (Vec3::from_array(head.position_m) - target).normalize();
-    hand.position = (target + inward * 0.2).to_array();
-    hand.ray = (-inward).to_array();
-    i.update(1.06, true, [hand, Hand::default()], &s, head);
-    hand.grip = true;
-    let p = i.update(1.07, true, [hand, Hand::default()], &s, head);
-    apply(&mut s, p);
-    for t in 0..3 {
-        hand.position = (Vec3::from_array(hand.position) - inward * 0.075).to_array();
-        let p = i.update(
-            1.08 + t as f64 * 0.01,
-            true,
-            [hand, Hand::default()],
-            &s,
-            head,
-        );
-        apply(&mut s, p);
-    }
-    assert!(s.window(id).unwrap().pullout_slot.is_none());
-    assert!(xr_input::quads(&s, head).remove(0).dome.is_some());
 }
 #[test]
 fn legacy_projection_migration_preserves_pullout() {
@@ -245,65 +182,6 @@ fn pulled_scaling_keeps_panels_side_by_side_and_restores_dome_size() {
     s.apply(Action::ReturnToDome { id: a }).unwrap();
     assert_eq!(s.window(a).unwrap().xr_scale, 0.6);
 }
-#[test]
-fn left_pinch_can_click_while_right_hand_hovers() {
-    let mut s = scene();
-    s.config.projection = Projection::RoomDome;
-    let head = Pose::default();
-    let q = xr_input::quads(&s, head).remove(0);
-    let point = q.point([0.5, 0.5]);
-    let origin = point + Quat::from_array(q.pose.orientation_xyzw) * Vec3::Z;
-    let mut hands = [Hand {
-        valid: true,
-        position: origin.to_array(),
-        ray: (point - origin).normalize().to_array(),
-        ..Hand::default()
-    }; 2];
-    let mut input = Interaction::default();
-    input.update(1., true, hands, &s, head);
-    hands[0].pinch[0] = true;
-    let packet = input.update(1.01, true, hands, &s, head);
-    assert!(packet.events.iter().any(|e| matches!(
-        e,
-        xr_input::SeatEvent::Button {
-            button: 0x110,
-            pressed: true
-        }
-    )));
-}
-#[test]
-fn two_hand_translation_can_pull_out_without_accidental_scale() {
-    let mut s = scene();
-    let head = Pose::default();
-    let id = s.windows[0].id;
-    let q = xr_input::quads(&s, head).remove(0);
-    let target = q.point([0.5, 0.5]);
-    let inward = (Vec3::from_array(head.position_m) - target).normalize();
-    let mut hands = std::array::from_fn(|i| {
-        let origin = target + inward * 0.5 + Vec3::X * if i == 0 { -0.08 } else { 0.08 };
-        Hand {
-            valid: true,
-            position: origin.to_array(),
-            ray: (target - origin).normalize().to_array(),
-            ..Hand::default()
-        }
-    });
-    let mut input = Interaction::default();
-    input.update(1., true, hands, &s, head);
-    hands.iter_mut().for_each(|h| h.grip = true);
-    let packet = input.update(1.01, true, hands, &s, head);
-    apply(&mut s, packet);
-    for t in 0..3 {
-        for h in &mut hands {
-            h.position = (Vec3::from_array(h.position) + inward * 0.075).to_array();
-        }
-        let packet = input.update(1.02 + t as f64 * 0.01, true, hands, &s, head);
-        apply(&mut s, packet);
-    }
-    assert!(s.window(id).unwrap().pullout_slot.is_some());
-    assert_eq!(s.window(id).unwrap().xr_scale, 1.);
-}
-
 #[test]
 fn radius_flattens_cards_and_compact_spacing_is_preserved() {
     let mut s = scene();
@@ -598,59 +476,7 @@ fn room_dome_render_surfaces_use_pixel_spacing_in_every_lane() {
 }
 
 #[test]
-fn hiding_xr_desktop_releases_hand_buttons_and_preserves_window_routing() {
-    let mut s = scene();
-    let head = Pose::default();
-    let q = xr_input::quads(&s, head).remove(0);
-    let hand = Hand {
-        valid: true,
-        position: head.position_m,
-        ray: (Vec3::from_array(q.pose.position_m) - Vec3::from_array(head.position_m))
-            .normalize()
-            .to_array(),
-        ..Hand::default()
-    };
-    let mut input = Interaction::default();
-    input.update(1., true, [hand, Hand::default()], &s, head);
-    let pinch = Hand {
-        pinch: [true, false, false],
-        ..hand
-    };
-    let press = input.update(1.01, true, [pinch, Hand::default()], &s, head);
-    assert!(press
-        .events
-        .iter()
-        .any(|e| matches!(e, xr_input::SeatEvent::Button { pressed: true, .. })));
-    let id = s.windows[0].id;
-    let revision = s.revision;
-    s.apply(Action::XrPresentation {
-        top: Some(false),
-        bottom: None,
-        desktop: Some(false),
-    })
-    .unwrap();
-    assert!(s.revision > revision && s.window(id).unwrap().desktop_visible);
-    let reset = input.update(1.02, true, [pinch, Hand::default()], &s, head);
-    assert!(matches!(
-        reset.events.as_slice(),
-        [xr_input::SeatEvent::Reset]
-    ));
-    s.apply(Action::XrPresentation {
-        top: None,
-        bottom: None,
-        desktop: Some(true),
-    })
-    .unwrap();
-    assert!(!s.presentation.top && s.presentation.bottom);
-    let held = input.update(1.03, true, [pinch, Hand::default()], &s, head);
-    assert!(!held
-        .events
-        .iter()
-        .any(|e| matches!(e, xr_input::SeatEvent::Button { pressed: true, .. })));
-}
-
-#[test]
-fn dome_bars_border_lanes_and_orbit_with_horizontal_gaze() {
+fn dome_bars_border_lanes_and_orbit_with_horizontal_head_yaw() {
     let mut s = scene();
     let layout = dome::xr_transport::ShellLayout {
         width: 1280,
@@ -1094,23 +920,6 @@ fn settings_persist_height_and_bindings_and_reject_conflicts_atomically() {
 }
 
 #[test]
-fn gaze_settings_keep_old_profiles_compatible_and_roundtrip() {
-    use dome::{geometry_settings, Config, XrPointerMode};
-    let old: Config = serde_json::from_str("{}").unwrap();
-    assert_eq!(old.xr_pointer_mode, XrPointerMode::HandRay);
-    assert!(old.gaze_smoothing);
-    let gaze = geometry_settings::adjust(&old, 20, 1.).unwrap();
-    assert_eq!(gaze.xr_pointer_mode, XrPointerMode::Gaze);
-    let gaze = geometry_settings::adjust(&gaze, 21, 1.).unwrap();
-    assert!(!gaze.gaze_smoothing);
-    assert_eq!(
-        serde_json::from_slice::<Config>(&serde_json::to_vec(&gaze).unwrap()).unwrap(),
-        gaze
-    );
-    assert!(serde_json::from_str::<Config>(r#"{"xr_pointer_mode":"invalid"}"#).is_err());
-}
-
-#[test]
 fn curved_pullouts_keep_mouse_uv_and_reticle_after_move_and_resize() {
     let mut s = scene();
     let id = s.windows[0].id;
@@ -1179,4 +988,32 @@ fn saved_shortcuts_gain_pullout_without_overriding_a_custom_chord() {
             .enabled
     );
     migrated.validate().unwrap();
+}
+
+#[test]
+fn mouse_cursor_stays_on_compositor_surface_when_render_head_moves() {
+    let s = scene();
+    let surfaces = xr_input::quads(&s, Pose::default());
+    let surface = &surfaces[0];
+    let uv = [0.85, 0.2];
+    let cursor = dome::xr_transport::Cursor { id: surface.id, uv };
+    let head = Pose { position_m: [1., 1., 0.],
+        orientation_xyzw: Quat::from_rotation_y(2.).to_array() };
+    let reticle = xr_input::mouse_cursor_reticle(&surfaces, Some(&cursor), head, [0., 0.]);
+    let point = surface.point(uv);
+    assert!((Vec3::from_array(reticle.pose.position_m) - point).length() < 0.003);
+    let normal = Quat::from_array(reticle.pose.orientation_xyzw) * Vec3::Z;
+    assert!(normal.dot(surface.dome.as_ref().unwrap().inward_normal(point)) > 0.999);
+    let fallback = xr_input::mouse_cursor_reticle(&[], Some(&cursor), head, [0., 0.]);
+    assert!(((Vec3::from_array(fallback.pose.position_m) - Vec3::from_array(head.position_m)).length() - 0.4).abs() < 0.0001);
+}
+
+#[test]
+fn retired_tracking_settings_are_ignored_and_not_saved() {
+    let config: Config = serde_json::from_str(r#"{"xr_pointer_mode":"gaze","gaze_smoothing":true}"#).unwrap();
+    assert_eq!(config, Config::default());
+    let saved = serde_json::to_value(&config).unwrap();
+    assert!(saved.get("xr_pointer_mode").is_none());
+    assert!(saved.get("gaze_smoothing").is_none());
+    assert_eq!(geometry_settings::rows(&config).len(), 20);
 }

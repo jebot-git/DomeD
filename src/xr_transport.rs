@@ -40,7 +40,6 @@ pub struct Bridge {
     pub mouse_angles: Option<[f32; 2]>,
     pub last_mouse: Option<Instant>,
     pub mouse_buttons: std::collections::HashSet<u32>,
-    pub hand_resume_ms: u64,
     pub input_realm: crate::Realm,
 }
 impl Default for Bridge {
@@ -59,7 +58,6 @@ impl Default for Bridge {
             mouse_angles: None,
             last_mouse: None,
             mouse_buttons: Default::default(),
-            hand_resume_ms: 800,
             input_realm: crate::Realm::Desktop,
         }
     }
@@ -97,10 +95,8 @@ impl Bridge {
                 .is_some_and(|t| t.elapsed().as_secs_f32() < 2.)
     }
     pub fn mouse_owned(&self) -> bool {
-        !self.mouse_buttons.is_empty()
-            || self
-                .last_mouse
-                .is_some_and(|t| t.elapsed().as_millis() < self.hand_resume_ms as u128)
+        // Mouse ownership lasts for this input realm, including idle periods.
+        self.last_mouse.is_some() || !self.mouse_buttons.is_empty()
     }
     pub fn control(&self) -> Control {
         Control {
@@ -129,7 +125,7 @@ impl Bridge {
     }
     pub fn push(&mut self, p: Packet) -> Result<(), String> {
         if self.mouse_owned() {
-            // Renderer packets cannot interfere with an active physical mouse drag.
+            // Synthetic input cannot move the physical mouse or interrupt its drag.
             return Ok(());
         }
         if p.events.len() > 32 || p.actions.len() > 16 {
@@ -174,7 +170,29 @@ mod tests {
         assert!(!b.control().exit_requested);
     }
     #[test]
-    fn renderer_lease_and_mouse_idle_are_independent() {
+    fn physical_mouse_rejects_synthetic_pointer_events_and_actions() {
+        let mut b = Bridge::default();
+        b.last_mouse = Some(Instant::now());
+        for held in [false, true] {
+            if held {
+                b.last_mouse = Some(Instant::now() - Duration::from_secs(2));
+                b.mouse_buttons.insert(0x110);
+            }
+            b.push(Packet {
+                events: vec![SeatEvent::Motion { id: 7, uv: [0.5, 0.5] },
+                    SeatEvent::Button { button: 0x110, pressed: true }, SeatEvent::Reset],
+                actions: vec![crate::Action::Focus { id: 7 }],
+            }).unwrap();
+            assert!(b.packets.is_empty());
+            assert!(b.last_input.is_none());
+        }
+        b.mouse_buttons.clear();
+        b.last_mouse = None;
+        b.push(Packet { events: vec![SeatEvent::Motion { id: 7, uv: [0.5, 0.5] }], actions: vec![] }).unwrap();
+        assert_eq!(b.packets.len(), 1);
+    }
+    #[test]
+    fn mouse_stays_owned_when_idle_and_renderer_lease_is_independent() {
         let mut b = Bridge::default();
         b.heartbeat(Session {
             visible: true,
@@ -183,7 +201,7 @@ mod tests {
         .unwrap();
         assert!(b.visible());
         b.last_mouse = Some(Instant::now() - Duration::from_secs(1));
-        assert!(!b.mouse_owned());
+        assert!(b.mouse_owned());
         b.mouse_buttons.insert(0x110);
         assert!(b.mouse_owned());
         b.push(Packet {

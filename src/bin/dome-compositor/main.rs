@@ -173,7 +173,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(|_| "49640".into())
         .parse()?;
     data.state.control_port = port;
-    data.state.xr_bridge.lock().unwrap().hand_resume_ms = data.state.appearance.hand_resume_ms;
     let _service = dome::service::serve_native(
         data.state.scene.clone(),
         port,

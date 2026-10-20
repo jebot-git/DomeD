@@ -10,13 +10,10 @@ pub enum Projection {
     #[serde(alias = "in_view")]
     RoomDome,
 }
-/// XR pointing source; click gestures use the same tracked hands in either mode.
-#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum XrPointerMode {
-    #[default]
-    HandRay,
-    Gaze,
+// Accept retired settings in saved profiles without exposing or serializing them.
+pub(crate) fn discard_retired_setting<'de, D: serde::Deserializer<'de>>(d: D) -> Result<(), D::Error> {
+    let _ = serde::de::IgnoredAny::deserialize(d)?;
+    Ok(())
 }
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Pose {
@@ -115,8 +112,10 @@ impl Default for DisplayConfig {
 pub struct Config {
     pub displays: Vec<DisplayConfig>,
     pub projection: Projection,
-    pub xr_pointer_mode: XrPointerMode,
-    pub gaze_smoothing: bool,
+    #[serde(rename = "xr_pointer_mode", deserialize_with = "discard_retired_setting", skip_serializing)]
+    pub retired_pointer_mode: (),
+    #[serde(rename = "gaze_smoothing", deserialize_with = "discard_retired_setting", skip_serializing)]
+    pub retired_pointer_smoothing: (),
     #[serde(deserialize_with = "crate::shortcuts::deserialize_bindings")]
     pub keybindings: Vec<crate::shortcuts::Binding>,
     pub anchor_mode: AnchorMode,
@@ -147,8 +146,8 @@ impl Default for Config {
         Self {
             displays: Vec::new(),
             projection: Projection::RoomDome,
-            xr_pointer_mode: XrPointerMode::HandRay,
-            gaze_smoothing: true,
+            retired_pointer_mode: (),
+            retired_pointer_smoothing: (),
             keybindings: crate::shortcuts::defaults(),
             anchor_mode: AnchorMode::Room,
             upper_bar_x_deg: 0.,

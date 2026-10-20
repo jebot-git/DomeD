@@ -522,7 +522,7 @@ impl Dome {
             realm
         };
     }
-    /// Physical devices take exclusive ownership until idle and all buttons are released.
+    /// Physical devices retain ownership until input leaves the XR realm.
     pub fn mouse_takeover(&mut self) -> bool {
         let (visible, owned) = {
             let b = self.xr_bridge.lock().unwrap();
@@ -537,7 +537,6 @@ impl Dome {
                 events: vec![SeatEvent::Reset],
                 actions: vec![],
             });
-            self.mouse_angles = None;
         }
         let mut b = self.xr_bridge.lock().unwrap();
         b.packets.clear();
@@ -551,7 +550,7 @@ impl Dome {
             (
                 b.session.clone(),
                 b.shell.clone(),
-                b.cursor.clone(),
+                if self.mouse_angles.is_some() { self.mouse_cursor.clone() } else { b.cursor.clone() },
                 !b.mouse_buttons.is_empty(),
             )
         };
@@ -569,7 +568,7 @@ impl Dome {
         surfaces.retain(|q| self.xr_animation.interactive(scene.presentation, q.id));
         let head = glam::Vec3::from_array(session.head.position_m);
         // Rebase from the last surface UV as the head or carousel moves. A
-        // stationary mouse stays on its panel instead of drifting with gaze.
+        // stationary mouse stays on its panel instead of drifting with head movement.
         let previous = self.mouse_angles.unwrap_or([0., 0.]);
         let mut angles = {
             cursor
@@ -595,6 +594,7 @@ impl Dome {
                     .map(|uv| (q.id, uv, q.point(uv).distance(head)))
             })
             .min_by(|a, b| a.2.total_cmp(&b.2));
+        self.mouse_cursor = target.map(|(id, uv, _)| dome::xr_transport::Cursor { id, uv });
         if let Some((id, uv, _)) = target {
             self.dispatch_xr(Packet {
                 events: vec![SeatEvent::Motion { id, uv }],

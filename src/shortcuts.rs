@@ -55,6 +55,9 @@ pub struct Mods {
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Binding {
+    // Stable identity lets profile migration preserve remapped/disabled aliases.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
     pub command: Command,
     pub key: u32,
     pub mods: Mods,
@@ -97,6 +100,7 @@ pub fn defaults() -> Vec<Binding> {
     let mut bindings = Vec::new();
     let mut add = |command, key, mods| {
         bindings.push(Binding {
+            id: None,
             command,
             key,
             mods,
@@ -224,6 +228,17 @@ pub fn defaults() -> Vec<Binding> {
             },
         );
     }
+    for (id, command, key) in [
+        ("window-lane-up", MoveLane(-1), 0xff52),
+        ("window-lane-down", MoveLane(1), 0xff54),
+        ("window-grow", Scale(1.1), 0xff53),
+        ("window-shrink", Scale(1. / 1.1), 0xff51),
+    ] {
+        bindings.push(Binding {
+            id: Some(id.into()), command, key,
+            mods: Mods { alt: true, ..logo }, enabled: true,
+        });
+    }
     bindings
 }
 fn normalized_key(key: u32) -> u32 {
@@ -252,6 +267,12 @@ pub fn validate(bindings: &[Binding]) -> Result<(), String> {
     for (i, b) in bindings.iter().enumerate() {
         if !available.iter().any(|d| d.command == b.command) {
             return Err("Unknown keybinding action".into());
+        }
+        if let Some(id) = &b.id {
+            if !available.iter().any(|d| d.id.as_ref() == Some(id) && d.command == b.command)
+                || bindings[..i].iter().any(|d| d.id.as_ref() == Some(id)) {
+                return Err("Unknown or duplicate keybinding identity".into());
+            }
         }
         if !b.enabled {
             continue;
@@ -510,20 +531,73 @@ mod configuration_tests {
     }
 }
 
-/// Add the new action to saved pre-pullout profiles without taking an existing chord.
+/// Add new bindings without stealing chords or reviving disabled actions.
 pub fn deserialize_bindings<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Vec<Binding>, D::Error> {
     let mut bindings = <Vec<Binding> as serde::Deserialize>::deserialize(deserializer)?;
-    if !bindings.iter().any(|b| b.command == Command::PullOut) {
-        let mut binding = defaults()
-            .into_iter()
-            .find(|b| b.command == Command::PullOut)
-            .unwrap();
-        binding.enabled = !bindings
-            .iter()
-            .any(|b| b.enabled && normalized_key(b.key) == binding.key && b.mods == binding.mods);
+    for mut binding in defaults().into_iter().filter(|b| b.id.is_some() || b.command == Command::PullOut) {
+        let present = bindings.iter().any(|b| match &binding.id {
+            Some(id) => b.id.as_ref() == Some(id),
+            None => b.command == binding.command,
+        });
+        if present { continue; }
+        let action_disabled = bindings.iter().any(|b| b.command == binding.command)
+            && !bindings.iter().any(|b| b.command == binding.command && b.enabled);
+        binding.enabled = !action_disabled && !bindings.iter().any(|b| {
+            b.enabled && normalized_key(b.key) == normalized_key(binding.key) && b.mods == binding.mods
+        });
         bindings.push(binding);
     }
     Ok(bindings)
+}
+
+#[cfg(test)]
+mod window_binding_tests {
+    use super::*;
+    fn restored(bindings: Vec<Binding>) -> Vec<Binding> {
+        let c: crate::Config = serde_json::from_value(serde_json::json!({"keybindings": bindings})).unwrap();
+        validate(&c.keybindings).unwrap();
+        c.keybindings
+    }
+    #[test]
+    fn window_arrows_and_existing_chords_resolve() {
+        let alt = Mods { logo: true, alt: true, ..Default::default() };
+        for (key, command) in [(0xff52, Command::MoveLane(-1)), (0xff54, Command::MoveLane(1)),
+            (0xff53, Command::Scale(1.1)), (0xff51, Command::Scale(1. / 1.1))] {
+            assert_eq!(resolve(key, alt), Some(command));
+        }
+        assert_eq!(resolve(0xff52, Mods { logo: true, ctrl: true, ..Default::default() }), Some(Command::MoveLane(-1)));
+        assert_eq!(resolve('=' as u32, Mods { logo: true, ..Default::default() }), Some(Command::Scale(1.1)));
+        validate(&defaults()).unwrap();
+    }
+    #[test]
+    fn old_profiles_gain_window_bindings_without_chord_conflicts() {
+        let mut old: Vec<_> = defaults().into_iter().filter(|b| b.id.is_none()).collect();
+        let menu = old.iter_mut().find(|b| b.command == Command::Menu).unwrap();
+        menu.key = 0xff52;
+        menu.mods = Mods { logo: true, alt: true, ..Default::default() };
+        let old = restored(old);
+        let added: Vec<_> = old.iter().filter(|b| b.id.is_some()).collect();
+        assert_eq!(added.len(), 4);
+        assert!(!added.iter().find(|b| b.command == Command::MoveLane(-1)).unwrap().enabled);
+        assert!(added.iter().find(|b| b.command == Command::Scale(1.1)).unwrap().enabled);
+    }
+    #[test]
+    fn migration_preserves_remapped_and_disabled_window_bindings() {
+        let mut bindings = defaults();
+        let up = bindings.iter_mut().find(|b| b.id.as_deref() == Some("window-lane-up")).unwrap();
+        up.key = 'u' as u32;
+        let grow = bindings.iter_mut().find(|b| b.id.as_deref() == Some("window-grow")).unwrap();
+        grow.enabled = false;
+        let restored = restored(restored(bindings.clone()));
+        assert_eq!(restored, bindings);
+        assert_eq!(resolve_with(&restored, 0xff52, Mods { logo: true, alt: true, ..Default::default() }), None);
+    }
+    #[test]
+    fn migration_does_not_revive_a_disabled_action() {
+        let mut old: Vec<_> = defaults().into_iter().filter(|b| b.id.is_none()).collect();
+        old.iter_mut().filter(|b| b.command == Command::MoveLane(-1)).for_each(|b| b.enabled = false);
+        assert!(!restored(old).iter().find(|b| b.id.as_deref() == Some("window-lane-up")).unwrap().enabled);
+    }
 }

@@ -25,6 +25,33 @@ pub fn command_for(socket: &str, binary: std::ffi::OsString, mode: Mode) -> Comm
     command
 }
 
+/// F12 belongs to the overlay in XR; desktop applications retain bare F12.
+pub fn show_shortcut(key: u32, mods: crate::shortcuts::Mods, realm: crate::Realm, mode: Mode) -> bool {
+    key == 0xffc9 && !mods.ctrl && !mods.alt && !mods.shift
+        && (mods.logo || (realm == crate::Realm::Xr && mode == Mode::Overlay))
+}
+
+/// Reopen the existing overlay without creating another shell tab.
+pub fn show(socket: &str, realm: crate::Realm) -> io::Result<()> {
+    if Mode::configured().for_realm(realm) == Mode::Overlay {
+        if let Some(dir) = std::env::var_os("XDG_RUNTIME_DIR") {
+            if show_overlay(&std::path::PathBuf::from(dir).join("ghostty-xr/control.sock")).is_ok() {
+                return Ok(());
+            }
+        }
+    }
+    let mut child = command(socket, realm).spawn()?;
+    std::thread::spawn(move || { let _ = child.wait(); });
+    Ok(())
+}
+
+fn show_overlay(path: &std::path::Path) -> io::Result<()> {
+    let socket = std::os::unix::net::UnixDatagram::unbound()?;
+    socket.connect(path)?;
+    socket.send(b"show")?;
+    Ok(())
+}
+
 // Send both requests through one socket so the new tab is selected before focus.
 fn reuse_overlay(path: &std::path::Path) -> io::Result<()> {
     let socket = std::os::unix::net::UnixDatagram::unbound()?;
@@ -53,6 +80,22 @@ pub fn launch(socket: &str, realm: crate::Realm) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn f12_show_is_realm_and_modifier_aware() {
+        use super::*;
+        use crate::{Realm, shortcuts::Mods};
+        for realm in [Realm::Desktop, Realm::Xr] {
+            for mode in [Mode::Overlay, Mode::Wayland] {
+                assert_eq!(show_shortcut(0xffc9, Mods::default(), realm, mode),
+                    realm == Realm::Xr && mode == Mode::Overlay);
+                assert!(show_shortcut(0xffc9, Mods { logo: true, ..Default::default() }, realm, mode));
+                for mods in [Mods { ctrl: true, ..Default::default() },
+                    Mods { shift: true, ..Default::default() }, Mods { alt: true, ..Default::default() }] {
+                    assert!(!show_shortcut(0xffc9, mods, realm, mode));
+                }
+            }
+        }
+    }
+    #[test]
     fn desktop_is_wayland_even_with_an_overlay_configured() {
         use super::Mode;
         use crate::Realm;
@@ -73,6 +116,10 @@ mod tests {
             let size = receiver.recv(&mut message).unwrap();
             assert_eq!(&message[..size], expected);
         }
+        super::show_overlay(&path).unwrap();
+        let size = receiver.recv(&mut message).unwrap();
+        assert_eq!(&message[..size], b"show");
+        assert!(receiver.recv(&mut message).is_err(), "show must not create a new tab");
         drop(receiver);
         assert!(super::reuse_overlay(&path).is_err());
         std::fs::remove_file(path).unwrap();

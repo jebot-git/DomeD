@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import threading
 import urllib.request
 
 from Xlib import X, XK, display
@@ -165,6 +166,9 @@ try:
         key("Super_L", False)
         wait(lambda: len(state()["windows"]) == 2)
         assert len(list((runtime / "ghostty-xr").glob("wayland-*.sock"))) == 2
+        key("Super_L", True); key("F12"); key("Super_L", False)
+        wait(lambda: len(state()["windows"]) == 3)
+        assert len(list((runtime / "ghostty-xr").glob("wayland-*.sock"))) == 3
 
         def frame():
             with urllib.request.urlopen(base + f"/api/xr-frame/{first}", timeout=2) as response:
@@ -193,8 +197,40 @@ try:
             raise AssertionError("Desktop terminal launch sent a command to the suspended XR terminal")
         except socket.timeout:
             pass
+        # A private XR heartbeat gives the nested compositor XR shortcut ownership.
+        stopped = threading.Event()
+        def heartbeat():
+            while not stopped.is_set():
+                request = urllib.request.Request(base + "/api/xr-session", data=json.dumps({
+                    "id": 987, "visible": True, "focused": True,
+                    "head": {"position_m": [0, 1.4, 0], "orientation_xyzw": [0, 0, 0, 1]},
+                    "horizontal_fov_deg": 100}).encode(), headers={"Content-Type": "application/json"})
+                with urllib.request.urlopen(request, timeout=2):
+                    pass
+                stopped.wait(.1)
+        pulse = threading.Thread(target=heartbeat, daemon=True)
+        pulse.start()
+        try:
+            def xr_owned():
+                with urllib.request.urlopen(base + "/api/xr-control", timeout=2) as response:
+                    return json.load(response)["input_realm"] == "xr"
+            wait(xr_owned)
+            for logo in (False, True):
+                if logo: key("Super_L", True)
+                key("F12")
+                if logo: key("Super_L", False)
+                assert overlay.recv(1024) == b"show"
+                try:
+                    overlay.recv(1024)
+                    raise AssertionError("F12 reopening created a tab or repeated the request")
+                except socket.timeout:
+                    pass
+            assert not state()["windows"]
+        finally:
+            stopped.set()
+            pulse.join(timeout=3)
         xd.close()
-        print("PASS: independent desktop terminal, clipboard copy/UTF-8 paste, windowless clipboard roundtrip, Wayland seat typing, Super+T, XR texture bridge, window lifecycle and socket cleanup")
+        print("PASS: independent desktop terminal, clipboard copy/UTF-8 paste, windowless clipboard roundtrip, Wayland seat typing, Super+T, F12/Super+F12 reopen without new tabs, XR texture bridge, window lifecycle and socket cleanup")
 finally:
     overlay.close()
     for child in reversed(processes):

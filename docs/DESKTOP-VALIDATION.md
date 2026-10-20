@@ -87,19 +87,16 @@ driver overrides; its Intel GPU cannot present to Xvfb without DRI3.
 
 `artifacts/desktop/01-native-xr-stereo.png` is the actual simulated headset window.
 `xr-report.json` records 541 frame iterations (including exit), two window layers and two shell layers,
-texture uploads and a clean OpenXR STOPPING/end/EXITING lifecycle. Monado advertises
-EXT_hand_tracking but the simulated device supplies no hands, so no hand trackers
-are created. Physical gesture ergonomics and WiVRn streaming are not validated.
+texture uploads and a clean OpenXR STOPPING/end/EXITING lifecycle. The current
+renderer uses only mouse and keyboard input and requests no hand or eye extensions.
+WiVRn streaming and physical headset appearance are not validated by this test.
 
-`cargo test --locked` passes 62 Rust tests, including scene/layout, gesture/shortcut, catalog/taskbar,
-renderer ownership and curved-surface/pull-out/shell tests. They cover three-button mapping, grip
-movement, two-hand scaling/release continuity, drag capture outside windows,
-tracking/focus/timeout/target-loss cancellation, gesture debounce/hysteresis, fist
-priority, ambiguous pinch suppression and neutral rearming after tracking loss.
+Rust tests cover scene/layout, shortcuts, mouse cursor geometry, idle persistence,
+renderer ownership, pullout slots, shell surfaces and retired profile migration.
 The API smoke test and real EGL Wayland client test also pass.
 
 The combined run also verifies a real StatusNotifier/DBusMenu action, XR-shell
-pinch menu activation, cylindrical dome layers followed by flat pulled-out
+synthetic mouse menu activation, cylindrical dome layers followed by flat pulled-out
 layers, live grouped thumbnails, task wheel cycling, XDG Desktop Action execution,
 persisted launcher pins, grouped close-all and launching a pinned app after closing
 its windows. Additional actual headset captures are `01-native-xr-pulled.png` and

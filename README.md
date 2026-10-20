@@ -57,7 +57,10 @@ overlay, input focus and positioning controls. In the XR input realm, **Super+T*
 opens it or creates and selects a new tab in its existing overlay. In the desktop
 realm, including while XR is suspended, it opens an independent Wayland terminal
 without changing the XR terminal. **F12** hides Ghostty and releases keyboard input back to
-Dome. The overlay uses placement 20, above Dome's placement 10.
+Dome. In XR, **F12** or **Super+F12** reopens the overlay without adding a tab;
+**Super+T** still creates a new tab. In desktop mode, Super+F12 opens a Wayland
+terminal and bare F12 remains available to applications. The overlay uses placement
+20, above Dome's placement 10.
 
 ```sh
 ./scripts/build-local.sh
@@ -170,7 +173,7 @@ With no connected monitor, a virtual 1280×800 desktop keeps XR clients renderin
 XR configuration uses a fixed 1024×768 canvas, independent of monitor resolution.
 Expanded configuration follows the selected projection, anchor, pane distance and
 vertical view field rather than stretching into a bar. Rows retain readable height;
-wheel/hand scrolling, the scroll buttons, arrows, Page Up/Down and Home/End navigate
+wheel scrolling, the scroll buttons, arrows, Page Up/Down and Home/End navigate
 all options. The selected row stays visible and hit testing follows the viewport.
 
 **Ctrl+Alt+F1…F12** switches VTs through libseat. Seat deactivation stops scanout and
@@ -385,17 +388,15 @@ user turns or moves their head. Mouse hits and cursor placement use the same
 curved surface; a stationary mouse retains its panel UV through pullout,
 return, scaling and head motion.
 
-Press **Super+P** again to return the focused panel, or push a gripped panel
-outward by 18 cm. **Return to Dome Layout** also restores its original dome
+Press **Super+P** again to return the focused panel. **Return to Dome Layout** also restores its original dome
 placement. The shortcut is configurable under Settings → keybindings; old
 profiles gain it automatically unless Super+P is already assigned, in which
 case the new action starts disabled. A third pull leaves that window on the
-dome. One- and two-hand pulls work, and scaling grows panels outward from the
-central gap. Open the hand between pull/return transitions.
+dome. Scaling grows panels outward from the central gap.
 
 The same Qt6 menu/tray/taskbar is rendered into two XR shell layers,
 with configurable angular sizes and lens-safe insets. Menu and preview expansion
-keeps the original top/bottom edges fixed. Hand pinches route into the native shell
+keeps the original top/bottom edges fixed. Mouse clicks invoke native shell
 commands, including application actions, task previews and status menus. Horizontal
 bar widths are capped to the runtime field of view as well as the configured cap.
 
@@ -404,23 +405,17 @@ swapchains. The compositor thread owns input and Wayland resource lifetimes. Thi
 is an initial implementation, not a zero-copy renderer; window captures are capped
 at about 20 Hz.
 
-OpenXR `EXT_hand_tracking` supplies the 26 joints per hand when supported:
-
-| Gesture | Input |
-| --- | --- |
-| Index/thumb pinch | Left mouse button |
-| Middle/thumb pinch | Middle mouse button |
-| Ring/thumb pinch | Right mouse button |
-| Grip and move | Slide along the dome |
-| Pull / push a gripped dome panel | Pull into a near slot / return to dome |
-| Grip the same window with both hands and change separation | Scale the panel |
-
-White reticles show the hand targets and turn amber during a gesture. Pinches use
-palm-normalized thresholds, debounce and hysteresis; a fist takes grip priority.
-Both hands must reopen after tracking loss before another interaction. Drag capture
-stays with its original window outside the window bounds. Tracking/focus loss,
-large tracking jumps and an expired input sender release buttons and cancel grabs.
-Return a window to its lane with **Shift+Super+R**.
+Mouse and keyboard are the only input methods. The XR renderer requests no hand
+or eye tracking extensions and emits no tracked input. The mouse cursor follows
+the compositor's selected surface UV, including curved windows and captured drags.
+Use **Super+P** to pull/return a panel and **Shift+Super+R** to reset its layout.
+Move the focused window up/down a lane with **Ctrl+Super+Up/Down** or
+**Super+Alt+Up/Down**. Lane moves recenter the window; moving a pulled-out panel
+returns it to the dome. The first and last lanes stop further movement.
+**Super+Plus/Minus** (also **Super+Equals** to grow) or **Super+Alt+Right/Left**
+expands it by 10% or shrinks by the inverse factor, within 0.25–4× scale. These actions are also available
+in **View** and can be rebound in Settings. Saved profiles gain the arrow bindings
+without replacing occupied chords or reviving disabled actions.
 
 ### Spatial application popups
 
@@ -430,7 +425,7 @@ Their placement follows the active projection:
 
 * **Room dome:** a flat panel 14 cm forward and 4 cm above the parent's upper edge.
   A thin blue beam connects its lower edge to the origin on the parent surface.
-  The beam is decorative and never captures mouse or hand input.
+  The beam is decorative and never captures mouse input.
 * **Desktop:** a separate panel to the right with an 8 logical pixel gap, or over
   the parent when space is tight. DomeD announces this placement in the Wayland
   popup configure event so GTK, Chromium and other clients use the same coordinates
@@ -470,14 +465,14 @@ Wayland menus/dialogs, nesting, side-panel and front-fallback desktop pixels,
 separate XR textures, XR pointer coordinates, dismissal and cleanup. Captures and
 protocol logs are saved in `artifacts/popups/`. Rust geometry tests cover both XR
 projections, beam endpoints, matching ray hits, nested placement, parent scale and
-visibility, and hand input. Headset appearance still needs visual verification.
+visibility, and mouse input. Headset appearance still needs visual verification.
 The test also checks RMB anchors in desktop and XR seat input, immediate context
 focus, top/bottom scrolling, scrolled input coordinates and a task menu with fifty
 desktop actions. Context screenshots are saved alongside the popup captures.
 
-The simulator has no tracked hands: joint/gesture logic is covered by Rust tests
-and injected seat events by real Wayland-client tests. Physical hand ergonomics
-still need headset testing. Controller bindings, GPU buffer sharing and persistent marker localization remain follow-up work.
+Rust and real Wayland-client tests cover mouse geometry and seat delivery.
+Headset cursor appearance still needs visual verification. GPU buffer sharing and
+persistent marker localization remain follow-up work.
 The optional Godot viewer remains a separate design prototype.
 
 ## XR routing, cursor ownership and desktop session
@@ -498,26 +493,23 @@ additional windows from that client. A single-instance application activated ove
 D-Bus can reuse its existing connection and therefore retains that connection's
 origin.
 
-OpenXR visibility and tracking status are reported separately from hand input.
+OpenXR visibility and headset pose determine XR availability.
 Stopping/interruption promotes XR-only windows to the primary desktop without
 relaunching them. Missing renderer heartbeats recover them within two seconds,
 including after SIGKILL. They are unminimized, moved to desktop 1, clamped to the
 primary work area and stacked. They stay on desktop when XR resumes. Focus loss
-while the session remains visible suspends hand input without promoting windows.
+while the session remains visible suspends XR cursor rendering without promoting windows.
 The nested backend and the initial native DRM backend expose one primary output.
 
-A physical mouse motion, button or wheel event takes exclusive XR cursor ownership,
-releases hand buttons and cancels gestures. Movement starts at the last laser target.
-Buttons retain mouse ownership while held; after release and **800 ms** without
-mouse input, hand control resumes with neutral gesture rearming. The delay is
-configurable. Wheel events target the hovered surface. The mouse uses one continuous
-angular coordinate across bars, lanes and empty space, with a cursor placed on the hit surface, following its curvature and lean. A held button keeps its original target for
-continuous drags. Head and carousel movement preserve the cursor’s surface UV without extending the
-mouse ownership timeout. Outside XR, mouse control uses the normal desktop stacking path.
+Physical mouse motion, button and wheel events control the XR pointer. Its position
+persists while idle, with no timeout or switch to another input source. The cursor
+follows the hit surface's curvature and lean; empty space uses a view cursor.
+Head and carousel movement preserve its surface UV. Held buttons capture the
+original target through a drag. Outside XR, the mouse uses desktop stacking.
 
 In dome mode the upper menu/tray bar borders the top lane and the taskbar borders
 the bottom lane, at the dome radius. Both orbit the dome anchor with horizontal
-headset gaze; pitching the headset lets you look up/down to reach the bars without
+headset yaw; pitching the headset lets you look up/down to reach the bars without
 moving them over the room-anchored lanes. Expanded menus keep the bar edge fixed and extend toward the lanes.
 For a dome taller than the headset's field of view, look up/down to see its bars.
 Dome bars use the configured dome radius and span. Adjust **Dome height / vertical
@@ -546,8 +538,8 @@ through the Window menu, taskbar and Super+M. Border resizing and Shift-drag til
 continue to work. These gadgets apply to desktop frames; XR client panels retain
 their existing presentation.
 
-Appearance offers a light/dark colour scheme, accent, desktop background, chrome opacity, global bitmap font and native pixel size, and
-mouse-to-hand idle delay, persisted in `$XDG_CONFIG_HOME/dome/appearance.json`.
+Appearance offers a light/dark colour scheme, accent, desktop background, chrome
+opacity, global bitmap font and native pixel size, persisted in `$XDG_CONFIG_HOME/dome/appearance.json`.
 Window titlebars and borders follow the selected theme, accent and chrome opacity;
 existing windows repaint immediately, including inactive decorations. The global
 menu bar and taskbar use the same colours and opacity, in desktop and
@@ -629,7 +621,7 @@ lane lean rotates its screens about their lower centre edges and preserves
 texture aspect ratio; it does not add a ceiling.
 Enlarging the dome preserves reference card height while shrinking angular sizes.
 Ghostty XR retains its independent flat overlay. Focus changes the same geometry used by lasers
-and mouse hit testing; its visual outset is not saved into gesture transforms.
+and mouse hit testing; its visual outset is not saved into window transforms.
 
 ## Application menus, global bar and taskbar
 
@@ -708,29 +700,6 @@ does not request full-resolution XR readbacks or continuously repaint the shell.
 `scripts/test-task-previews.py` checks four large grouped windows, live updates,
 dismissal, and keyboard responsiveness while the previews are open.
 
-## Gaze pointer and click gestures
-
-In **XR settings**, set **XR pointer** to **Gaze + pinch clicks** to look at
-windows and shell controls instead of aiming a hand ray. **Gaze smoothing**
-controls the adaptive eye filter. These preferences persist in
-`~/.config/dome/xr.json` as `xr_pointer_mode` (`hand_ray` or `gaze`) and
-`gaze_smoothing`. Existing profiles keep hand rays by default.
-
-The interaction follows the local KWin VR build: tracked eye gaze points when
-available through `XR_EXT_eye_gaze_interaction`; otherwise the headset's forward
-direction points. Eye movement is smoothed relative to the head, so turning your
-head stays immediate. Invalid eye tracking falls back immediately and requires
-80 ms of stable samples before resuming. The cursor follows the same curved or
-flat surface used for input.
-
-Either hand can pinch thumb + index for left click, thumb + middle for middle
-click, or thumb + ring for right click. Hold a pinch to drag; the drag remains
-on its original surface until released. Both hands can hold the same button;
-it releases when the last hand releases or loses tracking. Fists retain the
-existing window move and two-hand resize gestures, targeting the gaze point.
-Physical mouse takeover, focus loss, tracking-source changes and interaction
-mode changes release held input; open your hand before clicking again.
-
 ## Audio tray controls
 
 Click the speaker in the right-side tray to control PipeWire audio in desktop or
@@ -788,8 +757,8 @@ Open **View → Displays, XR & Keybindings** (Super+Comma), select a keybinding
 row and press Enter or click its value to record a replacement chord. Escape
 cancels; Backspace disables that binding. Changes persist in `dome/xr.json`.
 Duplicate chords are rejected. Bare function keys pass to qimgvr, mpvr, fsv-xr
-and Ghostty XR: Dome’s menu uses Super+F10. F12 and Super+F12 remain reserved for
-Ghostty XR’s own controls. Alt+F4 retains the standard window-close behavior.
+and Ghostty XR: Dome’s menu uses Super+F10. In XR overlay mode, F12 and Super+F12
+show Ghostty XR; its own F12 handler hides it while it owns the keyboard. Alt+F4 retains the standard window-close behavior.
 
 | Shortcut | Action |
 | --- | --- |
@@ -802,7 +771,8 @@ Ghostty XR’s own controls. Alt+F4 retains the standard window-close behavior.
 | Super+M / Super+Enter | Minimize / toggle maximize |
 | Super+1…8 / Shift+Super+1…8 | Switch desktop / move window to desktop |
 | Ctrl+Super+Left/Right | Previous / next desktop |
-| Ctrl+Super+Up/Down | Move window between lanes |
+| Ctrl+Super+Up/Down or Super+Alt+Up/Down | Move focused window between lanes |
+| Super+Plus/Minus or Super+Alt+Right/Left | Expand / shrink focused XR window (×1.1 / ÷1.1) |
 | Shift+Super+N | Create desktop |
 | Super+Plus/Minus | Increase / decrease XR window scale |
 | Shift+Super+R | Reset XR placement and scale |

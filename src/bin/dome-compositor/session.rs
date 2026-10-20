@@ -229,17 +229,9 @@ impl crate::Dome {
                     .map_or(0, |index| (index + 1) % font.sizes.len());
                 self.appearance.font_size = font.sizes[next];
             }
-            6 => {
-                self.appearance.hand_resume_ms = if self.appearance.hand_resume_ms >= 1500 {
-                    500
-                } else {
-                    self.appearance.hand_resume_ms + 500
-                }
-            }
-            7 => self.appearance = Default::default(),
+            6 => self.appearance = Default::default(),
             _ => return,
         }
-        self.xr_bridge.lock().unwrap().hand_resume_ms = self.appearance.hand_resume_ms;
         if let Err(e) = self.appearance.save() {
             self.shell_error = e;
         }
