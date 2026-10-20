@@ -1104,3 +1104,22 @@ Part of the [de-xr desktop](https://github.com/topics/de-xr):
 [LightXR](https://github.com/jebot-git/LightXR) the optional login manager.
 Each application has its own dependencies and can be used independently where
 its selected backend permits.
+
+### Live XR performance smoke test
+
+Run `python scripts/smoke-xr-performance.py --seconds 60` during an existing
+DomeD/WiVRn Pro session. It reads the runtime performance feed and process CPU
+counters without restarting the headset, moving windows, or changing rendering.
+Use `--output PATH` to retain a separate baseline and `--feed PATH` for a custom
+runtime directory. Results default to `artifacts/xr-performance/live.json`.
+CPU percentages use one core as 100%. Reported latency percentiles describe
+sampled gauges, not every frame; application GPU timings do not measure the
+runtime's layer-squashing GPU work. Other applications and head motion affect
+these live observations.
+
+Runtime-side minification filtering is implemented separately in WiVRn Pro's
+PC layer compositor. Its `WIVRN_LAYER_FILTER=balanced|quality` modes are opt-in;
+`off` remains the default because footprint estimation adds GPU work. Set the
+variable on the runtime server, not on `dome-xr`. It does not change gaze-driven
+encoding. See that runtime's `wivrn-layer-filter(7)` and shader smoke report before
+enabling it. DomeD does not apply a full-frame blur to bitmap fonts.

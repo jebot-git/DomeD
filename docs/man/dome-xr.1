@@ -50,5 +50,18 @@ the active desktop. More distant layers are fainter. Only the active desktop
 accepts input. Switching desktops brings the selected desktop to the front.
 Minimized windows and windows assigned only to the physical desktop are omitted.
 
+.SH PERFORMANCE DIAGNOSTICS
+The source distribution includes scripts/smoke-xr-performance.py. During an
+existing DomeD/WiVRn Pro session, run it with --seconds 60 to collect a read-only
+performance sample. --output selects the JSON report and --feed selects a custom
+runtime performance feed. No headset restart or scene modification is performed.
+.PP
+CPU percentages use one core as 100 percent. Latency percentiles summarize sampled
+gauges rather than every frame. Application GPU timings do not measure the
+runtime's layer-squashing GPU work. Concurrent applications affect results.
+.PP
+WiVRn Pro builds containing the desktop-layer minification patch provide
+WIVRN_LAYER_FILTER=balanced or quality on the runtime server. Filtering is off
+by default and does not change gaze-driven encoding. See wivrn-layer-filter(7).
 .SH SEE ALSO
 dome\-compositor(1), dome\-preview(1)
