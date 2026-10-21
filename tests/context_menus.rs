@@ -153,3 +153,15 @@ fn large_xr_context_menu_stays_between_shell_bars() {
         assert!(angle <= upper + 1e-5 && angle >= lower - 1e-5);
     }
 }
+
+#[test]
+fn high_density_popup_scrolls_in_logical_coordinates() {
+    let viewport = dome::context_menu::Viewport::new(200.,100.,40.);
+    let mut source=vec![0;8*400*4];
+    for y in 0..400 { for x in 0..8 { source[(y*8+x)*4..(y*8+x)*4+4].copy_from_slice(&[(y%256) as u8,0,0,255]); } }
+    let result=dome::context_menu::texture_scaled(&source,8,viewport,2.);
+    assert_eq!(result.len(),8*200*4);
+    // Logical row 24 is the first body row, sampling logical source row 40.
+    assert_eq!(&result[48*8*4..48*8*4+4], &[80,0,0,255]);
+    assert_eq!(&result[8*4..8*4+4], &[31,37,45,255]);
+}

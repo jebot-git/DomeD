@@ -13,12 +13,15 @@ use std::{
     },
     time::{Duration, Instant},
 };
+#[path = "dome-xr/gpu.rs"]
+mod gpu;
 const VIEW_TYPE: xr::ViewConfigurationType = xr::ViewConfigurationType::PRIMARY_STEREO;
 #[derive(Clone)]
 struct Image {
     width: u32,
     height: u32,
     rgba: Vec<u8>,
+    gpu: Option<Arc<dome::xr_gpu::Received>>,
     serial: u64,
 }
 #[derive(Default)]
@@ -30,6 +33,7 @@ struct Network {
     control_received: Option<Instant>,
     shell: dome::xr_transport::ShellLayout,
     images: HashMap<u64, Image>,
+    gpu_error: Option<String>,
 }
 fn scene_border(n: &Arc<Mutex<Network>>) -> u8 {
     n.lock()
@@ -54,9 +58,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut music_floor_only = false;
     let mut floor_size: Option<[f32; 2]> = None;
     let mut placement = 10u32;
+    let mut transport = "auto".to_string();
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
         match a.as_str() {
+            "--transport" => transport = args.next().ok_or("missing transport")?,
             "--server" => base = args.next().ok_or("missing server")?,
             "--frames" => frames = args.next().ok_or("missing frames")?.parse()?,
             "--capture" => capture = args.next(),
@@ -79,7 +85,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             "--help" => {
-                println!("dome-xr [--server http://127.0.0.1:PORT] [--frames N] [--capture DIR] [--report FILE] [--standalone] [--placement N] [--music-floor-only] [--floor-size WIDTHxDEPTH]\nMusic-floor-only runs a passive audio-reactive overlay without a desktop server.\nFloor-size explicitly supplies the STAGE floor extent when the runtime does not expose bounds.\nDefault: transparent overlay, or passthrough blending when overlay sessions are unavailable.");
+                println!("dome-xr [--server http://127.0.0.1:PORT] [--frames N] [--transport auto|cpu|gpu] [--capture DIR] [--report FILE] [--standalone] [--placement N] [--music-floor-only] [--floor-size WIDTHxDEPTH]\nMusic-floor-only runs a passive audio-reactive overlay without a desktop server.\nFloor-size explicitly supplies the STAGE floor extent when the runtime does not expose bounds.\nDefault: transparent overlay, or passthrough blending when overlay sessions are unavailable.");
                 return Ok(());
             }
             _ => return Err(format!("unknown argument {a}").into()),
@@ -88,6 +94,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     if !base.starts_with("http://127.0.0.1:") || base[17..].parse::<u16>().is_err() {
         return Err("server must be numeric loopback http://127.0.0.1:PORT".into());
     }
+    if !matches!(transport.as_str(), "auto" | "cpu" | "gpu") { return Err("transport must be auto, cpu or gpu".into()); }
+    let gpu_enabled = Arc::new(AtomicBool::new(false));
+    let gpu_failed = Arc::new(Mutex::new(std::collections::HashSet::<u64>::new()));
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
     ctrlc::set_handler(move || {
@@ -148,12 +157,17 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     });
     let n = network.clone();
     let r = running.clone();
+    let worker_gpu_enabled = gpu_enabled.clone();
+    let worker_gpu_failed = gpu_failed.clone();
+    let capture_cpu = capture.is_some();
+    let worker_transport = transport.clone();
     let worker = std::thread::spawn(move || {
         if music_floor_only { return; }
         let agent = ureq::AgentBuilder::new()
             .timeout(Duration::from_millis(250))
             .build();
         let mut serial = 0;
+        let mut gpu_waiting = HashMap::<u64,Instant>::new();
         let mut last_server = Instant::now();
         while r.load(Ordering::Relaxed) {
             if let Ok(response) = agent.get(&format!("{base}/api/state")).call() {
@@ -191,9 +205,36 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         let border = scene_border(&n);
                         for id in ids {
+                            if worker_gpu_enabled.load(Ordering::Relaxed) && !capture_cpu
+                                && !dome::xr_transport::is_shell(id) && !worker_gpu_failed.lock().unwrap().contains(&id) {
+                                let path = n.lock().unwrap().control.gpu_socket.clone();
+                                if let Some(path) = path {
+                                    if let Ok(frame) = dome::xr_gpu::receive(std::path::Path::new(&path), id) {
+                                        gpu_waiting.remove(&id);
+                                        let mut state = n.lock().unwrap();
+                                        let same = state.images.get(&id).and_then(|i| i.gpu.as_ref())
+                                            .is_some_and(|old| old.info.serial == frame.info.serial);
+                                        if !same {
+                                            let (width,height) = frame.info.output_size();
+                                            serial += 1;
+                                            state.images.insert(id, Image { width,height,rgba:vec![],gpu:Some(Arc::new(frame)),serial });
+                                        }
+                                        continue;
+                                    }
+                                }
+                                if worker_transport == "gpu" {
+                                    if gpu_waiting.entry(id).or_insert_with(Instant::now).elapsed() > Duration::from_secs(3) {
+                                        n.lock().unwrap().gpu_error = Some(format!("GPU frame unavailable for window {id}; use --transport auto for fallback"));
+                                        r.store(false, Ordering::Relaxed);
+                                    }
+                                    continue;
+                                }
+                            }
                             if let Ok(response) =
                                 agent.get(&format!("{base}/api/xr-frame/{id}")).call()
                             {
+                                let pixel_scale = response.header("X-Dome-Scale").and_then(|v| v.parse::<f32>().ok())
+                                    .filter(|v| v.is_finite() && *v > 0. && *v <= 2.).unwrap_or(1.);
                                 let dims = response
                                     .header("X-Dome-Width")
                                     .and_then(|v| v.parse::<u32>().ok())
@@ -215,13 +256,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                                     {
                                         let stereo = n.lock().unwrap().scene.as_ref().and_then(|s| s.window(id)).is_some_and(|w| w.stereo == dome::stereo::Stereo::SideBySide);
                                         if !dome::xr_transport::is_shell(id) && !stereo {
-                                            dome::xr_input::paint_border(
-                                                &mut rgba, width, height, border,
+                                            dome::xr_input::paint_border_scaled(
+                                                &mut rgba, width, height, border, pixel_scale,
                                             );
                                         }
                                         let state = n.lock().unwrap();
                                         if !dome::xr_transport::is_shell(id) && state.scene.as_ref().is_some_and(|s| s.focused == Some(id)) {
-                                            dome::visual_feedback::focus_border(&mut rgba, width, height, state.control.accent, stereo);
+                                            dome::visual_feedback::focus_border_scaled(&mut rgba, width, height, state.control.accent, stereo, pixel_scale);
                                         }
                                         drop(state);
                                         serial += 1;
@@ -231,6 +272,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                                                 width,
                                                 height,
                                                 rgba,
+                                                gpu: None,
                                                 serial,
                                             },
                                         );
@@ -333,6 +375,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             })
             .expect("Vulkan device has no graphics queue");
 
+        let gpu_extensions = gpu::extensions(&vk_instance, vk_physical_device);
+        if transport == "gpu" && gpu_extensions.is_none() { return Err("Required Vulkan DMA-BUF extensions unavailable".into()); }
+        let enabled_gpu_extensions = if transport != "cpu" && !capture_cpu { gpu_extensions.clone().unwrap_or_default() } else { vec![] };
         let vk_device = {
             let vk_device = xr_instance
                 .create_vulkan_device(
@@ -340,6 +385,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     std::mem::transmute(vk_entry.static_fn().get_instance_proc_addr),
                     vk_physical_device.as_raw() as _,
                     &vk::DeviceCreateInfo::default()
+                        .enabled_extension_names(&enabled_gpu_extensions)
                         .queue_create_infos(&[vk::DeviceQueueCreateInfo::default()
                             .queue_family_index(queue_family_index)
                             .queue_priorities(&[1.0])])
@@ -395,6 +441,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             .into_iter()
             .find(|f| formats.contains(&(f.as_raw() as u32)))
             .ok_or("no RGBA swapchain format")?;
+        let mut gpu_renderer = if !enabled_gpu_extensions.is_empty() {
+            match gpu::Renderer::new(&vk_instance, &vk_device, vk_physical_device, queue_family_index, format) {
+                Ok(r) => { gpu_enabled.store(true, Ordering::Relaxed); eprintln!("XR DMA-BUF transport enabled"); Some(r) }
+                Err(e) if transport == "gpu" => return Err(e),
+                Err(e) => { eprintln!("XR GPU renderer unavailable; using CPU: {e}"); None }
+            }
+        } else { None };
+        let mut gpu_submissions = 0u64;
         let pool = vk_device.create_command_pool(
             &vk::CommandPoolCreateInfo::default()
                 .queue_family_index(queue_family_index)
@@ -562,6 +616,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         finder.size = finder.size.map(|v| v * 4.);
                         images.insert(finder.id, Image {
                             width: 128, height: 128,
+                            gpu: None,
                             rgba: dome::visual_feedback::finder_pixels(age, control.accent),
                             serial: count + 2,
                         });
@@ -575,6 +630,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             width: 32,
                             height: 32,
                             rgba,
+                            gpu: None,
                             serial: 1,
                         },
                     );
@@ -587,6 +643,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     Image {
                         width: 1,
                         height: 1,
+                        gpu: None,
                         rgba: vec![160, 205, 255, 180],
                         serial: 1,
                     },
@@ -606,13 +663,17 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             if let Some(floor) = music_floor.frame(floor_bounds) {
                 const FLOOR_ID: u64 = u64::MAX - 32;
-                images.insert(FLOOR_ID, Image { width:128, height:128, rgba:floor.rgba, serial:floor.serial });
+                images.insert(FLOOR_ID, Image { width:128, height:128, rgba:floor.rgba, gpu:None, serial:floor.serial });
                 geometry.push(dome::xr_input::Quad {
                     id:FLOOR_ID,
                     pose:Pose { position_m:[0.,0.005,0.],
                         orientation_xyzw:glam::Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2).to_array() },
                     size:floor.size, dome:None,
                 });
+            }
+            if let Some(renderer) = gpu_renderer.as_mut() {
+                let ids: Vec<_> = images.iter().filter(|(_,i)| i.gpu.is_some()).map(|(id,_)| *id).collect();
+                renderer.retain(&ids);
             }
             // Keep interactive surfaces ahead of background domes when layer limits apply.
             geometry.sort_by_key(|q| {
@@ -642,27 +703,44 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         let p = chains.get_mut(&q.id).unwrap();
                         let fade = (transition.opacity * layer_opacities.get(&q.id).copied().unwrap_or(1.)).clamp(0., 1.);
                         let opacity = (fade * 255.).round() as u8;
-                        if p.serial != image.serial || p.opacity != opacity {
-                            let mut faded;
-                            let uploaded_image = if opacity < 255 {
-                                faded = image.clone();
-                                for channel in &mut faded.rgba {
-                                    *channel = ((*channel as u16 * opacity as u16 + 127) / 255) as u8;
+                        let stereo = scene.as_ref().and_then(|s| s.window(q.id)).is_some_and(|w| w.stereo == dome::stereo::Stereo::SideBySide);
+                        let effects = (scene.as_ref().map_or(0, |s| s.config.window_border_px), scene.as_ref().is_some_and(|s| s.focused == Some(q.id)), stereo, control.accent);
+                        if p.serial != image.serial || p.opacity != opacity || (image.gpu.is_some() && p.effects != Some(effects)) {
+                            if let (Some(frame), Some(renderer)) = (&image.gpu, gpu_renderer.as_mut()) {
+                                if let Err(e) = renderer.draw(q.id, frame.clone(), p, queue, command, opacity,
+                                    effects.0, effects.1, effects.2, effects.3) {
+                                    if transport == "gpu" { return Err(e); }
+                                    eprintln!("XR GPU import failed for {}: {e}; using CPU", q.id);
+                                    gpu_failed.lock().unwrap().insert(q.id);
+                                    network.lock().unwrap().images.remove(&q.id);
+                                    renderer.invalidate(q.id);
+                                    chains.remove(&q.id);
+                                    continue;
                                 }
-                                &faded
+                                gpu_submissions += 1;
                             } else {
-                                image
-                            };
-                            upload(
-                                &vk_instance,
-                                &vk_device,
-                                vk_physical_device,
-                                queue,
-                                command,
-                                p,
-                                uploaded_image,
-                            )?;
+                                let mut faded;
+                                let uploaded_image = if opacity < 255 {
+                                    faded = image.clone();
+                                    for channel in &mut faded.rgba {
+                                        *channel = ((*channel as u16 * opacity as u16 + 127) / 255) as u8;
+                                    }
+                                    &faded
+                                } else {
+                                    image
+                                };
+                                upload(
+                                    &vk_instance,
+                                    &vk_device,
+                                    vk_physical_device,
+                                    queue,
+                                    command,
+                                    p,
+                                    uploaded_image,
+                                )?;
+                            }
                             p.serial = image.serial;
+                            p.effects = Some(effects);
                             p.opacity = opacity;
                             uploaded += 1;
                             if q.id == u64::MAX - 32 && !floor_uploaded {
@@ -806,17 +884,19 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         running.store(false, Ordering::Relaxed);
         let _ = worker.join();
         let _ = input_worker.join();
-        let summary = serde_json::json!({"runtime":runtime,"system":properties.system_name,"overlay":environment.overlay,"environment_blend":format!("{blend:?}"),"overlay_placement":placement,"frames":count,"peak_window_layers":peak,"peak_curved_layers":peak_curved,"peak_flat_layers":peak_flat,"peak_stereo_windows":peak_stereo,"peak_shell_layers":peak_shell,"uploads":uploaded,"input_methods":["mouse","keyboard"],"presentation_hidden_frames":hidden_frames,"presentation_fade_frames":fade_frames,"presentation_slide_frames":slide_frames,"clean_exit":true});
+        let summary = serde_json::json!({"runtime":runtime,"system":properties.system_name,"overlay":environment.overlay,"environment_blend":format!("{blend:?}"),"overlay_placement":placement,"frames":count,"peak_window_layers":peak,"peak_curved_layers":peak_curved,"peak_flat_layers":peak_flat,"peak_stereo_windows":peak_stereo,"peak_shell_layers":peak_shell,"uploads":uploaded,"gpu_submissions":gpu_submissions,"input_methods":["mouse","keyboard"],"presentation_hidden_frames":hidden_frames,"presentation_fade_frames":fade_frames,"presentation_slide_frames":slide_frames,"clean_exit":true});
         println!("{summary}");
         if let Some(path) = report {
             std::fs::write(path, serde_json::to_vec_pretty(&summary)?)?;
         }
         vk_device.device_wait_idle()?;
+        drop(gpu_renderer);
         drop(chains);
         drop((stage, view, stream, waiter, session));
         vk_device.destroy_command_pool(pool, None);
         vk_device.destroy_device(None);
         vk_instance.destroy_instance(None);
+        if let Some(error) = network.lock().unwrap().gpu_error.take() { return Err(error.into()); }
     }
     Ok(())
 }
@@ -849,6 +929,7 @@ fn xr_pose(p: Pose) -> xr::Posef {
 struct Panel {
     chain: xr::Swapchain<xr::Vulkan>,
     images: Vec<vk::Image>,
+    effects: Option<(u8, bool, bool, [u8;3])>,
     width: u32,
     height: u32,
     serial: u64,
@@ -882,6 +963,7 @@ impl Panel {
         Ok(Self {
             chain,
             images,
+            effects: None,
             width,
             height,
             serial: 0,

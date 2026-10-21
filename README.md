@@ -751,6 +751,42 @@ while open, for both its interface and PDF pages. Its saved preferences remain
 unchanged and continue to apply outside Dome. See
 `native/toolkit-hooks/README.md` for patch provenance.
 
+The native XR frontend uses **GPU frame sharing** automatically when the compositor
+and OpenXR run on the same DRM render device and support compatible DMA-BUF
+layouts. Window captures stay in GPU memory: a private Unix socket passes buffer
+file descriptors to Vulkan, which renders into the OpenXR swapchain. Producer
+fences and socket leases keep captures immutable until the consumer releases them.
+The capture pool allows three buffers per surface, with a 256 MiB estimated total
+budget. Borders, focus highlights, fades and scrolling popup crops run in a shader.
+CPU-rendered shell chrome retains its upload path.
+
+`dome-xr --transport cpu` selects the RGBA compatibility path;
+`--transport gpu` requires the GPU path for window frames. The default `auto`
+falls back per window when import is unsupported, including different GPU devices.
+`--capture` uses CPU transport to write diagnostic images. The final report includes
+`gpu_submissions` separately from total content updates. GPU sharing removes the
+window pixel readback/re-upload round trip; it still renders into runtime-owned
+OpenXR images and is not a promise of zero GPU copies or dedicated VRAM residency.
+
+**XR render density** in XR Settings defaults to **150%**, adjustable from
+100–200% in 25% steps, and is saved as `xr_render_scale` in `dome/xr.json`.
+A 720×460 logical window therefore normally produces a 1080×690 XR texture.
+Texture dimensions are capped at 4096 per axis, reducing density equally on both
+axes when necessary. Fractional-scale clients receive the preferred density;
+clients supporting Wayland's integer buffer-scale hint receive its ceiling.
+Clients that ignore these hints still work, but enlarging their capture cannot
+create additional detail. Logical window dimensions, pointer coordinates and
+physical panel size remain independent of texture density. The RGBA fallback
+also preserves the selected density and reports it in `X-Dome-Scale`.
+
+To verify GPU sharing without a headset, build with `nested,xr,standalone`, then run
+`python3 scripts/test-xr-gpu.py` (PySide6, Xvfb and a DRM render node required).
+The ignored `hardware_dmabuf_render` test in `dome-xr` exercises actual EGL-to-Vulkan
+imports, orientation, channel order, gamma and shader effects; run it with
+`cargo test --features nested,xr --bin dome-xr hardware_dmabuf_render -- --ignored`.
+To rebuild the checked-in shaders after editing their GLSL sources, run
+`scripts/build-xr-shaders.sh` with `glslangValidator` installed.
+
 XR window gaps are at most **8 Wayland logical content pixels**, horizontally
 and between lanes, including **room-dome view**. Different client sizes and crowded rings use the smaller
 adjacent angular pixel pitch to preserve the cap; the conversion is recalculated

@@ -136,6 +136,8 @@ pub struct Dome {
 
     // Smithay State
     pub compositor_state: CompositorState,
+    pub xr_gpu_capture: crate::xr_gpu::Capture,
+    pub _fractional_scale_state: smithay::wayland::fractional_scale::FractionalScaleManagerState,
     pub _viewporter_state: smithay::wayland::viewporter::ViewporterState,
     pub xdg_shell_state: XdgShellState,
     pub decoration_state: smithay::wayland::shell::xdg::decoration::XdgDecorationState,
@@ -363,6 +365,8 @@ impl Dome {
             mouse_last_absolute: None,
 
             compositor_state,
+            xr_gpu_capture: Default::default(),
+            _fractional_scale_state: smithay::wayland::fractional_scale::FractionalScaleManagerState::new::<Self>(&dh),
             _viewporter_state: smithay::wayland::viewporter::ViewporterState::new::<Self>(&dh),
             xdg_shell_state,
             decoration_state: smithay::wayland::shell::xdg::decoration::XdgDecorationState::new::<

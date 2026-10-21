@@ -76,6 +76,10 @@ pub fn finder_pixels(seconds: f32, color: [u8; 3]) -> Vec<u8> {
 
 /// Blend a one-pixel accent edge and a faint second pixel inside the client.
 pub fn focus_border(pixels: &mut [u8], width: u32, height: u32, color: [u8; 3], stereo: bool) {
+    focus_border_scaled(pixels, width, height, color, stereo, 1.);
+}
+pub fn focus_border_scaled(pixels: &mut [u8], width: u32, height: u32, color: [u8; 3], stereo: bool, scale: f32) {
+    let inset = (2. * scale).ceil() as u32;
     if width == 0 || height == 0 || pixels.len() != width as usize * height as usize * 4 { return; }
     let eyes = if stereo { 2 } else { 1 };
     for eye in 0..eyes {
@@ -84,14 +88,14 @@ pub fn focus_border(pixels: &mut [u8], width: u32, height: u32, color: [u8; 3], 
         let eye_width = end - start;
         if eye_width == 0 { continue; }
         for y in 0..height {
-            let ranges = if y < 2 || y >= height.saturating_sub(2) || eye_width <= 4 {
+            let ranges = if y < inset || y >= height.saturating_sub(inset) || eye_width <= 2 * inset {
                 [start..end, end..end]
-            } else { [start..start + 2, end - 2..end] };
+            } else { [start..start + inset, end - inset..end] };
             for range in ranges {
                 for x in range {
                     let local = x - start;
                     let edge = local.min(eye_width - 1 - local).min(y.min(height - 1 - y));
-                    let alpha = match edge { 0 => 0.60, 1 => 0.16, _ => continue };
+                    let alpha = if (edge as f32) < scale { 0.60 } else if (edge as f32) < 2. * scale { 0.16 } else { continue };
                     let at = ((y * width + x) * 4) as usize;
                     let opacity = pixels[at + 3] as f32 / 255.;
                     for c in 0..3 { pixels[at + c] = (pixels[at + c] as f32 * (1. - alpha) + color[c] as f32 * alpha * opacity).round() as u8; }

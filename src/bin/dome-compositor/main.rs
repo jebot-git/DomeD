@@ -42,6 +42,7 @@ mod toolkit_appearance;
 mod tray;
 mod winit;
 mod xr_bridge;
+mod xr_gpu;
 mod xr_settings;
 
 use smithay::reexports::{
@@ -183,6 +184,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(data.state.xr_bridge.clone()),
     )
     .map_err(|e| e.to_string())?;
+    let _gpu_service = dome::xr_gpu::serve(data.state.xr_bridge.clone(), port)
+        .map_err(|e| eprintln!("XR GPU transport unavailable: {e}")).ok();
     // Publish only after the loopback service has bound successfully. Older
     // readers still recognize the version-1 per-socket launch realm.
     let _launch_contexts = [

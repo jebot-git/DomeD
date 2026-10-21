@@ -109,11 +109,15 @@ pub fn fit_xr(panel: &mut crate::xr_input::Quad, head: crate::Pose, config: &cra
 
 /// A cropped menu texture with compositor-owned top/bottom scroll controls.
 pub fn texture(rgba: &[u8], width: u32, viewport: Viewport) -> Vec<u8> {
-    let height = viewport.height.round() as usize;
+    texture_scaled(rgba, width, viewport, 1.)
+}
+/// Render scroll controls in logical coordinates at a higher texture density.
+pub fn texture_scaled(rgba: &[u8], width: u32, viewport: Viewport, scale: f32) -> Vec<u8> {
+    let height = (viewport.height * scale).round() as usize;
     let width = width as usize;
     let mut out = vec![0; width * height * 4];
     for y in 0..height {
-        if let Some(direction) = viewport.control(y as f32) {
+        if let Some(direction) = viewport.control(y as f32 / scale) {
             let enabled = if direction < 0 {
                 viewport.offset > 0.
             } else {
@@ -127,14 +131,14 @@ pub fn texture(rgba: &[u8], width: u32, viewport: Viewport) -> Vec<u8> {
                 } else {
                     viewport.height - viewport.band() / 2.
                 };
-                let dy = (y as f32 - cy) * direction as f32;
-                if (-4. ..=4.).contains(&dy) && (x as f32 - width as f32 / 2.).abs() <= (4. - dy) {
+                let dy = (y as f32 / scale - cy) * direction as f32;
+                if (-4. ..=4.).contains(&dy) && ((x as f32 - width as f32 / 2.) / scale).abs() <= (4. - dy) {
                     let color = if enabled { 235 } else { 100 };
                     pixel.copy_from_slice(&[color, color, color, 255]);
                 }
             }
         } else {
-            let source = viewport.content_y(y as f32).floor().max(0.) as usize;
+            let source = (viewport.content_y(y as f32 / scale) * scale).floor().max(0.) as usize;
             let start = source * width * 4;
             if let Some(row) = rgba.get(start..start + width * 4) {
                 out[y * width * 4..(y + 1) * width * 4].copy_from_slice(row);

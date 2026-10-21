@@ -78,6 +78,7 @@ impl Dome {
                     width: w,
                     height: h,
                     rgba: std::sync::Arc::new(rgba),
+                    scale: 1.,
                     stamp: std::time::Instant::now(),
                 },
             );
@@ -102,6 +103,7 @@ impl Dome {
                     width: width as u32,
                     height: rows as u32,
                     rgba: std::sync::Arc::new(rgba),
+                    scale: 1.,
                     stamp: std::time::Instant::now(),
                 },
             );
@@ -649,7 +651,35 @@ impl Dome {
         }
     }
     pub fn export_xr_surface(&mut self, renderer: &mut GlesRenderer) {
+        self.update_xr_density();
         self.update_task_previews(renderer);
+        let live: Vec<_> = self.registry.iter().map(|(id,_)| *id)
+            .chain(self.spatial_popups.iter().map(|(id,_)| *id)).collect();
+        self.xr_gpu_capture.publish(&self.xr_bridge, &live);
+        let gpu_request = {
+            let b = self.xr_bridge.lock().unwrap();
+            b.gpu_requested.keys().filter(|id| live.contains(id))
+                .filter_map(|id| {
+                    let age = b.gpu_frames.get(id).map_or(100., |f| f.stamp.elapsed().as_secs_f32());
+                    (age >= 0.05).then_some((*id, age))
+                }).max_by(|a,b| a.1.total_cmp(&b.1)).map(|x| x.0)
+        };
+        if let Some(id) = gpu_request {
+            if let Some((surface, geo)) = self.popup_surface(id) {
+                if geo.size.w > 0 && geo.size.h > 0 && geo.size.w <= 4096 && geo.size.h <= 4096 {
+                    let scene = self.scene.lock().unwrap();
+                    let scale = scene.config.xr_render_scale;
+                    let viewport = scene.popup(id).and_then(|p| p.viewport).filter(|v| v.band() > 0.);
+                    drop(scene);
+                    if let Err(e) = self.xr_gpu_capture.render(renderer, id, &surface, geo, scale, viewport) {
+                        self.xr_gpu_capture.disable(&e);
+                        let mut bridge = self.xr_bridge.lock().unwrap();
+                        bridge.gpu_socket = None;
+                        bridge.gpu_frames.clear();
+                    }
+                }
+            }
+        }
         let request = {
             let mut b = self.xr_bridge.lock().unwrap();
             b.requested.retain(|_, t| t.elapsed().as_secs_f32() < 0.5);
@@ -686,6 +716,9 @@ impl Dome {
         if size.w < 1 || size.h < 1 || size.w > 4096 || size.h > 4096 {
             return;
         }
+        let scale_setting = self.scene.lock().unwrap().config.xr_render_scale;
+        let (width, height, scale) = dome::xr_gpu::capture_size(size.w as u32, size.h as u32, scale_setting);
+        let size = smithay::utils::Size::<i32, smithay::utils::Physical>::from((width as i32, height as i32));
         let capture = (|| -> Result<Vec<u8>, Box<dyn std::error::Error>> {
             let mut texture: GlesTexture =
                 renderer.create_buffer(Fourcc::Argb8888, (size.w, size.h).into())?;
@@ -696,12 +729,12 @@ impl Dome {
             >(
                 renderer,
                 &surface,
-                (-geo.loc.x, -geo.loc.y),
-                1.0,
+                ((-geo.loc.x as f64 * scale).round() as i32, (-geo.loc.y as f64 * scale).round() as i32),
+                scale,
                 1.,
                 Kind::Unspecified,
             );
-            let mut tracker = OutputDamageTracker::new((size.w, size.h), 1., Transform::Normal);
+            let mut tracker = OutputDamageTracker::new((size.w, size.h), scale, Transform::Normal);
             tracker.render_output(renderer, &mut target, 0, &elements, [0., 0., 0., 0.])?;
             let mapping = renderer.copy_framebuffer(
                 &target,
@@ -722,17 +755,18 @@ impl Dome {
                     .and_then(|p| p.viewport)
                     .filter(|v| v.band() > 0.);
                 let rgba = if let Some(v) = viewport {
-                    dome::context_menu::texture(&rgba, size.w as u32, v)
+                    dome::context_menu::texture_scaled(&rgba, size.w as u32, v, scale as f32)
                 } else {
                     rgba
                 };
-                let height = viewport.map_or(size.h as u32, |v| v.height.round() as u32);
+                let height = viewport.map_or(size.h as u32, |v| (v.height * scale as f32).round() as u32);
                 self.xr_bridge.lock().unwrap().frames.insert(
                     id,
                     dome::xr_transport::Surface {
                         width: size.w as u32,
                         height,
                         rgba: std::sync::Arc::new(rgba),
+                        scale,
                         stamp: std::time::Instant::now(),
                     },
                 );

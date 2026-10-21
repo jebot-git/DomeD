@@ -148,3 +148,39 @@ impl smithay::wayland::selection::ext_data_control::DataControlHandler for Dome 
 smithay::delegate_primary_selection!(Dome);
 smithay::delegate_data_control!(Dome);
 smithay::delegate_ext_data_control!(Dome);
+
+impl smithay::wayland::fractional_scale::FractionalScaleHandler for Dome {
+    fn new_fractional_scale(&mut self, surface: WlSurface) {
+        self.update_surface_density(&surface);
+    }
+}
+smithay::delegate_fractional_scale!(Dome);
+impl Dome {
+    pub fn update_surface_density(&self, surface: &WlSurface) {
+        use smithay::wayland::{compositor::{with_states, get_parent}, fractional_scale::with_fractional_scale};
+        let mut root = surface.clone();
+        while let Some(p) = get_parent(&root) { root = p; }
+        let origin = surface.client().and_then(|c| c.get_data::<crate::state::ClientState>().map(|s| s.origin));
+        let scene = self.scene.lock().unwrap();
+        let in_xr = self.id_for(&root).and_then(|id| scene.window(id)).is_some_and(|w| w.xr_visible);
+        let scale = if origin == Some(dome::Realm::Xr) || (in_xr && self.xr_bridge.lock().unwrap().visible()) {
+            scene.config.xr_render_scale as f64
+        } else { 1. };
+        with_states(surface, |s| {
+            with_fractional_scale(s, |f| f.set_preferred_scale(scale));
+            smithay::wayland::compositor::send_surface_state(surface, s, scale.ceil() as i32, smithay::utils::Transform::Normal);
+        });
+    }
+    pub fn update_xr_density(&self) {
+        use smithay::wayland::compositor::{with_surface_tree_downward, TraversalAction};
+        let mut surfaces = Vec::new();
+        for surface in self.registry.iter().map(|(_,w)| w.toplevel().unwrap().wl_surface())
+            .chain(self.spatial_popups.iter().map(|(_,p)| p.wl_surface())) {
+            with_surface_tree_downward(surface, (), |_,_,_| TraversalAction::DoChildren(()),
+                |s,_,_| surfaces.push(s.clone()), |_,_,_| true);
+        }
+        // Tree traversal holds Smithay's surface lock. Resolve parentage and
+        // update state only after leaving it.
+        for surface in surfaces { self.update_surface_density(&surface); }
+    }
+}

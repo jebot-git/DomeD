@@ -587,6 +587,7 @@ dependencies = [
  "glam",
  "image",
  "libloading 0.8.9",
+ "nix",
  "openxr",
  "pkg-config",
  "serde",
@@ -1396,6 +1397,7 @@ dependencies = [
  "cfg-if",
  "cfg_aliases",
  "libc",
+ "memoffset",
 ]
 
 [[package]]

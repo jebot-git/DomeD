@@ -1226,7 +1226,7 @@ fn retired_tracking_settings_are_ignored_and_not_saved() {
     let saved = serde_json::to_value(&config).unwrap();
     assert!(saved.get("xr_pointer_mode").is_none());
     assert!(saved.get("gaze_smoothing").is_none());
-    assert_eq!(geometry_settings::rows(&config).len(), 14);
+    assert_eq!(geometry_settings::rows(&config).len(), 15);
 }
 
 #[test]
@@ -1292,4 +1292,26 @@ fn inactive_workspaces_render_as_deeper_faded_domes_without_accepting_input() {
     assert!(!xr_input::render_quads(&s, Pose::default()).iter().any(|q| q.id == c));
     s.windows.iter_mut().find(|w| w.id == a).unwrap().xr_visible = false;
     assert!(!xr_input::render_quads(&s, Pose::default()).iter().any(|q| q.id == a));
+}
+
+#[test]
+fn render_density_is_validated_persisted_and_independent_of_spatial_geometry() {
+    let mut s = scene();
+    let default: Config = serde_json::from_str("{}").unwrap();
+    assert_eq!(default.xr_render_scale, 1.5);
+    let before = xr_input::quads(&s, Pose::default());
+    s.config.xr_render_scale = 2.;
+    let after = xr_input::quads(&s, Pose::default());
+    for (a,b) in before.iter().zip(&after) {
+        assert_eq!(a.id,b.id); assert_eq!(a.pose,b.pose); assert_eq!(a.size,b.size);
+        for uv in [[0.,0.], [0.5,0.5], [1.,1.]] { assert_eq!(a.point(uv),b.point(uv)); }
+    }
+    let json = serde_json::to_string(&s.config).unwrap();
+    assert_eq!(serde_json::from_str::<Config>(&json).unwrap().xr_render_scale, 2.);
+    for invalid in [0.75, 2.25, f32::NAN, f32::INFINITY] {
+        s.config.xr_render_scale = invalid; assert!(s.config.validate().is_err());
+    }
+    assert_eq!(geometry_settings::adjust(&default,14,1.).unwrap().xr_render_scale,1.75);
+    let mut max = default; max.xr_render_scale=2.;
+    assert!(geometry_settings::adjust(&max,14,1.).is_err());
 }

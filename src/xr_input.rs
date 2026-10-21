@@ -590,7 +590,11 @@ pub fn paint_border(rgba: &mut [u8], width: u32, height: u32, requested: u8) {
     if rgba.len() != width as usize * height as usize * 4 {
         return;
     }
-    let border = (requested.min(2) as u32).min(width / 2).min(height / 2);
+    paint_border_scaled(rgba, width, height, requested, 1.);
+}
+pub fn paint_border_scaled(rgba: &mut [u8], width: u32, height: u32, requested: u8, scale: f32) {
+    if rgba.len() != width as usize * height as usize * 4 { return; }
+    let border = ((requested.min(2) as f32 * scale).round() as u32).min(width / 2).min(height / 2);
     for y in 0..height {
         let ranges = if y < border || y >= height - border {
             [0..width, 0..0]

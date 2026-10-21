@@ -166,6 +166,7 @@ pub fn serve_native(
                 if let Some(f) = frame {
                     let _ = request.respond(
                         Response::from_data((*f.rgba).clone())
+                            .with_header(Header::from_bytes("X-Dome-Scale", f.scale.to_string()).unwrap())
                             .with_header(
                                 Header::from_bytes("Content-Type", "application/octet-stream")
                                     .unwrap(),

@@ -9,6 +9,7 @@ pub struct Surface {
     pub width: u32,
     pub height: u32,
     pub rgba: Arc<Vec<u8>>,
+    pub scale: f64,
     pub stamp: Instant,
 }
 pub const TOP_BAR: u64 = 0;
@@ -27,6 +28,10 @@ pub struct ShellLayout {
     pub notifications: Option<[u32; 4]>,
 }
 pub struct Bridge {
+    pub gpu_socket: Option<String>,
+    #[cfg(feature = "nested")]
+    pub gpu_frames: HashMap<u64, Arc<crate::xr_gpu::Published>>,
+    pub gpu_requested: HashMap<u64, Instant>,
     pub shell: ShellLayout,
     pub requested: HashMap<u64, Instant>,
     pub frames: HashMap<u64, Surface>,
@@ -47,6 +52,10 @@ pub struct Bridge {
 impl Default for Bridge {
     fn default() -> Self {
         Self {
+            gpu_socket: None,
+            #[cfg(feature = "nested")]
+            gpu_frames: HashMap::new(),
+            gpu_requested: HashMap::new(),
             shell: ShellLayout::default(),
             requested: HashMap::new(),
             frames: HashMap::new(),
@@ -86,6 +95,8 @@ pub struct Cursor {
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct Control {
     #[serde(default)]
+    pub gpu_socket: Option<String>,
+    #[serde(default)]
     pub finder_seconds: Option<f32>,
     #[serde(default = "default_accent")]
     pub accent: [u8; 3],
@@ -111,6 +122,7 @@ impl Bridge {
     }
     pub fn control(&self) -> Control {
         Control {
+            gpu_socket: self.gpu_socket.clone(),
             finder_seconds: self.finder_started.map(|t| t.elapsed().as_secs_f32())
                 .filter(|t| self.input_realm == crate::Realm::Xr && *t < crate::visual_feedback::FINDER_DURATION),
             accent: self.accent,

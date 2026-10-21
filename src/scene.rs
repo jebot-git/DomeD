@@ -138,6 +138,8 @@ pub struct Config {
     #[serde(rename = "lower_inset_deg", deserialize_with = "discard_retired_setting", skip_serializing)]
     pub retired_lower_inset_deg: (),
     pub radius_m: f32,
+    /// XR texture density in pixels per Wayland logical pixel.
+    pub xr_render_scale: f32,
     pub pullout_distance_m: f32,
     pub center_m: [f32; 3],
     pub yaw_deg: f32,
@@ -169,6 +171,7 @@ impl Default for Config {
             retired_upper_inset_deg: (),
             retired_lower_inset_deg: (),
             radius_m: 2.2,
+            xr_render_scale: 1.5,
             pullout_distance_m: 2.0,
             center_m: [0., 1.4, 0.],
             yaw_deg: 0.,
@@ -196,6 +199,9 @@ impl Config {
             {
                 return Err("Invalid display configuration".into());
             }
+        }
+        if !self.xr_render_scale.is_finite() || !(1. ..=2.).contains(&self.xr_render_scale) {
+            return Err("XR render scale must be 1–2".into());
         }
         let numbers = [
             self.bar_distance_m,

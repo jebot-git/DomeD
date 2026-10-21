@@ -53,6 +53,35 @@ the active desktop. More distant layers are fainter. Only the active desktop
 accepts input. Switching desktops brings the selected desktop to the front.
 Minimized windows and windows assigned only to the physical desktop are omitted.
 
+.SH GPU TRANSPORT AND DENSITY
+Window frames use local DMA-BUF sharing when compatible compositor and OpenXR
+render devices are available. The compositor passes file descriptors over a
+private Unix socket; Vulkan samples these images into runtime-owned swapchains.
+No window pixels are read back to the CPU on this path. Shell chrome retains its
+CPU upload path. A three-buffer pool per surface and socket leases prevent reuse
+while frames are consumed. Borders, focus highlights, fades and scrolling popup
+crops are rendered on the GPU.
+.PP
+.B --transport auto|cpu|gpu
+selects automatic sharing with per-window fallback (default), the RGBA
+compatibility path, or required GPU sharing for windows. Different GPU devices
+use the compatibility path in automatic mode.
+.B --capture
+uses CPU transport for diagnostic image export.
+.PP
+XR Settings offers XR render density from 100 to 200 percent in 25 percent steps;
+the default is 150 percent. The persistent configuration key is
+.B xr_render_scale
+in dome/xr.json. A 720 by 460 logical window normally has a 1080 by 690 texture.
+Texture dimensions are capped at 4096 per axis. Supporting Wayland clients
+receive fractional and integer buffer-scale preferences. Window geometry, panel
+size and input coordinates are independent of texture density. Clients that ignore
+scale preferences cannot gain detail through capture enlargement alone.
+.PP
+The final JSON report includes
+.B gpu_submissions
+for GPU window updates. GPU sharing still performs a GPU rendering pass into
+OpenXR images and does not guarantee dedicated VRAM placement.
 .SH PERFORMANCE DIAGNOSTICS
 The source distribution includes scripts/smoke-xr-performance.py. During an
 existing DomeD/WiVRn Pro session, run it with --seconds 60 to collect a read-only
