@@ -67,12 +67,14 @@ try:
         children.append(client)
         def mapped():
             with urllib.request.urlopen(f'http://127.0.0.1:{port}/api/state', timeout=2) as response:
-                return any(w['title'] == 'Dome X11 bridge fixture' for w in json.load(response)['scene']['windows'])
+                data=json.load(response)
+                (out / 'state.json').write_text(json.dumps(data))
+                return any(w['title'] == 'Dome X11 bridge fixture' and w['origin'] == 'desktop' and w['desktop_visible'] and not w['xr_visible'] for w in data['scene']['windows'])
         wait(mapped)
         compositor.send_signal(signal.SIGTERM)
         compositor.wait(timeout=10)
         wait(lambda: not Path('/tmp/.X11-unix/X' + bridge_display[1:]).exists())
-        print('PASS: session-owned Xwayland maps an X11 client in Dome and stops on logout')
+        print('PASS: session-owned Xwayland maps an X11 client desktop-only and stops on logout')
 finally:
     for child in reversed(children):
         if child.poll() is None:

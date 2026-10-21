@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Wallet Manager (FLTK)
+Comment=Manage KWallet folders and entries
+Exec=dome-tray --wallets
+Icon=wallet-open
+Terminal=false
+Categories=Settings;
+StartupWMClass=org.domed.Tray

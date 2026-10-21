@@ -15,6 +15,7 @@ use zbus::{
 #[derive(Clone, Debug, Serialize)]
 pub struct Item {
     pub key: String,
+    pub id: String,
     pub title: String,
     pub icon: String,
     pub icon_theme_path: String,
@@ -219,6 +220,21 @@ fn menu_rows(c: &Connection, item: &Item, parent: i32) -> zbus::Result<Vec<Row>>
         })
         .collect())
 }
+fn native_frontend(item: &Item) -> Option<&'static str> {
+    if std::env::var("DOME_TRAY_FRONTEND").as_deref() == Ok("qt6") { return None; }
+    let identity = format!("{} {} {}", item.id, item.title, item.service).to_lowercase();
+    if identity.contains("kdeconnect") || identity.contains("kde connect") { Some("devices") }
+    else if identity.contains("fcitx") { Some("input") }
+    else if identity.contains("kwallet") || identity.contains("wallet manager") { Some("wallets") }
+    else { None }
+}
+fn open_native(connection: &Connection, page: &str) -> bool {
+    if let Ok(proxy) = Proxy::new(connection, "org.domed.Tray", "/org/domed/Tray", "org.domed.Tray") {
+        if proxy.call_method("Show", &(page,)).is_ok() { return true; }
+    }
+    dome::desktop_entries::find_executable("dome-tray")
+        .is_some_and(|program| std::process::Command::new(program).arg(format!("--{page}")).spawn().is_ok())
+}
 fn run(
     state: Arc<Mutex<Snapshot>>,
     receive: mpsc::Receiver<Request>,
@@ -288,6 +304,14 @@ fn run(
                 }
                 Request::Activate(index, x, y, context) => {
                     if let Some(item) = snapshot.items.get(index) {
+                        if !context {
+                            if let Some(page) = native_frontend(item) {
+                                if !open_native(&connection, page) {
+                                    state.lock().unwrap().error = "Install dome-tray for native service controls".into();
+                                }
+                                continue;
+                            }
+                        }
                         if item.menu != "/"
                             && !item.menu.is_empty()
                             && (context || item.item_is_menu)
@@ -332,6 +356,13 @@ fn run(
                             .get(index)
                             .filter(|r| r.enabled && !r.separator)
                         {
+                            let settings = row.text.to_lowercase();
+                            if !row.submenu && (settings.contains("configur") || settings.contains("settings") || settings.contains("wallet manager"))
+                                && native_frontend(item).is_some_and(|page| open_native(&connection, page)) {
+                                let mut s = state.lock().unwrap();
+                                s.menu = None; s.rows.clear(); s.revision += 1;
+                                continue;
+                            }
                             if row.submenu {
                                 let result = menu_rows(&connection, item, row.id);
                                 let mut s = state.lock().unwrap();
@@ -442,6 +473,7 @@ fn run(
             let item_is_menu = proxy.get_property("ItemIsMenu").unwrap_or(false);
             items.push(Item {
                 key: key.clone(),
+                id: proxy.get_property("Id").unwrap_or_default(),
                 title,
                 icon,
                 icon_theme_path,
@@ -454,6 +486,9 @@ fn run(
                 menu,
                 item_is_menu,
             });
+        }
+        if items.iter().any(|item| item.id == "dome.input") {
+            items.retain(|item| !item.id.to_lowercase().contains("fcitx"));
         }
         if !owner {
             // An item may register before exporting its properties, and live
@@ -502,6 +537,7 @@ impl crate::Dome {
         }
         let own = |key: &str, title: &str, attention: bool| Item {
             key: key.into(),
+            id: key.into(),
             title: title.into(),
             icon: String::new(),
             icon_theme_path: String::new(),

@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # SDDM entry point: Dome owns the seat, DRM output and native Wayland desktop.
 set -euo pipefail
-for program in /usr/bin/dbus-run-session /usr/bin/python3 /usr/local/bin/dome-compositor /usr/local/bin/dome-xr /usr/local/libexec/dome-session-client /usr/local/bin/dome-askpass; do
+for program in /usr/bin/dbus-run-session /usr/bin/python3 /usr/local/bin/dome-compositor /usr/local/bin/dome-xr /usr/local/libexec/dome-session-client /usr/local/bin/dome-askpass /usr/local/bin/dome-tray; do
     [[ -x "$program" ]] || { echo "DomeD: required program missing: $program" >&2; exit 1; }
 done
 if [[ "${1:-}" == --check ]]; then
     /usr/local/bin/dome-compositor --backend drm --check-backend
     echo 'DomeD standalone login session and XR frontend are installed.'
     echo 'Native FLTK sudo askpass is available: /usr/local/bin/dome-askpass'
+    echo 'Native FLTK KDE Connect, Fcitx5 and wallet managers are installed.'
     if command -v kwalletd6 >/dev/null; then
         echo 'KWallet D-Bus activation is available.'
         [[ ! -x /usr/libexec/pam_kwallet_init ]] || echo 'KWallet PAM login handoff is available.'

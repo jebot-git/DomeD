@@ -22,6 +22,15 @@ localization remains future work.
 
 ![Dome layout laboratory](docs/preview.png)
 
+## Native tray applications and rendering audit
+
+DomeD starts native FLTK/OpenGL managers for KDE Connect, Fcitx5 and KWallet.
+Other StatusNotifier applications keep native tray menus; X11 windows translated
+by the session-owned bridge start on the desktop side. See
+[tray controls and build instructions](docs/TRAY_FRONTENDS.md) and the
+[workspace FLTK/GPU audit](docs/FLTK_GPU_AUDIT.md) for implemented paths,
+remaining feature gaps and actual hardware evidence.
+
 ## Native administrator authentication
 
 DomeD uses `dome-askpass`, a FLTK Pinentry frontend, as the default

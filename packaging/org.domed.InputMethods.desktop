@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Input Methods (FLTK)
+Comment=Configure Fcitx5 groups and input methods
+Exec=dome-tray --input
+Icon=input-keyboard
+Terminal=false
+Categories=Settings;
+StartupWMClass=org.domed.Tray

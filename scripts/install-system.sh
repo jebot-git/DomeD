@@ -19,6 +19,12 @@ files=(
     usr/local/bin/dome-preview
     usr/local/bin/dome-portal-picker
     usr/local/bin/dome-session
+    usr/local/share/doc/domed/TRAY_FRONTENDS.md
+    usr/local/share/doc/domed/FLTK_GPU_AUDIT.md
+    usr/local/bin/dome-tray
+    usr/local/share/applications/org.domed.Connect.desktop
+    usr/local/share/applications/org.domed.InputMethods.desktop
+    usr/local/share/applications/org.domed.Wallets.desktop
     usr/local/bin/dome-askpass
     usr/local/libexec/domed/pinentry-fltk
     usr/local/libexec/dome-session-client

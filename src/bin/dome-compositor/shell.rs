@@ -9,6 +9,7 @@ use smithay::{
 };
 impl Dome {
     pub fn register(&mut self, window: Window) {
+        let x11_bridge = self.is_x11_bridge(window.toplevel().unwrap().wl_surface());
         let previous_focus = self.scene.lock().unwrap().focused;
         let id = self.scene.lock().unwrap().add("Untitled", "Application");
         let origin = window
@@ -25,7 +26,14 @@ impl Dome {
         w.desktop.x += primary.loc.x as f32;
         w.desktop.y += primary.loc.y as f32;
         w.origin = origin;
+        if x11_bridge {
+            w.xr_visible = false;
+        }
         w.desktop_visible = origin == dome::Realm::Desktop || !visible;
+        if x11_bridge && self.input_xr_active {
+            self.focus_history[0] = Some(Some(id));
+            scene.focused = previous_focus;
+        }
         if origin == dome::Realm::Xr && visible && !self.input_xr_active {
             self.focus_history[1] = Some(Some(id));
             scene.focused = previous_focus;
@@ -51,6 +59,7 @@ impl Dome {
     }
     pub fn metadata(&mut self, surface: &WlSurface) {
         if self.capture_notification_window(surface) { return; }
+        let x11_bridge = self.is_x11_bridge(surface);
         if let Some(id) = self.id_for(surface) {
             let (title, app) = with_states(surface, |s| {
                 let a = s
@@ -71,7 +80,7 @@ impl Dome {
                 // Gmsh's live mesh view shares its GUI's Wayland connection,
                 // but is a dedicated XR-only top level. Apply this on the
                 // identity transition, preserving later user presentation edits.
-                if entering_gmsh {
+                if entering_gmsh && !x11_bridge {
                     w.desktop_visible = false;
                     w.xr_visible = true;
                 }

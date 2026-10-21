@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=KDE Connect (FLTK)
+Comment=Manage connected devices with DomeD
+Exec=dome-tray --devices
+Icon=kdeconnect
+Terminal=false
+Categories=Network;
+StartupWMClass=org.domed.Tray

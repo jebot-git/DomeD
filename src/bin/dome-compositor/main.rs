@@ -23,6 +23,7 @@ mod input;
 mod input_routing;
 mod keyboard;
 mod launcher;
+mod x11_bridge;
 mod menu_navigation;
 mod notifications;
 mod notification_windows;
@@ -264,7 +265,11 @@ fn activate_client_socket(state: &mut Dome) {
                         && !std::path::Path::new(&format!("/tmp/.X11-unix/X{n}")).exists()
                 }) {
                     let display = format!(":{number}");
-                    match std::process::Command::new(program).arg(&display).spawn() {
+                    match std::process::Command::new(program)
+                        .arg(&display)
+                        .env("WAYLAND_DISPLAY", &state.x11_socket_name)
+                        .env_remove("WAYLAND_SOCKET")
+                        .spawn() {
                         Ok(child) => {
                             eprintln!("Dome Xwayland bridge: {display}");
                             std::env::set_var("DISPLAY", display);

@@ -115,6 +115,7 @@ pub struct Dome {
     pub start_time: std::time::Instant,
     pub socket_name: OsString,
     pub xr_socket_name: OsString,
+    pub x11_socket_name: OsString,
     pub input_realm: dome::Realm,
     pub input_xr_active: bool,
     pub focus_history: [Option<Option<u64>>; 2],
@@ -250,7 +251,7 @@ impl Dome {
         // Outputs become views of a part of the Space and can be rendered via Space::render_output.
         let space = Space::default();
 
-        let (socket_name, xr_socket_name) = Self::init_wayland_listener(display, event_loop);
+        let (socket_name, xr_socket_name, x11_socket_name) = Self::init_wayland_listener(display, event_loop);
 
         // Get the loop signal, used to stop the event loop
         let loop_signal = event_loop.get_signal();
@@ -349,6 +350,7 @@ impl Dome {
             loop_signal,
             socket_name,
             xr_socket_name,
+            x11_socket_name,
             input_realm: dome::Realm::Desktop,
             input_xr_active: false,
             focus_history: [None, None],
@@ -394,10 +396,16 @@ impl Dome {
     fn init_wayland_listener(
         display: Display<Dome>,
         event_loop: &mut EventLoop<CalloopData>,
-    ) -> (OsString, OsString) {
+    ) -> (OsString, OsString, OsString) {
         let loop_handle = event_loop.handle();
         let mut names = Vec::new();
-        for origin in [dome::Realm::Desktop, dome::Realm::Xr] {
+        // Satellite starts an internal Xwayland before connecting to us. A
+        // dedicated named socket avoids leaking WAYLAND_SOCKET into that child.
+        for (origin, x11_bridge) in [
+            (dome::Realm::Desktop, false),
+            (dome::Realm::Xr, false),
+            (dome::Realm::Desktop, true),
+        ] {
             let listener = ListeningSocketSource::new_auto().unwrap();
             names.push(listener.socket_name().to_os_string());
             loop_handle
@@ -408,6 +416,7 @@ impl Dome {
                             stream,
                             Arc::new(ClientState {
                                 origin,
+                                x11_bridge,
                                 ..ClientState::default()
                             }),
                         )
@@ -432,7 +441,7 @@ impl Dome {
             )
             .unwrap();
 
-        (names.remove(0), names.remove(0))
+        (names.remove(0), names.remove(0), names.remove(0))
     }
 
     pub fn surface_under(
@@ -458,6 +467,7 @@ impl Dome {
 #[derive(Default)]
 pub struct ClientState {
     pub trusted_ime: bool,
+    pub x11_bridge: bool,
     pub origin: dome::Realm,
     pub compositor_state: CompositorClientState,
 }

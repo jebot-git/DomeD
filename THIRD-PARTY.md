@@ -99,3 +99,8 @@ Werner Koch distribution signing key `6DAA6E64A76D2840571B4902528897B826403ADA`.
 shared `native/fltk_appearance.h` retains its MIT license. The helper dynamically
 links FLTK and remains a separate process from the MIT-licensed compositor.
 Its corresponding upstream source, modifications and license are staged with it.
+
+`native/tray/desktop-menu.{cpp,h}`, `appmenu.xml` and `desktop-menu.cmake` reuse
+the MIT-licensed de-xr FLTK universal-menu exporter from the cmuxr frontend.
+The service manager talks to KDE Connect, Fcitx5 and KWallet over their public
+D-Bus interfaces; it does not incorporate or link their Qt frontends.

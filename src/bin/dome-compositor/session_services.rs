@@ -23,10 +23,23 @@ pub fn start() {
             }
         }
         if std::env::var("DOME_START_KDECONNECT").as_deref() != Ok("0") {
-            match std::process::Command::new("kdeconnect-indicator").spawn() {
-                Ok(_) => (),
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
-                Err(error) => eprintln!("KDE Connect indicator startup: {error}"),
+            if std::env::var("DOME_TRAY_FRONTEND").as_deref() == Ok("qt6") {
+                let _ = std::process::Command::new("kdeconnect-indicator").spawn();
+            } else if let Ok(connection) = zbus::blocking::Connection::session() {
+                if let Ok(bus) = zbus::blocking::Proxy::new(&connection, "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus") {
+                    let _ = bus.call::<_, _, u32>("StartServiceByName", &("org.kde.kdeconnect", 0u32));
+                }
+            }
+        }
+
+        if std::env::var("DOME_START_TRAY").as_deref() != Ok("0")
+            && std::env::var("DOME_TRAY_FRONTEND").as_deref() != Ok("qt6") {
+            if let Some(program) = dome::desktop_entries::find_executable("dome-tray") {
+                if let Err(error) = std::process::Command::new(program).arg("--daemon").spawn() {
+                    eprintln!("Native FLTK tray manager startup: {error}");
+                }
+            } else {
+                eprintln!("Native tray manager is missing; build and install dome-tray");
             }
         }
         if std::env::var_os("PAM_KWALLET5_LOGIN").is_some() {
