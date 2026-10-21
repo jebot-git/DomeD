@@ -43,14 +43,15 @@ Results, Wayland traces, screenshots and scene snapshots are saved under
 `artifacts/{fltk,sdl}-popups`. Tests create private displays and D-Bus sessions;
 XR interaction is driven through DomeD's XR input API without a physical headset.
 
-## Miro desktop appearance
+## Miro appearance and universal menus
 
-`miro-0.12.0-dome-theme.patch` applies to Miro upstream commit
+`miro-0.12.0-dome-theme.patch` followed by `miro-0.12.0-global-menu.patch`
+applies to Miro upstream commit
 `d35322c47d53903638558162a5e3153f32dfdc37` (version 0.12.0).
 Run `scripts/install-miro.sh` to build, test and install it into `~/.local`.
 The script retains the clean upstream checkout, patched source worktree,
-license, patch and revision. It pins this verified revision; review and rebase
-the patch before changing that pin to a later upstream revision.
+license, both patches and revision. It pins this verified revision; review and
+rebase both patches before changing that pin to a later upstream revision.
 
 In `XDG_CURRENT_DESKTOP=Dome` sessions, Iced's standard theme query and change
 subscription read the desktop Settings portal, which Dome publishes from its
@@ -72,3 +73,32 @@ running, checking the Wayland origin and desktop visibility of both windows.
 Run it with Python Xlib and Pillow;
 `DOME_COMPOSITOR`, `DOME_XVFB` and `DOME_MIRO` select the test executables.
 Artifacts are written under `artifacts/miro-appearance`.
+
+Stock Miro 0.12.0 draws its Linux menu with iced_aw and exports no application
+menu. Dome's fallback therefore cannot expose its PDF commands. The menu patch
+exports the existing `common_menu` definitions through `com.canonical.dbusmenu`
+and associates the export with Iced's actual `wl_surface` using
+`org_kde_kwin_appmenu_manager`. It does not register X11 IDs or infer a surface
+from a process name. Each Miro process owns its own D-Bus connection and menu.
+
+File, View and Layout include configured shortcuts, nested recent documents,
+disabled document actions, live toggles and layout radios. Activation uses the
+same `AppMessage` actions as the local menu. Model changes emit `LayoutUpdated`;
+disabled items are checked again before dispatch. Dome merges its universal Edit
+and Window controls. The local bar hides only after the Wayland association is
+installed; X11 and hosts without that protocol retain the local bar. This patch
+supports Miro's current single-window process model. It does not add an X11
+registrar exporter or relocate menus drawn privately in Iced content.
+
+Run the real desktop/XR menu regression test with:
+
+```sh
+uv run --no-project --with python-xlib --with pillow --with dbus-next \
+  python scripts/test-miro-menus.py
+```
+
+`DOME_COMPOSITOR`, `DOME_XVFB` and `DOME_MIRO` select executables. The test uses a
+private bus/display and checks native pointer and keyboard activation, rendered
+PDF changes, radio state, recent-file traversal, empty-document disabled items,
+multiple-process focus, XR dispatch, Window presentation, exporter disconnect,
+and in-window fallback. Results and screenshots are in `artifacts/miro-menus`.

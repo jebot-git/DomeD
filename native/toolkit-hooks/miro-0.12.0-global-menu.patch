@@ -1,0 +1,491 @@
+diff --git a/Cargo.lock b/Cargo.lock
+index e353314..7d9cf91 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -3476,7 +3476,11 @@ dependencies = [
+  "tracing-subscriber",
+  "tracy-client",
+  "twox-hash",
++ "wayland-backend",
++ "wayland-client",
++ "wayland-protocols-plasma",
+  "webbrowser",
++ "zbus",
+ ]
+ 
+ [[package]]
+@@ -5943,6 +5947,7 @@ dependencies = [
+  "signal-hook-registry",
+  "socket2",
+  "tokio-macros",
++ "tracing",
+  "windows-sys 0.52.0",
+ ]
+ 
+@@ -7621,6 +7626,7 @@ dependencies = [
+  "serde",
+  "serde_repr",
+  "static_assertions",
++ "tokio",
+  "tracing",
+  "uds_windows",
+  "windows-sys 0.59.0",
+diff --git a/Cargo.toml b/Cargo.toml
+index d4e37df..68741b3 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -64,6 +64,12 @@ reqwest = { version = "0.13.4", features = ["blocking"] }
+ [target.'cfg(target_os = "macos")'.dependencies]
+ muda = "0.19.2"
+ 
++[target.'cfg(target_os = "linux")'.dependencies]
++zbus = { version = "=5.5.0", default-features = false, features = ["tokio"] }
++wayland-client = "=0.31.8"
++wayland-backend = { version = "=0.3.8", features = ["client_system"] }
++wayland-protocols-plasma = { version = "=0.3.6", features = ["client"] }
++
+ [build-dependencies]
+ embed-resource = "3.0.6"
+ 
+diff --git a/src/app.rs b/src/app.rs
+index 3d47b4b..8112781 100644
+--- a/src/app.rs
++++ b/src/app.rs
+@@ -130,6 +130,8 @@ impl SidebarTab {
+ 
+ #[derive(Debug)]
+ pub struct App {
++    #[cfg(target_os = "linux")]
++    linux_menu_active: bool,
+     #[cfg(target_os = "macos")]
+     mac_menu: Option<platform_specific::macos::Menu>,
+     pub pdfs: Vec<PdfViewer>,
+@@ -154,6 +156,14 @@ pub struct App {
+ #[derive(Debug, Clone, Serialize, Deserialize, EnumString, Default)]
+ pub enum AppMessage {
+     InitializeMacMenu,
++    #[cfg(target_os = "linux")]
++    #[strum(disabled)]
++    #[serde(skip)]
++    LinuxMenuService(String),
++    #[cfg(target_os = "linux")]
++    #[strum(disabled)]
++    #[serde(skip)]
++    LinuxMenuAttached(bool),
+     OpenFile(PathBuf),
+     #[strum(disabled)]
+     #[serde(skip)]
+@@ -250,6 +260,8 @@ impl App {
+         }
+ 
+         Self {
++            #[cfg(target_os = "linux")]
++            linux_menu_active: false,
+             #[cfg(target_os = "macos")]
+             mac_menu: None,
+             pdfs: vec![],
+@@ -331,6 +343,24 @@ impl App {
+     pub fn update(&mut self, message: AppMessage) -> iced::Task<AppMessage> {
+         let _span = tracy_client::span!("App update");
+         match message {
++            #[cfg(target_os = "linux")]
++            AppMessage::LinuxMenuService(service) => iced::window::latest().then(move |id| {
++                let service = service.clone();
++                match id {
++                    Some(id) => iced::window::run(id, move |window| {
++                        crate::linux_menu::attach(window, &service).unwrap_or_else(|error| {
++                            tracing::warn!(%error, "Native menu unavailable");
++                            false
++                        })
++                    }).map(AppMessage::LinuxMenuAttached),
++                    None => iced::Task::none(),
++                }
++            }),
++            #[cfg(target_os = "linux")]
++            AppMessage::LinuxMenuAttached(active) => {
++                self.linux_menu_active = active;
++                iced::Task::none()
++            }
+             AppMessage::InitializeMacMenu => {
+                 #[cfg(target_os = "macos")]
+                 {
+@@ -997,7 +1027,9 @@ impl App {
+                             }
+                             #[cfg(target_os = "macos")]
+                             let has_native_menu = self.mac_menu.is_some();
+-                            #[cfg(not(target_os = "macos"))]
++                            #[cfg(target_os = "linux")]
++                            let has_native_menu = self.linux_menu_active;
++                            #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+                             let has_native_menu = false;
+                             if !has_native_menu {
+                                 let menu_bar = platform_specific::iced_aw::create_menu_bar(
+@@ -1192,6 +1224,15 @@ impl App {
+         ];
+         subs.append(&mut platform_specific::listeners());
+         subs.push(crate::dome_appearance::subscription());
++        #[cfg(target_os = "linux")]
++        {
++            crate::linux_menu::publish(
++                self.recent_files.get_recent(), self.pdfs.get(self.pdf_idx),
++                self.dark_mode, self.invert_pdf, self.draw_page_borders,
++                self.pane_state.len() > 1,
++            );
++            subs.push(Subscription::run(crate::linux_menu::listen));
++        }
+ 
+         let config = CONFIG.read().unwrap();
+         if config.rpc_enabled {
+diff --git a/src/linux_menu.rs b/src/linux_menu.rs
+new file mode 100644
+index 0000000..989a5a4
+--- /dev/null
++++ b/src/linux_menu.rs
+@@ -0,0 +1,319 @@
++//! Linux DBusMenu exporter, associated with the actual Iced Wayland surface.
++//! No registrar XIDs or process-name matching are used.
++use std::{collections::HashMap, path::PathBuf, sync::{LazyLock, Mutex}};
++
++use iced::{futures::{SinkExt, channel::mpsc}, stream, window};
++use zbus::{object_server::SignalEmitter, zvariant::{OwnedValue, Value}};
++
++use crate::{app::AppMessage, common_menu::{self, CommonMenuItem}, config::{BindableMessage, BindingMode},
++    pdf::{page_layout::PageLayoutKind, widget::PdfViewer}, CONFIG};
++
++const PATH: &str = "/dev/uden/miro/Menu";
++type Properties = HashMap<String, Value<'static>>;
++type WireNode = (i32, Properties, Vec<Value<'static>>);
++
++#[derive(Debug, Clone, PartialEq)]
++enum Action { Command(BindableMessage), Recent(PathBuf) }
++
++#[derive(Debug, Clone, PartialEq)]
++struct Node {
++    id: i32,
++    properties: Properties,
++    children: Vec<Node>,
++    action: Option<Action>,
++}
++impl Node {
++    fn new(id: i32, label: &str) -> Self {
++        Self { id, properties: HashMap::from([
++            ("label".into(), Value::from(label.replace('_', "__"))),
++            ("enabled".into(), Value::from(true)),
++            ("visible".into(), Value::from(true)),
++        ]), children: vec![], action: None }
++    }
++    fn find(&self, id: i32) -> Option<&Self> {
++        if self.id == id { Some(self) } else { self.children.iter().find_map(|n| n.find(id)) }
++    }
++    fn wire(&self, depth: i32, names: &[String]) -> WireNode {
++        (self.id, self.properties.iter().filter(|(key, _)| names.is_empty() || names.contains(key))
++            .map(|(k, v)| (k.clone(), v.clone())).collect(),
++         if depth == 0 { vec![] } else { self.children.iter()
++            .map(|node| Value::new(node.wire(depth.saturating_sub(1), names))).collect() })
++    }
++    fn submenu(&mut self) {
++        self.properties.insert("children-display".into(), Value::from("submenu"));
++    }
++    fn enabled(&self) -> bool {
++        self.properties.get("enabled").and_then(|v| bool::try_from(v).ok()).unwrap_or(true)
++    }
++}
++
++#[derive(Debug)]
++struct Model { revision: u32, root: Node }
++static MODEL: LazyLock<Mutex<Model>> = LazyLock::new(|| Mutex::new(Model {
++    revision: 1, root: Node::new(0, ""),
++}));
++static CHANGED: LazyLock<tokio::sync::Notify> = LazyLock::new(tokio::sync::Notify::new);
++
++pub fn publish(recent: &[PathBuf], pdf: Option<&PdfViewer>, dark: bool, inverted: bool,
++               borders: bool, sidebar: bool) {
++    let mut root = Node::new(0, "");
++    root.submenu();
++    let config = CONFIG.read().unwrap();
++    for (category_index, (label, items)) in common_menu::items().into_iter().enumerate() {
++        let mut id = (category_index as i32 + 1) * 1000;
++        let mut next = || { id += 1; id };
++        let mut category = Node::new(next(), &label);
++        category.submenu();
++        for item in items {
++            let node = match item {
++                CommonMenuItem::Button(command) => {
++                    let mut n = Node::new(next(), command.default_menu_label().unwrap_or(""));
++                    n.action = Some(Action::Command(command));
++                    let enabled = pdf.is_some() || matches!(command,
++                        BindableMessage::OpenFileFinder | BindableMessage::ToggleDarkModeUi |
++                        BindableMessage::ToggleDarkModePdf | BindableMessage::TogglePageBorders |
++                        BindableMessage::ToggleSidebar | BindableMessage::ToggleFullscreen);
++                    n.properties.insert("enabled".into(), Value::from(enabled));
++                    if let Some(binding) = config.get_binding_for_msg(command) {
++                        // DBusMenu represents each chord as modifier/key strings.
++                        let chords: Vec<Vec<String>> = binding.seq.as_slice().iter()
++                            .map(|key| {
++                                let mut chord: Vec<String> = key.mods().to_string().split('+')
++                                    .filter(|part| !part.is_empty())
++                                    .map(|part| match part {
++                                        "Ctrl" => "Control".into(), "Cmd" => "Super".into(),
++                                        _ => part.to_owned(),
++                                    }).collect();
++                                chord.push(key.key().to_string());
++                                chord
++                            }).collect();
++                        n.properties.insert("shortcut".into(), Value::from(chords));
++                    }
++                    let check = match command {
++                        BindableMessage::ToggleDarkModeUi => Some(("checkmark", dark)),
++                        BindableMessage::ToggleDarkModePdf => Some(("checkmark", inverted)),
++                        BindableMessage::TogglePageBorders => Some(("checkmark", borders)),
++                        BindableMessage::ToggleSidebar => Some(("checkmark", sidebar)),
++                        BindableMessage::TogglePresentationMode => Some(("checkmark",
++                            config.binding_mode == BindingMode::Presentation)),
++                        BindableMessage::SinglePageLayout => Some(("radio",
++                            pdf.is_some_and(|p| p.menu_layout() == PageLayoutKind::SinglePage))),
++                        BindableMessage::DoublePageLayout => Some(("radio",
++                            pdf.is_some_and(|p| p.menu_layout() == PageLayoutKind::DoublePage))),
++                        BindableMessage::DoublePageTitlePageLayout => Some(("radio",
++                            pdf.is_some_and(|p| p.menu_layout() == PageLayoutKind::DoublePageTitlePage))),
++                        _ => None,
++                    };
++                    if let Some((kind, checked)) = check {
++                        n.properties.insert("toggle-type".into(), Value::from(kind));
++                        n.properties.insert("toggle-state".into(), Value::from(i32::from(checked)));
++                    }
++                    n
++                }
++                CommonMenuItem::Separator => {
++                    let mut n = Node::new(next(), "");
++                    n.properties.insert("type".into(), Value::from("separator"));
++                    n
++                }
++                CommonMenuItem::RecentFiles => {
++                    let mut n = Node::new(next(), "Recent Files");
++                    n.submenu();
++                    n.properties.insert("enabled".into(), Value::from(!recent.is_empty()));
++                    for (index, path) in recent.iter().enumerate() {
++                        let label = path.file_name().unwrap_or(path.as_os_str()).to_string_lossy();
++                        let mut child = Node::new(100000 + index as i32, &label);
++                        child.action = Some(Action::Recent(path.clone()));
++                        n.children.push(child);
++                    }
++                    n
++                }
++            };
++            category.children.push(node);
++        }
++        root.children.push(category);
++    }
++    let mut model = MODEL.lock().unwrap();
++    if model.root != root {
++        model.root = root;
++        model.revision = model.revision.wrapping_add(1);
++        CHANGED.notify_one();
++    }
++}
++
++#[derive(Debug)]
++struct Menu { sender: mpsc::Sender<AppMessage> }
++#[zbus::interface(name = "com.canonical.dbusmenu")]
++impl Menu {
++    #[zbus(property)]
++    fn version(&self) -> u32 { 3 }
++    #[zbus(property)]
++    fn text_direction(&self) -> &str { "ltr" }
++    #[zbus(property)]
++    fn status(&self) -> &str { "normal" }
++    #[zbus(property)]
++    fn icon_theme_path(&self) -> Vec<String> { vec![] }
++
++    fn get_layout(&self, parent_id: i32, recursion_depth: i32, property_names: Vec<String>)
++        -> zbus::fdo::Result<(u32, WireNode)> {
++        let model = MODEL.lock().unwrap();
++        let node = model.root.find(parent_id).ok_or_else(|| zbus::fdo::Error::InvalidArgs("Unknown menu item".into()))?;
++        Ok((model.revision, node.wire(recursion_depth, &property_names)))
++    }
++    fn get_group_properties(&self, ids: Vec<i32>, property_names: Vec<String>) -> Vec<(i32, Properties)> {
++        let model = MODEL.lock().unwrap();
++        fn collect(node: &Node, ids: &mut Vec<i32>) {
++            ids.push(node.id);
++            for child in &node.children { collect(child, ids); }
++        }
++        let ids = if ids.is_empty() {
++            let mut all = vec![];
++            collect(&model.root, &mut all);
++            all
++        } else { ids };
++        ids.iter().filter_map(|id| model.root.find(*id))
++            .map(|n| { let (id, props, _) = n.wire(0, &property_names); (id, props) }).collect()
++    }
++    fn get_property(&self, id: i32, name: String) -> zbus::fdo::Result<Value<'static>> {
++        MODEL.lock().unwrap().root.find(id).and_then(|n| n.properties.get(&name)).cloned()
++            .ok_or_else(|| zbus::fdo::Error::InvalidArgs("Unknown menu property".into()))
++    }
++    async fn event(&self, id: i32, event_id: String, _data: OwnedValue, _timestamp: u32) {
++        if event_id != "clicked" { return; }
++        let action = MODEL.lock().unwrap().root.find(id)
++            .filter(|n| n.enabled()).and_then(|n| n.action.clone());
++        let message = match action {
++            Some(Action::Command(command)) => command.into(),
++            Some(Action::Recent(path)) => AppMessage::OpenFile(path),
++            None => return,
++        };
++        let _ = self.sender.clone().send(message).await;
++    }
++    async fn event_group(&self, events: Vec<(i32, String, OwnedValue, u32)>) -> Vec<i32> {
++        let mut errors = vec![];
++        for (id, event, data, timestamp) in events {
++            if MODEL.lock().unwrap().root.find(id).is_none() { errors.push(id); }
++            else { self.event(id, event, data, timestamp).await; }
++        }
++        errors
++    }
++    fn about_to_show(&self, _id: i32) -> bool { false }
++    fn about_to_show_group(&self, ids: Vec<i32>) -> (Vec<i32>, Vec<i32>) {
++        let model = MODEL.lock().unwrap();
++        (vec![], ids.into_iter().filter(|id| model.root.find(*id).is_none()).collect())
++    }
++    #[zbus(signal)]
++    async fn layout_updated(emitter: &SignalEmitter<'_>, revision: u32, parent: i32) -> zbus::Result<()>;
++    #[zbus(signal)]
++    async fn items_properties_updated(emitter: &SignalEmitter<'_>, updated: Vec<(i32, Properties)>,
++                                      removed: Vec<(i32, Vec<String>)>) -> zbus::Result<()>;
++}
++
++pub fn listen() -> impl iced::futures::Stream<Item = AppMessage> {
++    stream::channel(100, |mut output: mpsc::Sender<AppMessage>| async move {
++        let result = async {
++            let connection = zbus::connection::Builder::session()?
++                .serve_at(PATH, Menu { sender: output.clone() })?.build().await?;
++            let service = connection.unique_name().unwrap().to_string();
++            let _ = output.send(AppMessage::LinuxMenuService(service)).await;
++            let emitter = SignalEmitter::new(&connection, PATH)?;
++            loop {
++                CHANGED.notified().await;
++                let revision = MODEL.lock().unwrap().revision;
++                Menu::layout_updated(&emitter, revision, 0).await?;
++            }
++            #[allow(unreachable_code)]
++            Ok::<(), zbus::Error>(())
++        }.await;
++        if let Err(error) = result {
++            tracing::warn!(%error, "Menu exporter unavailable");
++            let _ = output.send(AppMessage::LinuxMenuAttached(false)).await;
++        }
++        // Keep a failed subscription alive so it cannot repeatedly reconnect.
++        iced::futures::future::pending::<()>().await;
++    })
++}
++
++/// Use Iced's borrowed handles only during this main-thread callback. The guest
++/// backend and all local proxies are dropped before returning. Appmenu has no
++/// events: its server-side association remains until the client disconnects.
++/// This single-window application exits when its window closes.
++pub fn attach(window: &dyn window::Window, service: &str) -> anyhow::Result<bool> {
++    use window::raw_window_handle::{RawDisplayHandle, RawWindowHandle};
++    use wayland_client::{backend::ObjectId, protocol::{wl_registry, wl_surface}, Connection,
++                         Dispatch, Proxy, QueueHandle};
++    use wayland_protocols_plasma::appmenu::client::{
++        org_kde_kwin_appmenu::OrgKdeKwinAppmenu,
++        org_kde_kwin_appmenu_manager::OrgKdeKwinAppmenuManager,
++    };
++    #[derive(Debug, Default)]
++    struct State { manager: Option<OrgKdeKwinAppmenuManager> }
++    impl Dispatch<wl_registry::WlRegistry, ()> for State {
++        fn event(state: &mut Self, registry: &wl_registry::WlRegistry, event: wl_registry::Event,
++                 _: &(), _: &Connection, qh: &QueueHandle<Self>) {
++            if let wl_registry::Event::Global { name, interface, version } = event {
++                if interface == "org_kde_kwin_appmenu_manager" {
++                    state.manager = Some(registry.bind(name, version.min(1), qh, ()));
++                }
++            }
++        }
++    }
++    wayland_client::delegate_noop!(State: ignore OrgKdeKwinAppmenuManager);
++    wayland_client::delegate_noop!(State: ignore OrgKdeKwinAppmenu);
++    let (RawDisplayHandle::Wayland(display), RawWindowHandle::Wayland(surface)) =
++        (window.display_handle()?.as_raw(), window.window_handle()?.as_raw()) else { return Ok(false); };
++    // SAFETY: Iced guarantees these borrowed handles are valid during window::run.
++    // No backend, proxy, or pointer escapes this function.
++    let backend = unsafe { wayland_backend::sys::client::Backend::from_foreign_display(display.display.as_ptr().cast()) };
++    let connection = Connection::from_backend(backend);
++    let mut queue = connection.new_event_queue();
++    let qh = queue.handle();
++    let registry = connection.display().get_registry(&qh, ());
++    let mut state = State::default();
++    queue.roundtrip(&mut state)?;
++    let Some(ref manager) = state.manager else { return Ok(false); };
++    let id = unsafe { ObjectId::from_ptr(wl_surface::WlSurface::interface(), surface.surface.as_ptr().cast()) }?;
++    let surface = wl_surface::WlSurface::from_id(&connection, id)?;
++    let menu = manager.create(&surface, &qh, ());
++    menu.set_address(service.to_owned(), PATH.to_owned());
++    // A roundtrip ensures the address is installed before the in-window bar hides.
++    queue.roundtrip(&mut state)?;
++    drop(registry);
++    Ok(true)
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use iced::futures::{StreamExt, FutureExt};
++
++    #[tokio::test]
++    async fn live_model_keeps_actions_stable_and_rejects_disabled_events() {
++        publish(&[PathBuf::from("/tmp/one_file.pdf")], None, false, false, true, false);
++        let (sender, mut receiver) = mpsc::channel(10);
++        let menu = Menu { sender };
++        let (_, root) = menu.get_layout(0, -1, vec![]).unwrap();
++        assert_eq!(root.2.len(), 3);
++        let find_command = |command| {
++            MODEL.lock().unwrap().root.children.iter().flat_map(|n| &n.children)
++                .find(|n| n.action == Some(Action::Command(command))).unwrap().id
++        };
++        let print = find_command(BindableMessage::PrintPdf);
++        let close = find_command(BindableMessage::CloseTab);
++        let toggle = find_command(BindableMessage::ToggleDarkModeUi);
++        menu.event(print, "clicked".into(), OwnedValue::from(0), 0).await;
++        assert!(receiver.next().now_or_never().is_none());
++        menu.event(toggle, "hovered".into(), OwnedValue::from(0), 0).await;
++        assert!(receiver.next().now_or_never().is_none());
++        menu.event(toggle, "clicked".into(), OwnedValue::from(0), 0).await;
++        assert!(matches!(receiver.next().await, Some(AppMessage::ToggleDarkModeUi)));
++        let before = MODEL.lock().unwrap().revision;
++        publish(&[PathBuf::from("/tmp/two.pdf"), PathBuf::from("/tmp/one_file.pdf")],
++                None, true, false, true, false);
++        assert_eq!(close, find_command(BindableMessage::CloseTab));
++        assert!(MODEL.lock().unwrap().revision > before);
++        assert_eq!(i32::try_from(menu.get_property(toggle, "toggle-state".into()).unwrap()).unwrap(), 1);
++        menu.event(100001, "clicked".into(), OwnedValue::from(0), 0).await;
++        assert!(matches!(receiver.next().await, Some(AppMessage::OpenFile(path)) if path == PathBuf::from("/tmp/one_file.pdf")));
++        assert!(menu.get_layout(-999, 0, vec![]).is_err());
++    }
++}
+diff --git a/src/main.rs b/src/main.rs
+index 33b5c49..cb7a60a 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -25,6 +25,8 @@ mod bookmarks;
+ mod common_menu;
+ mod config;
+ mod dome_appearance;
++#[cfg(target_os = "linux")]
++mod linux_menu;
+ mod geometry;
+ mod icons;
+ mod jumplist;
+diff --git a/src/pdf/widget.rs b/src/pdf/widget.rs
+index 5675c4b..aeb396b 100644
+--- a/src/pdf/widget.rs
++++ b/src/pdf/widget.rs
+@@ -957,6 +957,10 @@ impl Drop for PdfViewer {
+ 
+ #[allow(clippy::type_complexity)]
+ impl PdfViewer {
++    pub(crate) fn menu_layout(&self) -> PageLayoutKind {
++        self.layout.layout
++    }
++
+     fn build_document_data(
+         doc: &mupdf::Document,
+     ) -> Result<(

@@ -140,3 +140,25 @@ menu export from stock FLTK/SDL. Neither fixture exports an application menu mod
 - [Electron Menu API](https://www.electronjs.org/docs/latest/api/menu) and
   [X11 registrar](https://github.com/electron/electron/blob/main/shell/browser/ui/views/global_menu_bar_registrar_x11.cc).
 - [Vivaldi menu customization](https://help.vivaldi.com/desktop/appearance-customization/customize-application-and-context-menus/).
+
+## Miro / Iced integration follow-up (2026-10-20)
+
+Miro 0.12.0 at `d35322c47d53903638558162a5e3153f32dfdc37` has a
+custom iced_aw Linux menu and no native exporter. Its macOS menu adapter does
+not establish Linux support. The pinned Miro installer now layers a DBusMenu
+exporter over the appearance patch, with KDE Wayland per-surface association
+through Iced's borrowed window handles. This is an application integration;
+it does not establish menu export for other Iced/winit clients.
+
+The model reuses Miro's shared menu definitions and sends the existing application
+messages. File/View/Layout retain application commands, nested recents, configured
+shortcuts and live enabled/check/radio state. Dome supplies universal Edit and
+Window controls. The local menu remains when native association is unavailable.
+See `native/toolkit-hooks/README.md` and `scripts/test-miro-menus.py` for the
+adapter's scope, provenance and isolated desktop/XR validation.
+
+The installed patched binary passed all 44 Miro unit tests, 15 isolated live menu
+checks and the existing 13 appearance/launch checks. Menu validation includes
+real Wayland applications on the desktop, simulated XR input, two independent
+exporters, disconnect cleanup and a real X11 in-window fallback. It does not
+claim physical-headset validation.

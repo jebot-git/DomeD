@@ -760,12 +760,17 @@ Default Applications; Dome does not select a replacement. Other desktops' PDF
 preferences are preserved.
 
 `scripts/install-miro.sh` builds and installs Miro 0.12.0 into `~/.local` from
-the verified upstream revision with Dome's appearance patch. It requires Rust,
-a C/C++ toolchain, Clang headers, and Fontconfig/GLib development packages.
+the verified upstream revision with Dome's appearance and native menu patches.
+It requires Rust, a C/C++ toolchain, Clang headers, and Fontconfig/GLib development
+packages.
 In a Dome session, Miro follows Appearance's light/dark setting on startup and
 while open, for both its interface and PDF pages. Its saved preferences remain
 unchanged and continue to apply outside Dome. See
-`native/toolkit-hooks/README.md` for patch provenance.
+`native/toolkit-hooks/README.md` for patch provenance. Miro's File, View and
+Layout commands, recent files, shortcuts and live check/radio states are exported
+to the universal menu through DBusMenu and the KDE Wayland appmenu protocol.
+Dome supplies Edit and Window controls alongside them. Miro keeps its in-window
+menu when no compatible Wayland menu host is available.
 
 The native XR frontend uses **GPU frame sharing** automatically when the compositor
 and OpenXR run on the same DRM render device and support compatible DMA-BUF
