@@ -1237,3 +1237,18 @@ optimization; leave it off when current readability is acceptable. The synthetic
 shader smoke does not establish full-headset performance. See that runtime's
 `wivrn-layer-filter(7)` and shader smoke report. DomeD does not apply a full-frame
 blur to bitmap fonts.
+
+## Gmsh stereo mesh view
+
+The FLTK Gmsh integration opens a live mesh-only `org.gmsh.Sbs` surface alongside
+the ordinary desktop GUI. DomeD marks this surface XR-only when its identity is
+first set and submits the left and right texture halves to their respective eyes.
+It uses the existing DMA-BUF transport; Gmsh does not create another OpenXR session.
+Later user changes to the window's presentation remain available.
+
+Start XR, then choose **Window → DomeD XR Mesh** in Gmsh, press `Ctrl+Shift+X`, or
+run `gmsh-dome-xr mesh.msh` from inside the DomeD session. Gmsh checks the caller's
+owned per-socket session record and `GET /api/integrations/gmsh`, whose version-1
+response provides `compositor_pid`, `xr_socket`, `xr_active` and `sbs_app_id`.
+An inactive XR session leaves the normal GUI running. See the Gmsh checkout's
+`doc/DomeD-XR.md` for controls, projection details and isolated test instructions.

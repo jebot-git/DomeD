@@ -75,8 +75,12 @@ pub fn serve_native(
                 );
                 continue;
             }
-            if request.method() == &Method::Get && matches!(request.url(), "/api/integrations/qimgvr" | "/api/integrations/mpvr") {
-                let app_id = if request.url().ends_with("/mpvr") { crate::stereo::MPVR_SBS_APP_ID } else { crate::stereo::QIMGVR_SBS_APP_ID };
+            if request.method() == &Method::Get && matches!(request.url(), "/api/integrations/qimgvr" | "/api/integrations/mpvr" | "/api/integrations/gmsh") {
+                let app_id = match request.url() {
+                    "/api/integrations/mpvr" => crate::stereo::MPVR_SBS_APP_ID,
+                    "/api/integrations/gmsh" => crate::stereo::GMSH_SBS_APP_ID,
+                    _ => crate::stereo::QIMGVR_SBS_APP_ID,
+                };
                 let status = bridge.as_ref().map(|b| {
                     let b = b.lock().unwrap();
                     serde_json::json!({"version":1, "compositor_pid":std::process::id(),

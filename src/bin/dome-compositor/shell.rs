@@ -63,9 +63,18 @@ impl Dome {
             });
             let mut scene = self.scene.lock().unwrap();
             if let Some(w) = scene.windows.iter_mut().find(|w| w.id == id) {
+                let entering_gmsh = w.app_id != dome::stereo::GMSH_SBS_APP_ID
+                    && app.as_deref() == Some(dome::stereo::GMSH_SBS_APP_ID);
                 w.title = title.unwrap_or("Untitled".into());
                 w.app_id = app.unwrap_or("Application".into());
                 w.stereo = dome::stereo::Stereo::for_app_id(&w.app_id);
+                // Gmsh's live mesh view shares its GUI's Wayland connection,
+                // but is a dedicated XR-only top level. Apply this on the
+                // identity transition, preserving later user presentation edits.
+                if entering_gmsh {
+                    w.desktop_visible = false;
+                    w.xr_visible = true;
+                }
                 scene.revision += 1;
             }
         }

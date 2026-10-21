@@ -107,5 +107,14 @@ Galmuri7's 10-pixel strike is removed. Existing smaller saved selections
 migrate to Unifont at 16 pixels without resetting colours and opacity.
 Font licenses and provenance are installed under
 /usr/local/share/doc/domed/fonts.
+.SH GMSH STEREO VIEW
+The FLTK Gmsh client uses org.gmsh.Sbs for its live mesh-only side-by-side
+window. DomeD initially presents this window only in XR and crops the left and
+right texture halves for the corresponding eyes. Gmsh retains its desktop GUI
+and uses DomeD's existing XR session and native GPU transport.
+.PP
+Start XR, then select Window / DomeD XR Mesh in Gmsh, press Ctrl+Shift+X, or run
+gmsh-dome-xr mesh.msh inside the DomeD Wayland session. The version-1
+/api/integrations/gmsh endpoint advertises session identity and availability.
 .SH SEE ALSO
 dome\-xr(1), dome\-preview(1), ghostty\-xr(1)
