@@ -463,6 +463,25 @@ pub fn finish_frame(state: &mut Dome, output: &Output) {
                 |_, _| Some(output.clone()),
             )
         });
+    // Closing removes a window from the scene/registry before its client has
+    // dispatched xdg_toplevel.close. An in-flight EGL swap can still commit a
+    // fresh frame callback afterward. Keep completing those callbacks until the
+    // client destroys the toplevel, or it can never dispatch close/hide-to-tray.
+    if state.space.outputs().next() == Some(output) {
+        for toplevel in state.xdg_shell_state.toplevel_surfaces() {
+            if !state.registry.iter().any(|(_, window)| {
+                window.toplevel().is_some_and(|known| known == toplevel)
+            }) {
+                smithay::desktop::utils::send_frames_surface_tree(
+                    toplevel.wl_surface(),
+                    output,
+                    state.start_time.elapsed(),
+                    Some(std::time::Duration::ZERO),
+                    |_, _| Some(output.clone()),
+                );
+            }
+        }
+    }
     for popup in &state.ime_popups {
         smithay::desktop::utils::send_frames_surface_tree(
             popup.wl_surface(),

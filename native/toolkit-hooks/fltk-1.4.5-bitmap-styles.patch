@@ -1,0 +1,31 @@
+--- a/src/drivers/Cairo/Fl_Cairo_Graphics_Driver.cxx
++++ b/src/drivers/Cairo/Fl_Cairo_Graphics_Driver.cxx
+@@ -1059,18 +1059,24 @@
+   static std::map<std::pair<std::string,int>,FT_Face> cache;
+   const char *name = Fl::get_font(font);
+   if (!name || size <= 0) return NULL;
++  std::string family(name), style;
++  auto slash=family.find(" / ");
++  if(slash!=std::string::npos){style=family.substr(slash+3);family.resize(slash);}
+   std::pair<std::string,int> key(name,size);
+   auto found=cache.find(key);if(found!=cache.end())return found->second;
+   FT_Face face=NULL;FcPattern *p=FcPatternCreate();
+-  FcPatternAddString(p,FC_FAMILY,(const FcChar8*)name);
++  FcPatternAddString(p,FC_FAMILY,(const FcChar8*)family.c_str());
++  if(!style.empty())FcPatternAddString(p,FC_STYLE,(const FcChar8*)style.c_str());
+   FcPatternAddDouble(p,FC_PIXEL_SIZE,size);
+   FcConfigSubstitute(NULL,p,FcMatchPattern);FcDefaultSubstitute(p);
+   FcResult result;FcPattern *match=FcFontMatch(NULL,p,&result);FcPatternDestroy(p);
+-  if(match){FcBool scalable=FcTrue;FcChar8 *file=NULL,*family=NULL;double strike=0;
++  if(match){FcBool scalable=FcTrue;FcChar8 *file=NULL,*resolvedFamily=NULL,*resolvedStyle=NULL;double strike=0;
+     FcPatternGetBool(match,FC_SCALABLE,0,&scalable);
+     FcPatternGetDouble(match,FC_PIXEL_SIZE,0,&strike);
+-    FcPatternGetString(match,FC_FILE,0,&file);FcPatternGetString(match,FC_FAMILY,0,&family);
+-    if(!scalable&&file&&family&&!FcStrCmpIgnoreCase(family,(const FcChar8*)name)&&int(strike+.5)==size){
++    FcPatternGetString(match,FC_FILE,0,&file);FcPatternGetString(match,FC_FAMILY,0,&resolvedFamily);
++    FcPatternGetString(match,FC_STYLE,0,&resolvedStyle);
++    if(!scalable&&file&&resolvedFamily&&!FcStrCmpIgnoreCase(resolvedFamily,(const FcChar8*)family.c_str())&&
++       (style.empty()||(resolvedStyle&&!FcStrCmpIgnoreCase(resolvedStyle,(const FcChar8*)style.c_str())))&&int(strike+.5)==size){
+       if(!library)FT_Init_FreeType(&library);
+       if(library&&!FT_New_Face(library,(const char*)file,0,&face)){
+         bool ok=false;for(int n=0;n<face->num_fixed_sizes;++n)if(int(face->available_sizes[n].y_ppem/64)==size){ok=!FT_Select_Size(face,n);break;}

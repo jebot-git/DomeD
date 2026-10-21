@@ -102,3 +102,8 @@ private bus/display and checks native pointer and keyboard activation, rendered
 PDF changes, radio state, recent-file traversal, empty-document disabled items,
 multiple-process focus, XR dispatch, Window presentation, exporter disconnect,
 and in-window fallback. Results and screenshots are in `artifacts/miro-menus`.
+
+The isolated FLTK 1.4.5 build also applies `first-configure`: libdecor windows
+can redraw after their first valid committed configure. Transient dialogs must
+not depend on a redundant second configure or later activation to finish
+exposure; otherwise native file choosers freeze at their first frame.

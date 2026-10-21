@@ -73,6 +73,11 @@ pub fn init_winit(
     let mut damage_tracker = OutputDamageTracker::from_output(&output);
     let mut present_damage = OutputDamageTracker::from_output(&output);
 
+    let renderer = vulkan.as_mut().unwrap_or_else(|| backend.renderer());
+    if let Err(error) = crate::rendering::advertise_dmabuf(state, renderer) {
+        eprintln!("Nested client DMA-BUF unavailable: {error}; retaining shared-memory clients");
+    }
+
     crate::activate_client_socket(state);
 
     let backend = std::rc::Rc::new(std::cell::RefCell::new(backend));

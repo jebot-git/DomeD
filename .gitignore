@@ -8,3 +8,7 @@ __pycache__/
 
 /.local-deps/
 /build/
+
+# Isolated FLTK experiment build outputs
+/build-fltk/
+/fltk-*.log

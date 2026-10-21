@@ -1,0 +1,11 @@
+--- a/src/drivers/Wayland/Fl_Wayland_Window_Driver.cxx
++++ b/src/drivers/Wayland/Fl_Wayland_Window_Driver.cxx
+@@ -1501,6 +1501,8 @@
+ //fprintf(stderr, "makeWindow: xdg_wm_base_get_xdg_surface=%p\n", new_window->xdg_surface);
+     xdg_surface_add_listener(new_window->xdg_surface, &xdg_surface_listener, new_window);
+     new_window->xdg_toplevel = xdg_surface_get_toplevel(new_window->xdg_surface);
++    const char *appid = pWindow->xclass() ? pWindow->xclass() : get_prog_name();
++    xdg_toplevel_set_app_id(new_window->xdg_toplevel, appid);
+     xdg_toplevel_add_listener(new_window->xdg_toplevel, &xdg_toplevel_listener, new_window);
+     if (pWindow->label()) xdg_toplevel_set_title(new_window->xdg_toplevel, pWindow->label());
+     wl_surface_commit(new_window->wl_surface);

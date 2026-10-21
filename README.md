@@ -1,3 +1,5 @@
+> This experimental branch defaults to FLTK 1.4.5. See [FLTK_EXPERIMENT.md](FLTK_EXPERIMENT.md) for build instructions and missing features.
+
 # DomeD
 
 An experimental Wayland compositor with a classic stacking desktop and a shared
@@ -6,9 +8,11 @@ independent repository; it does not modify or depend on WiVRn-Pro.
 
 **The native application is Rust.** Godot is restricted to experiments under
 `prototypes/` and is not a production compositor dependency. Both the desktop WM
-and the OpenXR frontend are Rust; a small C++ FFI adapter calls Qt6 painting/style APIs.
+and the OpenXR frontend are Rust. This experimental branch defaults to a cached
+Cairo/FreeType shell adapter and OpenGL FLTK picker; Qt6 remains selectable.
+See [the experiment report](FLTK_EXPERIMENT.md) for current validation and gaps.
 
-**Current milestone:** a standalone DRM/KMS Wayland compositor with Qt6 decorations, a classic
+**Current milestone:** a standalone DRM/KMS Wayland compositor with toolkit-rendered decorations, a classic
 Mac-style global menu and a native Rust/OpenXR frontend displaying live Wayland
 window textures, open cylindrical dome surfaces, curved pulled-out panels and
 shared XR shell bars. Application identity/actions use XDG desktop entries; the

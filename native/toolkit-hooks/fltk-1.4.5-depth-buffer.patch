@@ -1,0 +1,11 @@
+--- a/src/drivers/Wayland/Fl_Wayland_Gl_Window_Driver.cxx
++++ b/src/drivers/Wayland/Fl_Wayland_Gl_Window_Driver.cxx
+@@ -130,7 +130,7 @@
+     EGL_NONE
+   };
+ 
+-  if (m & FL_DEPTH) config_attribs[11] = 1;
++  if (m & FL_DEPTH) config_attribs[11] = 24;
+   if (m & FL_MULTISAMPLE) config_attribs[13] = 1;
+   if (m & FL_STENCIL) config_attribs[15] = 1;
+   if (m & FL_ALPHA) config_attribs[17] = (m & FL_RGB8) ? 8 : 1;

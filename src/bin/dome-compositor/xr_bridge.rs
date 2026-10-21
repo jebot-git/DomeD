@@ -61,7 +61,7 @@ impl Dome {
             serde_json::json!({"kind":"notifications","width":width,"height":height,"appearance":self.appearance,"notifications":toasts}),
         );
         let mut b = self.xr_bridge.lock().unwrap();
-        b.frames.remove(&NOTIFICATIONS);
+        if notification_rect.is_none() { b.frames.remove(&NOTIFICATIONS); }
         if let Some([x, y, w, h]) = notification_rect {
             let mut rgba = Vec::with_capacity((w * h * 4) as usize);
             for row in y..y + h {
@@ -72,7 +72,7 @@ impl Dome {
                     rgba.extend_from_slice(&[pixel[2], pixel[1], pixel[0], pixel[3]]);
                 }
             }
-            b.frames.insert(
+            b.update_surface(
                 NOTIFICATIONS,
                 Surface {
                     width: w,
@@ -97,7 +97,7 @@ impl Dome {
             {
                 rgba.extend_from_slice(&[pixel[2], pixel[1], pixel[0], pixel[3]]);
             }
-            b.frames.insert(
+            b.update_surface(
                 id,
                 Surface {
                     width: width as u32,
@@ -653,12 +653,30 @@ impl Dome {
     pub fn export_xr_surface(&mut self, renderer: &mut GlesRenderer) {
         self.update_xr_density();
         self.update_task_previews(renderer);
-        let live: Vec<_> = self.registry.iter().map(|(id,_)| *id)
+        let mut live: Vec<_> = self.registry.iter().map(|(id,_)| *id)
             .chain(self.spatial_popups.iter().map(|(id,_)| *id)).collect();
+        let shells: Vec<_> = {
+            let b = self.xr_bridge.lock().unwrap();
+            b.frames.iter().filter(|(id, _)| dome::xr_transport::is_shell(**id))
+                .map(|(id, source)| (*id, source.clone(), b.gpu_requested.contains_key(id)))
+                .collect()
+        };
+        live.extend(shells.iter().map(|(id, _, _)| *id));
         self.xr_gpu_capture.publish(&self.xr_bridge, &live);
+        for (id, source, requested) in shells {
+            if requested {
+                if let Err(error) = self.xr_gpu_capture.render_shell(renderer, id, &source) {
+                    self.xr_gpu_capture.disable(&error);
+                    let mut bridge = self.xr_bridge.lock().unwrap();
+                    bridge.gpu_socket = None;
+                    bridge.gpu_frames.clear();
+                    break;
+                }
+            }
+        }
         let gpu_request = {
             let b = self.xr_bridge.lock().unwrap();
-            b.gpu_requested.keys().filter(|id| live.contains(id))
+            b.gpu_requested.keys().filter(|id| live.contains(id) && !dome::xr_transport::is_shell(**id))
                 .filter_map(|id| {
                     let age = b.gpu_frames.get(id).map_or(100., |f| f.stamp.elapsed().as_secs_f32());
                     (age >= 0.05).then_some((*id, age))
