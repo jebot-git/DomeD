@@ -88,3 +88,14 @@ The Vulkan/OpenXR initialization in `src/bin/dome-xr.rs` is adapted from the
 MIT/Apache-2.0 openxrs `openxr` 0.21.1 Vulkan example (Ralith contributors).
 Qt6 is dynamically linked and supplies its own LGPL/GPL/commercial licensing;
 Qt source is not included. See dependency distributions for license terms.
+
+The separately executed native authentication helper is GnuPG Pinentry 1.3.3
+(GPL-2.0-or-later), from
+https://www.gnupg.org/ftp/gcrypt/pinentry/pinentry-1.3.3.tar.bz2.
+SHA-256: `c2970f16d6afb66ecddfca767d743936c86239bff936eed7fd7597a678414b63`.
+The upstream signature was verified with the system GnuPG distribution keyring,
+Werner Koch distribution signing key `6DAA6E64A76D2840571B4902528897B826403ADA`.
+`native/pinentry/` supplies GPL-2.0-or-later integration code and patches; the
+shared `native/fltk_appearance.h` retains its MIT license. The helper dynamically
+links FLTK and remains a separate process from the MIT-licensed compositor.
+Its corresponding upstream source, modifications and license are staged with it.

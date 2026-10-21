@@ -10,6 +10,7 @@ exec 9>/run/lock/domed-install.lock
 files=(
     etc/systemd/user/plasma-xdg-desktop-portal-kde.service.d/50-dome-qt6.conf
     etc/systemd/user/xdg-desktop-portal-kde.service.d/50-dome-qt6.conf
+    usr/local/share/man/man1/dome-askpass.1
     usr/local/share/man/man1/dome-compositor.1
     usr/local/share/man/man1/dome-xr.1
     usr/local/share/man/man1/dome-preview.1
@@ -18,6 +19,8 @@ files=(
     usr/local/bin/dome-preview
     usr/local/bin/dome-portal-picker
     usr/local/bin/dome-session
+    usr/local/bin/dome-askpass
+    usr/local/libexec/domed/pinentry-fltk
     usr/local/libexec/dome-session-client
     usr/share/xdg-desktop-portal/dome-portals.conf
     usr/share/xdg-desktop-portal/portals/dome-settings.portal
@@ -31,6 +34,9 @@ files=(
     usr/local/share/doc/domed/protocols/gtk-shell.xml
     usr/local/share/doc/domed/protocols/COPYING.gtk
 )
+for name in COPYING source.sha256 pinentry-1.3.3.tar.bz2 dome_pinentry.h pinentry-1.3.3-dome.patch fltk_appearance.h build-askpass.py; do
+    files+=("usr/local/share/doc/domed/pinentry/$name")
+done
 while IFS= read -r name; do
     files+=("usr/local/share/doc/domed/fonts/$name")
 done < "$root/packaging/font-notices.list"

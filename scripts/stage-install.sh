@@ -3,6 +3,7 @@ set -euo pipefail
 root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 stage="${DOME_STAGE_DIR:-$root/build/system-stage}"
 release="${DOME_RELEASE_DIR:-$root/target/release}"
+"$root/scripts/stage-askpass.sh" "$stage"
 "$release/dome-compositor" --backend drm --check-backend
 for name in dome-compositor dome-xr dome-preview dome-portal-picker; do
     install -D -m 0755 "$release/$name" "$stage/usr/local/bin/$name"

@@ -1,0 +1,6 @@
+#!/bin/sh
+# sudo invokes askpass as the calling user; this helper is never setuid.
+set -eu
+dome_bindir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+export LD_LIBRARY_PATH='@FLTK_LIBDIR@'${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+exec "$dome_bindir/../libexec/domed/pinentry-fltk" --askpass "$@"

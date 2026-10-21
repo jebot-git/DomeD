@@ -22,6 +22,30 @@ localization remains future work.
 
 ![Dome layout laboratory](docs/preview.png)
 
+## Native administrator authentication
+
+DomeD uses `dome-askpass`, a FLTK Pinentry frontend, as the default
+`SUDO_ASKPASS` for its child applications and activated services. It uses the
+shared patched FLTK 1.4.5 toolkit, Dome appearance settings and Ctrl+W/Escape
+cancellation. Enter authenticates; Tab moves between controls. This configures
+sudo's `-A` graphical password request; Polkit services keep their existing agent.
+An explicitly supplied `SUDO_ASKPASS`, including an empty value, is preserved.
+
+Build as your regular user before staging or installing DomeD:
+
+```sh
+python3 scripts/build-askpass.py --fltk-prefix /opt/fltk-vr/toolkit
+scripts/stage-askpass.sh build/askpass-stage
+python3 tests/askpass/test_dialog.py
+```
+
+The build verifies the pinned Pinentry 1.3.3 source checksum. The source archive,
+patch, shared appearance header and GPL license accompany the installed helper
+under `/usr/local/share/doc/domed/pinentry`. The frontend also retains standard
+Pinentry Assuan operation. Passwords go directly to sudo through its output pipe;
+cancellation returns failure without password output. No password file or cache
+is created. Installation does not restart a desktop session.
+
 ## Try the layout laboratory
 
 With a Rust toolchain installed:

@@ -252,6 +252,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn activate_client_socket(state: &mut Dome) {
+    dome::askpass::configure();
     std::env::set_var("WAYLAND_DISPLAY", &state.socket_name);
     if std::env::var("DOME_LOGIN_SESSION").as_deref() == Ok("1") {
         // An Xwayland process attached to another compositor cannot serve this
@@ -287,6 +288,7 @@ fn activate_client_socket(state: &mut Dome) {
             .args([
                 "--systemd",
                 "WAYLAND_DISPLAY",
+                "SUDO_ASKPASS",
                 "XDG_CURRENT_DESKTOP",
                 "XDG_SESSION_DESKTOP",
                 "XDG_SESSION_TYPE",

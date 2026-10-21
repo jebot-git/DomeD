@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # SDDM entry point: Dome owns the seat, DRM output and native Wayland desktop.
 set -euo pipefail
-for program in /usr/bin/dbus-run-session /usr/bin/python3 /usr/local/bin/dome-compositor /usr/local/bin/dome-xr /usr/local/libexec/dome-session-client; do
+for program in /usr/bin/dbus-run-session /usr/bin/python3 /usr/local/bin/dome-compositor /usr/local/bin/dome-xr /usr/local/libexec/dome-session-client /usr/local/bin/dome-askpass; do
     [[ -x "$program" ]] || { echo "DomeD: required program missing: $program" >&2; exit 1; }
 done
 if [[ "${1:-}" == --check ]]; then
     /usr/local/bin/dome-compositor --backend drm --check-backend
     echo 'DomeD standalone login session and XR frontend are installed.'
+    echo 'Native FLTK sudo askpass is available: /usr/local/bin/dome-askpass'
     if command -v kwalletd6 >/dev/null; then
         echo 'KWallet D-Bus activation is available.'
         [[ ! -x /usr/libexec/pam_kwallet_init ]] || echo 'KWallet PAM login handoff is available.'
@@ -45,6 +46,7 @@ if [[ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]]; then
 fi
 unset DISPLAY WAYLAND_DISPLAY WAYLAND_SOCKET
 export XDG_CURRENT_DESKTOP=Dome XDG_SESSION_DESKTOP=dome XDG_SESSION_TYPE=wayland
+export SUDO_ASKPASS="${SUDO_ASKPASS-/usr/local/bin/dome-askpass}"
 export QT_QPA_PLATFORM=wayland
 export QT_IM_MODULE=wayland GTK_IM_MODULE=fcitx XMODIFIERS=@im=fcitx
 # Native FLTK 1.4 otherwise reopens menus dismissed by the compositor. Keep the

@@ -1,0 +1,25 @@
+.TH DOME-ASKPASS 1 "October 2026" "DomeD" "User Commands"
+.SH NAME
+dome-askpass \- native FLTK password dialog for sudo
+.SH SYNOPSIS
+.B dome-askpass
+.RI [ prompt ]
+.SH DESCRIPTION
+Uses the shared DomeD FLTK toolkit and appearance. Enter submits the password.
+Escape, Ctrl+W, closing the window or Cancel abort without password output.
+A successful request writes one password line to standard output for sudo.
+.SH ENVIRONMENT
+.TP
+.B SUDO_ASKPASS
+DomeD sets this to the installed helper for child applications and activated
+services unless the caller supplies a value. Use sudo -A to request this dialog.
+An empty override disables the default selection.
+.TP
+.B DISPLAY, WAYLAND_DISPLAY
+A graphical display is required. There is no terminal fallback.
+.SH FILES
+.I /usr/local/share/doc/domed/pinentry
+contains upstream source, license and DomeD modifications.
+.SH SEE ALSO
+.BR sudo (8),
+.BR dome-compositor (1)
