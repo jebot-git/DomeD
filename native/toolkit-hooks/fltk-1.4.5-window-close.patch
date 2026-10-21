@@ -1,0 +1,53 @@
+--- a/src/drivers/Wayland/Fl_Wayland_Window_Driver.cxx
++++ b/src/drivers/Wayland/Fl_Wayland_Window_Driver.cxx
+@@ -1015,9 +1015,24 @@
+ }
+ 
+ 
+-static void delayed_close(Fl_Window *win) {
+-  Fl::remove_check((Fl_Timeout_Handler)delayed_close, win);
++static void delayed_close(void *data) {
++  Fl_Widget_Tracker *tracker = (Fl_Widget_Tracker *)data;
++  Fl_Window *win = (Fl_Window *)tracker->widget();
++  if (!win || !win->shown()) { delete tracker; return; }
++  // popup_done and close can arrive in the same Wayland dispatch. The modal
++  // menu must unwind its grab before FL_CLOSE, otherwise Fl::handle drops it.
++  if (Fl::grab() || (Fl::modal() && Fl::modal() != win)) {
++    Fl::repeat_timeout(.01, delayed_close, data);
++    return;
++  }
+   Fl::handle(FL_CLOSE, win);
++  delete tracker;
++}
++
++static void request_close(Fl_Window *win) {
++  Fl_Window_Driver::dismiss_menu();
++  // Also leave libdecor's callback before a callback can destroy its frame.
++  Fl::add_timeout(0., delayed_close, new Fl_Widget_Tracker(win));
+ }
+ 
+ 
+@@ -1026,14 +1041,7 @@
+   // or after "Quit" of the application menu
+   // or after the Kill command of Sway
+   Fl_Window* win = ((struct wld_window*)user_data)->fl_win;
+-  int X, Y;
+-  libdecor_frame_translate_coordinate(frame, 0, 0, &X, &Y);
+-  if (Y == 0) Fl::handle(FL_CLOSE, win);
+-  else {
+-    // the close window attempt is delayed because libdecor
+-    // uses the frame after return from this function
+-    Fl::add_check((Fl_Timeout_Handler)delayed_close, win);
+-  }
++  request_close(win);
+ }
+ 
+ 
+@@ -1135,6 +1143,7 @@
+ 
+ static void xdg_toplevel_close(void *data, struct xdg_toplevel *toplevel)
+ {
++  request_close(((struct wld_window *)data)->fl_win);
+ }
+ 
+ 

@@ -1,0 +1,40 @@
+--- a/src/drivers/Wayland/Fl_Wayland_Window_Driver.cxx
++++ b/src/drivers/Wayland/Fl_Wayland_Window_Driver.cxx
+@@ -868,7 +868,8 @@
+   // true exactly for the 1st run of handle_configure() for this window
+   bool is_1st_run = (window->xdg_surface == 0);
+   // true exactly for the 2nd run of handle_configure() for this window
+-  bool is_2nd_run = (window->xdg_surface != 0 && driver->wait_for_expose_value);
++  bool is_2nd_run = (window->libdecor_configures == 1);
++  if (window->libdecor_configures < 2) ++window->libdecor_configures;
+   float f = Fl::screen_scale(window->fl_win->screen_num());
+ 
+   if (!window->xdg_surface) window->xdg_surface = libdecor_frame_get_xdg_surface(frame);
+@@ -952,7 +953,6 @@
+   if (wl_output) window->fl_win->redraw();
+   window->configured_width = ceil(width / f);
+   window->configured_height = ceil(height / f);
+-  if (is_2nd_run) driver->wait_for_expose_value = 0;
+ //fprintf(stderr, "handle_configure fl_win=%p size:%dx%d state=%x wait_for_expose_value=%d is_2nd_run=%d\n", window->fl_win, width,height,window_state,driver->wait_for_expose_value, is_2nd_run);
+ 
+ /* We would like to do FL_HIDE when window is minimized but :
+@@ -984,6 +984,9 @@
+    }
+   libdecor_state_free(state);
+ 
++  // A valid committed configure is enough to draw. A compositor need not
++  // send a second redundant configure (notably for transient dialogs).
++  driver->wait_for_expose_value = 0;
+   driver->flush();
+   if (Fl_Wayland_Screen_Driver::compositor != Fl_Wayland_Screen_Driver::WESTON || !is_1st_run) {
+     window->fl_win->clear_damage();
+--- a/src/drivers/Wayland/Fl_Wayland_Window_Driver.H
++++ b/src/drivers/Wayland/Fl_Wayland_Window_Driver.H
+@@ -164,6 +164,7 @@
+   };
+   // non-null when using custom cursor
+   struct Fl_Wayland_Window_Driver::custom_cursor *custom_cursor;
++  unsigned libdecor_configures; // capped at two; separate from exposure
+   int configured_width;
+   int configured_height;
+   int floating_width;

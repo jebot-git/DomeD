@@ -1,4 +1,4 @@
-//! Separate Qt6 process: the compositor never blocks its GUI thread for consent.
+//! Separate toolkit process: the compositor never blocks its GUI thread for consent.
 use dome as _;
 use std::ffi::CString;
 unsafe extern "C" {

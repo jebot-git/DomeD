@@ -110,6 +110,18 @@ pub struct Control {
 }
 fn default_accent() -> [u8; 3] { crate::visual_feedback::ACCENT }
 impl Bridge {
+    /// Keep identity stable across unrelated shell invalidations. GPU consumers
+    /// may retain the corresponding texture until these pixels actually change.
+    pub fn update_surface(&mut self, id: u64, surface: Surface) {
+        if let Some(old) = self.frames.get_mut(&id) {
+            if old.width == surface.width && old.height == surface.height
+                && old.scale == surface.scale && old.rgba == surface.rgba {
+                old.stamp = surface.stamp;
+                return;
+            }
+        }
+        self.frames.insert(id, surface);
+    }
     pub fn visible(&self) -> bool {
         self.session.visible
             && self
@@ -273,5 +285,24 @@ mod tests {
         })
         .unwrap();
         assert!(b.visible());
+    }
+}
+
+#[cfg(test)]
+mod surface_cache_tests {
+    use super::*;
+    fn surface(width: u32, pixel: u8) -> Surface { Surface {width, height:1,
+        rgba:Arc::new(vec![pixel; width as usize*4]), scale:1., stamp:Instant::now()} }
+    #[test]
+    fn unchanged_shell_keeps_gpu_cache_identity() {
+        let mut bridge=Bridge::default();bridge.update_surface(TOP_BAR,surface(2,10));
+        let first=bridge.frames[&TOP_BAR].rgba.clone();
+        bridge.update_surface(TOP_BAR,surface(2,10));
+        assert!(Arc::ptr_eq(&first,&bridge.frames[&TOP_BAR].rgba));
+        bridge.update_surface(TOP_BAR,surface(2,11));
+        assert!(!Arc::ptr_eq(&first,&bridge.frames[&TOP_BAR].rgba));
+        let next=bridge.frames[&TOP_BAR].rgba.clone();
+        bridge.update_surface(TOP_BAR,surface(3,11));
+        assert!(!Arc::ptr_eq(&next,&bridge.frames[&TOP_BAR].rgba));
     }
 }

@@ -206,7 +206,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         let border = scene_border(&n);
                         for id in ids {
                             if worker_gpu_enabled.load(Ordering::Relaxed) && !capture_cpu
-                                && !dome::xr_transport::is_shell(id) && !worker_gpu_failed.lock().unwrap().contains(&id) {
+                                && !worker_gpu_failed.lock().unwrap().contains(&id) {
                                 let path = n.lock().unwrap().control.gpu_socket.clone();
                                 if let Some(path) = path {
                                     if let Ok(frame) = dome::xr_gpu::receive(std::path::Path::new(&path), id) {
@@ -704,7 +704,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         let fade = (transition.opacity * layer_opacities.get(&q.id).copied().unwrap_or(1.)).clamp(0., 1.);
                         let opacity = (fade * 255.).round() as u8;
                         let stereo = scene.as_ref().and_then(|s| s.window(q.id)).is_some_and(|w| w.stereo == dome::stereo::Stereo::SideBySide);
-                        let effects = (scene.as_ref().map_or(0, |s| s.config.window_border_px), scene.as_ref().is_some_and(|s| s.focused == Some(q.id)), stereo, control.accent);
+                        let effects = (if dome::xr_transport::is_shell(q.id) { 0 } else { scene.as_ref().map_or(0, |s| s.config.window_border_px) }, scene.as_ref().is_some_and(|s| s.focused == Some(q.id)), stereo, control.accent);
                         if p.serial != image.serial || p.opacity != opacity || (image.gpu.is_some() && p.effects != Some(effects)) {
                             if let (Some(frame), Some(renderer)) = (&image.gpu, gpu_renderer.as_mut()) {
                                 if let Err(e) = renderer.draw(q.id, frame.clone(), p, queue, command, opacity,
