@@ -1,5 +1,8 @@
 fn main() {
     println!("cargo:rerun-if-changed=native/qt_chrome.cpp");
+    println!("cargo:rerun-if-changed=native/fltk_appearance.h");
+    println!("cargo:rerun-if-changed=native/suite-icons.h");
+    println!("cargo:rerun-if-changed=native/gpu-window.h");
     println!("cargo:rerun-if-changed=native/bitmap_fonts.hpp");
     println!("cargo:rerun-if-changed=native/default_apps.cpp");
     println!("cargo:rerun-if-changed=native/gtk_appearance.c");
@@ -24,6 +27,31 @@ fn main() {
     for library in gio.libs { compiler.arg(format!("-l{library}")); }
     compiler.arg("-l:libgtk-3.so.0");
     assert!(compiler.status().expect("GTK appearance module compiler").success(), "GTK appearance module build failed");
+    if std::env::var_os("CARGO_FEATURE_FLTK").is_some() {
+        if std::env::var_os("CARGO_FEATURE_QT6").is_some() {
+            panic!("Choose FLTK or Qt6; use --no-default-features for Qt6");
+        }
+        let prefix = std::env::var("DOME_FLTK_PREFIX").expect("Set DOME_FLTK_PREFIX to the isolated FLTK 1.4.5 install");
+        println!("cargo:rerun-if-env-changed=DOME_FLTK_PREFIX");
+        let mut native = cc::Build::new();
+        native.cpp(true).std("c++17").include(format!("{prefix}/include"));
+        for dependency in ["fontconfig", "freetype2", "gio-unix-2.0", "cairo"] {
+            let lib = pkg_config::Config::new().probe(dependency).expect("FLTK shell dependency");
+            for path in lib.include_paths { native.include(path); }
+        }
+        for source in ["native/fltk_chrome.cpp", "native/fltk_default_apps.cpp", "native/fltk_portal_picker.cpp"] {
+            println!("cargo:rerun-if-changed={source}");
+            native.file(source);
+        }
+        println!("cargo:rustc-link-search=native={prefix}/lib");
+        println!("cargo:rustc-link-lib=dylib=fltk");
+        println!("cargo:rustc-link-lib=dylib=fltk_images");
+        println!("cargo:rustc-link-lib=dylib=fltk_gl");
+        println!("cargo:rustc-link-lib=dylib=GL");
+        println!("cargo:rustc-link-arg=-Wl,-rpath,{prefix}/lib");
+        native.compile("dome_fltk_chrome");
+        return;
+    }
     let mut build = cc::Build::new();
     for dependency in ["fontconfig", "freetype2", "gio-unix-2.0"] {
         let library = pkg_config::Config::new().probe(dependency)

@@ -1,0 +1,103 @@
+--- a/src/drivers/Cairo/Fl_Cairo_Graphics_Driver.cxx
++++ b/src/drivers/Cairo/Fl_Cairo_Graphics_Driver.cxx
+@@ -1045,13 +1045,68 @@
+ }
+ 
+ 
++
++// DomeD experiment: Pango's scalable-font path does not render PCF/BDF strikes.
++// Resolve only exact non-scalable family/size matches; outlines retain Pango.
++#include <fontconfig/fontconfig.h>
++#include <ft2build.h>
++#include FT_FREETYPE_H
++#include <map>
++#include <string>
++#include <vector>
++static FT_Face dome_bitmap(Fl_Font font, Fl_Fontsize size) {
++  static FT_Library library = NULL;
++  static std::map<std::pair<std::string,int>,FT_Face> cache;
++  const char *name = Fl::get_font(font);
++  if (!name || size <= 0) return NULL;
++  std::pair<std::string,int> key(name,size);
++  auto found=cache.find(key);if(found!=cache.end())return found->second;
++  FT_Face face=NULL;FcPattern *p=FcPatternCreate();
++  FcPatternAddString(p,FC_FAMILY,(const FcChar8*)name);
++  FcPatternAddDouble(p,FC_PIXEL_SIZE,size);
++  FcConfigSubstitute(NULL,p,FcMatchPattern);FcDefaultSubstitute(p);
++  FcResult result;FcPattern *match=FcFontMatch(NULL,p,&result);FcPatternDestroy(p);
++  if(match){FcBool scalable=FcTrue;FcChar8 *file=NULL,*family=NULL;double strike=0;
++    FcPatternGetBool(match,FC_SCALABLE,0,&scalable);
++    FcPatternGetDouble(match,FC_PIXEL_SIZE,0,&strike);
++    FcPatternGetString(match,FC_FILE,0,&file);FcPatternGetString(match,FC_FAMILY,0,&family);
++    if(!scalable&&file&&family&&!FcStrCmpIgnoreCase(family,(const FcChar8*)name)&&int(strike+.5)==size){
++      if(!library)FT_Init_FreeType(&library);
++      if(library&&!FT_New_Face(library,(const char*)file,0,&face)){
++        bool ok=false;for(int n=0;n<face->num_fixed_sizes;++n)if(int(face->available_sizes[n].y_ppem/64)==size){ok=!FT_Select_Size(face,n);break;}
++        if(!ok){FT_Done_Face(face);face=NULL;}
++      }
++    }FcPatternDestroy(match);
++  }if(getenv("DOME_FLTK_BITMAP_TRACE"))fprintf(stderr,"FLTK bitmap: %s %d -> %s\n",name,size,face?"native":"Pango");cache[key]=face;return face;
++}
++static double dome_bitmap_width(FT_Face face,const char *str,int n){
++  double width=0;const char* end=str+n;
++  while(str<end){int bytes=0;unsigned c=fl_utf8decode(str,end,&bytes);if(bytes<=0)break;str+=bytes;
++    if(!FT_Load_Char(face,c,FT_LOAD_RENDER|FT_LOAD_TARGET_MONO|FT_LOAD_MONOCHROME))width+=face->glyph->advance.x/64.;
++  }return width;
++}
++static void dome_bitmap_draw(cairo_t *cr,FT_Face face,const char* str,int n,double x,double y){
++  const char* end=str+n;cairo_save(cr);cairo_set_antialias(cr,CAIRO_ANTIALIAS_NONE);
++  while(str<end){int bytes=0;unsigned c=fl_utf8decode(str,end,&bytes);if(bytes<=0)break;str+=bytes;
++    if(FT_Load_Char(face,c,FT_LOAD_RENDER|FT_LOAD_TARGET_MONO|FT_LOAD_MONOCHROME))continue;
++    const FT_Bitmap& b=face->glyph->bitmap;
++    if(b.width&&b.rows){int stride=cairo_format_stride_for_width(CAIRO_FORMAT_A8,b.width);std::vector<unsigned char> alpha(stride*b.rows,0);
++      for(unsigned row=0;row<b.rows;++row)for(unsigned col=0;col<b.width;++col){const unsigned char* src=b.buffer+(b.pitch<0?b.rows-1-row:row)*abs(b.pitch);alpha[row*stride+col]=b.pixel_mode==FT_PIXEL_MODE_MONO?((src[col/8]&(0x80>>(col%8)))?255:0):src[col];}
++      cairo_surface_t* mask=cairo_image_surface_create_for_data(alpha.data(),CAIRO_FORMAT_A8,b.width,b.rows,stride);
++      cairo_mask_surface(cr,mask,floor(x)+face->glyph->bitmap_left-.5,floor(y)-face->glyph->bitmap_top-.5);cairo_surface_destroy(mask);
++    }x+=face->glyph->advance.x/64.;
++  }cairo_restore(cr);
++}
++
+ int Fl_Cairo_Graphics_Driver::height() {
++  if(auto face=dome_bitmap(font(),size()))return face->size->metrics.height/64;
+   if (!font_descriptor()) font(0, 12);
+   return ceil(((Fl_Cairo_Font_Descriptor*)font_descriptor())->line_height / float(PANGO_SCALE));
+ }
+ 
+ 
+ int Fl_Cairo_Graphics_Driver::descent() {
++  if(auto face=dome_bitmap(font(),size()))return -face->size->metrics.descender/64;
+   return font_descriptor()->descent / float(PANGO_SCALE) + 0.5;
+ }
+ 
+@@ -1337,6 +1392,7 @@
+ 
+ 
+ void Fl_Cairo_Graphics_Driver::draw(const char* str, int n, float x, float y) {
++  if(auto face=dome_bitmap(font(),size())){dome_bitmap_draw(cairo_,face,str,n,x,y);surface_needs_commit();return;}
+   if (!n) return;
+   cairo_save(cairo_);
+   Fl_Cairo_Font_Descriptor *fd = (Fl_Cairo_Font_Descriptor*)font_descriptor();
+@@ -1367,6 +1423,7 @@
+ 
+ // cache the widths of single Unicode characters
+ double Fl_Cairo_Graphics_Driver::width(unsigned int utf32) {
++  if(auto face=dome_bitmap(font(),size())){char text[4];int n=fl_utf8encode(utf32,text);return dome_bitmap_width(face,text,n);}
+   unsigned r=0;
+   Fl_Cairo_Font_Descriptor *desc = NULL;
+   if (utf32 <= 0xFFFF) {
+@@ -1396,6 +1453,7 @@
+ 
+ 
+ double Fl_Cairo_Graphics_Driver::width(const char* str, int n) {
++  if(auto face=dome_bitmap(font(),size()))return str?dome_bitmap_width(face,str,n):0;
+   if (!font_descriptor()) return -1;
+   if ((str == NULL) || (n == 0)) return 0.;
+   if (n == fl_utf8len(*str)) { // str contains a single unicode character
+@@ -1418,6 +1476,7 @@
+ 
+ 
+ void Fl_Cairo_Graphics_Driver::text_extents(const char* txt, int n, int& dx, int& dy, int& w, int& h) {
++  if(auto face=dome_bitmap(font(),size())){dx=0;dy=-face->size->metrics.ascender/64;w=ceil(dome_bitmap_width(face,txt,n));h=face->size->metrics.height/64;return;}
+   txt = clean_utf8(txt, n);
+   pango_layout_set_text(pango_layout_, txt, n);
+   PangoRectangle ink_rect;

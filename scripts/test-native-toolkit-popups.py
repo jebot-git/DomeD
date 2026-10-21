@@ -164,7 +164,16 @@ try:
         click(*point(p, 2)); time.sleep(.3)
         check(window()["title"] == before, toolkit + " disabled item cannot activate")
         key("Escape"); wait(lambda: not popups())
-        p = open_menu(); motion(*point(p, 1)); time.sleep(.8); shot("desktop-submenu")
+        p = open_menu(); before = window()["title"]
+        click(*point(p, 1)); time.sleep(.8); shot("desktop-submenu")
+        check(main_popup() is not None and window()["title"] == before,
+              toolkit + " clicking a submenu header keeps the popup open")
+        # A pointer leave is not a dismissal gesture, including leaving the
+        # entire application surface. Return to the same menu afterwards.
+        motion(1550, 920); time.sleep(.8)
+        check(main_popup() is not None and window()["title"] == before,
+              toolkit + " pointer leaving popup and application does not dismiss the menu")
+        motion(*point(p, 1)); time.sleep(.8)
         child = wait(lambda: next((v for v in popups() if v["id"] != p["id"] and v["parent"] == p["id"]), None))
         # point() accounts for title/menu/submenu chains in FLTK.
         cx, cy = point(child)
@@ -218,7 +227,15 @@ try:
             p = wait(lambda: (p if (p := main_popup()) and p["anchor"]["h"] >= 64 else None))
             time.sleep(.6)
             return p
-        p = xr_open_menu()
+        p = xr_open_menu(); before = window()["title"]
+        xr_click(p["id"], [.4, .375])
+        time.sleep(.6)
+        check(main_popup() is not None and window()["title"] == before,
+              toolkit + " XR submenu header click keeps the menu open")
+        post("/api/xr-input", {"events": [{"kind": "motion", "id": aid, "uv": [.7, .9]}], "actions": []})
+        time.sleep(.8)
+        check(main_popup() is not None and window()["title"] == before,
+              toolkit + " XR pointer leaving popup keeps the menu open")
         for uv in ([.35, .375], [.4, .375]):
             post("/api/xr-input", {"events": [{"kind": "motion", "id": p["id"], "uv": uv}], "actions": []})
             time.sleep(.2)

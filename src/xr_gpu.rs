@@ -277,7 +277,6 @@ pub fn serve(bridge: crate::xr_transport::Shared, port: u16) -> io::Result<Serve
                         b.gpu_requested.insert(id, std::time::Instant::now());
                         b.gpu_frames
                             .get(&id)
-                            .filter(|f| f.stamp.elapsed().as_millis() < 500)
                             .cloned()
                     };
                     if let Some(frame) = frame {

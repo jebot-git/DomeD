@@ -95,3 +95,24 @@ pub fn offscreen() -> Result<GlesRenderer, Box<dyn std::error::Error>> {
         .into())
     })
 }
+
+/// Native EGL clients can submit GPU buffers on nested sessions too. Validate
+/// imports in a shared context, without borrowing the host presenter recursively.
+pub fn advertise_dmabuf(state: &mut crate::Dome, renderer: &mut GlesRenderer)
+    -> Result<(), Box<dyn std::error::Error>> {
+    use smithay::backend::{egl::{EGLContext, EGLDevice}, renderer::ImportDma};
+    use std::os::unix::fs::MetadataExt;
+    let display = renderer.egl_context().display();
+    let device = EGLDevice::device_for_display(display)?;
+    let path = device.render_device_path()?;
+    let device_id = std::fs::metadata(&path)?.rdev();
+    let formats = renderer.egl_context().dmabuf_texture_formats().iter().copied().collect::<Vec<_>>();
+    if formats.is_empty() { return Err("Renderer exposes no DMA-BUF texture formats".into()); }
+    let context = EGLContext::new_shared(display, renderer.egl_context())?;
+    let mut importer = unsafe { GlesRenderer::new(context)? };
+    let feedback = smithay::wayland::dmabuf::DmabufFeedbackBuilder::new(device_id, formats).build()?;
+    state.dmabuf_state.create_global_with_default_feedback::<crate::Dome>(&state.display_handle, &feedback);
+    state.dmabuf_importer = Some(Box::new(move |buffer| importer.import_dmabuf(buffer, None).is_ok()));
+    eprintln!("Nested client DMA-BUF imports enabled on {}", path.display());
+    Ok(())
+}
