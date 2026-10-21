@@ -10,6 +10,7 @@ default = []
 xr = ["dep:openxr","dep:ash","dep:ureq","dep:ctrlc","dep:image"]
 nested = ["dep:async-channel", "dep:smithay", "dep:tracing-subscriber", "dep:bitflags", "dep:zbus", "dep:wayland-protocols-plasma", "dep:wayland-server", "dep:wayland-scanner"]
 standalone = ["nested", "dep:calloop", "smithay/backend_drm", "smithay/backend_gbm", "smithay/backend_libinput", "smithay/backend_udev", "smithay/backend_session_libseat"]
+multi-gpu = ["standalone"]
 
 [dependencies]
 nix = { version = "0.31", features = ["socket", "uio", "user", "fs"] }

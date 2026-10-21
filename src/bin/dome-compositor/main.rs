@@ -101,6 +101,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             cfg!(feature = "standalone"),
             rendering::selection()
         );
+        println!("Multi-GPU compiled: {}; build DRM device: {}",
+            cfg!(feature = "multi-gpu"),
+            option_env!("DOME_BUILD_DRM_DEVICE").unwrap_or("automatic"));
         return Ok(());
     }
     if let Ok(env_filter) = tracing_subscriber::EnvFilter::try_from_default_env() {

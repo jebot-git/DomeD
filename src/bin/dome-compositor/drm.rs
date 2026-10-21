@@ -425,18 +425,27 @@ pub fn init(event_loop: &mut EventLoop<CalloopData>, data: &mut CalloopData) -> 
         .as_ref()
         .map(|s| s.seat())
         .unwrap_or_else(|| "seat0".into());
-    let paths = if let Some(paths) = test_devices {
+    let paths: Vec<PathBuf> = if let Some(paths) = test_devices {
         paths.split(',').map(PathBuf::from).collect()
     } else if let Some(path) = test_device.clone() {
         vec![path]
+    } else if let Some(path) = option_env!("DOME_BUILD_DRM_DEVICE") {
+        vec![path.into()]
     } else if let Some(path) = std::env::var_os("DOME_DRM_DEVICE") {
         vec![path.into()]
     } else {
-        smithay::backend::udev::all_gpus(&seat)?
+        #[cfg(feature = "multi-gpu")]
+        { smithay::backend::udev::all_gpus(&seat)? }
+        #[cfg(not(feature = "multi-gpu"))]
+        { smithay::backend::udev::primary_gpu(&seat)?.into_iter().collect() }
     };
     if paths.is_empty() {
         return Err("No DRM devices on this seat".into());
     }
+    validate_gpu_count(paths.len())?;
+    #[cfg(not(feature = "multi-gpu"))]
+    let selected_path = paths[0].clone();
+    eprintln!("Dome DRM multi-GPU compiled: {}; selected devices: {paths:?}", cfg!(feature = "multi-gpu"));
     let devices: Devices = Rc::new(RefCell::new(Vec::new()));
     for path in paths {
         match init_gpu(
@@ -458,15 +467,18 @@ pub fn init(event_loop: &mut EventLoop<CalloopData>, data: &mut CalloopData) -> 
         .borrow_mut()
         .sort_by_key(|g| g.borrow().outputs.is_empty());
     relayout(&devices, &mut data.state)?;
-    // Advertise the intersection so every active GPU can import advertised client buffers.
+    // Multi-GPU builds advertise only formats importable on every GPU.
     let formats = {
         let devices = devices.borrow();
-        let mut formats = devices[0]
+        let formats = devices[0]
             .borrow()
             .renderer
             .egl_context()
             .dmabuf_texture_formats()
             .clone();
+        #[cfg(feature = "multi-gpu")]
+        let mut formats = formats;
+        #[cfg(feature = "multi-gpu")]
         for device in devices.iter().skip(1) {
             let gpu = device.borrow();
             formats = formats
@@ -485,14 +497,19 @@ pub fn init(event_loop: &mut EventLoop<CalloopData>, data: &mut CalloopData) -> 
     let importers = devices.clone();
     data.state.dmabuf_importer = Some(Box::new(move |dmabuf| {
         use smithay::backend::renderer::ImportDma;
-        importers.borrow().iter().all(|gpu| {
+        let devices = importers.borrow();
+        let import = |gpu: &Rc<RefCell<Native>>| {
             let mut gpu = gpu.borrow_mut();
             let good = gpu.renderer.import_dmabuf(dmabuf, None).is_ok();
             if good {
                 gpu.dmabuf_imports += 1;
             }
             good
-        })
+        };
+        #[cfg(feature = "multi-gpu")]
+        { devices.iter().all(import) }
+        #[cfg(not(feature = "multi-gpu"))]
+        { devices.first().is_some_and(import) }
     }));
     if let Some(session) = session {
         let mut input = Libinput::new_with_udev::<LibinputSessionInterface<LibSeatSession>>(
@@ -580,6 +597,12 @@ pub fn init(event_loop: &mut EventLoop<CalloopData>, data: &mut CalloopData) -> 
             .insert_source(UdevBackend::new(&seat)?, move |event, _, data| {
                 match event {
                     UdevEvent::Added { device_id, path } => {
+                        // A single-GPU binary may recover its selected card, but
+                        // cannot acquire a second GPU through hotplug.
+                        #[cfg(not(feature = "multi-gpu"))]
+                        if !same_gpu_path(&selected_path, &path) {
+                            return;
+                        }
                         if !displays
                             .borrow()
                             .iter()
@@ -788,6 +811,21 @@ impl Dome {
 }
 
 type Devices = Rc<RefCell<Vec<Rc<RefCell<Native>>>>>;
+fn validate_gpu_count(count: usize) -> Result<(), Error> {
+    if count > 1 && !cfg!(feature = "multi-gpu") {
+        return Err("Multiple DRM devices require a build with --features multi-gpu".into());
+    }
+    Ok(())
+}
+
+#[cfg(not(feature = "multi-gpu"))]
+fn same_gpu_path(selected: &Path, candidate: &Path) -> bool {
+    match (selected.canonicalize(), candidate.canonicalize()) {
+        (Ok(selected), Ok(candidate)) => selected == candidate,
+        _ => false,
+    }
+}
+
 fn init_gpu(
     handle: smithay::reexports::calloop::LoopHandle<'_, CalloopData>,
     state: &mut Dome,
@@ -795,7 +833,9 @@ fn init_gpu(
     session: Option<&mut LibSeatSession>,
     _test: bool,
 ) -> Result<Rc<RefCell<Native>>, Error> {
-    crate::rendering::create(|| init_gpu_inner(handle, state, path, session, _test))
+    // Stable PCI by-path pins must retain the same output identities as cardN paths.
+    let path = path.canonicalize()?;
+    crate::rendering::create(|| init_gpu_inner(handle, state, &path, session, _test))
 }
 fn init_gpu_inner(
     handle: smithay::reexports::calloop::LoopHandle<'_, CalloopData>,
@@ -988,6 +1028,25 @@ fn assign_crtcs<T: Copy + Eq>(candidates: &[Vec<T>]) -> Vec<Option<T>> {
 #[cfg(test)]
 mod tests {
     use super::assign_crtcs;
+    #[test]
+    fn multiple_devices_require_compile_time_support() {
+        assert!(super::validate_gpu_count(1).is_ok());
+        assert_eq!(super::validate_gpu_count(2).is_ok(), cfg!(feature = "multi-gpu"));
+    }
+    #[cfg(not(feature = "multi-gpu"))]
+    #[test]
+    fn single_gpu_hotplug_accepts_only_the_selected_device() {
+        use std::os::unix::fs::symlink;
+        let dir = std::env::temp_dir().join(format!("dome-gpu-paths-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("arc"), []).unwrap();
+        std::fs::write(dir.join("uhd"), []).unwrap();
+        symlink(dir.join("arc"), dir.join("pci-card")).unwrap();
+        assert!(super::same_gpu_path(&dir.join("pci-card"), &dir.join("arc")));
+        assert!(!super::same_gpu_path(&dir.join("pci-card"), &dir.join("uhd")));
+        assert!(!super::same_gpu_path(&dir.join("missing"), &dir.join("arc")));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
     #[test]
     fn assigns_distinct_crtcs_and_rehomes_flexible_connector() {
         assert_eq!(assign_crtcs(&[vec![1, 2], vec![1]]), vec![Some(2), Some(1)]);

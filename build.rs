@@ -1,4 +1,9 @@
 fn main() {
+    println!("cargo:rerun-if-env-changed=DOME_BUILD_DRM_DEVICE");
+    if let Ok(device) = std::env::var("DOME_BUILD_DRM_DEVICE") {
+        assert!(std::path::Path::new(&device).is_absolute(), "DOME_BUILD_DRM_DEVICE must be an absolute DRM device path");
+        assert!(std::env::var_os("CARGO_FEATURE_MULTI_GPU").is_none(), "DOME_BUILD_DRM_DEVICE and multi-gpu are mutually exclusive");
+    }
     println!("cargo:rerun-if-changed=native/qt_chrome.cpp");
     println!("cargo:rerun-if-changed=native/bitmap_fonts.hpp");
     println!("cargo:rerun-if-changed=native/default_apps.cpp");

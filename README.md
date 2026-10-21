@@ -154,7 +154,9 @@ Use `--backend nested` for a development window in an existing desktop. Without
 an explicit backend, a host DISPLAY/WAYLAND_DISPLAY selects nested mode; otherwise
 DRM is selected. `--check-backend` reports compiled support without opening a seat.
 
-The native backend enumerates the seat's GPUs and drives every connected output,
+The native backend defaults to one GPU and drives every connected output on it.
+Multi-GPU support is available only in builds with the Cargo feature `multi-gpu`
+(`scripts/build-local.sh --release --multi-gpu`). These builds enumerate the seat's GPUs,
 with independent CRTC assignment, scanout buffers, damage and page-flip scheduling.
 Displays form a horizontal extended desktop by default. Each monitor has its own
 bars; windows, cursors and popups use global desktop coordinates, and maximization
@@ -162,6 +164,18 @@ reserves the containing monitor's bars. Unplugging a monitor recovers stranded
 windows; reconnecting it restores scanout without restarting the session. GPUs can
 also be added or removed while other outputs remain active. Each GPU has its own
 GBM/EGL renderer; advertised DMA-BUF formats are supported by every initial GPU.
+Single-GPU builds import client buffers only on the selected GPU and ignore other
+GPUs during hotplug, while retaining monitor hotplug on the selected card.
+To pin a single-GPU binary to the Arc A770 in this system, build with:
+
+```sh
+./scripts/build-local.sh --release --drm-device /dev/dri/by-path/pci-0000:03:00.0-card
+```
+
+The device path is embedded at compile time through `DOME_BUILD_DRM_DEVICE` and
+takes precedence over runtime `DOME_DRM_DEVICE`. It cannot be combined with
+`multi-gpu`. Without a build pin or runtime device selection, a single-GPU build
+uses the seat's primary GPU. `--check-backend` reports both build settings.
 
 Open **Displays & XR Configuration** (**Super+,**) to select each connector's
 resolution/refresh, enable it, choose a primary display, or position it explicitly
@@ -222,13 +236,15 @@ pkexec /usr/bin/bash "$PWD/scripts/vkms-test-device.sh" prepare
 uv run --no-project --with PySide6 --with pillow python scripts/test-native-drm.py
 uv run --no-project --with PySide6 --with pillow python scripts/test-native-drm.py --installed
 pkexec /usr/bin/bash "$PWD/scripts/vkms-test-device.sh" prepare-second-gpu
+./scripts/build-local.sh --multi-gpu
 uv run --no-project --with PySide6 --with pillow python scripts/test-native-drm.py --multi-gpu
 pkexec /usr/bin/bash "$PWD/scripts/vkms-test-device.sh" cleanup
 ```
 
 `DOME_DRM_TEST_DEVICE` and the comma-separated `DOME_DRM_TEST_DEVICES` accept only
-the kernel's `vkms` driver. Its optional
-`DOME_DRM_TEST_CONTROL` socket is available only in that test mode. Production
+the kernel's `vkms` driver.
+Multiple test devices require a `multi-gpu` build; test devices bypass the build
+device pin. The `DOME_DRM_TEST_CONTROL` socket is available only in that test mode. Production
 sessions always use libseat and libinput. `DOME_DRM_CAPTURE` and `DOME_DRM_REPORT`
 write diagnostic framebuffer snapshots and scanout counters when explicitly set.
 `DOME_DRM_CAPTURE_ALL=1` names snapshots per output; `DOME_DRM_REPORT_ALL=1`
@@ -1121,7 +1137,7 @@ GET `/api/integrations/qimgvr` returns version 1, compositor PID, XR socket,
 The viewer validates Unix peer credentials and the owned session record before
 using this endpoint. It does not create a headset session.
 
-Validation: `scripts/build-local.sh --release` builds all features and runs Rust
+Validation: `scripts/build-local.sh --release` builds the desktop and XR binaries and runs Rust
 tests. Run the isolated compositor/default-opener test with the installed Arc
 Python: `~/.local/opt/arc-sbs/current/venv/bin/python scripts/test-qimgvr.py`.
 It requires Xvfb, qimgvr, cv2/numpy and the local depth model. Results are written

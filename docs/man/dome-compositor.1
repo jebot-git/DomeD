@@ -41,6 +41,13 @@ changed in keybindings. Native OpenXR overlays and other compositors are not
 supported by this action.
 .SH ENVIRONMENT
 DOME_BACKEND and DOME_RENDERER select backend and renderer. DOME_CONFIG selects a geometry profile. DOME_PREVIEW_PORT selects the loopback bridge port (default 49640). DOME_TERMINAL selects a terminal executable without arguments.
+.PP
+Native DRM uses one GPU unless compiled with the Cargo feature multi-gpu.
+DOME_BUILD_DRM_DEVICE is a build-time absolute device path that pins a single-GPU
+binary, preferably using /dev/dri/by-path. Otherwise DOME_DRM_DEVICE selects one
+card at runtime, defaulting to the seat's primary GPU in single-GPU builds.
+A build-time pin takes precedence over DOME_DRM_DEVICE. Multi-GPU support cannot
+be enabled at runtime. Use --check-backend to inspect these build settings.
 .SH INTERACTION
 XR uses cylindrical dome windows. Super+P pulls the focused window in front of the user or returns it to the dome; at most two windows can be pulled out. The default distance is 2 metres. Settings configure distance, dome height and bindings. Mouse and keyboard are the only input methods. Alt+Tab and Alt+Shift+Tab switch windows in the same lane.
 .PP
