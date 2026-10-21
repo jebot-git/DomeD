@@ -52,3 +52,6 @@ pub mod bundled_fonts;
 pub mod visual_feedback;
 
 pub mod xr_gpu;
+
+#[cfg(feature = "xr")]
+pub mod webxr_bridge;

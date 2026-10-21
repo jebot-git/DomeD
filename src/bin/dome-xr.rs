@@ -1,8 +1,6 @@
 //! Native OpenXR quad compositor. Window content and seat input remain owned by Smithay.
 use ash::vk::{self, Handle};
-use dome::{
-    Pose, Scene,
-};
+use dome::{Pose, Scene};
 use openxr as xr;
 use std::{
     collections::HashMap,
@@ -57,6 +55,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut standalone = false;
     let mut music_floor_only = false;
     let mut floor_size: Option<[f32; 2]> = None;
+    let mut webxr_socket: Option<std::path::PathBuf> = None;
     let mut placement = 10u32;
     let mut transport = "auto".to_string();
     let mut args = std::env::args().skip(1);
@@ -64,6 +63,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         match a.as_str() {
             "--transport" => transport = args.next().ok_or("missing transport")?,
             "--server" => base = args.next().ok_or("missing server")?,
+            "--webxr-socket" => {
+                webxr_socket = Some(args.next().ok_or("missing WebXR socket")?.into())
+            }
             "--frames" => frames = args.next().ok_or("missing frames")?.parse()?,
             "--capture" => capture = args.next(),
             "--report" => report = args.next(),
@@ -85,7 +87,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             "--help" => {
-                println!("dome-xr [--server http://127.0.0.1:PORT] [--frames N] [--transport auto|cpu|gpu] [--capture DIR] [--report FILE] [--standalone] [--placement N] [--music-floor-only] [--floor-size WIDTHxDEPTH]\nMusic-floor-only runs a passive audio-reactive overlay without a desktop server.\nFloor-size explicitly supplies the STAGE floor extent when the runtime does not expose bounds.\nDefault: transparent overlay, or passthrough blending when overlay sessions are unavailable.");
+                println!("dome-xr [--server http://127.0.0.1:PORT] [--frames N] [--transport auto|cpu|gpu] [--capture DIR] [--report FILE] [--webxr-socket PATH] [--standalone] [--placement N] [--music-floor-only] [--floor-size WIDTHxDEPTH]\nMusic-floor-only runs a passive audio-reactive overlay without a desktop server.\nFloor-size explicitly supplies the STAGE floor extent when the runtime does not expose bounds.\nDefault: transparent overlay, or passthrough blending when overlay sessions are unavailable.");
                 return Ok(());
             }
             _ => return Err(format!("unknown argument {a}").into()),
@@ -161,6 +163,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let worker_gpu_failed = gpu_failed.clone();
     let capture_cpu = capture.is_some();
     let worker_transport = transport.clone();
+    let webxr_control_port = base
+        .trim_end_matches('/')
+        .rsplit(':')
+        .next()
+        .and_then(|s| s.parse::<u16>().ok())
+        .unwrap_or(49640);
     let worker = std::thread::spawn(move || {
         if music_floor_only { return; }
         let agent = ureq::AgentBuilder::new()
@@ -212,12 +220,26 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                                     if let Ok(frame) = dome::xr_gpu::receive(std::path::Path::new(&path), id) {
                                         gpu_waiting.remove(&id);
                                         let mut state = n.lock().unwrap();
-                                        let same = state.images.get(&id).and_then(|i| i.gpu.as_ref())
-                                            .is_some_and(|old| old.info.serial == frame.info.serial);
+                                        let same = state
+                                            .images
+                                            .get(&id)
+                                            .and_then(|i| i.gpu.as_ref())
+                                            .is_some_and(|old| {
+                                                old.info.serial == frame.info.serial
+                                            });
                                         if !same {
                                             let (width,height) = frame.info.output_size();
                                             serial += 1;
-                                            state.images.insert(id, Image { width,height,rgba:vec![],gpu:Some(Arc::new(frame)),serial });
+                                            state.images.insert(
+                                                id,
+                                                Image {
+                                                    width,
+                                                    height,
+                                                    rgba: vec![],
+                                                    gpu: Some(Arc::new(frame)),
+                                                    serial,
+                                                },
+                                            );
                                         }
                                         continue;
                                     }
@@ -254,15 +276,35 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                                         .is_ok()
                                         && rgba.len() == width as usize * height as usize * 4
                                     {
-                                        let stereo = n.lock().unwrap().scene.as_ref().and_then(|s| s.window(id)).is_some_and(|w| w.stereo == dome::stereo::Stereo::SideBySide);
+                                        let stereo = n
+                                            .lock()
+                                            .unwrap()
+                                            .scene
+                                            .as_ref()
+                                            .and_then(|s| s.window(id))
+                                            .is_some_and(|w| {
+                                                w.stereo == dome::stereo::Stereo::SideBySide
+                                            });
                                         if !dome::xr_transport::is_shell(id) && !stereo {
                                             dome::xr_input::paint_border_scaled(
                                                 &mut rgba, width, height, border, pixel_scale,
                                             );
                                         }
                                         let state = n.lock().unwrap();
-                                        if !dome::xr_transport::is_shell(id) && state.scene.as_ref().is_some_and(|s| s.focused == Some(id)) {
-                                            dome::visual_feedback::focus_border_scaled(&mut rgba, width, height, state.control.accent, stereo, pixel_scale);
+                                        if !dome::xr_transport::is_shell(id)
+                                            && state
+                                                .scene
+                                                .as_ref()
+                                                .is_some_and(|s| s.focused == Some(id))
+                                        {
+                                            dome::visual_feedback::focus_border_scaled(
+                                                &mut rgba,
+                                                width,
+                                                height,
+                                                state.control.accent,
+                                                stereo,
+                                                pixel_scale,
+                                            );
                                         }
                                         drop(state);
                                         serial += 1;
@@ -428,6 +470,61 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             })?;
         let view =
             session.create_reference_space(xr::ReferenceSpaceType::VIEW, xr::Posef::IDENTITY)?;
+        let recommended = xr_instance.enumerate_view_configuration_views(system, VIEW_TYPE)?;
+        if recommended.len() != 2 {
+            return Err("Dome WebXR bridge requires stereo views".into());
+        }
+        let eye_sizes = [0, 1].map(|i| {
+            [
+                recommended[i]
+                    .recommended_image_rect_width
+                    .min(dome::webxr_bridge::MAX_DIMENSION / 2),
+                recommended[i]
+                    .recommended_image_rect_height
+                    .min(dome::webxr_bridge::MAX_DIMENSION),
+            ]
+        });
+        let control_port = webxr_control_port;
+        let webxr_socket = webxr_socket.unwrap_or_else(|| {
+            std::path::PathBuf::from(
+                std::env::var_os("XDG_RUNTIME_DIR").unwrap_or_else(|| "/tmp".into()),
+            )
+            .join(format!("dome-webxr-{control_port}.sock"))
+        });
+        let browser = if music_floor_only {
+            None
+        } else {
+            match dome::webxr_bridge::Server::bind(
+                &webxr_socket,
+                dome::webxr_bridge::Capabilities {
+                    name: "DomeD XR session".into(),
+                    width: eye_sizes[0][0] + eye_sizes[1][0],
+                    height: eye_sizes[0][1].max(eye_sizes[1][1]),
+                    view_sizes: eye_sizes,
+                    max_width: dome::webxr_bridge::MAX_DIMENSION,
+                    max_height: dome::webxr_bridge::MAX_DIMENSION,
+                    blend_modes: vec!["opaque".into()],
+                    stage: floor_stage_available,
+                    period: 0,
+                },
+            ) {
+                Ok(server) => {
+                    eprintln!("Dome WebXR session bridge: {}", webxr_socket.display());
+                    Some(server)
+                }
+                Err(error) => {
+                    eprintln!(
+                        "Dome WebXR bridge unavailable at {}: {error}",
+                        webxr_socket.display()
+                    );
+                    None
+                }
+            }
+        };
+        let mut browser_panel: Option<Panel> = None;
+        let mut browser_views: Option<[dome::webxr_bridge::ProjectionView; 2]> = None;
+        let mut browser_updated: Option<Instant> = None;
+        let mut browser_layer_flags = 0u64;
         let mut animator = dome::xr_presentation::Animator::default();
         let mut presentation_initialized = false;
         let mut presentation = dome::xr_presentation::Presentation::default();
@@ -441,9 +538,24 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             .into_iter()
             .find(|f| formats.contains(&(f.as_raw() as u32)))
             .ok_or("no RGBA swapchain format")?;
+        // The browser facade exposes GL_RGBA8, whose bytes encode linear RGB.
+        // Desktop snapshots use sRGB bytes and keep their separate format above.
+        let browser_format = formats
+            .contains(&(vk::Format::R8G8B8A8_UNORM.as_raw() as u32))
+            .then_some(vk::Format::R8G8B8A8_UNORM);
         let mut gpu_renderer = if !enabled_gpu_extensions.is_empty() {
-            match gpu::Renderer::new(&vk_instance, &vk_device, vk_physical_device, queue_family_index, format) {
-                Ok(r) => { gpu_enabled.store(true, Ordering::Relaxed); eprintln!("XR DMA-BUF transport enabled"); Some(r) }
+            match gpu::Renderer::new(
+                &vk_instance,
+                &vk_device,
+                vk_physical_device,
+                queue_family_index,
+                format,
+            ) {
+                Ok(r) => {
+                    gpu_enabled.store(true, Ordering::Relaxed);
+                    eprintln!("XR DMA-BUF transport enabled");
+                    Some(r)
+                }
                 Err(e) if transport == "gpu" => return Err(e),
                 Err(e) => { eprintln!("XR GPU renderer unavailable; using CPU: {e}"); None }
             }
@@ -488,6 +600,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                                 active = true;
                             }
                             xr::SessionState::STOPPING => {
+                                if let Some(browser) = &browser {
+                                    browser.suspend();
+                                }
                                 session.end()?;
                                 active = false;
                             }
@@ -529,6 +644,89 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 last_head = pose(head.pose);
             }
             let head_pose = last_head;
+            let (webxr_view_flags, webxr_views) =
+                session.locate_views(VIEW_TYPE, frame.predicted_display_time, &stage)?;
+            if let Some(browser) = &browser {
+                if webxr_views.len() == 2 {
+                    browser.publish(dome::webxr_bridge::Tracking {
+                        frame_id: count,
+                        time: frame.predicted_display_time.as_nanos(),
+                        period: frame.predicted_display_period.as_nanos(),
+                        should_render: frame.should_render,
+                        visible,
+                        focused,
+                        head_flags: head.location_flags.into_raw(),
+                        view_flags: webxr_view_flags.into_raw(),
+                        head: bridge_pose(head.pose),
+                        views: [0, 1].map(|i| dome::webxr_bridge::View {
+                            pose: bridge_pose(webxr_views[i].pose),
+                            fov: bridge_fov(webxr_views[i].fov),
+                        }),
+                    });
+                } else {
+                    browser.suspend();
+                }
+            }
+            if let Some(mut submitted) = browser
+                .as_ref()
+                .and_then(|browser| browser.take_submission())
+            {
+                let copied = (|| -> Result<(), Box<dyn std::error::Error>> {
+                    let browser_format =
+                        browser_format.ok_or("WebXR requires a linear RGBA8 swapchain format")?;
+                    if browser_panel
+                        .as_ref()
+                        .is_none_or(|p| p.width != submitted.width || p.height != submitted.height)
+                    {
+                        browser_panel = Some(Panel::new(
+                            &session,
+                            browser_format,
+                            submitted.width,
+                            submitted.height,
+                        )?);
+                    }
+                    let image = Image {
+                        width: submitted.width,
+                        height: submitted.height,
+                        rgba: std::mem::take(&mut submitted.rgba),
+                        gpu: None,
+                        serial: submitted.frame_id,
+                    };
+                    upload(
+                        &vk_instance,
+                        &vk_device,
+                        vk_physical_device,
+                        queue,
+                        command,
+                        browser_panel.as_mut().unwrap(),
+                        &image,
+                    )?;
+                    Ok(())
+                })();
+                match copied {
+                    Ok(())
+                        if browser
+                            .as_ref()
+                            .is_some_and(|browser| browser.composed(&submitted)) =>
+                    {
+                        browser_views = Some(submitted.views.clone());
+                        browser_layer_flags = submitted.layer_flags;
+                        browser_updated = Some(Instant::now());
+                        submitted.complete(Ok(()));
+                    }
+                    Ok(()) => submitted.complete(Err("Browser lease ended during upload".into())),
+                    Err(error) => {
+                        // A failed resize/upload may have replaced the old
+                        // swapchain. Its previous projection rectangles are
+                        // no longer safe to submit against the new image.
+                        browser_views = None;
+                        browser_updated = None;
+                        browser_panel = None;
+                        eprintln!("Dome WebXR frame rejected: {error}");
+                        submitted.complete(Err(error.to_string()));
+                    }
+                }
+            }
             let (scene, mut images, shell, control) = {
                 let state = network.lock().unwrap();
                 let mut control = state.control.clone();
@@ -548,7 +746,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let mut popup_ids = std::collections::HashSet::new();
             let mut stereo_windows = std::collections::HashSet::new();
             if let Some(ref scene) = scene {
-                stereo_windows.extend(scene.windows.iter().filter(|w| w.stereo == dome::stereo::Stereo::SideBySide).map(|w| w.id));
+                stereo_windows.extend(
+                    scene
+                        .windows
+                        .iter()
+                        .filter(|w| w.stereo == dome::stereo::Stereo::SideBySide)
+                        .map(|w| w.id),
+                );
                 presentation = scene.presentation;
                 if !presentation_initialized {
                     animator = dome::xr_presentation::Animator::initial(presentation);
@@ -566,20 +770,30 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 popup_ids.extend(scene.popups.iter().map(|p| p.id));
                 popup_beams = dome::spatial_popup::beams(&scene, &geometry, head_pose);
                 let hud_scene = scene.clone();
-                let (_, views) =
-                    session.locate_views(VIEW_TYPE, frame.predicted_display_time, &stage)?;
+                let views = &webxr_views;
                 let horizontal = views
                     .iter()
                     .map(|v| (v.fov.angle_right - v.fov.angle_left).to_degrees())
                     .fold(160f32, f32::min)
                     - 8.;
-                let mouse_viewport = views.iter().map(|v| [
-                    v.fov.angle_left, v.fov.angle_right,
-                    v.fov.angle_down, v.fov.angle_up,
-                ]).reduce(|a, b| [
-                    a[0].max(b[0]), a[1].min(b[1]),
-                    a[2].max(b[2]), a[3].min(b[3]),
-                ]);
+                let mouse_viewport = views
+                    .iter()
+                    .map(|v| {
+                        [
+                            v.fov.angle_left,
+                            v.fov.angle_right,
+                            v.fov.angle_down,
+                            v.fov.angle_up,
+                        ]
+                    })
+                    .reduce(|a, b| {
+                        [
+                            a[0].max(b[0]),
+                            a[1].min(b[1]),
+                            a[2].max(b[2]),
+                            a[3].min(b[3]),
+                        ]
+                    });
                 {
                     let mut state = network.lock().unwrap();
                     state.session = dome::xr_transport::Session {
@@ -592,7 +806,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     };
                     state.sampled = Some(Instant::now());
                 }
-                let hud = dome::xr_input::shell_quads_in_view(&hud_scene, head_pose, &shell, horizontal.max(30.));
+                let hud = dome::xr_input::shell_quads_in_view(
+                    &hud_scene,
+                    head_pose,
+                    &shell,
+                    horizontal.max(30.),
+                );
                 geometry.extend(hud);
                 transition.apply(&mut geometry, head_pose, &hud_scene.config);
             }
@@ -614,12 +833,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         let mut finder = reticle.clone();
                         finder.id = u64::MAX - 1;
                         finder.size = finder.size.map(|v| v * 4.);
-                        images.insert(finder.id, Image {
-                            width: 128, height: 128,
-                            gpu: None,
-                            rgba: dome::visual_feedback::finder_pixels(age, control.accent),
-                            serial: count + 2,
-                        });
+                        images.insert(
+                            finder.id,
+                            Image {
+                                width: 128,
+                                height: 128,
+                                gpu: None,
+                                rgba: dome::visual_feedback::finder_pixels(age, control.accent),
+                                serial: count + 2,
+                            },
+                        );
                         geometry.push(finder);
                     }
                     let id = reticle.id;
@@ -653,8 +876,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             // Added after input processing so the floor never captures a pointer.
             if floor_stage_available && floor_bounds_read.elapsed() >= Duration::from_secs(1) {
                 floor_bounds_read = Instant::now();
-                let bounds = floor_size.or_else(dome::music_floor::configured_bounds).or_else(|| session.reference_space_bounds_rect(xr::ReferenceSpaceType::STAGE)
-                    .ok().flatten().map(|b| [b.width, b.height]));
+                let bounds = floor_size
+                    .or_else(dome::music_floor::configured_bounds)
+                    .or_else(|| {
+                        session
+                            .reference_space_bounds_rect(xr::ReferenceSpaceType::STAGE)
+                            .ok()
+                            .flatten()
+                            .map(|b| [b.width, b.height])
+                    });
                 if bounds != floor_bounds || !floor_announced {
                     eprintln!("Music floor STAGE bounds: {bounds:?}");
                     floor_announced = true;
@@ -663,12 +893,25 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             if let Some(floor) = music_floor.frame(floor_bounds) {
                 const FLOOR_ID: u64 = u64::MAX - 32;
-                images.insert(FLOOR_ID, Image { width:128, height:128, rgba:floor.rgba, gpu:None, serial:floor.serial });
+                images.insert(
+                    FLOOR_ID,
+                    Image {
+                        width: 128,
+                        height: 128,
+                        rgba: floor.rgba,
+                        gpu: None,
+                        serial: floor.serial,
+                    },
+                );
                 geometry.push(dome::xr_input::Quad {
-                    id:FLOOR_ID,
-                    pose:Pose { position_m:[0.,0.005,0.],
-                        orientation_xyzw:glam::Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2).to_array() },
-                    size:floor.size, dome:None,
+                    id: FLOOR_ID,
+                    pose: Pose {
+                        position_m: [0., 0.005, 0.],
+                        orientation_xyzw: glam::Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)
+                            .to_array(),
+                    },
+                    size: floor.size,
+                    dome: None,
                 });
             }
             if let Some(renderer) = gpu_renderer.as_mut() {
@@ -677,12 +920,18 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             // Keep interactive surfaces ahead of background domes when layer limits apply.
             geometry.sort_by_key(|q| {
-                let background = scene.as_ref().and_then(|s| s.window(q.id))
-                    .filter(|w| scene.as_ref().is_some_and(|s| w.workspace != s.active_workspace));
-                (background.is_some(), background.map_or(0, |w| {
-                    let s = scene.as_ref().unwrap();
-                    (w.workspace + s.workspaces.len() - s.active_workspace) % s.workspaces.len()
-                }))
+                let background = scene.as_ref().and_then(|s| s.window(q.id)).filter(|w| {
+                    scene
+                        .as_ref()
+                        .is_some_and(|s| w.workspace != s.active_workspace)
+                });
+                (
+                    background.is_some(),
+                    background.map_or(0, |w| {
+                        let s = scene.as_ref().unwrap();
+                        (w.workspace + s.workspaces.len() - s.active_workspace) % s.workspaces.len()
+                    }),
+                )
             });
             chains.retain(|id, _| geometry.iter().any(|q| q.id == *id));
             if frame.should_render {
@@ -774,11 +1023,20 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .take(max_layers)
                 .filter_map(|q| chains.get(&q.id).map(|p| (q, p)))
                 .collect();
+            let browser_visible = browser
+                .as_ref()
+                .is_some_and(|browser| browser.content_active(browser_updated))
+                && browser_views.is_some()
+                && browser_panel.is_some();
+            let available_layers = max_layers.saturating_sub(usize::from(browser_visible));
             let mut layer_budget = 0;
             visible.retain(|(q, _)| {
                 let cost = if stereo_windows.contains(&q.id) { 2 } else { 1 };
-                if layer_budget + cost > max_layers { return false; }
-                layer_budget += cost; true
+                if layer_budget + cost > available_layers {
+                    return false;
+                }
+                layer_budget += cost;
+                true
             });
             visible.sort_by_key(|(q, _)| {
                 let group = if q.id == u64::MAX - 32 {
@@ -792,60 +1050,85 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 } else {
                     1
                 };
-                let order = scene.as_ref().map(|s| dome::xr_input::window_order(s, q.id)).unwrap_or(1);
-                let depth = scene.as_ref().and_then(|s| s.window(q.id).map(|w| {
-                    (w.workspace + s.workspaces.len() - s.active_workspace) % s.workspaces.len()
-                })).unwrap_or(0);
+                let order = scene
+                    .as_ref()
+                    .map(|s| dome::xr_input::window_order(s, q.id))
+                    .unwrap_or(1);
+                let depth = scene
+                    .as_ref()
+                    .and_then(|s| {
+                        s.window(q.id).map(|w| {
+                            (w.workspace + s.workspaces.len() - s.active_workspace)
+                                % s.workspaces.len()
+                        })
+                    })
+                    .unwrap_or(0);
                 (group, std::cmp::Reverse(depth), order, q.dome.is_none())
             });
-            peak_stereo = peak_stereo.max(visible.iter().filter(|(q, _)| stereo_windows.contains(&q.id)).count());
+            peak_stereo = peak_stereo.max(
+                visible
+                    .iter()
+                    .filter(|(q, _)| stereo_windows.contains(&q.id))
+                    .count(),
+            );
             let stage_ref = &stage;
             let layers: Vec<_> = visible
                 .iter()
                 .flat_map(|(q, p)| {
-                    let stereo = if stereo_windows.contains(&q.id) { dome::stereo::Stereo::SideBySide } else { dome::stereo::Stereo::Mono };
-                    stereo.regions(p.width).into_iter().map(move |region| {
-                    let eye = match region.eye {
-                        dome::stereo::Eye::Both => xr::EyeVisibility::BOTH,
-                        dome::stereo::Eye::Left => xr::EyeVisibility::LEFT,
-                        dome::stereo::Eye::Right => xr::EyeVisibility::RIGHT,
-                    };
-                    let sub = xr::SwapchainSubImage::new()
-                        .swapchain(&p.chain)
-                        .image_array_index(0)
-                        .image_rect(xr::Rect2Di {
-                            offset: xr::Offset2Di { x: region.x as _, y: 0 },
-                            extent: xr::Extent2Di {
-                                width: region.width as _,
-                                height: p.height as _,
-                            },
-                        });
-                    if let Some(d) = &q.dome {
-                        Layer::Dome(
-                            xr::CompositionLayerCylinderKHR::new()
-                                .space(stage_ref)
-                                .eye_visibility(eye)
-                                .layer_flags(xr::CompositionLayerFlags::BLEND_TEXTURE_SOURCE_ALPHA)
-                                .sub_image(sub)
-                                .pose(xr_pose(d.layer_pose()))
-                                .radius(d.radius)
-                                .central_angle(d.horizontal)
-                                .aspect_ratio(d.aspect_ratio()),
-                        )
+                    let stereo = if stereo_windows.contains(&q.id) {
+                        dome::stereo::Stereo::SideBySide
                     } else {
-                        Layer::Flat(
-                            xr::CompositionLayerQuad::new()
-                                .space(stage_ref)
-                                .eye_visibility(eye)
-                                .layer_flags(xr::CompositionLayerFlags::BLEND_TEXTURE_SOURCE_ALPHA)
-                                .pose(xr_pose(q.pose))
-                                .size(xr::Extent2Df {
-                                    width: q.size[0],
-                                    height: q.size[1],
-                                })
-                                .sub_image(sub),
-                        )
-                    }
+                        dome::stereo::Stereo::Mono
+                    };
+                    stereo.regions(p.width).into_iter().map(move |region| {
+                        let eye = match region.eye {
+                            dome::stereo::Eye::Both => xr::EyeVisibility::BOTH,
+                            dome::stereo::Eye::Left => xr::EyeVisibility::LEFT,
+                            dome::stereo::Eye::Right => xr::EyeVisibility::RIGHT,
+                        };
+                        let sub = xr::SwapchainSubImage::new()
+                            .swapchain(&p.chain)
+                            .image_array_index(0)
+                            .image_rect(xr::Rect2Di {
+                                offset: xr::Offset2Di {
+                                    x: region.x as _,
+                                    y: 0,
+                                },
+                                extent: xr::Extent2Di {
+                                    width: region.width as _,
+                                    height: p.height as _,
+                                },
+                            });
+                        if let Some(d) = &q.dome {
+                            Layer::Dome(
+                                xr::CompositionLayerCylinderKHR::new()
+                                    .space(stage_ref)
+                                    .eye_visibility(eye)
+                                    .layer_flags(
+                                        xr::CompositionLayerFlags::BLEND_TEXTURE_SOURCE_ALPHA,
+                                    )
+                                    .sub_image(sub)
+                                    .pose(xr_pose(d.layer_pose()))
+                                    .radius(d.radius)
+                                    .central_angle(d.horizontal)
+                                    .aspect_ratio(d.aspect_ratio()),
+                            )
+                        } else {
+                            Layer::Flat(
+                                xr::CompositionLayerQuad::new()
+                                    .space(stage_ref)
+                                    .eye_visibility(eye)
+                                    .layer_flags(
+                                        xr::CompositionLayerFlags::BLEND_TEXTURE_SOURCE_ALPHA,
+                                    )
+                                    .pose(xr_pose(q.pose))
+                                    .size(xr::Extent2Df {
+                                        width: q.size[0],
+                                        height: q.size[1],
+                                    })
+                                    .sub_image(sub),
+                            )
+                        }
                     })
                 })
                 .collect();
@@ -861,30 +1144,75 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     .filter(|(q, _)| dome::xr_transport::is_shell(q.id))
                     .count(),
             );
-            peak_curved = peak_curved.max(visible.iter().filter(|(q, _)| q.dome.is_some() && !dome::xr_transport::is_shell(q.id)).count());
+            peak_curved = peak_curved.max(
+                visible
+                    .iter()
+                    .filter(|(q, _)| q.dome.is_some() && !dome::xr_transport::is_shell(q.id))
+                    .count(),
+            );
             peak_flat = peak_flat.max(
                 visible
                     .iter()
                     .filter(|(q, _)| q.dome.is_none() && !dome::xr_transport::is_shell(q.id))
                     .count(),
             );
-            let refs: Vec<&xr::CompositionLayerBase<xr::Vulkan>> = if frame.should_render {
-                layers
-                    .iter()
-                    .map(|l| match l {
-                        Layer::Flat(q) => &**q,
-                        Layer::Dome(d) => &**d,
-                    })
-                    .collect()
+            let projection_views: Option<Vec<_>> = if browser_visible {
+                let panel = browser_panel.as_ref().unwrap();
+                Some(
+                    browser_views
+                        .as_ref()
+                        .unwrap()
+                        .iter()
+                        .map(|v| {
+                            xr::CompositionLayerProjectionView::new()
+                                .pose(from_bridge_pose(v.pose))
+                                .fov(from_bridge_fov(v.fov))
+                                .sub_image(
+                                    xr::SwapchainSubImage::new()
+                                        .swapchain(&panel.chain)
+                                        .image_array_index(0)
+                                        .image_rect(xr::Rect2Di {
+                                            offset: xr::Offset2Di {
+                                                x: v.rect.x as i32,
+                                                y: v.rect.y as i32,
+                                            },
+                                            extent: xr::Extent2Di {
+                                                width: v.rect.width as i32,
+                                                height: v.rect.height as i32,
+                                            },
+                                        }),
+                                )
+                        })
+                        .collect(),
+                )
             } else {
-                vec![]
+                None
             };
+            let projection = projection_views.as_ref().map(|views| {
+                xr::CompositionLayerProjection::new()
+                    .space(&stage)
+                    .layer_flags(xr::CompositionLayerFlags::from_raw(browser_layer_flags))
+                    .views(views)
+            });
+            let mut refs: Vec<&xr::CompositionLayerBase<xr::Vulkan>> = Vec::new();
+            if frame.should_render {
+                if let Some(layer) = projection.as_ref() {
+                    refs.push(&**layer);
+                }
+                refs.extend(layers.iter().map(|l| match l {
+                    Layer::Flat(q) => &**q,
+                    Layer::Dome(d) => &**d,
+                }));
+            }
             stream.end(frame.predicted_display_time, blend, &refs)?;
+        }
+        if let Some(browser) = &browser {
+            browser.suspend();
         }
         running.store(false, Ordering::Relaxed);
         let _ = worker.join();
         let _ = input_worker.join();
-        let summary = serde_json::json!({"runtime":runtime,"system":properties.system_name,"overlay":environment.overlay,"environment_blend":format!("{blend:?}"),"overlay_placement":placement,"frames":count,"peak_window_layers":peak,"peak_curved_layers":peak_curved,"peak_flat_layers":peak_flat,"peak_stereo_windows":peak_stereo,"peak_shell_layers":peak_shell,"uploads":uploaded,"gpu_submissions":gpu_submissions,"input_methods":["mouse","keyboard"],"presentation_hidden_frames":hidden_frames,"presentation_fade_frames":fade_frames,"presentation_slide_frames":slide_frames,"clean_exit":true});
+        let summary = serde_json::json!({"runtime":runtime,"system":properties.system_name,"overlay":environment.overlay,"environment_blend":format!("{blend:?}"),"overlay_placement":placement,"frames":count,"peak_window_layers":peak,"peak_curved_layers":peak_curved,"peak_flat_layers":peak_flat,"peak_stereo_windows":peak_stereo,"peak_shell_layers":peak_shell,"uploads":uploaded,"gpu_submissions":gpu_submissions,"input_methods":["mouse","keyboard"],"presentation_hidden_frames":hidden_frames,"presentation_fade_frames":fade_frames,"presentation_slide_frames":slide_frames,"clean_exit":true,"webxr":browser.as_ref().map(|browser| browser.stats()).unwrap_or_default()});
         println!("{summary}");
         if let Some(path) = report {
             std::fs::write(path, serde_json::to_vec_pretty(&summary)?)?;
@@ -892,6 +1220,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         vk_device.device_wait_idle()?;
         drop(gpu_renderer);
         drop(chains);
+        drop(browser_panel);
+        drop(browser);
         drop((stage, view, stream, waiter, session));
         vk_device.destroy_command_pool(pool, None);
         vk_device.destroy_device(None);
@@ -1084,4 +1414,47 @@ unsafe fn upload(
 enum Layer<'a> {
     Flat(xr::CompositionLayerQuad<'a, xr::Vulkan>),
     Dome(xr::CompositionLayerCylinderKHR<'a, xr::Vulkan>),
+}
+
+fn bridge_pose(p: xr::Posef) -> dome::webxr_bridge::Pose {
+    dome::webxr_bridge::Pose {
+        position: [p.position.x, p.position.y, p.position.z],
+        orientation: [
+            p.orientation.x,
+            p.orientation.y,
+            p.orientation.z,
+            p.orientation.w,
+        ],
+    }
+}
+fn from_bridge_pose(p: dome::webxr_bridge::Pose) -> xr::Posef {
+    xr::Posef {
+        position: xr::Vector3f {
+            x: p.position[0],
+            y: p.position[1],
+            z: p.position[2],
+        },
+        orientation: xr::Quaternionf {
+            x: p.orientation[0],
+            y: p.orientation[1],
+            z: p.orientation[2],
+            w: p.orientation[3],
+        },
+    }
+}
+fn bridge_fov(f: xr::Fovf) -> dome::webxr_bridge::Fov {
+    dome::webxr_bridge::Fov {
+        left: f.angle_left,
+        right: f.angle_right,
+        up: f.angle_up,
+        down: f.angle_down,
+    }
+}
+fn from_bridge_fov(f: dome::webxr_bridge::Fov) -> xr::Fovf {
+    xr::Fovf {
+        angle_left: f.left,
+        angle_right: f.right,
+        angle_up: f.up,
+        angle_down: f.down,
+    }
 }
