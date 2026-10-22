@@ -19,6 +19,18 @@ fn write_if_changed(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     std::fs::rename(temporary, path)
 }
 
+fn prune_retired(directory: &Path, root: &Path, retained: &std::collections::HashSet<&str>) -> std::io::Result<()> {
+    if !directory.exists() { return Ok(()); }
+    for item in std::fs::read_dir(directory)? {
+        let item = item?; let path = item.path();
+        if item.file_type()?.is_dir() { prune_retired(&path, root, retained)?; }
+        else if path.extension().is_some_and(|e| e == "bdf") &&
+            !retained.contains(path.strip_prefix(root).unwrap().to_string_lossy().as_ref()) {
+            std::fs::remove_file(path)?;
+        }
+    }
+    Ok(())
+}
 /// Export every registered face and a Fontconfig allowlist for distributions
 /// that disable bitmap fonts. Re-running this repairs an older session's export
 /// without replacing its themes or restarting the compositor.
@@ -33,6 +45,8 @@ pub fn export(root: &Path, inherited: &str, _families: &[String]) -> std::io::Re
             xml(&path.to_string_lossy())
         ));
     }
+    let retained = crate::bundled_fonts::FONTS.iter().map(|(name, _)| *name).collect();
+    prune_retired(&directory, &directory, &retained)?;
     let index = include_bytes!("../assets/fonts/fonts.index");
     write_if_changed(&directory.join("fonts.index"), index)?;
     let cache = std::env::var_os("XDG_CACHE_HOME").map(PathBuf::from)
@@ -93,15 +107,18 @@ mod tests {
         let config = export(&root, "/etc/fonts/fonts.conf", &["A&B".into()]).unwrap();
         let data = std::fs::read_to_string(&config).unwrap();
         assert!(!data.contains("A&amp;B"), "Family aliases must not admit outline fonts with the same name");
-        assert!(data.contains("dunggeunmo-v1.3/DungGeunMo.bdf"));
+        assert!(data.contains("kissinger2-dev5/kissinger2.bdf"));
         for (name, bytes) in crate::bundled_fonts::FONTS {
             assert_eq!(
                 std::fs::read(root.join("fonts").join(name)).unwrap(),
                 *bytes
             );
         }
+        let retired = root.join("fonts/retired.bdf");
+        std::fs::write(&retired, "old distribution font").unwrap();
         let modified = std::fs::metadata(&config).unwrap().modified().unwrap();
         export(&root, "/etc/fonts/fonts.conf", &["A&B".into()]).unwrap();
+        assert!(!retired.exists(), "Retired fonts must disappear from managed exports");
         assert_eq!(
             std::fs::metadata(&config).unwrap().modified().unwrap(),
             modified
@@ -113,7 +130,7 @@ mod tests {
         assert_eq!(stable, root.join("dome-fonts/fonts.conf"));
         assert!(std::fs::read_to_string(legacy.join("fonts.conf"))
             .unwrap()
-            .contains("DungGeunMo.bdf"));
+            .contains("kissinger2.bdf"));
         assert_eq!(
             refresh_session(&root, "/etc/fonts/fonts.conf", &[]).unwrap(),
             stable

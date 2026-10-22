@@ -242,7 +242,8 @@ extern "C" int dome_qt_paint(const char *json,unsigned char *pixels,int length) 
     }
     if(o["about"].toBool()){QRect box((w-440)/2,(h-200)/2,440,200);p.fillRect(box,background);p.setPen(foreground);auto info=o["app_info"].toObject();QString text=o["about_is_app"].toBool()?info["name"].toString()+"\n"+info["comment"].toString()+"\n"+info["desktop_id"].toString():"Dome\nExperimental Rust / Smithay compositor\nQt6 desktop chrome · Native OpenXR";p.drawText(box.adjusted(24,24,-24,-24),Qt::AlignCenter|Qt::TextWordWrap,text+"\n\nClick or press a key to close");}
     if(o["appearance_open"].toBool()&&o["keyboard_settings"].isNull()){
-        QRect box((w-600)/2,(h-560)/2,600,560);p.fillRect(box,background);p.setPen(foreground);
+        auto fontChoice=o["appearance_font"].toObject();bool scripts=fontChoice["has_scripts"].toBool();int panelHeight=560+(scripts?48:0);
+        QRect box((w-600)/2,(h-panelHeight)/2,600,panelHeight);p.fillRect(box,background);p.setPen(foreground);
         p.drawText(box.adjusted(24,18,-24,-440),Qt::AlignLeft|Qt::AlignVCenter,"Appearance & Input");
         int opacity=barBackground.alpha();
         QString opacityPreset=QString("%1%").arg(qRound(opacity*100./255));
@@ -256,10 +257,12 @@ extern "C" int dome_qt_paint(const char *json,unsigned char *pixels,int length) 
         if(!bitmapFonts.isEmpty()&&fontSize=="Unavailable"){fontName="Saved font unavailable";fontSize=QString("%1 px · fallback").arg(app()->font().pixelSize());}
         QStringList names={"Colour scheme","Accent colour","Chrome opacity","Font family · BDF only","Font face","Native size","Font scale","Reset settings"};
         QStringList values={light?"Light":"Dark",accent.name(),opacityPreset,chosen.section(" / ",0,0),chosen.section(" / ",1),fontSize,QString::number(appearance["font_scale"].toInt(1))+"x","Reset"};
+        if(!fontChoice.isEmpty()){values[3]=fontChoice["family"].toString();values[4]=fontChoice["face"].toString();values[5]=fontChoice["size"].toString();}
+        if(scripts){names.insert(7,"Font script");values.insert(7,fontChoice["script"].toString());}
         for(int n=0;n<names.size();++n){int y=box.y()+60+n*48;if(n==o["shell_selection"].toInt()){p.setPen(accent);p.drawRect(QRect(box.x()+12,y-2,576,44));}p.setPen(foreground);p.drawText(QRect(box.x()+24,y,270,40),Qt::AlignVCenter,p.fontMetrics().elidedText(names[n],Qt::ElideRight,270));p.fillRect(QRect(box.x()+300,y,276,40),selection);p.drawText(QRect(box.x()+308,y,260,40),Qt::AlignCenter,p.fontMetrics().elidedText(values[n],Qt::ElideRight,260));}
-        p.setPen(muted);p.drawText(QRect(box.x()+24,box.y()+468,552,28),Qt::AlignCenter,"↑/↓ select · ←/→ adjust · Enter activates");
-        p.fillRect(QRect(box.x()+24,box.y()+512,260,36),selection);p.fillRect(QRect(box.x()+316,box.y()+512,260,36),selection);
-        if(o["shell_selection"].toInt()>=8){p.setPen(accent);p.drawRect(QRect(box.x()+(o["shell_selection"].toInt()==8?24:316),box.y()+512,260,36).adjusted(0,0,-1,-1));}p.setPen(foreground);p.drawText(QRect(box.x()+24,box.y()+512,260,36),Qt::AlignCenter,"Default applications…");p.drawText(QRect(box.x()+316,box.y()+512,260,36),Qt::AlignCenter,"Close · Esc");
+        p.setPen(muted);p.drawText(QRect(box.x()+24,box.y()+panelHeight-92,552,28),Qt::AlignCenter,"↑/↓ select · ←/→ adjust · Enter activates");
+        p.fillRect(QRect(box.x()+24,box.y()+panelHeight-48,260,36),selection);p.fillRect(QRect(box.x()+316,box.y()+panelHeight-48,260,36),selection);
+        if(o["shell_selection"].toInt()>=names.size()){p.setPen(accent);p.drawRect(QRect(box.x()+(o["shell_selection"].toInt()==names.size()?24:316),box.y()+panelHeight-48,260,36).adjusted(0,0,-1,-1));}p.setPen(foreground);p.drawText(QRect(box.x()+24,box.y()+panelHeight-48,260,36),Qt::AlignCenter,"Default applications…");p.drawText(QRect(box.x()+316,box.y()+panelHeight-48,260,36),Qt::AlignCenter,"Close · Esc");
     }
     if(o["appearance_open"].toBool()&&o["keyboard_settings"].isObject()){
         auto k=o["keyboard_settings"].toObject();QRect box((w-600)/2,(h-400)/2,600,400);p.fillRect(box,background);p.setPen(foreground);p.drawText(box.adjusted(24,18,-24,-340),Qt::AlignVCenter,"Keyboard Layouts · desktop and XR");

@@ -73,6 +73,7 @@ for file in "${files[@]}"; do
     /usr/bin/install -d -o root -g root -m 0755 "$(dirname -- "$target")"
     /usr/bin/install -D -o root -g root -m "$mode" -- "$stage/$file" "$target"
 done
+/usr/bin/python3 "$root/scripts/prune-retired-fonts.py" "$root/packaging/retired-font-files.json" "$backup"
 /usr/bin/install -d -m 0755 /usr/local/share/domed
 cd /
 sha256sum -- "${files[@]}" > /usr/local/share/domed/install.sha256

@@ -35,7 +35,7 @@ extern "C" const char *dome_qt_font_catalog(const unsigned char *data, int lengt
         if(found==indices.end()){
             indices[face.id()]=bitmapFonts.size();
             bitmapFonts.append(QJsonObject{{"id",QString::fromStdString(face.id())},{"family",QString::fromStdString(face.family)},
-                {"style",QString::fromStdString(face.style)},{"file",QString::fromStdString(face.file)},{"sizes",QJsonArray{face.pixels}}});
+                {"style",QString::fromStdString(face.style)}, {"file",QString::fromStdString(face.file)},{"sizes",QJsonArray{face.pixels}}});
         }else{
             auto entry=bitmapFonts[found->second].toObject();auto sizes=entry["sizes"].toArray();
             if(!sizes.contains(face.pixels))sizes.append(face.pixels);

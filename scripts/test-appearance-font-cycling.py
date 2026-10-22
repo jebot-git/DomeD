@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Stress native font changes against toolkit exports on a private desktop.
 
-Requires Xvfb and python-xlib. DOME_COMPOSITOR selects the release binary.
+Requires Xvfb, python-xlib and Pillow. DOME_COMPOSITOR selects the release binary.
 No running session or user configuration is changed.
 """
 import json
@@ -52,7 +52,7 @@ try:
         config = runtime / 'config/dome'
         config.mkdir(parents=True)
         appearance = config / 'appearance.json'
-        appearance.write_text(json.dumps({'font': 'Unifont / Sans-Serif', 'font_size': 16}))
+        appearance.write_text(json.dumps({'font': 'Galmuri9 / Regular', 'font_size': 12}))
         env = {**os.environ, 'HOME': str(runtime), 'XDG_RUNTIME_DIR': directory,
                'XDG_CONFIG_HOME': str(config.parent), 'XDG_CACHE_HOME': str(runtime / 'cache'),
                'XDG_DATA_HOME': str(runtime / 'data'), 'XDG_STATE_HOME': str(runtime / 'state'),
@@ -101,18 +101,45 @@ try:
                         xtest.fake_input(xd, kind, code)
                     xd.sync()
 
+                def settings(): return json.loads(appearance.read_text())
+                def panel_height(): return 608 if settings()['font'].startswith(('Fusion Pixel ', 'Neep')) else 560
+                def row(n):
+                    g=host.get_geometry()
+                    click(g.width//2+100,(g.height-panel_height())//2+60+n*48+24)
                 click(20, 18)
                 click(100, 250)  # Dome > Appearance (including the separator row)
                 g = host.get_geometry()
-                click(g.width // 2 + 100, (g.height - 560) // 2 + 228)  # Font family
-                wait(lambda: json.loads(appearance.read_text())['font'] != 'Unifont / Sans-Serif')
+                for expected in ['Galmuri11 / Regular','Galmuri14 / Regular','Galmuri7 / Regular','Galmuri9 / Regular']:
+                    row(5);wait(lambda:settings()['font'].split(' [')[0]==expected)
+                key('Left');wait(lambda:settings()['font']=='Galmuri7 / Regular')
+                row(3)  # Galmuri -> Kissinger2
+                for _ in range(12):
+                    if settings()['font'].startswith('Fusion Pixel '):break
+                    row(3)
+                assert settings()['font'].startswith('Fusion Pixel '), settings()
+                for _ in range(7):
+                    if ' ja / ' in settings()['font']: break
+                    row(7)
+                assert ' ja / ' in settings()['font'], settings()
+                old=settings();native=old['font_size']
+                row(5);wait(lambda:settings()['font_size']!=native)
+                assert ' ja / ' in settings()['font'],'Size change lost the selected script'
+                before=settings()['font_size'];row(7)
+                wait(lambda:' ja / ' not in settings()['font'])
+                assert settings()['font_size']==before,'Script change lost the selected native size'
+                row(7);time.sleep(.2)
+                from PIL import Image
+                g=host.get_geometry();raw=host.get_image(0,0,g.width,g.height,X.ZPixmap,0xffffffff)
+                artifact=root/'artifacts/bitmap-fonts';artifact.mkdir(parents=True,exist_ok=True)
+                Image.frombytes('RGB',(g.width,g.height),raw.data,'raw','BGRX').save(artifact/'script-selection.png')
+                print('PASS: Galmuri strike cycling/wrap, conditional Fusion Pixel script selection, size/script preservation',flush=True)
                 changes = set()
                 for index in range(160):
                     before = appearance.read_text()
                     # Family, face, size, and scale all enter native font caches.
                     if index % 8 == 0:
                         click(g.width // 2 + 100,
-                              (g.height - 560) // 2 + 60 + (3 + index // 8 % 4) * 48 + 24)
+                              (g.height - panel_height()) // 2 + 60 + (3 + index // 8 % 4) * 48 + 24)
                     else:
                         key('Right')
                     time.sleep(.04)
@@ -138,6 +165,13 @@ try:
                 log.seek(0)
                 print(log.read()[-12000:], file=sys.stderr)
                 raise
+                # Stop writers before TemporaryDirectory removes exported fonts.
+            finally:
+                compositor.terminate() if compositor.poll() is None else None
+                try:
+                    compositor.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    compositor.kill(); compositor.wait()
 finally:
     for child in reversed(children):
         if child.poll() is None:

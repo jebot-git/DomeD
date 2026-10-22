@@ -1,0 +1,14 @@
+{
+  "name": "Kissinger2",
+  "version": "dev5",
+  "homepage": "https://typedesign.replit.app/kissinger2.html",
+  "source": "https://typedesign.replit.app/kissinger2dev5.zip",
+  "archive_sha256": "e5955cd3ab7cd1d8fb22cb1877cf9a0c7ffe4afba23415569073380d0550fd50",
+  "license": "Unlicense / public-domain dedication in upstream readme.txt",
+  "format": "Unmodified upstream BDF bitmaps; no outline conversion.",
+  "files": {
+    "kissinger2.bdf": "70a4969c67e44697972a44d34254c650cae96fdd45c402e2a3eaca08c2307064",
+    "kissinger2f.bdf": "a7ad8173e95956f5d9324e73e687c04178c279d35c703665a9c3443b6f414f62",
+    "readme.txt": "dd1c7cfbcec5d9d085aac0025d5da8f61119b8e8757dfc7140064888bb21b664"
+  }
+}

@@ -18,6 +18,12 @@
 #include <string>
 #include <vector>
 namespace bdf_fonts {
+inline bool default_family(std::string family) {
+  family = family.substr(0, family.find(" ["));
+  std::transform(family.begin(), family.end(), family.begin(), [](unsigned char c) { return std::tolower(c); });
+  static const std::set<std::string> names = {"qub", "unifont", "uni16m", "x10y12pxdenkichiphangul", "cozette", "ufo16", "zpix", "kissinger 2", "kissinger 2f"};
+  return names.count(family) || family.rfind("galmuri", 0) == 0 || family.rfind("fusion pixel ", 0) == 0 || family.rfind("neep", 0) == 0;
+}
 inline std::string identity(const std::string &family, const std::string &style) {
   auto variant = family.find(" [");
   if (variant != std::string::npos && family.back() == ']')
@@ -218,6 +224,14 @@ inline std::vector<Face> discover(bool force = false) {
 
     }
     Face f = found->second.face;
+    // Retired default faces can survive in old installations and exported caches.
+    // Personal BDF directories remain available for explicitly installed fonts.
+    bool distributed = file.find("/assets/fonts/") != std::string::npos ||
+        file.find("/share/fonts/domed/") != std::string::npos ||
+        file.find("/de-xr/bundled/fonts/") != std::string::npos ||
+        file.find("/dome-fonts/fonts/") != std::string::npos ||
+        (file.find("/dome-appearance-") != std::string::npos && file.find("/fonts/") != std::string::npos);
+    if (distributed && !default_family(f.family)) continue;
     if (found->second.valid && f.family.rfind("Dome 2x ", 0) != 0 && f.family.rfind("Dome Qt BDF ", 0) != 0 && f.family.rfind("Dome Media BDF ", 0) != 0) {
       faces.push_back(f);
     }

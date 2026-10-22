@@ -49,6 +49,7 @@ pub mod audio;
 pub mod music_floor;
 
 pub mod bundled_fonts;
+pub mod font_picker;
 pub mod visual_feedback;
 
 pub mod xr_gpu;

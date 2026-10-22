@@ -1,10 +1,6 @@
 use serde_json::Value;
 use std::ffi::CString;
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
-pub struct BitmapFont {
-    pub id: String,
-    pub sizes: Vec<u16>,
-}
+pub use dome::font_picker::BitmapFont;
 unsafe extern "C" {
     fn dome_bdf_font_resolve(id: *const std::ffi::c_char, pixels: i32, scale: i32) -> *const std::ffi::c_char;
     fn dome_qt_queue_bitmap_font(data: *const u8, len: i32);

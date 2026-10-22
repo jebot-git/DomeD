@@ -282,5 +282,6 @@
       "unicode_mapping": false
     }
   },
-  "skipped": []
+  "skipped": [],
+  "distribution": "Selected default families only; unselected collection fonts are omitted."
 }

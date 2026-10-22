@@ -169,28 +169,40 @@ impl crate::Dome {
             Err(e) => self.shell_error = format!("Start XR: {e}"),
         }
     }
+    pub fn appearance_font_description(&self) -> dome::font_picker::Description {
+        dome::font_picker::describe(&crate::qt::bitmap_fonts(), &self.appearance)
+    }
+    pub fn appearance_row_count(&self) -> usize {
+        8 + usize::from(self.appearance_font_description().has_scripts)
+    }
     pub fn appearance_click(&mut self, x: f64, y: f64, width: f64, height: f64) {
-        let (left, top) = ((width - 600.) / 2., (height - 560.) / 2.);
-        if x < left || x > left + 600. || y < top || y > top + 560. {
+        let rows = self.appearance_row_count();
+        let panel_height = 560. + (rows - 8) as f64 * 48.;
+        let (left, top) = ((width - 600.) / 2., (height - panel_height) / 2.);
+        if x < left || x > left + 600. || y < top || y > top + panel_height {
             self.appearance_open = false;
             return;
         }
-        if y >= top + 512. {
-            self.appearance_activate(if x < left+300. { 8 } else { 9 }, 1);
+        if y >= top + panel_height - 48. {
+            self.appearance_activate(if x < left+300. { rows } else { rows + 1 }, 1);
             return;
         }
         if x < left + 300. || y < top + 60. {
             return;
         }
         let row = ((y - top - 60.) / 48.) as usize;
-        if row < 8 {
+        if row < rows {
             self.appearance_activate(row, 1);
         }
     }
     pub fn appearance_activate(&mut self, row: usize, direction: i32) {
         self.shell_selection = row;
         crate::qt::normalize_appearance(&mut self.appearance);
-        match row {
+        let rows = self.appearance_row_count();
+        if row == rows { self.default_apps_open(); return; }
+        if row == rows + 1 { self.appearance_open = false; return; }
+        if row == rows - 1 { self.appearance = Default::default(); }
+        else { match row {
             0 => self.appearance.light = !self.appearance.light,
             1 => {
                 self.appearance.accent = crate::menu_navigation::cycle(
@@ -203,42 +215,16 @@ impl crate::Dome {
                     &dome::appearance::CHROME_OPACITIES, &self.appearance.opacity, direction,
                 ).unwrap();
             }
-            3 | 4 => {
-                let fonts = crate::qt::bitmap_fonts();
-                let current = self.appearance.font.split_once(" / ").map(|v| v.0).unwrap_or("");
-                let choices: Vec<_> = if row == 3 {
-                    let mut families = std::collections::BTreeMap::new();
-                    for font in &fonts {
-                        let family = font.id.split_once(" / ").map(|v| v.0).unwrap_or(&font.id);
-                        let entry = families.entry(family).or_insert(font);
-                        if font.id.ends_with(" / Regular") || font.id.ends_with(" / Sans-Serif") { *entry = font; }
-                    }
-                    families.into_values().collect()
-                } else {
-                    fonts.iter().filter(|font| font.id.split_once(" / ").map(|v| v.0) == Some(current)).collect()
-                };
-                if choices.is_empty() { return; }
-                let index = choices.iter().position(|font| if row == 3 {
-                    font.id.split_once(" / ").map(|v| v.0) == Some(current)
-                } else { font.id == self.appearance.font }).unwrap_or(0);
-                let next = (index as i32 + direction).rem_euclid(choices.len() as i32) as usize;
-                self.appearance.font = choices[next].id.clone();
-                self.appearance.font_size = *choices[next].sizes.iter()
-                    .min_by_key(|size| size.abs_diff(self.appearance.font_size)).unwrap();
-            }
-            5 => {
-                let fonts = crate::qt::bitmap_fonts();
-                let Some(font) = fonts.iter().find(|f| f.id == self.appearance.font) else { return; };
-                if let Some(size) = crate::menu_navigation::cycle(
-                    &font.sizes, &self.appearance.font_size, direction,
-                ) { self.appearance.font_size = size; }
+            3 | 4 | 5 | 7 => {
+                use dome::font_picker::Control;
+                let control = match row { 3 => Control::Family, 4 => Control::Face,
+                    5 => Control::Size, _ => Control::Script };
+                dome::font_picker::adjust(&crate::qt::bitmap_fonts(), &mut self.appearance, control, direction);
             }
             6 => self.appearance.font_scale = if self.appearance.font_scale == 1 { 2 } else { 1 },
-            7 => self.appearance = Default::default(),
-            8 => { self.default_apps_open(); return; }
-            9 => { self.appearance_open = false; return; }
             _ => return,
-        }
+        } }
+        self.shell_selection = self.shell_selection.min(self.appearance_row_count() + 1);
         if let Err(e) = crate::qt::resolved_font(&self.appearance) {
             self.shell_error = e;
             return;

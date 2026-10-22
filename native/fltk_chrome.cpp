@@ -510,16 +510,16 @@ extern "C" const char *dome_qt_font_catalog(const unsigned char *data,
     auto found = indices.find(font.id());
     if (found == indices.end()) {
       indices[font.id()] = catalog.size();
-      catalog.push_back({{"id",font.id()},{"family",font.family},{"style",font.style},{"sizes",J::array({font.pixels})}});
+      catalog.push_back({{"id",font.id()},{"family",font.family},{"style",font.style},{"file",font.file},{"sizes",J::array({font.pixels})}});
     } else {
       auto sizes=catalog[found->second]["sizes"].get<std::vector<int>>();
       sizes.push_back(font.pixels);std::sort(sizes.begin(),sizes.end());sizes.erase(std::unique(sizes.begin(),sizes.end()),sizes.end());
       catalog[found->second]["sizes"]=sizes;
     }
   }
-  // Unifont covers ordinary interface text. Siji supplies the separate icon repertoire.
+  // Unifont supplies fallback coverage; interface icons are vector assets.
   for (const auto &font : available)
-    if (font.family=="Unifont" || font.family=="Siji" || font.family=="siji") ensureFont(font.id(),font.pixels);
+    if (font.family=="Unifont") ensureFont(font.id(),font.pixels);
   result = catalog.dump();
   return result.c_str();
 }
@@ -801,8 +801,11 @@ extern "C" int dome_qt_paint(const char *json, unsigned char *pixels,
     if (yes(o, "appearance_open")) {
       bool keyboard =
           o.contains("keyboard_settings") && o["keyboard_settings"].is_object();
-      int x = (w - 600) / 2, y = (h - (keyboard ? 400 : 560)) / 2;
-      p.rect(x, y, 600, keyboard ? 400 : 560, p.bg);
+      auto fontChoice = obj(o, "appearance_font");
+      bool scripts = yes(fontChoice, "has_scripts");
+      int panelHeight = keyboard ? 400 : 560 + (scripts ? 48 : 0);
+      int x = (w - 600) / 2, y = (h - panelHeight) / 2;
+      p.rect(x, y, 600, panelHeight, p.bg);
       p.text(x + 24, y + 18, 552, 32,
              keyboard ? "Keyboard Layouts · desktop and XR"
                       : "Appearance & Input",
@@ -826,15 +829,19 @@ extern "C" int dome_qt_paint(const char *json, unsigned char *pixels,
                                                " px · native",
                                            std::to_string(num(a, "font_scale", 1)) + "x",
                                            "Reset"};
+        if (!fontChoice.empty()) {
+          values[3] = str(fontChoice, "family"); values[4] = str(fontChoice, "face"); values[5] = str(fontChoice, "size");
+        }
+        if (scripts) { labels.insert(labels.begin() + 7, "Font script"); values.insert(values.begin() + 7, str(fontChoice, "script")); }
         for (int n = 0; n < int(labels.size()); ++n) {
           p.text(x + 24, y + 60 + n * 48, 270, 40, labels[n], p.fg);
           p.button(x + 300, y + 60 + n * 48, 276, 40, values[n],
                    num(o, "shell_selection") == n);
         }
-        p.button(x + 24, y + 512, 260, 36, "Default applications...",
-                 num(o, "shell_selection") == 8);
-        p.button(x + 316, y + 512, 260, 36, "Close · Esc",
-                 num(o, "shell_selection") == 9);
+        p.button(x + 24, y + panelHeight - 48, 260, 36, "Default applications...",
+                 num(o, "shell_selection") == int(labels.size()));
+        p.button(x + 316, y + panelHeight - 48, 260, 36, "Close · Esc",
+                 num(o, "shell_selection") == int(labels.size()) + 1);
       } else {
         auto k = obj(o, "keyboard_settings");
         std::vector<std::string> keys = {"layout", "variant", "options"};

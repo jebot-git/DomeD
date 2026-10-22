@@ -32,6 +32,9 @@ done
 for name in gtk-shell.xml COPYING.gtk; do
     install -D -m 0644 "$root/protocols/$name" "$stage/usr/local/share/doc/domed/protocols/$name"
 done
+# These stage subtrees contain only managed distribution artifacts. Avoid
+# carrying retired files forward when reusing a previous staging directory.
+rm -rf -- "$stage/usr/local/share/fonts/domed" "$stage/usr/local/share/doc/domed/fonts"
 while IFS= read -r name; do
     install -D -m 0644 "$root/assets/fonts/$name" "$stage/usr/local/share/doc/domed/fonts/$name"
 done < "$root/packaging/font-notices.list"

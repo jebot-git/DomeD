@@ -7,12 +7,13 @@ under SIL OFL 1.1; its full notices, original README and provenance remain in
 Collection-specific licenses, embedded copyright notices, source revisions,
 original and packaged SHA-256 checksums, and packaging details are retained in
 `assets/fonts/*/upstream.json` and the adjacent source documentation. See the
-font section in README.md for the testing bundle and format policy. Zpix is
+font section in README.md for the curated bundle and format policy. Zpix is
 included for personal/education use; commercial products require a separate
-license under its upstream pricing terms. The historical Classic Mac collection
-provides no separate redistribution license; its upstream documentation is
-retained without asserting a new grant. Tecate is an aggregation with individual
-font notices, not a single relicensed collection.
+license under its upstream pricing terms. Tecate is an aggregation with individual font notices, not a single relicensed
+collection; only QUB and Neep are retained from it. Kissinger2 dev5 is distributed
+as the two unmodified upstream BDFs, with the author's public-domain dedication
+and license text in `assets/fonts/kissinger2-dev5/readme.txt`. Its archive checksum
+and source URL are pinned in the adjacent manifest.
 
 BDF packaging maps legacy character codes to Unicode and normalizes metadata;
 glyph bitmap pixels remain unchanged. Cozette and Zpix BDFs are exported from

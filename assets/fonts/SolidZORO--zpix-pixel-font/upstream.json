@@ -17,5 +17,6 @@
     }
   },
   "skipped": [],
-  "source_sha256": "be86dca34dd4757c3aa3275287041dc6dfe01f582d14ee377081d6ff41394352"
+  "source_sha256": "be86dca34dd4757c3aa3275287041dc6dfe01f582d14ee377081d6ff41394352",
+  "distribution": "Selected default families only; unselected collection fonts are omitted."
 }

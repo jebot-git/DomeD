@@ -37,16 +37,17 @@ impl crate::Dome {
     pub fn shell_panel_key(&mut self, key: u32) -> bool {
         if self.clock_key(key) { return true; }
         if self.appearance_open && self.keyboard_draft.is_none() {
-            if let Some(row) = selection(self.shell_selection, 10, key) {
+            let rows = self.appearance_row_count();
+            if let Some(row) = selection(self.shell_selection, rows + 2, key) {
                 self.shell_selection = row;
             } else {
                 match key {
                     0xff1b => self.appearance_open = false,
-                    0xff51 | 0xff53 if self.shell_selection < 7 => {
+                    0xff51 | 0xff53 if self.shell_selection < rows - 1 => {
                         self.appearance_activate(self.shell_selection, if key == 0xff51 { -1 } else { 1 });
                     }
-                    0xff51 | 0xff53 if self.shell_selection >= 8 => {
-                        self.shell_selection = if key == 0xff51 { 8 } else { 9 };
+                    0xff51 | 0xff53 if self.shell_selection >= rows => {
+                        self.shell_selection = if key == 0xff51 { rows } else { rows + 1 };
                     }
                     0xff0d | 0xff8d | 0x20 => self.appearance_activate(self.shell_selection, 1),
                     _ => (),

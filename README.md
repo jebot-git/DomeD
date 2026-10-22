@@ -801,13 +801,19 @@ used as session fallbacks. A private Fontconfig configuration allows only BDF;
 the host configuration is preserved. Font files are read directly by FreeType,
 FLTK CPU/GL rendering, the private patched Pango for GTK, Ghostty, and the patched libass used by mpvr and qimgvr.
 
-The full testing bundle currently contains 748 BDF files, including Unifont,
-DenkiChip, DungGeunMo, Galmuri, Fusion Pixel, Cozette, kirsch, all Spleen and
-ttyp0 native sizes, Tamzen, UFO, Artwiz WL, X11 Fixed 10x20, Robotron 1715,
-Classic Mac, IBM/OldSchool PC, Hiro’s X11 fonts, OEM12x20, the historical Hangul
-collection, Terminus, uni16m, Zpix, Dina, the Tecate collection, Monomacs and Siji.
-The test bundle will be narrowed after evaluation; collection manifests and the
-separate font directory also support distributing the remainder as another package.
+The default distribution contains 268 BDF files from eleven families: QUB,
+Unifont, uni16m, DenkiChipHangul, Cozette, Galmuri, Fusion Pixel, Neep, UFO16,
+Zpix, and Kissinger2. Bitocra, 4thD, 5th Element and the remaining evaluation
+fonts are excluded. Personal BDF installations remain supported.
+
+The family picker groups physical strikes: Galmuri7/9/11/14 share **Galmuri**;
+**Font size** cycles through the available native strikes for the selected face.
+The size label retains the upstream strike name and its actual pixel size
+(for example Galmuri9 at 12 native pixels). **Font script** appears for families
+with language variants, including Fusion Pixel and Neep; changing size preserves
+the script and changing script preserves the nearest available size. Monospaced,
+proportional, bold and other designs remain face choices. Saved settings retain
+the physical BDF identity so shell and client toolkits resolve the same pixels.
 
 Each collection retains its source revision, SHA-256 checksums, and available
 upstream terms in `assets/fonts/*/upstream.json`. Zpix is bundled for personal
@@ -815,8 +821,8 @@ and education use at the user’s request; commercial product use requires its
 separate upstream license. Historical collections may have individual embedded
 notices rather than a collection-wide license; those notices are preserved.
 Legacy character codes are mapped to Unicode during packaging without changing
-glyph pixels. Ambiguous names receive source aliases, displayed as separate faces
-within their original family. Symbol-only and non-Latin-only fonts remain
+glyph pixels. Ambiguous names retain source aliases internally and are grouped by family,
+face, size and script in the appearance picker. Symbol-only and non-Latin-only fonts remain
 available for fallback and are excluded from the global Latin text picker.
 
 `scripts/index-bdf-fonts.py` rebuilds the verified metadata index after imports;

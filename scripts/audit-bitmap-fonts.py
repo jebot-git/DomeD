@@ -62,7 +62,16 @@ assert len(notices) == len(set(notices))
 expected_notices = {str(p.relative_to(assets)) for p in assets.rglob('*')
                     if p.is_file() and p.suffix != '.bdf'}
 assert set(notices) == expected_notices, 'Distribution must include every font notice and conversion script'
-assert any(r['family'] == 'DungGeunMo' and r['samples']['Korean'] for r in records)
+assert any(r['family'] == 'x10y12pxDenkiChipHangul' and r['samples']['Korean'] for r in records)
+allowed=set(json.loads((assets/'collections.json').read_text())['families'])
+def family(name):
+    name=name.split(' [')[0]
+    if name.startswith('Galmuri'):return 'Galmuri'
+    if name.startswith('Fusion Pixel'):return 'Fusion Pixel'
+    if name.startswith('Neep'):return 'Neep'
+    if name.startswith('Kissinger 2'):return 'Kissinger2'
+    return {'qub':'QUB','x10y12pxDenkiChipHangul':'DenkiChipHangul'}.get(name,name)
+assert {family(r['family']) for r in records} == allowed, 'Only the requested default families may be bundled'
 assert all(r['file'].endswith('.bdf') for r in records)
 out = root / 'artifacts/bitmap-fonts'
 out.mkdir(parents=True, exist_ok=True)
