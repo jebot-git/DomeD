@@ -28,6 +28,7 @@ with tempfile.TemporaryDirectory(prefix='dome-tray-ui-') as directory:
   with os.fdopen(rd) as pipe:disp=':'+pipe.readline().strip()
   env={**os.environ,'DISPLAY':disp,'XDG_RUNTIME_DIR':directory,'XDG_CONFIG_HOME':str(runtime/'config'),'XDG_STATE_HOME':str(runtime/'state'),'XDG_CURRENT_DESKTOP':'Dome','DE_XR_GL_TRACE':'1','FLTK_BACKEND':'x11','LIBGL_ALWAYS_SOFTWARE':'1','TRAY_FIXTURE_READY':str(runtime/'ready')}
   for key in ['WAYLAND_DISPLAY','WAYLAND_SOCKET']:env.pop(key,None)
+  env['TRAY_FIXTURE_CONFIG_REQUESTS']=str(runtime/'config-requests')
   start([sys.executable,str(ROOT/'tests/tray/mock_services.py')],env,'ui-services.log');wait(lambda:(runtime/'ready').exists())
   manager=start([str(BUILD/'dome-tray')],env,'ui-frontend.log')
   def dbus(path,method,*args):
@@ -78,6 +79,8 @@ with tempfile.TemporaryDirectory(prefix='dome-tray-ui-') as directory:
    img.save(out/('ui-'+page+'.png'))
    # Native bitmap fonts deliberately use a small palette, without antialiasing.
    assert len(img.getcolors(geo.width*geo.height))>8,page
+   if page=='input':
+    assert (190,101,112) in [color for _,color in img.crop((28,140,438,310)).getcolors(410*170)],'Native input-method flags were not drawn'
    if page=='devices':click(w,80,110)
    if page=='input':click(w,390,424)
    if page=='wallets':click(w,470,95);click(w,80,160)
@@ -88,17 +91,56 @@ with tempfile.TemporaryDirectory(prefix='dome-tray-ui-') as directory:
    else:key('w',ctrl=True)
    wait(lambda:window() is None);assert manager.poll() is None
    asyncio.run(check_notifier())
+  async def check_input_menu():
+   bus=await MessageBus().connect()
+   try:
+    node=await bus.introspect('org.domed.Tray','/InputMethods/Menu')
+    menu=bus.get_proxy_object('org.domed.Tray','/InputMethods/Menu',node).get_interface('com.canonical.dbusmenu')
+    async def rows(parent):return (await menu.call_get_layout(parent,1,[]))[1][2]
+    root=[v.value for v in await rows(0)]
+    assert [r[1]['label'].value for r in root[:3]]==['Input methods','Input method groups','Configuration']
+    methods=[v.value for v in await rows(1)]
+    english=next(r for r in methods if r[1]['label'].value=='English')
+    japanese=next(r for r in methods if r[1]['label'].value=='Japanese')
+    assert english[1]['icon-name'].value=='flag-us' and english[1]['toggle-state'].value==1
+    assert japanese[1]['icon-name'].value=='flag-jp'
+    from dbus_next import Variant
+    await menu.call_event(japanese[0],'clicked',Variant('i',0),0)
+    for _ in range(50):
+     methods=[v.value for v in await rows(1)]
+     if next(r for r in methods if r[0]==japanese[0])[1]['toggle-state'].value==1:break
+     await asyncio.sleep(.04)
+    else:raise AssertionError('Input selection did not update Fcitx')
+    groups=[v.value for v in await rows(2)]
+    writing=next(r for r in groups if r[1]['label'].value=='Writing')
+    await menu.call_event(writing[0],'clicked',Variant('i',0),0)
+    groups=[v.value for v in await rows(2)]
+    assert next(r for r in groups if r[0]==writing[0])[1]['toggle-state'].value==1
+    config=[v.value for v in await rows(3)]
+    assert any(r[1]['label'].value=='Classic UI…' for r in config)
+    assert any(r[1]['label'].value=='Current input method…' for r in config)
+    await menu.call_event(7,'clicked',Variant('i',0),0)
+   finally:bus.disconnect()
+  asyncio.run(check_input_menu())
+  wait(lambda:(runtime/'config-requests').exists() and 'fcitx://config/global' in (runtime/'config-requests').read_text())
+  w=wait(window);w.set_input_focus(X.RevertToParent,X.CurrentTime);d.sync();key('w',ctrl=True)
+  wait(lambda:window() is None)
+  config=subprocess.run([str(BUILD/'fcitx5-configuration-fltk'),'fcitx://config/addon/classicui'],env=env,capture_output=True,timeout=4)
+  assert config.returncode==0,config.stderr
+  wait(lambda:'fcitx://config/addon/classicui' in (runtime/'config-requests').read_text())
+  w=wait(window);w.set_input_focus(X.RevertToParent,X.CurrentTime);d.sync();time.sleep(.5)
+  key('w',ctrl=True);wait(lambda:window() is None)
   dbus(menu,'com.canonical.dbusmenu.Event','1','clicked','<0>','0');wait(window)
   second=subprocess.run([str(BUILD/'dome-tray'),'--devices'],env=env,capture_output=True,timeout=4);assert second.returncode==0
   assert len([w for w in d.screen().root.query_tree().children if w.get_wm_class() and 'org.domed.Tray' in w.get_wm_class()])==1
   log=(out/'ui-frontend.log').read_text();assert 'FLTK GPU widgets:' in log,log
   w=wait(window);w.set_input_focus(X.RevertToParent,X.CurrentTime);d.sync();key('q',ctrl=True);assert manager.wait(timeout=4)==0
   # Starting directly on a service page must also survive closing the window.
-  manager=start([str(BUILD/'dome-tray'),'--wallets'],env,'ui-direct-frontend.log')
+  manager=start([str(BUILD/'fcitx5-configuration-fltk'),'fcitx://config/global'],env,'ui-direct-frontend.log')
   w=wait(window);w.set_input_focus(X.RevertToParent,X.CurrentTime);d.sync();key('w',ctrl=True)
   wait(lambda:window() is None);assert manager.poll() is None
   dbus(menu,'com.canonical.dbusmenu.Event','1','clicked','<0>','0');wait(window)
-  print('PASS: one tray entry, four manager pages, embedded ARGB icons, GPU presentation, single-instance routing, close/Escape/Ctrl+W persistence and explicit Quit')
+  print('PASS: one tray entry, four pages, flags, Fcitx method/group/configuration submenus, fcitx5-configuration-fltk URI routing, GPU presentation, close/restore and explicit Quit')
  finally:
   for p in reversed(processes):p.terminate()
   for p in reversed(processes):

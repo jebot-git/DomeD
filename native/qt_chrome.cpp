@@ -13,6 +13,7 @@
 #include <QtCore/QDir>
 #include <QtCore/QFileInfo>
 #include <cstring>
+#include "keyboard-flags.h"
 static QApplication *app() {
     static int argc=5;static char name[]="dome-qt",platform[]="-platform",offscreen[]="offscreen",theme[]="-platformtheme",generic[]="generic";
     static char *argv[]={name,platform,offscreen,theme,generic,nullptr};
@@ -131,10 +132,14 @@ extern "C" int dome_qt_paint(const char *json,unsigned char *pixels,int length) 
     for(int i=0;i<headers.size();++i){auto header=headers[i].toObject();int width=header["width"].toInt();QRect rect(header["x"].toInt(),0,width,35);QFont font=app()->font();font.setBold(i==1);p.setFont(font);if(i==menu)p.fillRect(rect,selection);p.setPen(header["enabled"].toBool()?foreground:muted);p.drawText(rect,Qt::AlignCenter,p.fontMetrics().elidedText(header["text"].toString(),Qt::ElideRight,width-14));}
     p.restore();
     p.setFont(app()->font());p.setPen(foreground);p.drawText(QRect(w-168,0,152,35),Qt::AlignRight|Qt::AlignVCenter,QDateTime::currentDateTime().toString("ddd HH:mm"));
-    p.drawText(QRect(w-220,0,44,35),Qt::AlignCenter,o["keyboard"].toString());
+    QPixmap keyboardFlag;
+    keyboardFlag.loadFromData(QByteArray::fromStdString(dx_flags::svg(o["keyboard_flag"].toString("generic").toStdString(),foreground.name().toStdString())),"SVG");
+    if(o["tray"].toObject()["keyboard_menu"].toBool()&&!o["tray"].toObject()["menu"].isNull())p.fillRect(QRect(w-220,0,44,35),selection);
+    if(!keyboardFlag.isNull())p.drawPixmap(QRect(w-220,6,24,24),keyboardFlag);
+    p.drawText(QRect(w-195,0,19,35),Qt::AlignVCenter,o["keyboard"].toString());
     auto tray=o["tray"].toObject();auto extras=tray["items"].toArray();int tx=w-220-extras.size()*28;
     for(int index=0;index<extras.size();++index){auto item=extras[index].toObject();int x=tx+index*28;
-        if((!tray["menu"].isNull()&&tray["menu"].toInt(-1)==index)||(item["key"].toString()=="dome.audio"&&o["audio"].isObject())||(item["key"].toString()=="dome.clipboard"&&o["history"].toObject()["kind"].toString()=="clipboard")||(item["key"].toString()=="dome.notifications"&&o["history"].toObject()["kind"].toString()=="notifications"))p.fillRect(QRect(x,0,28,35),selection);
+        if((!tray["keyboard_menu"].toBool()&&!tray["menu"].isNull()&&tray["menu"].toInt(-1)==index)||(item["key"].toString()=="dome.audio"&&o["audio"].isObject())||(item["key"].toString()=="dome.clipboard"&&o["history"].toObject()["kind"].toString()=="clipboard")||(item["key"].toString()=="dome.notifications"&&o["history"].toObject()["kind"].toString()=="notifications"))p.fillRect(QRect(x,0,28,35),selection);
         p.drawImage(x+3,7,trayImage(item,foreground));if(item["attention"].toBool()){p.setPen(accent);p.drawLine(x+10,32,x+18,32);}
     }
     p.fillRect(0,h-60,w,60,barBackground);p.setPen(foreground);p.drawText(QRect(12,h-60,86,60),Qt::AlignVCenter,"⌕  Launch");p.drawText(QRect(w-240,h-60,140,60),Qt::AlignVCenter,"▦  Desktops");p.drawText(QRect(w-90,h-60,86,60),Qt::AlignCenter,o["xr_active"].toBool()?"Desktop":"XR");
@@ -192,7 +197,7 @@ extern "C" int dome_qt_paint(const char *json,unsigned char *pixels,int length) 
         }
         p.restore();
     }
-    if(!tray["menu"].isNull()&&!tray["menu"].isUndefined()){auto rows=tray["rows"].toArray();int index=tray["menu"].toInt();int x=qBound(4,w-220-(extras.size()-index)*28,w-284);p.fillRect(QRect(x,36,280,rows.size()*28+8),background);for(int n=0;n<rows.size();++n){auto row=rows[n].toObject();QStyleOptionMenuItem item;item.rect=QRect(x+3,40+n*28,274,28);item.text=row["text"].toString();item.state=row["enabled"].toBool()?QStyle::State_Enabled:QStyle::State_None;if(n==tray["selected"].toInt(-1))item.state|=QStyle::State_Selected;item.menuItemType=row["separator"].toBool()?QStyleOptionMenuItem::Separator:(row["submenu"].toBool()?QStyleOptionMenuItem::SubMenu:QStyleOptionMenuItem::Normal);item.checked=row["checked"].toBool();item.checkType=row["checkable"].toBool()?QStyleOptionMenuItem::NonExclusive:QStyleOptionMenuItem::NotCheckable;item.palette=menuPalette;if(!row["enabled"].toBool())item.palette.setCurrentColorGroup(QPalette::Disabled);app()->style()->drawControl(QStyle::CE_MenuItem,&item,&p);}}
+    if(!tray["menu"].isNull()&&!tray["menu"].isUndefined()){auto rows=tray["rows"].toArray();int index=tray["menu"].toInt();int x=qBound(4,tray["keyboard_menu"].toBool()?w-284:w-220-(extras.size()-index)*28,qMax(4,w-284));p.fillRect(QRect(x,36,280,rows.size()*28+8),background);for(int n=0;n<rows.size();++n){auto row=rows[n].toObject();QStyleOptionMenuItem item;item.rect=QRect(x+3,40+n*28,274,28);item.text=row["text"].toString();if(row["icon"].toString().startsWith("flag-")){QPixmap flag;flag.loadFromData(QByteArray::fromStdString(dx_flags::svg(row["icon"].toString().mid(5).toStdString(),foreground.name().toStdString())),"SVG");item.icon=QIcon(flag);}item.state=row["enabled"].toBool()?QStyle::State_Enabled:QStyle::State_None;if(n==tray["selected"].toInt(-1))item.state|=QStyle::State_Selected;item.menuItemType=row["separator"].toBool()?QStyleOptionMenuItem::Separator:(row["submenu"].toBool()?QStyleOptionMenuItem::SubMenu:QStyleOptionMenuItem::Normal);item.checked=row["checked"].toBool();item.checkType=row["checkable"].toBool()?QStyleOptionMenuItem::NonExclusive:QStyleOptionMenuItem::NotCheckable;item.palette=menuPalette;if(!row["enabled"].toBool())item.palette.setCurrentColorGroup(QPalette::Disabled);app()->style()->drawControl(QStyle::CE_MenuItem,&item,&p);}}
     auto xrSettings=o["xr_settings"].toObject();
     if(!xrSettings.isEmpty()){
         int x=xrSettings["x"].toInt(),y=xrSettings["y"].toInt(),sw=xrSettings["w"].toInt(),sh=xrSettings["h"].toInt();

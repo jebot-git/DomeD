@@ -7,6 +7,7 @@ fn main() {
     println!("cargo:rerun-if-changed=native/qt_chrome.cpp");
     println!("cargo:rerun-if-changed=native/fltk_appearance.h");
     println!("cargo:rerun-if-changed=native/suite-icons.h");
+    println!("cargo:rerun-if-changed=native/keyboard-flags.h");
     println!("cargo:rerun-if-changed=native/theme_icons.hpp");
     println!("cargo:rerun-if-changed=native/gpu-window.h");
     println!("cargo:rerun-if-changed=native/bitmap_fonts.hpp");

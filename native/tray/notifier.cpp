@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "notifier.h"
+#include "input-menu.h"
 #include "tray-icon.h"
 #include <FL/Fl_PNG_Image.H>
 #include <cstring>
@@ -28,6 +29,7 @@ struct Notifier::Impl {
   guint watcher = 0;
   std::vector<Icon> icons;
   std::function<void(const std::string &)> show;
+  std::unique_ptr<InputMenu> inputMenu;
   static GVariant *pixmaps() {
     static Fl_PNG_Image small("tray-applications-24", tray_icon_24,
                               sizeof(tray_icon_24));
@@ -186,6 +188,7 @@ struct Notifier::Impl {
     if (result != 1 && result != 4)
       throw std::runtime_error("Another tray manager owns the session");
     add("/org/domed/Tray", control, this);
+    inputMenu = std::make_unique<InputMenu>(bus, show);
     icons = {{this, "/TrayApplications", "tray", "DomeD tray applications", ""}};
     for (auto &icon : icons) {
       add(icon.path, item, &icon);
@@ -206,6 +209,7 @@ struct Notifier::Impl {
         nullptr, this, nullptr);
   }
   ~Impl() {
+    inputMenu.reset();
     if (watcher)
       g_bus_unwatch_name(watcher);
     if (bus) {

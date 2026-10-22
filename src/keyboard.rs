@@ -16,6 +16,18 @@ pub fn input_method_label(method: &str) -> Option<&'static str> {
         .find(|(id, _)| *id == method)
         .map(|(_, label)| *label)
 }
+/// Only use a national flag for a known layout/engine; custom engines stay neutral.
+pub fn input_method_flag(method: &str) -> &'static str {
+    match method {
+        "anthy" | "mozc" => "jp",
+        "hangul" => "kr",
+        _ => match method.strip_prefix("keyboard-").unwrap_or(method).split('-').next().unwrap_or("") {
+            "us" => "us", "gb" => "gb", "jp" => "jp", "cz" => "cz",
+            "kr" => "kr", "rs" => "rs", "de" => "de", "fr" => "fr",
+            _ => "generic",
+        },
+    }
+}
 
 /// Preserve custom ordering/layout overrides; add only engines actually installed.
 pub fn complete_input_methods(
@@ -156,6 +168,14 @@ impl Keyboard {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn keyboard_flags_cover_default_methods_and_preserve_unknown_engines() {
+        for (method, country) in [("keyboard-us", "us"), ("anthy", "jp"),
+            ("keyboard-cz", "cz"), ("hangul", "kr"), ("keyboard-rs-latin", "rs"),
+            ("custom-engine", "generic")] {
+            assert_eq!(input_method_flag(method), country);
+        }
+    }
     #[test]
     fn input_choices_preserve_custom_methods_and_skip_uninstalled_engines() {
         let existing = vec![

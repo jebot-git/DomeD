@@ -462,9 +462,12 @@ uv run --no-project --with python-xlib --with pillow python scripts/test-steam-n
 
 US English, **Anthy** Japanese, Czech, Korean **Hangul**, and Serbian Cyrillic
 input use the installed Fcitx5 framework. **Super+Space** cycles the available
-methods; **Super+Shift+Space** opens the application launcher. Clicking the
-top-bar US/あ/CZ/한/СР indicator also switches input
-methods. The native login session starts Fcitx5 on a private, trusted Wayland
+methods; **Super+Shift+Space** opens the application launcher. The top-bar
+flag and US/あ/CZ/한/СР label open the native Fcitx5 menu, with input-method,
+group, and configuration submenus. There is one language indicator; Fcitx's
+separate tray icon is suppressed. `fcitx5-configuration-fltk` opens the shared
+FLTK configuration frontend and accepts `fcitx://config/...` targets.
+The native login session starts Fcitx5 on a private, trusted Wayland
 connection. Input-method-v2 and virtual-keyboard privileges are restricted to that
 connection. Text-input-v3 clients receive Japanese preedit, conversion and commit;
 candidate popups use the same desktop and spatial popup pipeline as application

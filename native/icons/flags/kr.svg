@@ -1,0 +1,19 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <title>DomeD keyboard flag: kr</title>
+  <defs>
+    <clipPath id="flag-clip">
+      <rect x="2" y="5" width="20" height="14" rx="2"/>
+    </clipPath>
+  </defs>
+  <g id="flag" clip-path="url(#flag-clip)">
+    <rect x="2" y="5" width="20" height="14" fill="#e4e6e2"/>
+    <circle cx="12" cy="12" r="3.5" fill="#638aa8"/>
+    <path d="M8.5 12a3.5 3.5 0 0 1 7 0c0 2-3.5 2-3.5 0s-3.5-2-3.5 0" fill="#be6570"/>
+    <path d="M5 8h2 M5 9.5h2" stroke="#53606e" stroke-width=".8"/>
+    <path d="M17 8h2 M17 9.5h2" stroke="#53606e" stroke-width=".8"/>
+    <path d="M5 15h2 M5 16.5h2" stroke="#53606e" stroke-width=".8"/>
+    <path d="M17 15h2 M17 16.5h2" stroke="#53606e" stroke-width=".8"/>
+  </g>
+  <rect id="border" x="2" y="5" width="20" height="14" rx="2" fill="none" stroke="#80aabd" stroke-width="1.6"/>
+</svg>

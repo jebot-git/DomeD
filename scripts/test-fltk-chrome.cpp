@@ -21,6 +21,14 @@ int main(int argc, char **argv) try {
   auto cr = cairo_create(surface);
   cairo_set_source_rgb(cr, .12, .145, .176); cairo_paint(cr);
   Paint p(cr, J::object());
+  for (int i = 0; i < 9; ++i) {
+    const char *flags[] = {"us", "jp", "cz", "kr", "rs", "de", "gb", "fr", "generic"};
+    for (bool light : {false, true}) {
+      p.rect(40 + i * 32, light ? 32 : 0, 32, 32, light ? Color{.9,.92,.94} : p.bg);
+      p.icon(40 + i * 32, light ? 36 : 4, 24, std::string("flag-") + flags[i],
+             light ? Color{.1,.15,.2} : p.fg, "", false);
+    }
+  }
   // A private application IconThemePath, using an inherited theme.
   auto dir = std::filesystem::temp_directory_path() / ("dome-icons-test-" + std::to_string(getpid()));
   std::filesystem::create_directories(dir / "Parent/22x22/apps");
@@ -34,6 +42,8 @@ int main(int argc, char **argv) try {
   p.icon(0, 0, 22, "unique-test-icon", p.fg, dir.string());
   cairo_surface_flush(surface);
   auto pixels = (uint32_t *)cairo_image_surface_get_data(surface);
+  require((pixels[16 * 640 + 84] & 0xffffff) == 0xbe6570, "Japanese flag missing its national colour in dark appearance");
+  require((pixels[48 * 640 + 84] & 0xffffff) == 0xbe6570, "Japanese flag colour changed in light appearance");
   require((pixels[10 * 640 + 10] & 0xffffff) == 0xec172a, "Theme icon replaced by generic icon or recoloured");
   // Exercise a font which lacks a UI symbol covered by another bundled font.
   bool checked = false; int y = 40;

@@ -3,6 +3,7 @@
 // never open a toolkit connection to the Wayland server owned by this process.
 // Legacy C ABI names preserve the Rust-owned compositor/input boundary.
 #include "suite-icons.h"
+#include "keyboard-flags.h"
 #include "theme_icons.hpp"
 #include <FL/Fl_Shared_Image.H>
 #include <FL/Fl_PNG_Image.H>
@@ -259,7 +260,8 @@ struct Paint {
     char color[8];
     snprintf(color, sizeof(color), "#%02x%02x%02x", int(tint.r * 255),
              int(tint.g * 255), int(tint.b * 255));
-    auto role = dx_icon::role(name);
+    bool flag = name.rfind("flag-", 0) == 0;
+    auto role = flag ? name : dx_icon::role(name);
     auto key = (themed ? name + theme_path : role) + color + std::to_string(extent);
     struct Raster {
       std::vector<uint32_t> pixels;
@@ -268,9 +270,9 @@ struct Paint {
     static std::map<std::string, Raster> cache;
     auto it = cache.find(key);
     if (it == cache.end()) {
-      auto svg = dx_icon::svg(role, color);
+      auto svg = flag ? dx_flags::svg(name.substr(5), color) : dx_icon::svg(role, color);
       std::unique_ptr<Fl_Image> source;
-      if (themed) {
+      if (themed && !flag) {
         auto path = theme_icons::resolve(name, theme_path, extent);
         if (!path.empty()) {
           auto shared = Fl_Shared_Image::get(path.c_str());
@@ -412,7 +414,10 @@ struct Paint {
       if (yes(row, "checked"))
         text(x + 6, ry, 22, 28, yes(row, "radio") ? "●" : "✓", color);
       int reserve = str(row, "shortcut").empty() ? 28 : 164;
-      text(x + 32, ry, std::max(0, w - 32 - reserve), 28, str(row, "text"),
+      bool flag = str(row, "icon").rfind("flag-", 0) == 0;
+      if (flag) icon(x + 29, ry + 2, 24, str(row, "icon"), color, "", false);
+      int inset = flag ? 60 : 32;
+      text(x + inset, ry, std::max(0, w - inset - reserve), 28, str(row, "text"),
            color);
       text(x + w - 150, ry, 125, 28, str(row, "shortcut"), color);
       if (yes(row, "submenu"))
@@ -550,13 +555,16 @@ extern "C" int dome_qt_paint(const char *json, unsigned char *pixels,
     auto now = time(nullptr);
     strftime(date, sizeof(date), "%a %H:%M", localtime(&now));
     p.text(w - 168, 0, 152, 35, date, p.fg);
-    p.text(w - 220, 0, 44, 35, str(o, "keyboard"), p.fg);
+    if (yes(tray, "keyboard_menu") && !tray["menu"].is_null())
+      p.rect(w - 220, 0, 44, 35, p.sel);
+    p.icon(w - 220, 6, 24, "flag-" + str(o, "keyboard_flag", "generic"), p.fg, "", false);
+    p.text(w - 195, 0, 19, 35, str(o, "keyboard"), p.fg);
     i = 0;
     for (auto &item : extras) {
       int x = w - 220 - (int(extras.size()) - i++) * 28 + 3;
       auto key = str(item, "key");
       bool selected =
-          (!tray["menu"].is_null() && num(tray, "menu", -1) == i - 1) ||
+          (!yes(tray, "keyboard_menu") && !tray["menu"].is_null() && num(tray, "menu", -1) == i - 1) ||
           (key == "dome.audio" && o["audio"].is_object() &&
            !o["audio"].empty()) ||
           (key == "dome.clipboard" &&
@@ -640,7 +648,7 @@ extern "C" int dome_qt_paint(const char *json, unsigned char *pixels,
              num(panel, "width"), num(panel, "selected", -1));
     if (tray.contains("menu") && tray["menu"].is_number_integer())
       p.menu(arr(tray, "rows"),
-             std::clamp(w - 220 - int(extras.size() - num(tray, "menu")) * 28,
+             std::clamp(yes(tray, "keyboard_menu") ? w - 284 : w - 220 - int(extras.size() - num(tray, "menu")) * 28,
                         4, std::max(4, w - 284)),
              36, 280, num(tray, "selected", -1));
     p.taskPopup(obj(o, "task_popup"));

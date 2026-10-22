@@ -41,6 +41,15 @@ pub struct Row {
     pub checked: bool,
     pub checkable: bool,
     pub submenu: bool,
+    pub icon: String,
+    pub radio: bool,
+}
+fn loading_rows() -> Vec<Row> {
+    vec![Row {
+        id: 0, text: "Loading input methods…".into(), enabled: false,
+        separator: false, checked: false, checkable: false, submenu: false,
+        icon: String::new(), radio: false,
+    }]
 }
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct Snapshot {
@@ -50,8 +59,26 @@ pub struct Snapshot {
     pub rows: Vec<Row>,
     pub selected: Option<usize>,
     pub error: String,
+    pub keyboard_menu: bool,
+}
+impl Snapshot {
+    fn active_item(&self) -> Option<Item> {
+        self.menu?;
+        if self.keyboard_menu { Some(keyboard_item()) }
+        else { self.items.get(self.menu?).cloned() }
+    }
+}
+fn keyboard_item() -> Item {
+    Item {
+        key: "dome.keyboard".into(), id: "dome.keyboard".into(),
+        title: "Input methods".into(), icon: String::new(),
+        icon_theme_path: String::new(), pixmap: String::new(), width: 0, height: 0,
+        attention: false, service: "org.domed.Tray".into(),
+        path: "/InputMethods".into(), menu: "/InputMethods/Menu".into(), item_is_menu: true,
+    }
 }
 enum Request {
+    Keyboard,
     Activate(usize, i32, i32, bool),
     Select(usize),
     Close,
@@ -146,6 +173,21 @@ impl Tray {
     pub fn select(&self, index: usize) {
         let _ = self.send.try_send(Request::Select(index));
     }
+    pub fn keyboard(&self) {
+        let mut state = self.snapshot.lock().unwrap();
+        if state.keyboard_menu && state.menu.is_some() {
+            drop(state);
+            self.close();
+            return;
+        }
+        state.menu = Some(0);
+        state.keyboard_menu = true;
+        state.selected = None;
+        state.rows = loading_rows();
+        state.revision += 1;
+        drop(state);
+        let _ = self.send.try_send(Request::Keyboard);
+    }
     pub fn close(&self) {
         let _ = self.send.try_send(Request::Close);
     }
@@ -216,6 +258,8 @@ fn menu_rows(c: &Connection, item: &Item, parent: i32) -> zbus::Result<Vec<Row>>
                     .and_then(|v| i32::try_from(v).ok())
                     == Some(1),
                 submenu: text("children-display") == "submenu",
+                icon: text("icon-name").to_owned(),
+                radio: text("toggle-type") == "radio",
             })
         })
         .collect())
@@ -233,7 +277,8 @@ fn open_native(connection: &Connection, page: &str) -> bool {
         if proxy.call_method("Show", &(page,)).is_ok() { return true; }
     }
     dome::desktop_entries::find_executable("dome-tray")
-        .is_some_and(|program| std::process::Command::new(program).arg(format!("--{page}")).spawn().is_ok())
+        .is_some_and(|program| std::process::Command::new(program)
+            .arg(if page.is_empty() { "--daemon".into() } else { format!("--{page}") }).spawn().is_ok())
 }
 fn run(
     state: Arc<Mutex<Snapshot>>,
@@ -275,6 +320,29 @@ fn run(
         while let Ok(request) = receive.try_recv() {
             let snapshot = state.lock().unwrap().clone();
             match request {
+                Request::Keyboard => {
+                    let mut rows = Err(zbus::Error::Failure("Native Fcitx5 frontend is unavailable".into()));
+                    if open_native(&connection, "") {
+                        for _ in 0..20 {
+                            rows = menu_rows(&connection, &keyboard_item(), 0);
+                            if rows.is_ok() { break; }
+                            std::thread::sleep(Duration::from_millis(25));
+                        }
+                    }
+                    let mut s = state.lock().unwrap();
+                    match rows {
+                        Ok(rows) => {
+                            s.menu = Some(0); s.keyboard_menu = true;
+                            s.selected = rows.iter().position(|r| r.enabled && !r.separator);
+                            s.rows = rows; parents = vec![0]; s.error.clear();
+                        }
+                        Err(error) => {
+                            s.error = error.to_string();
+                            s.menu = None; s.rows.clear();
+                        }
+                    }
+                    s.revision += 1;
+                }
                 Request::Close => {
                     let mut s = state.lock().unwrap();
                     s.menu = None;
@@ -286,8 +354,8 @@ fn run(
                 Request::Back => {
                     if parents.len() > 1 {
                         parents.pop();
-                        if let Some(item) = snapshot.menu.and_then(|i| snapshot.items.get(i)) {
-                            if let Ok(rows) = menu_rows(&connection, item, *parents.last().unwrap()) {
+                        if let Some(item) = snapshot.active_item() {
+                            if let Ok(rows) = menu_rows(&connection, &item, *parents.last().unwrap()) {
                                 let mut s = state.lock().unwrap();
                                 s.selected = rows.iter().position(|r| r.enabled && !r.separator);
                                 s.rows = rows;
@@ -320,6 +388,7 @@ fn run(
                                 Ok(rows) => {
                                     let mut s = state.lock().unwrap();
                                     s.menu = Some(index);
+                                    s.keyboard_menu = false;
                                     s.selected = rows.iter().position(|r| r.enabled && !r.separator);
                                     parents = vec![0];
                                     s.rows = rows;
@@ -350,7 +419,7 @@ fn run(
                     }
                 }
                 Request::Select(index) => {
-                    if let Some(item) = snapshot.menu.and_then(|i| snapshot.items.get(i)) {
+                    if let Some(item) = snapshot.active_item() {
                         if let Some(row) = snapshot
                             .rows
                             .get(index)
@@ -358,13 +427,18 @@ fn run(
                         {
                             let settings = row.text.to_lowercase();
                             if !row.submenu && (settings.contains("configur") || settings.contains("settings") || settings.contains("wallet manager"))
-                                && native_frontend(item).is_some_and(|page| open_native(&connection, page)) {
+                                && native_frontend(&item).is_some_and(|page| open_native(&connection, page)) {
                                 let mut s = state.lock().unwrap();
                                 s.menu = None; s.rows.clear(); s.revision += 1;
                                 continue;
                             }
                             if row.submenu {
-                                let result = menu_rows(&connection, item, row.id);
+                                if snapshot.keyboard_menu {
+                                    let mut s = state.lock().unwrap();
+                                    s.rows = loading_rows(); s.selected = None;
+                                    s.revision += 1;
+                                }
+                                let result = menu_rows(&connection, &item, row.id);
                                 let mut s = state.lock().unwrap();
                                 match result {
                                     Ok(rows) => {
@@ -487,9 +561,12 @@ fn run(
                 item_is_menu,
             });
         }
-        if items.iter().any(|item| item.id == "dome.input") {
-            items.retain(|item| !item.id.to_lowercase().contains("fcitx"));
-        }
+        // The keyboard selector is the single language indicator, regardless
+        // of when Fcitx registers or which service frontend is preferred.
+        items.retain(|item| {
+            let identity = format!("{} {} {}", item.id, item.title, item.service).to_lowercase();
+            !identity.contains("fcitx")
+        });
         if !owner {
             // An item may register before exporting its properties, and live
             // applications can temporarily fail a property read. Only forget
@@ -519,8 +596,10 @@ fn run(
         let before = serde_json::to_string(&s.items)?;
         if serde_json::to_string(&items)? != before {
             s.items = items;
-            s.menu = None;
-            s.rows.clear();
+            if !s.keyboard_menu {
+                s.menu = None;
+                s.rows.clear();
+            }
             s.revision += 1;
         }
         drop(s);
@@ -532,7 +611,7 @@ fn run(
 impl crate::Dome {
     pub fn visible_tray(&self, width: i32) -> Snapshot {
         let mut state = self.tray.state();
-        if let Some(index) = state.menu.as_mut() {
+        if let Some(index) = state.menu.as_mut().filter(|_| !state.keyboard_menu) {
             *index += BUILTIN_COUNT;
         }
         let own = |key: &str, title: &str, attention: bool| Item {
@@ -576,7 +655,7 @@ impl crate::Dome {
             ],
         );
         state.items.truncate(((width - 704).max(0) / 28) as usize);
-        if state.menu.is_some_and(|i| i >= state.items.len()) {
+        if !state.keyboard_menu && state.menu.is_some_and(|i| i >= state.items.len()) {
             state.menu = None;
             state.rows.clear();
             self.tray.close();

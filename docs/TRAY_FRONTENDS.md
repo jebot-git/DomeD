@@ -39,6 +39,30 @@ a page option. Only the explicit File > Quit action terminates the companion.
   opened by those menu actions. Their X11 windows are desktop-only through the
   session's X bridge by default.
 
+The keyboard selector is the single language indicator. In input-method mode,
+clicking its flag opens the FLTK frontend's DBusMenu: **Input methods**, **Input
+method groups**, and **Configuration** submenus, plus toggle/reload actions.
+Method/group radio checks follow Fcitx's actual state. The separate Fcitx
+StatusNotifier item is suppressed even if it registers before the manager.
+Super+Space (or the configured switch shortcut) still cycles methods; Tab,
+arrows, Home/End, Enter/Space, and Escape use DomeD's shared menu navigation in
+desktop and XR. Plain XKB mode retains click-to-cycle behavior.
+
+`fcitx5-configuration-fltk` opens the input-method page in the same manager
+instance. It also accepts `fcitx://config/global`,
+`fcitx://config/inputmethod/ID`, and `fcitx://config/addon/ID` to open a specific
+configuration. It shares the universal application menu, live DomeD palette,
+bitmap fonts, Ctrl+R, Ctrl+W/Escape, Ctrl+Q, and Alt+1..4 page bindings.
+Ctrl+, opens input-method configuration. Global/engine/addon settings use
+Fcitx's GetConfig/SetConfig protocol and preserve fields that were not edited.
+An already running Fcitx instance is observed and controlled without rewriting
+its profile.
+
+Flags use the suite's 24-unit canvas, rounded 1.6-unit outlines and a muted flat
+palette. Editable Inkscape sources are in `native/icons/flags/`; run
+`python3 scripts/embed-keyboard-flags.py` after editing to update the shared
+shell/frontend header. Unknown engines use a neutral keyboard badge.
+
 Session startup runs `kdeconnectd` and the companion. The explicit
 `DOME_TRAY_FRONTEND=qt6` compatibility override retains the external Qt indicator;
 `DOME_START_TRAY=0` disables companion autostart. Existing Polkit, Fcitx engine and
@@ -49,6 +73,7 @@ Tests (private bus and Xvfb; install Python extras through uv):
 ```sh
 TRAY_TEST_PRIVATE_BUS=1 dbus-run-session -- uv run --no-project --with dbus-next python tests/tray/test_services.py
 TRAY_TEST_PRIVATE_BUS=1 dbus-run-session -- uv run --no-project --with dbus-next --with python-xlib --with pillow python tests/tray/test_ui.py
+TRAY_TEST_PRIVATE_BUS=1 dbus-run-session -- uv run --no-project --with dbus-next --with python-xlib --with pillow python tests/tray/test_keyboard_selector.py
 DOME_COMPOSITOR="$PWD/target/release/dome-compositor" python3 scripts/test-xwayland.py
 ```
 

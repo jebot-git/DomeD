@@ -10,12 +10,12 @@ GPU-resident pipeline or hardware execution.
 
 * `DomeD/native/tray`: native FLTK/OpenGL service managers for KDE Connect,
   Fcitx5, KWallet and arbitrary applications exporting StatusNotifier/DBusMenu.
-  It exports three native tray items, a universal application menu, shares DomeD
+  It exports one tray manager entry, a universal application menu, shares DomeD
   appearance, preserves existing daemons, and keeps blocking service work off
   the UI/compositor thread. Existing managed tray activation/settings actions
   open this frontend. Qt frontends require the explicit `DOME_TRAY_FRONTEND=qt6`
-  session override. Fcitx's duplicate external tray item is suppressed while
-  the native input-method item is registered.
+  session override. Fcitx's duplicate external tray item is always suppressed; the keyboard selector
+  opens the native method/group/configuration submenus.
 * Xwayland-satellite connects on a dedicated desktop bridge socket. Translated
   X11 toplevels start desktop-only even when XR has focus; explicit user transfer
   remains available. This is based on connection identity, not mutable WM_CLASS.

@@ -182,9 +182,11 @@ Json methods() {
     auto item = child(list.get(), i);
     auto id = child(item.get(), 0), name = child(item.get(), 1),
          lang = child(item.get(), 5);
+    auto configurable = child(item.get(), 6);
     out["methods"].push_back({{"id", str(id.get())},
                               {"name", str(name.get())},
-                              {"language", str(lang.get())}});
+                              {"language", str(lang.get())},
+                              {"configurable", bool(g_variant_get_boolean(configurable.get()))}});
   }
   r = fc("CurrentInputMethod");
   out["current"] = first(r.get());
@@ -200,8 +202,10 @@ Json methods() {
     for (size_t i = 0; i < g_variant_n_children(list.get()); ++i) {
       auto a = child(list.get(), i);
       auto id = child(a.get(), 0), name = child(a.get(), 1);
+      auto configurable = child(a.get(), 4);
       out["addons"].push_back(
-          {{"id", str(id.get())}, {"name", str(name.get())}});
+          {{"id", str(id.get())}, {"name", str(name.get())},
+           {"configurable", bool(g_variant_get_boolean(configurable.get()))}});
     }
   } catch (...) {
   }

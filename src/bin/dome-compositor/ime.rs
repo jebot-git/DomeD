@@ -34,7 +34,7 @@ impl Ime {
             loop {
                 match receive.recv_timeout(Duration::from_millis(200)) {
                     Ok(Request::Start(stream)) => {
-                        let result = (|| -> Result<std::process::Child, String> {
+                        let result = (|| -> Result<Option<std::process::Child>, String> {
                             let connection = Connection::session().map_err(|e| e.to_string())?;
                             let bus = Proxy::new(
                                 &connection,
@@ -47,10 +47,7 @@ impl Ime {
                                 .call::<_, _, bool>("NameHasOwner", &("org.fcitx.Fcitx5",))
                                 .unwrap_or(true)
                             {
-                                return Err(
-                                    "Fcitx5 already runs on this bus; DomeD will not replace it"
-                                        .into(),
-                                );
+                                return Ok(None);
                             }
                             let config = std::env::var_os("XDG_CONFIG_HOME")
                                 .map(std::path::PathBuf::from)
@@ -99,38 +96,36 @@ impl Ime {
                                         .map_err(std::io::Error::from)
                                 });
                             }
-                            command.spawn().map_err(|e| e.to_string())
+                            command.spawn().map(Some).map_err(|e| e.to_string())
                         })();
                         match result {
                             Ok(p) => {
-                                child = Some(p);
+                                child = p;
                                 configured = false;
                             }
                             Err(e) => shared.lock().unwrap().error = e,
                         }
                     }
                     Ok(Request::Toggle) => {
-                        if child.is_some() {
-                            if let Ok(c) = Connection::session() {
-                                if let Ok(p) = Proxy::new(
-                                    &c,
-                                    "org.fcitx.Fcitx5",
-                                    "/controller",
-                                    "org.fcitx.Fcitx.Controller1",
-                                ) {
-                                    let current = p
-                                        .call::<_, _, String>("CurrentInputMethod", &())
-                                        .unwrap_or_default();
-                                    let methods = method_group(&p).map(|(_, _, methods)| methods);
-                                    if let Ok(methods) = methods {
-                                        if let Some(next) =
-                                            dome::keyboard::next_input_method(&current, &methods)
+                        if let Ok(c) = Connection::session() {
+                            if let Ok(p) = Proxy::new(
+                                &c,
+                                "org.fcitx.Fcitx5",
+                                "/controller",
+                                "org.fcitx.Fcitx.Controller1",
+                            ) {
+                                let current = p
+                                    .call::<_, _, String>("CurrentInputMethod", &())
+                                    .unwrap_or_default();
+                                let methods = method_group(&p).map(|(_, _, methods)| methods);
+                                if let Ok(methods) = methods {
+                                    if let Some(next) =
+                                        dome::keyboard::next_input_method(&current, &methods)
+                                    {
+                                        if let Err(e) =
+                                            p.call::<_, _, ()>("SetCurrentIM", &(next,))
                                         {
-                                            if let Err(e) =
-                                                p.call::<_, _, ()>("SetCurrentIM", &(next,))
-                                            {
-                                                shared.lock().unwrap().error = e.to_string();
-                                            }
+                                            shared.lock().unwrap().error = e.to_string();
                                         }
                                     }
                                 }
@@ -154,48 +149,47 @@ impl Ime {
                         }
                         _ => (),
                     }
-                    if child.is_some() {
-                        if let Ok(c) = Connection::session() {
-                            let owned = Proxy::new(
-                                &c,
-                                "org.freedesktop.DBus",
-                                "/org/freedesktop/DBus",
-                                "org.freedesktop.DBus",
-                            )
+                }
+                if let Ok(c) = Connection::session() {
+                    let owned = Proxy::new(
+                        &c,
+                        "org.freedesktop.DBus",
+                        "/org/freedesktop/DBus",
+                        "org.freedesktop.DBus",
+                    )
+                    .ok()
+                    .and_then(|p| {
+                        p.call::<_, _, bool>("NameHasOwner", &("org.fcitx.Fcitx5",))
                             .ok()
-                            .and_then(|p| {
-                                p.call::<_, _, bool>("NameHasOwner", &("org.fcitx.Fcitx5",))
-                                    .ok()
-                            })
-                            .unwrap_or(false);
-                            if !owned {
-                                continue;
-                            }
+                    })
+                    .unwrap_or(false);
+                    if !owned {
+                        let mut state = shared.lock().unwrap();
+                        state.running = false;
+                        state.method.clear();
+                        continue;
+                    }
 
-                            if let Ok(p) = Proxy::new(
-                                &c,
-                                "org.fcitx.Fcitx5",
-                                "/controller",
-                                "org.fcitx.Fcitx.Controller1",
-                            ) {
-                                if !configured {
-                                    match configure_methods(&p) {
-                                        Ok(()) => configured = true,
-                                        Err(error) => shared.lock().unwrap().error = error,
-                                    }
-                                }
-                                if let Ok(method) =
-                                    p.call::<_, _, String>("CurrentInputMethod", &())
-                                {
-                                    let mut s = shared.lock().unwrap();
-                                    s.method = method;
-                                    s.running = true;
-                                }
+                    if let Ok(p) = Proxy::new(
+                        &c,
+                        "org.fcitx.Fcitx5",
+                        "/controller",
+                        "org.fcitx.Fcitx.Controller1",
+                    ) {
+                        if !configured && child.is_some() {
+                            match configure_methods(&p) {
+                                Ok(()) => configured = true,
+                                Err(error) => shared.lock().unwrap().error = error,
                             }
                         }
+                        if let Ok(method) =
+                            p.call::<_, _, String>("CurrentInputMethod", &())
+                        {
+                            let mut s = shared.lock().unwrap();
+                            s.method = method;
+                            s.running = true;
+                        }
                     }
-                } else {
-                    shared.lock().unwrap().running = false;
                 }
             }
         });

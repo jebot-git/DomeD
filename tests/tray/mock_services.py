@@ -55,15 +55,15 @@ class Share(ServiceInterface):
  def shareText(self,text:'s'):pass
 class Input(ServiceInterface):
  def __init__(self):
-  super().__init__('org.fcitx.Fcitx.Controller1');self.current='keyboard-us';self.group='Default';self.layout='us';self.items=[['keyboard-us','']];self.raw={'Behavior':Variant('a{sv}',{'ActiveByDefault':Variant('s','False'),'Keep':Variant('s','preserved')})}
+  super().__init__('org.fcitx.Fcitx.Controller1');self.current='keyboard-us';self.group='Default';self.layout='us';self.items=[['keyboard-us',''],['anthy','']];self.raw={'Behavior':Variant('a{sv}',{'ActiveByDefault':Variant('s','False'),'Keep':Variant('s','preserved')})}
  @method()
- def AvailableInputMethods(self)->'a(ssssssb)':return [['keyboard-us','English','en','en','us','input-keyboard',False],['anthy','Japanese','ja','ja','jp','anthy',True]]
+ def AvailableInputMethods(self)->'a(ssssssb)':return [['keyboard-us','English','English','input-keyboard','US','en',False],['anthy','Japanese','日本語','anthy','あ','ja',True]]
  @method()
  def CurrentInputMethod(self)->'s':return self.current
  @method()
  def CurrentInputMethodGroup(self)->'s':return self.group
  @method()
- def InputMethodGroups(self)->'as':return ['Default']
+ def InputMethodGroups(self)->'as':return ['Default','Writing']
  @method()
  def InputMethodGroupInfo(self,group:'s')->'sa(ss)':return [self.layout,self.items]
  @method()
@@ -89,7 +89,10 @@ class Input(ServiceInterface):
  @method()
  def GetAddons(self)->'a(sssibb)':return [['classicui','Classic UI','',4,True,True]]
  @method()
- def GetConfig(self,uri:'s')->'va(sa(sssva{sv}))':return [Variant('a{sv}',self.raw),[]]
+ def GetConfig(self,uri:'s')->'va(sa(sssva{sv}))':
+  if os.environ.get('TRAY_FIXTURE_CONFIG_REQUESTS'):
+   with open(os.environ['TRAY_FIXTURE_CONFIG_REQUESTS'],'a') as log:log.write(uri+'\n')
+  return [Variant('a{sv}',self.raw),[]]
  @method()
  def SetConfig(self,uri:'s',data:'v'):self.raw=data.value
 class Wallet(ServiceInterface):
@@ -128,7 +131,7 @@ class Wallet(ServiceInterface):
  @method()
  def close(self,handle:'i',force:'b',app:'s')->'i':self.check(handle,app);assert not force;return 0
 class Watcher(ServiceInterface):
- def __init__(self):super().__init__('org.kde.StatusNotifierWatcher');self.items=['org.domed.Fixture/Item']
+ def __init__(self):super().__init__('org.kde.StatusNotifierWatcher');self.items=['org.domed.Fixture/Item','org.domed.Fixture/Fcitx']
  @method()
  def RegisterStatusNotifierItem(self,service:'s'):self.items.append('org.domed.Tray'+service if service.startswith('/') else service)
  @dbus_property(access=PropertyAccess.READ)
@@ -151,9 +154,20 @@ class Menu(ServiceInterface):
  def GetLayout(self,parent:'i',depth:'i',properties:'as')->'u(ia{sv}av)':return [1,[0,{},[Variant('(ia{sv}av)',[10,{'label':Variant('s','Do _something'),'enabled':Variant('b',True),'toggle-type':Variant('s','checkmark'),'toggle-state':Variant('i',1)},[]])]]]
  @method()
  def Event(self,id:'i',event:'s',value:'v',timestamp:'u'):assert id==10 and event=='clicked'
+class FcitxItem(ServiceInterface):
+ def __init__(self):super().__init__('org.kde.StatusNotifierItem')
+ @dbus_property(access=PropertyAccess.READ)
+ def Id(self)->'s':return 'fcitx5-language'
+ @dbus_property(access=PropertyAccess.READ)
+ def Title(self)->'s':return 'Fcitx5 language indicator'
+ @dbus_property(access=PropertyAccess.READ)
+ def Status(self)->'s':return 'Active'
+ @dbus_property(access=PropertyAccess.READ)
+ def IconPixmap(self)->'a(iiay)':return [[16,16,bytes([255,255,0,255])*256]]
 async def main():
  bus=await MessageBus().connect()
  for name in ['org.kde.kdeconnect','org.fcitx.Fcitx5','org.kde.kwalletd6','org.kde.StatusNotifierWatcher','org.domed.Fixture']:await bus.request_name(name)
  for path,service in [('/modules/kdeconnect',Daemon()),('/modules/kdeconnect/devices/test_phone',Device()),('/modules/kdeconnect/devices/test_phone/battery',Battery()),('/modules/kdeconnect/devices/test_phone/ping',Ping()),('/modules/kdeconnect/devices/test_phone/findmyphone',Find()),('/modules/kdeconnect/devices/test_phone/share',Share()),('/controller',Input()),('/modules/kwalletd6',Wallet()),('/StatusNotifierWatcher',Watcher()),('/Item',Item()),('/Menu',Menu())]:bus.export(path,service)
+ bus.export('/Fcitx',FcitxItem())
  Path(os.environ['TRAY_FIXTURE_READY']).touch();await asyncio.Event().wait()
 asyncio.run(main())

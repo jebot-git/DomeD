@@ -11,6 +11,7 @@ esac
 exec 9>/run/lock/domed-install.lock
 flock -x 9
 files=(usr/local/bin/dome-tray usr/local/bin/dome-session
+    usr/local/bin/fcitx5-configuration-fltk
     usr/local/share/applications/org.domed.Connect.desktop
     usr/local/share/applications/org.domed.InputMethods.desktop
     usr/local/share/applications/org.domed.Wallets.desktop
@@ -35,7 +36,7 @@ install -d -m 0755 /usr/local/share/domed
 (cd /; sha256sum -- "${files[@]}") > /usr/local/share/domed/tray-install.sha256
 chmod 0644 /usr/local/share/domed/tray-install.sha256
 if command -v restorecon >/dev/null; then
-    restorecon /usr/local/bin/dome-tray /usr/local/bin/dome-session "$compositor"
+    restorecon /usr/local/bin/dome-tray /usr/local/bin/fcitx5-configuration-fltk /usr/local/bin/dome-session "$compositor"
 fi
 if command -v update-desktop-database >/dev/null; then update-desktop-database /usr/local/share/applications; fi
 echo "Installed native FLTK tray managers and desktop-only X bridge; backup: $backup"

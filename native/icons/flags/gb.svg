@@ -1,0 +1,18 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <title>DomeD keyboard flag: gb</title>
+  <defs>
+    <clipPath id="flag-clip">
+      <rect x="2" y="5" width="20" height="14" rx="2"/>
+    </clipPath>
+  </defs>
+  <g id="flag" clip-path="url(#flag-clip)">
+    <rect x="2" y="5" width="20" height="14" fill="#e4e6e2"/>
+    <rect x="2" y="5" width="20" height="14" fill="#638aa8"/>
+    <path d="M2 5l20 14 M22 5L2 19" stroke="#e4e6e2" stroke-width="3"/>
+    <path d="M2 5l20 14 M22 5L2 19" stroke="#be6570" stroke-width="1"/>
+    <path d="M12 5v14 M2 12h20" stroke="#e4e6e2" stroke-width="5"/>
+    <path d="M12 5v14 M2 12h20" stroke="#be6570" stroke-width="2.5"/>
+  </g>
+  <rect id="border" x="2" y="5" width="20" height="14" rx="2" fill="none" stroke="#80aabd" stroke-width="1.6"/>
+</svg>

@@ -3,6 +3,7 @@
 #include "gpu-window.h"
 #include "notifier.h"
 #include "services.h"
+#include "keyboard-flags.h"
 #include <FL/Fl_Box.H>
 #include <FL/Fl_Button.H>
 #include <FL/Fl_Choice.H>
@@ -18,11 +19,37 @@
 #include <FL/Fl_Tabs.H>
 #include <FL/fl_ask.H>
 #include <chrono>
+#include <cstring>
 #include <deque>
 #include <functional>
 #include <future>
+#include <map>
 #include <sys/resource.h>
 using services::Json;
+class FlagImage : public Fl_RGB_Image {
+public:
+  explicit FlagImage(const Fl_RGB_Image &source)
+      : Fl_RGB_Image(new uchar[source.w() * source.h() * source.d()],
+                     source.w(), source.h(), source.d()) {
+    alloc_array = 1;
+    auto stride = source.ld() ? source.ld() : source.w() * source.d();
+    for (int y = 0; y < h(); ++y)
+      memcpy(const_cast<uchar *>(array) + y * w() * d(),
+             source.array + y * stride, w() * d());
+  }
+  void draw(int x, int y, int width, int height, int cx = 0, int cy = 0) override {
+    // FLTK's GL widget driver has no Fl_RGB_Image drawing implementation.
+    auto window = dynamic_cast<Fl_Gl_Window *>(Fl_Window::current());
+    float scale = window ? window->pixels_per_unit() : 1.f;
+    glPushAttrib(GL_COLOR_BUFFER_BIT | GL_PIXEL_MODE_BIT | GL_CURRENT_BIT | GL_ENABLE_BIT);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glPixelZoom(scale, -scale);
+    gl_draw_image(array + (cy * w() + cx) * d(), x, y,
+                  std::min(width, w() - cx), std::min(height, h() - cy), d(), w() * d());
+    glPopAttrib();
+  }
+};
 class Manager : public dx::GpuWindow {
   Fl_Menu_Bar menu{0, 0, 940, 28};
   DesktopMenu exported;
@@ -41,7 +68,26 @@ class Manager : public dx::GpuWindow {
   Json selectedTray;
   std::vector<int> parents{0};
   std::string selectedDevice, walletName, selectedFolder, loadedEntry,
-      configUri;
+      configUri, requestedInputConfig;
+  std::map<std::string, std::unique_ptr<Fl_RGB_Image>> flags;
+  unsigned flagForeground = 0;
+  Fl_Image *flag(const std::string &method, const std::string &language = "") {
+    auto country = dx_flags::country(method, language);
+    unsigned char r, g, b;
+    Fl::get_color(FL_FOREGROUND_COLOR, r, g, b);
+    char tint[8];
+    snprintf(tint, sizeof(tint), "#%02x%02x%02x", r, g, b);
+    auto &image = flags[country + tint];
+    if (!image) {
+      auto svg = dx_flags::svg(country, tint);
+      Fl_SVG_Image source(nullptr, svg.c_str());
+      source.resize(24, 24);
+      source.normalize();
+      // The native GL browser driver consumes RGB images directly.
+      image = std::make_unique<FlagImage>(source);
+    }
+    return image.get();
+  }
   int handle = -1;
   Fl_Choice *walletList;
   bool quitting = false;
@@ -94,6 +140,23 @@ class Manager : public dx::GpuWindow {
   }
   static void tick(void *p) {
     auto self = static_cast<Manager *>(p);
+    auto foreground = Fl::get_color(FL_FOREGROUND_COLOR);
+    if (foreground != self->flagForeground && self->inputData.is_object()) {
+      self->flagForeground = foreground;
+      int row = 0;
+      for (auto &method : self->inputData["methods"])
+        self->available->icon(++row, self->flag(method.at("id"), method.value("language", "")));
+      if (self->groupData.is_object()) {
+        row = 0;
+        for (auto &method : self->groupData["methods"]) {
+          std::string language;
+          for (auto &available : self->inputData["methods"])
+            if (available["id"] == method["id"]) language = available.value("language", "");
+          self->enabled->icon(++row, self->flag(method.at("id"), language));
+        }
+      }
+      self->redraw();
+    }
     while (g_main_context_pending(nullptr))
       g_main_context_iteration(nullptr, FALSE);
     if (self->pending.valid() && self->pending.wait_for(std::chrono::seconds(
@@ -107,6 +170,16 @@ class Manager : public dx::GpuWindow {
       } catch (const std::exception &e) {
         self->message(e.what());
       }
+    }
+    if (!self->pending.valid() && !self->requestedInputConfig.empty()) {
+      auto uri = std::move(self->requestedInputConfig);
+      self->requestedInputConfig.clear();
+      if (uri == "fcitx://config/inputmethod/@current") {
+        auto method = self->inputData.is_object()
+                          ? self->inputData.value("current", std::string()) : std::string();
+        if (method.empty()) self->message("No active input method.");
+        else self->loadInputConfig("fcitx://config/inputmethod/" + method);
+      } else self->loadInputConfig(uri);
     }
     Fl::repeat_timeout(.04, tick, p);
   }
@@ -234,10 +307,12 @@ class Manager : public dx::GpuWindow {
       groups->clear();
       configTarget->clear();
       configTarget->add("Global settings");
-      for (auto &m : inputData["methods"])
+      for (auto &m : inputData["methods"]) {
         available->add((m.at("name").get<std::string>() + " (" +
                         m.at("id").get<std::string>() + ")")
                            .c_str());
+        available->icon(available->size(), flag(m.at("id"), m.value("language", "")));
+      }
       int i = 0, chosen = 0;
       for (auto &g : inputData["groups"]) {
         groups->add(g.get<std::string>().c_str());
@@ -272,10 +347,15 @@ class Manager : public dx::GpuWindow {
   }
   void updateGroup() {
     enabled->clear();
-    for (auto &m : groupData["methods"])
+    for (auto &m : groupData["methods"]) {
       enabled->add((m.at("id").get<std::string>() + "  " +
                     m.value("layout", std::string()))
                        .c_str());
+      std::string language;
+      for (auto &method : inputData["methods"])
+        if (method["id"] == m["id"]) language = method.value("language", "");
+      enabled->icon(enabled->size(), flag(m.at("id"), language));
+    }
   }
   void saveGroup() {
     if (groupData.is_null())
@@ -299,7 +379,19 @@ class Manager : public dx::GpuWindow {
       configUri = "fcitx://config/addon/" +
                   inputData["addons"][configTarget->value() - 2]["id"]
                       .get<std::string>();
-    auto uri = configUri;
+    loadInputConfig(configUri);
+  }
+  void loadInputConfig(const std::string &uri) {
+    configUri = uri;
+    configTarget->value(0);
+    for (size_t i = 0; i < inputData["methods"].size(); ++i)
+      if (uri == "fcitx://config/inputmethod/" + inputData["methods"][i]["id"].get<std::string>()) {
+        available->value(i + 1);
+        configTarget->value(1);
+      }
+    for (size_t i = 0; i < inputData["addons"].size(); ++i)
+      if (uri == "fcitx://config/addon/" + inputData["addons"][i]["id"].get<std::string>())
+        configTarget->value(i + 2);
     submit([uri] { return services::inputConfig(uri); },
            [this](Json data) {
              configuration = std::move(data);
@@ -317,7 +409,7 @@ class Manager : public dx::GpuWindow {
     auto it = configuration.begin();
     std::advance(it, i);
     auto value =
-        fl_input(it.key().c_str(), it.value().get<std::string>().c_str());
+        fl_input("%s", it.value().get<std::string>().c_str(), it.key().c_str());
     if (!value)
       return;
     it.value() = value;
@@ -527,6 +619,19 @@ public:
         "&View/&Wallets", FL_ALT + '4',
         [](Fl_Widget *, void *p) { ((Manager *)p)->showPage("wallets"); },
         this);
+    menu.add("&Input methods/&Configure…", FL_CTRL + ',',
+             [](Fl_Widget *, void *p) { ((Manager *)p)->showPage("input"); }, this);
+    menu.add("&Input methods/&Global options…", 0,
+             [](Fl_Widget *, void *p) { ((Manager *)p)->showPage("input:fcitx://config/global"); }, this);
+    menu.add("&Input methods/&Current method…", 0,
+             [](Fl_Widget *, void *p) {
+               ((Manager *)p)->showPage("input:fcitx://config/inputmethod/@current");
+             }, this);
+    menu.add("&Input methods/&Reload configuration", 0,
+             [](Fl_Widget *, void *p) {
+               auto self = static_cast<Manager *>(p);
+               self->command([] { services::inputAction("reload", ""); });
+             }, this);
     menu.add(
         "&Wallet/&New wallet…", 0,
         [](Fl_Widget *, void *p) {
@@ -821,8 +926,12 @@ public:
     hide();
   }
   void showPage(const std::string &name) {
+    requestedInputConfig.clear();
+    const bool input = name == "input" || name.rfind("input:fcitx://config/", 0) == 0;
+    if (name.rfind("input:fcitx://config/", 0) == 0)
+      requestedInputConfig = name.substr(6);
     tabs.value(name == "devices"   ? deviceTab
-               : name == "input"   ? inputTab
+               : input             ? inputTab
                : name == "wallets" ? walletTab
                                    : trayTab);
     show();
@@ -841,8 +950,13 @@ public:
   bool running() { return !quitting; }
 };
 int main(int argc, char **argv) try {
+#ifdef DOME_FCITX_CONFIGURATION
+  bool showWindow = true;
+  std::string page = "input";
+#else
   bool showWindow = false;
   std::string page = "tray";
+#endif
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
     if (a == "--daemon")
@@ -852,9 +966,16 @@ int main(int argc, char **argv) try {
       page = a.substr(2);
       showWindow = true;
     } else if (a == "--help") {
+#ifdef DOME_FCITX_CONFIGURATION
+      puts("fcitx5-configuration-fltk [fcitx://config/global|fcitx://config/inputmethod/ID|fcitx://config/addon/ID]");
+#else
       puts("dome-tray [--daemon|--tray|--devices|--input|--wallets]\n"
            "Close hides the manager; File > Quit exits the tray companion.");
+#endif
       return 0;
+    } else if (a.rfind("fcitx://config/", 0) == 0) {
+      page = "input:" + a;
+      showWindow = true;
     } else
       throw std::runtime_error("Unknown option: " + a);
   }

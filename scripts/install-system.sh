@@ -22,6 +22,7 @@ files=(
     usr/local/share/doc/domed/TRAY_FRONTENDS.md
     usr/local/share/doc/domed/FLTK_GPU_AUDIT.md
     usr/local/bin/dome-tray
+    usr/local/bin/fcitx5-configuration-fltk
     usr/local/share/applications/org.domed.Connect.desktop
     usr/local/share/applications/org.domed.InputMethods.desktop
     usr/local/share/applications/org.domed.Wallets.desktop
@@ -70,7 +71,7 @@ cd /
 sha256sum -- "${files[@]}" > /usr/local/share/domed/install.sha256
 chmod 0644 /usr/local/share/domed/install.sha256
 if command -v restorecon >/dev/null; then
-    restorecon /usr/share/wayland-sessions/dome.desktop /usr/local/bin/dome-* /usr/local/libexec/dome-session-client
+    restorecon /usr/share/wayland-sessions/dome.desktop /usr/local/bin/dome-* /usr/local/bin/fcitx5-configuration-fltk /usr/local/libexec/dome-session-client
 fi
 if command -v update-desktop-database >/dev/null; then update-desktop-database /usr/local/share/applications; fi
 echo 'Installed DomeD in /usr/local and registered the DomeD login session.'
