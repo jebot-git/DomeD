@@ -37,6 +37,7 @@ impl Navigation {
 
 impl Dome {
     pub fn open_launcher(&mut self) {
+        self.clock.open = false;
         self.apps = dome::service::apps();
         self.launcher = true;
         self.launch_query.clear();

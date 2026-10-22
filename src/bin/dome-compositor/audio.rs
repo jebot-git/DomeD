@@ -11,6 +11,7 @@ impl Dome {
         }
     }
     pub fn toggle_audio(&mut self) {
+        self.clock.open = false;
         self.audio_drag = None;
         self.audio_drag_value = None;
         self.audio_open = !self.audio_open;

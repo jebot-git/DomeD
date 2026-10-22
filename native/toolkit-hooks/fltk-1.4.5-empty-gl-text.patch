@@ -1,0 +1,22 @@
+--- a/src/gl_draw.cxx
++++ b/src/gl_draw.cxx
+@@ -425,7 +425,8 @@
+   fl_font(fl_font(), int(fs * Fl_Gl_Window_Driver::gl_scale)); // the font size to use in the GL scene
+   int w = (int)ceil( fl_width(fifo[current].utf8, n) );
+   w = ((w + 3) / 4) * 4; // make w a multiple of 4
+-  int h = fl_height();
++  w = w > 0 ? w : 4;
++  int h = fl_height() > 0 ? fl_height() : 1;
+   fl_graphics_driver->Fl_Graphics_Driver::scale(s); // re-install scaling factor
+   fl_font(fl_font(), fs);
+   fs = int(fs * Fl_Gl_Window_Driver::gl_scale);
+@@ -510,6 +511,9 @@
+ /** draws a utf8 string using an OpenGL texture */
+ void Fl_Gl_Window_Driver::draw_string_with_texture(const char* str, int n)
+ {
++  // Text displays draw empty lines. A zero-width image surface cannot be read.
++  if (!str || n <= 0) return;
++
+   // Check if the raster pos is valid.
+   // If it's not, then drawing it results in undefined behaviour (#1006, #1007).
+   GLint valid;

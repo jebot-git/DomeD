@@ -126,13 +126,18 @@ extern "C" int dome_qt_paint(const char *json,unsigned char *pixels,int length) 
     QStringList labels={QString::fromUtf8("◉"),o["app"].toString(),"File","Edit","View","Window","Help"};int xs[]={0,46,230,280,332,390,470};int widths[]={46,184,50,52,58,80,58};int menu=o["menu"].toInt(-1);
     auto headers=o["menu_headers"].toArray();
     if(headers.isEmpty())for(int i=0;i<labels.size();++i)headers.append(QJsonObject{{"text",labels[i]},{"x",xs[i]},{"width",widths[i]},{"enabled",true}});
-    int menuRight=w-220-o["tray"].toObject()["items"].toArray().size()*28;
+    auto clock=o["clock"].toObject();int clockWidth=clock["width"].toInt(176),reserve=clockWidth+44;
+    int menuRight=w-reserve-o["tray"].toObject()["items"].toArray().size()*28;
     p.save();p.setClipRect(QRect(0,0,qMax(0,menuRight),36));
     for(int i=0;i<headers.size();++i){auto header=headers[i].toObject();int width=header["width"].toInt();QRect rect(header["x"].toInt(),0,width,35);QFont font=app()->font();font.setBold(i==1);p.setFont(font);if(i==menu)p.fillRect(rect,selection);p.setPen(header["enabled"].toBool()?foreground:muted);p.drawText(rect,Qt::AlignCenter,p.fontMetrics().elidedText(header["text"].toString(),Qt::ElideRight,width-14));}
     p.restore();
-    p.setFont(app()->font());p.setPen(foreground);p.drawText(QRect(w-168,0,152,35),Qt::AlignRight|Qt::AlignVCenter,QDateTime::currentDateTime().toString("ddd HH:mm"));
-    p.drawText(QRect(w-220,0,44,35),Qt::AlignCenter,o["keyboard"].toString());
-    auto tray=o["tray"].toObject();auto extras=tray["items"].toArray();int tx=w-220-extras.size()*28;
+    p.setFont(app()->font());p.setPen(foreground);
+    auto secondary=clock["secondary"].toString();
+    if(clock["popup"].isObject())p.fillRect(QRect(w-clockWidth,0,clockWidth,35),selection);
+    p.drawText(QRect(w-clockWidth+8,0,clockWidth-24,secondary.isEmpty()?35:17),Qt::AlignRight|Qt::AlignVCenter,clock.isEmpty()?QDateTime::currentDateTime().toString("ddd HH:mm"):clock["text"].toString());
+    if(!secondary.isEmpty())p.drawText(QRect(w-clockWidth+8,17,clockWidth-24,18),Qt::AlignRight|Qt::AlignVCenter,secondary);
+    p.drawText(QRect(w-reserve,0,44,35),Qt::AlignCenter,o["keyboard"].toString());
+    auto tray=o["tray"].toObject();auto extras=tray["items"].toArray();int tx=w-reserve-extras.size()*28;
     for(int index=0;index<extras.size();++index){auto item=extras[index].toObject();int x=tx+index*28;
         if((!tray["menu"].isNull()&&tray["menu"].toInt(-1)==index)||(item["key"].toString()=="dome.audio"&&o["audio"].isObject())||(item["key"].toString()=="dome.clipboard"&&o["history"].toObject()["kind"].toString()=="clipboard")||(item["key"].toString()=="dome.notifications"&&o["history"].toObject()["kind"].toString()=="notifications"))p.fillRect(QRect(x,0,28,35),selection);
         p.drawImage(x+3,7,trayImage(item,foreground));if(item["attention"].toBool()){p.setPen(accent);p.drawLine(x+10,32,x+18,32);}
@@ -192,7 +197,19 @@ extern "C" int dome_qt_paint(const char *json,unsigned char *pixels,int length) 
         }
         p.restore();
     }
-    if(!tray["menu"].isNull()&&!tray["menu"].isUndefined()){auto rows=tray["rows"].toArray();int index=tray["menu"].toInt();int x=qBound(4,w-220-(extras.size()-index)*28,w-284);p.fillRect(QRect(x,36,280,rows.size()*28+8),background);for(int n=0;n<rows.size();++n){auto row=rows[n].toObject();QStyleOptionMenuItem item;item.rect=QRect(x+3,40+n*28,274,28);item.text=row["text"].toString();item.state=row["enabled"].toBool()?QStyle::State_Enabled:QStyle::State_None;if(n==tray["selected"].toInt(-1))item.state|=QStyle::State_Selected;item.menuItemType=row["separator"].toBool()?QStyleOptionMenuItem::Separator:(row["submenu"].toBool()?QStyleOptionMenuItem::SubMenu:QStyleOptionMenuItem::Normal);item.checked=row["checked"].toBool();item.checkType=row["checkable"].toBool()?QStyleOptionMenuItem::NonExclusive:QStyleOptionMenuItem::NotCheckable;item.palette=menuPalette;if(!row["enabled"].toBool())item.palette.setCurrentColorGroup(QPalette::Disabled);app()->style()->drawControl(QStyle::CE_MenuItem,&item,&p);}}
+    auto calendar=clock["popup"].toObject();
+    if(!calendar.isEmpty()) {
+        int x=calendar["x"].toInt(),y=calendar["y"].toInt(),pw=calendar["w"].toInt(),ph=calendar["h"].toInt();
+        p.save();p.setClipRect(QRect(x,y,pw,ph));p.fillRect(QRect(x,y,pw,ph),background);p.setPen(foreground);
+        p.drawText(QRect(x+8,y+4,36,34),Qt::AlignCenter,"<");p.drawText(QRect(x+48,y+4,pw-96,34),Qt::AlignCenter,calendar["month"].toString());p.drawText(QRect(x+pw-44,y+4,36,34),Qt::AlignCenter,">");
+        QStringList days={"Mon","Tue","Wed","Thu","Fri","Sat","Sun"};double cw=(pw-28.)/7.;
+        for(int i=0;i<7;++i)p.drawText(QRect(x+14+i*cw,y+44,cw,26),Qt::AlignCenter,days[i]);
+        int i=0;for(auto v:calendar["days"].toArray()){auto d=v.toObject();QRect r(x+14+(i%7)*cw,y+72+(i/7)*35,cw,34);++i;if(d["selected"].toBool())p.fillRect(r,selection);p.setPen(d["in_month"].toBool()?foreground:muted);p.drawText(r,Qt::AlignCenter,QString::number(d["day"].toInt()));if(d["today"].toBool())p.fillRect(QRect(r.x()+8,r.bottom()-2,r.width()-16,2),accent);}
+        p.setPen(foreground);p.drawText(QRect(x+14,y+290,pw-28,32),Qt::AlignCenter,calendar["available"].toBool()?"Open date in Penguin Mail":"Penguin Mail is not installed");p.drawText(QRect(x+14,y+330,pw-28,30),Qt::AlignCenter,"Time display settings");
+        if(calendar["settings_open"].toBool()){int row=0;for(auto v:calendar["options"].toArray()){auto a=v.toArray();QRect r(x+14,y+370+row*32,pw-28,31);if(row==calendar["settings_row"].toInt())p.fillRect(r,selection);p.drawText(r,Qt::AlignLeft|Qt::AlignVCenter,(a[1].toBool()?"[x] ":"[ ] ")+a[0].toString());++row;}}
+        p.drawText(QRect(x+14,y+ph-18,pw-28,18),Qt::AlignLeft,calendar["error"].toString());p.restore();
+    }
+    if(!tray["menu"].isNull()&&!tray["menu"].isUndefined()){auto rows=tray["rows"].toArray();int index=tray["menu"].toInt();int x=qBound(4,w-reserve-(extras.size()-index)*28,w-284);p.fillRect(QRect(x,36,280,rows.size()*28+8),background);for(int n=0;n<rows.size();++n){auto row=rows[n].toObject();QStyleOptionMenuItem item;item.rect=QRect(x+3,40+n*28,274,28);item.text=row["text"].toString();item.state=row["enabled"].toBool()?QStyle::State_Enabled:QStyle::State_None;if(n==tray["selected"].toInt(-1))item.state|=QStyle::State_Selected;item.menuItemType=row["separator"].toBool()?QStyleOptionMenuItem::Separator:(row["submenu"].toBool()?QStyleOptionMenuItem::SubMenu:QStyleOptionMenuItem::Normal);item.checked=row["checked"].toBool();item.checkType=row["checkable"].toBool()?QStyleOptionMenuItem::NonExclusive:QStyleOptionMenuItem::NotCheckable;item.palette=menuPalette;if(!row["enabled"].toBool())item.palette.setCurrentColorGroup(QPalette::Disabled);app()->style()->drawControl(QStyle::CE_MenuItem,&item,&p);}}
     auto xrSettings=o["xr_settings"].toObject();
     if(!xrSettings.isEmpty()){
         int x=xrSettings["x"].toInt(),y=xrSettings["y"].toInt(),sw=xrSettings["w"].toInt(),sh=xrSettings["h"].toInt();

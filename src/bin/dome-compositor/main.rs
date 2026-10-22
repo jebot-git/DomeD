@@ -8,6 +8,7 @@ mod rendering;
 mod screencast;
 
 mod audio;
+mod clock;
 mod default_apps;
 mod clipboard;
 mod commands;

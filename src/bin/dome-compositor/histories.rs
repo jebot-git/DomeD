@@ -33,6 +33,7 @@ impl Dome {
         serde_json::json!({"kind":kind,"title":if kind==Kind::Clipboard {"Clipboard history"}else{"Notification history"},"x":x,"y":y,"w":w,"h":h,"rows":rows,"first":first,"visible":visible,"selected":selected})
     }
     pub fn open_history(&mut self, kind: Kind) {
+        self.clock.open = false;
         self.close_audio();
         self.history_panel = if self.history_panel == Some(kind) {
             None

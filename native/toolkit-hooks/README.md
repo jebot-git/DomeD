@@ -77,3 +77,9 @@ The isolated FLTK 1.4.5 build also applies `first-configure`: libdecor windows
 can redraw after their first valid committed configure. Transient dialogs must
 not depend on a redundant second configure or later activation to finish
 exposure; otherwise native file choosers freeze at their first frame.
+
+`fltk-1.4.5-empty-gl-text.patch` prevents the GL text cache from constructing
+a zero-width offscreen surface for empty reader lines or zero-advance strings.
+Empty strings return before caching; remaining zero-width glyph runs receive a
+minimal allocation. Penguin Mail's native reader and composer smoke checks cover
+the original crash.

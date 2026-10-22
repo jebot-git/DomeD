@@ -487,10 +487,12 @@ extern "C" int dome_qt_paint(const char *json, unsigned char *pixels,
                           {{"text", "Window"}, {"x", 390}, {"width", 80}},
                           {{"text", "Help"}, {"x", 470}, {"width", 58}}});
     int i = 0;
+    auto clock = obj(o, "clock");
+    int clockWidth=num(clock,"width",176), reserve=clockWidth+44;
     auto tray = obj(o, "tray");
     auto extras = arr(tray, "items");
     cairo_save(c);
-    cairo_rectangle(c, 0, 0, std::max(0, w - 220 - int(extras.size()) * 28),
+    cairo_rectangle(c, 0, 0, std::max(0, w - reserve - int(extras.size()) * 28),
                     36);
     cairo_clip(c);
     for (auto &header : headers) {
@@ -501,14 +503,20 @@ extern "C" int dome_qt_paint(const char *json, unsigned char *pixels,
       ++i;
     }
     cairo_restore(c);
-    char date[32];
-    auto now = time(nullptr);
-    strftime(date, sizeof(date), "%a %H:%M", localtime(&now));
-    p.text(w - 168, 0, 152, 35, date, p.fg);
-    p.text(w - 220, 0, 44, 35, str(o, "keyboard"), p.fg);
+    if (clock.empty()) {
+      char date[32]; auto now = time(nullptr);
+      strftime(date, sizeof(date), "%a %H:%M", localtime(&now));
+      p.text(w - 168, 0, 152, 35, date, p.fg);
+    } else {
+      if (!obj(clock, "popup").empty()) p.rect(w - clockWidth, 0, clockWidth, 35, p.sel);
+      auto second = str(clock, "secondary");
+      p.text(w - clockWidth + 8, 0, clockWidth - 24, second.empty() ? 35 : 17, str(clock, "text"), p.fg);
+      if (!second.empty()) p.text(w - clockWidth + 8, 17, clockWidth - 24, 18, second, p.fg);
+    }
+    p.text(w - reserve, 0, 44, 35, str(o, "keyboard"), p.fg);
     i = 0;
     for (auto &item : extras) {
-      int x = w - 220 - (int(extras.size()) - i++) * 28 + 3;
+      int x = w - reserve - (int(extras.size()) - i++) * 28 + 3;
       auto key = str(item, "key");
       bool selected =
           (!tray["menu"].is_null() && num(tray, "menu", -1) == i - 1) ||
@@ -595,7 +603,7 @@ extern "C" int dome_qt_paint(const char *json, unsigned char *pixels,
              num(panel, "width"), num(panel, "selected", -1));
     if (tray.contains("menu") && tray["menu"].is_number_integer())
       p.menu(arr(tray, "rows"),
-             std::clamp(w - 220 - int(extras.size() - num(tray, "menu")) * 28,
+             std::clamp(w - reserve - int(extras.size() - num(tray, "menu")) * 28,
                         4, std::max(4, w - 284)),
              36, 280, num(tray, "selected", -1));
     p.taskPopup(obj(o, "task_popup"));
@@ -621,6 +629,38 @@ extern "C" int dome_qt_paint(const char *json, unsigned char *pixels,
       p.button(x + 20, y + ph - 66, 240, 36, "Anchor at headset");
       p.button(x + 280, y + ph - 66, 240, 36, "Restore defaults");
       p.button(x + pw - 140, y + ph - 66, 120, 36, "Close");
+    }
+    auto calendar = obj(obj(o, "clock"), "popup");
+    if (!calendar.empty()) {
+      int x = num(calendar, "x"), y = num(calendar, "y"), pw = num(calendar, "w"), ph = num(calendar, "h");
+      cairo_save(c); cairo_rectangle(c, x, y, pw, ph); cairo_clip(c);
+      p.rect(x, y, pw, ph, p.bg);
+      p.button(x + 8, y + 4, 36, 34, "<");
+      p.text(x + 48, y + 4, pw - 96, 34, str(calendar, "month"), p.fg);
+      p.button(x + pw - 44, y + 4, 36, 34, ">");
+      const char *week[] = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"};
+      double cell = (pw - 28.) / 7.;
+      for (int col = 0; col < 7; ++col) p.text(x + 14 + col * cell, y + 44, cell, 26, week[col], p.muted);
+      int index = 0;
+      for (auto &day : arr(calendar, "days")) {
+        int xx = x + 14 + index % 7 * cell, yy = y + 72 + index / 7 * 35; ++index;
+        if (yes(day, "selected")) p.rect(xx, yy, cell, 34, p.sel);
+        p.text(xx + 7, yy, cell - 14, 34, std::to_string(num(day, "day")), yes(day, "in_month") ? p.fg : p.muted);
+        if (yes(day, "today")) p.rect(xx + 8, yy + 31, cell - 16, 2, p.accent);
+      }
+      p.button(x + 14, y + 290, pw - 28, 32, yes(calendar, "available") ? "Open date in Penguin Mail" : "Penguin Mail is not installed");
+      p.button(x + 14, y + 330, pw - 28, 30, "Time display settings", yes(calendar, "settings_open"));
+      if (yes(calendar, "settings_open")) {
+        int row = 0;
+        for (auto &option : arr(calendar, "options")) {
+          if (row == num(calendar, "settings_row")) p.rect(x + 14, y + 370 + row * 32, pw - 28, 31, p.sel);
+          if (option.is_array() && option.size() == 2) p.text(x + 22, y + 370 + row * 32, pw - 44, 31, std::string(option[1].get<bool>() ? "[x] " : "[ ] ") + option[0].get<std::string>(), p.fg);
+          ++row;
+        }
+      }
+      auto error = str(calendar, "error");
+      if (!error.empty()) p.text(x + 14, y + ph - 18, pw - 28, 18, error, p.accent);
+      cairo_restore(c);
     }
     auto audio = obj(o, "audio");
     if (!audio.empty()) {

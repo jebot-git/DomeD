@@ -396,12 +396,12 @@ impl Dome {
                             }
                             let layout = self.xr_bridge.lock().unwrap().shell.clone();
                             let tray = self.visible_tray(layout.width as i32);
-                            let tx = layout.width as f64 - 220. - tray.items.len() as f64 * 28.;
+                            let tx = layout.width as f64 - self.clock_reserve() as f64 - tray.items.len() as f64 * 28.;
                             if self.shell_modal_open() {
                                 self.shell_click(x, y);
                             } else if y < 36.
                                 && x >= tx
-                                && x < layout.width as f64 - 220.
+                                && x < layout.width as f64 - self.clock_reserve() as f64
                                 && tray.menu.is_none()
                             {
                                 self.activate_tray(
