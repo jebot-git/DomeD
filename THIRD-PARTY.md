@@ -89,3 +89,14 @@ Its corresponding upstream source, modifications and license are staged with it.
 the MIT-licensed de-xr FLTK universal-menu exporter from the cmuxr frontend.
 The service manager talks to KDE Connect, Fcitx5 and KWallet over their public
 D-Bus interfaces; it does not incorporate or link their Qt frontends.
+
+## Optional FLTK translator
+
+`native/translator` runs a separate Python worker using pykakasi 2.3.0
+([upstream](https://github.com/miurahr/pykakasi), GPL-3.0-or-later) and its Japanese
+reading dictionaries. Its pinned dependencies are jaconv 0.5.0 (MIT), Deprecated
+1.3.1 (MIT) and wrapt 2.0.1 (BSD-2-Clause). Their wheel metadata and license files
+are retained in the installed worker's `vendor/` directory. These are fetched at
+build time rather than copied into this source tree. The worker also calls the
+system ICU library (Unicode license) for Korean and other script transliteration.
+The FLTK application, worker and tray implementation in this repository are MIT.

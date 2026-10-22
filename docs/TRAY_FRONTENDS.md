@@ -80,3 +80,11 @@ DOME_COMPOSITOR="$PWD/target/release/dome-compositor" python3 scripts/test-xwayl
 Optional `tests/tray/test_hardware.py` opens a short-lived native window on the
 caller's display, with fake services on a private bus, and checks the actual GL
 renderer. Xvfb/software UI tests do not establish hardware GPU execution.
+
+The optional [DomeD Translator](TRANSLATOR.md) is another native FLTK tray
+application. The standard tray build, stage and installation scripts include it
+(`DOME_BUILD_TRANSLATOR=0` opts out of building/staging it). It translates languages in the current system input group through
+DeepL API Free, with independent clipboard/primary paste and local Japanese/Korean
+transcription. English, Czech and Serbian do not receive transliteration.
+Build it with `scripts/build-translator.sh`; it can run independently of the
+service companion above.

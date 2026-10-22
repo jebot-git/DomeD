@@ -2,6 +2,7 @@
 # Install prepared tray frontends and bridge placement without replacing the suite launcher.
 set -euo pipefail
 [[ $(id -u) -eq 0 ]] || { echo 'Run with sudo -A bash scripts/install-tray.sh STAGE [COMPOSITOR_TARGET]' >&2; exit 1; }
+root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 stage="${1:?Prepared stage directory required}"
 compositor="${2:-/usr/local/bin/dome-compositor}"
 case "$compositor" in
@@ -41,3 +42,10 @@ fi
 if command -v update-desktop-database >/dev/null; then update-desktop-database /usr/local/share/applications; fi
 echo "Installed native FLTK tray managers and desktop-only X bridge; backup: $backup"
 echo 'New DomeD sessions use the native managers. Existing desktop sessions were left running.'
+
+# All base files are installed; release their lock before the translator's
+# verified installer acquires the same lock for its own backup transaction.
+if [[ -f "$stage/translator-manifest.json" ]]; then
+    flock -u 9
+    /usr/bin/python3 "$root/scripts/install-translator.py" "$stage"
+fi

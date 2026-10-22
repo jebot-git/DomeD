@@ -80,3 +80,10 @@ fi
 if command -v update-desktop-database >/dev/null; then update-desktop-database /usr/local/share/applications; fi
 echo 'Installed DomeD in /usr/local and registered the DomeD login session.'
 [[ ! -d "$backup" ]] || echo "Previous installation backup: $backup"
+
+# All base files are installed; release their lock before the translator's
+# verified installer acquires the same lock for its own backup transaction.
+if [[ -f "$stage/translator-manifest.json" ]]; then
+    flock -u 9
+    /usr/bin/python3 "$root/scripts/install-translator.py" "$stage"
+fi

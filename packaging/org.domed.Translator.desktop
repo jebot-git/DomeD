@@ -1,0 +1,18 @@
+[Desktop Entry]
+Type=Application
+Name=DomeD Translator
+Comment=Translate configured input languages with DeepL API Free
+Exec=dome-translator
+Icon=org.domed.Translator
+Terminal=false
+Categories=Utility;
+StartupWMClass=org.domed.Translator
+Actions=Clipboard;Primary;
+
+[Desktop Action Clipboard]
+Name=Paste clipboard
+Exec=dome-translator --clipboard
+
+[Desktop Action Primary]
+Name=Paste primary selection
+Exec=dome-translator --primary

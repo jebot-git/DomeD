@@ -12,3 +12,7 @@ for app in Connect InputMethods Wallets; do
     install -D -m 0644 "$root/packaging/org.domed.$app.desktop" "$stage/usr/local/share/applications/org.domed.$app.desktop"
     desktop-file-validate "$stage/usr/local/share/applications/org.domed.$app.desktop"
 done
+
+if [[ "${DOME_BUILD_TRANSLATOR:-1}" != 0 ]]; then
+    "$root/scripts/stage-translator.sh" "$stage"
+fi

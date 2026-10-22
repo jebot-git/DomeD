@@ -22,6 +22,10 @@ localization remains future work.
 
 ![Dome layout laboratory](docs/preview.png)
 
+The optional [DomeD Translator](docs/TRANSLATOR.md) provides a native FLTK tray
+translator for configured input languages, using DeepL API Free and local script
+transcription. Build it with `scripts/build-translator.sh`.
+
 ## Build and toolkit selection
 
 FLTK is the default Cargo feature. Native compositor builds require the patched
