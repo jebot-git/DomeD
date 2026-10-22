@@ -170,22 +170,26 @@ impl crate::Dome {
         }
     }
     pub fn appearance_click(&mut self, x: f64, y: f64, width: f64, height: f64) {
-        let (left, top) = ((width - 600.) / 2., (height - 500.) / 2.);
-        if x < left || x > left + 600. || y < top || y > top + 500. {
+        let (left, top) = ((width - 600.) / 2., (height - 560.) / 2.);
+        if x < left || x > left + 600. || y < top || y > top + 560. {
             self.appearance_open = false;
             return;
         }
-        if y >= top + 452. {
-            self.appearance_activate(if x < left+300. { 7 } else { 8 }, 1);
+        if y >= top + 512. {
+            self.appearance_activate(if x < left+300. { 8 } else { 9 }, 1);
             return;
         }
         if x < left + 300. || y < top + 60. {
             return;
         }
-        self.appearance_activate(((y - top - 60.) / 48.) as usize, 1);
+        let row = ((y - top - 60.) / 48.) as usize;
+        if row < 8 {
+            self.appearance_activate(row, 1);
+        }
     }
     pub fn appearance_activate(&mut self, row: usize, direction: i32) {
         self.shell_selection = row;
+        crate::qt::normalize_appearance(&mut self.appearance);
         match row {
             0 => self.appearance.light = !self.appearance.light,
             1 => {
@@ -195,27 +199,32 @@ impl crate::Dome {
                 ).unwrap();
             }
             2 => {
-                self.appearance.background = crate::menu_navigation::cycle(
-                    &[[0.025, 0.045, 0.06], [0.16, 0.18, 0.22], [0.52, 0.56, 0.62]],
-                    &self.appearance.background, direction,
-                ).unwrap();
-            }
-            3 => {
                 self.appearance.opacity = crate::menu_navigation::cycle(
-                    &[208, 248, 255], &self.appearance.opacity, direction,
+                    &dome::appearance::CHROME_OPACITIES, &self.appearance.opacity, direction,
                 ).unwrap();
             }
-            4 => {
+            3 | 4 => {
                 let fonts = crate::qt::bitmap_fonts();
-                if fonts.is_empty() { return; }
-                // An old font name falls back to the first face when painting;
-                // cycling must advance from that effective face too.
-                let next = (fonts.iter().position(|f| f.id == self.appearance.font)
-                    .unwrap_or(0) as i32 + direction).rem_euclid(fonts.len() as i32) as usize;
-                self.appearance.font = fonts[next].id.clone();
-                if !fonts[next].sizes.contains(&self.appearance.font_size) {
-                    self.appearance.font_size = fonts[next].sizes[0];
-                }
+                let current = self.appearance.font.split_once(" / ").map(|v| v.0).unwrap_or("");
+                let choices: Vec<_> = if row == 3 {
+                    let mut families = std::collections::BTreeMap::new();
+                    for font in &fonts {
+                        let family = font.id.split_once(" / ").map(|v| v.0).unwrap_or(&font.id);
+                        let entry = families.entry(family).or_insert(font);
+                        if font.id.ends_with(" / Regular") || font.id.ends_with(" / Sans-Serif") { *entry = font; }
+                    }
+                    families.into_values().collect()
+                } else {
+                    fonts.iter().filter(|font| font.id.split_once(" / ").map(|v| v.0) == Some(current)).collect()
+                };
+                if choices.is_empty() { return; }
+                let index = choices.iter().position(|font| if row == 3 {
+                    font.id.split_once(" / ").map(|v| v.0) == Some(current)
+                } else { font.id == self.appearance.font }).unwrap_or(0);
+                let next = (index as i32 + direction).rem_euclid(choices.len() as i32) as usize;
+                self.appearance.font = choices[next].id.clone();
+                self.appearance.font_size = *choices[next].sizes.iter()
+                    .min_by_key(|size| size.abs_diff(self.appearance.font_size)).unwrap();
             }
             5 => {
                 let fonts = crate::qt::bitmap_fonts();
@@ -224,14 +233,20 @@ impl crate::Dome {
                     &font.sizes, &self.appearance.font_size, direction,
                 ) { self.appearance.font_size = size; }
             }
-            6 => self.appearance = Default::default(),
-            7 => { self.default_apps_open(); return; }
-            8 => { self.appearance_open = false; return; }
+            6 => self.appearance.font_scale = if self.appearance.font_scale == 1 { 2 } else { 1 },
+            7 => self.appearance = Default::default(),
+            8 => { self.default_apps_open(); return; }
+            9 => { self.appearance_open = false; return; }
             _ => return,
+        }
+        if let Err(e) = crate::qt::resolved_font(&self.appearance) {
+            self.shell_error = e;
+            return;
         }
         if let Err(e) = self.appearance.save() {
             self.shell_error = e;
         }
+        self.recover_output_layout();
         if let Some(toolkit) = &self.toolkit_appearance { toolkit.update(&self.appearance); }
     }
 }

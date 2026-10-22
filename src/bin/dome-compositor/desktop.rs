@@ -276,8 +276,8 @@ impl DesktopRenderer {
                 continue;
             }
             let dw = geo.size.w + 8;
-            let dh = geo.size.h + 34;
-            if dw < 8 || dh < 34 || dw > 8192 || dh > 8192 {
+            let dh = geo.size.h + state.appearance.caption_height() + 4;
+            if dw < 8 || dh < state.appearance.caption_height() + 4 || dw > 8192 || dh > 8192 {
                 continue;
             }
             let zoomed = state.workbench_zoom.get(&id).is_some_and(|s| s.zoomed);
@@ -286,14 +286,15 @@ impl DesktopRenderer {
                 .filter(|(owner, _, inside)| *owner == id && *inside)
                 .map_or(0, |(_, hit, _)| hit);
             let key = format!(
-                "{dw}:{dh}:{}:{}:{}:{}:{}:{}:{}:{zoomed}:{pressed}",
+                "{dw}:{dh}:{}:{}:{}:{}:{}:{}:{}:{}:{zoomed}:{pressed}",
                 w.title,
                 scene.focused == Some(id),
                 state.appearance.light,
                 state.appearance.accent,
                 state.appearance.opacity,
                 state.appearance.font,
-                state.appearance.font_size
+                state.appearance.font_size,
+                state.appearance.font_scale
             );
             if self
                 .decoration_buffers
@@ -320,7 +321,7 @@ impl DesktopRenderer {
             }
             let deco = MemoryRenderBufferRenderElement::from_buffer(
                 renderer,
-                ((pos.x - 4) as f64, (pos.y - 30) as f64),
+                ((pos.x - 4) as f64, (pos.y - state.appearance.caption_height()) as f64),
                 &self.decoration_buffers[&id].1,
                 None,
                 None,
@@ -332,7 +333,8 @@ impl DesktopRenderer {
         }
         let capture_output = state.space.outputs().find(|o|
             state.space.output_geometry(o).is_some_and(|g| g.loc == origin)).cloned();
-        let background = [state.appearance.background[0], state.appearance.background[1], state.appearance.background[2], 1.];
+        let [r, g, b] = state.appearance.desktop_background();
+        let background = [r, g, b, 1.];
         if let Some(output) = &capture_output {
             crate::screencast::render(renderer, output, origin, &elements, 1, background);
         }
@@ -369,12 +371,7 @@ impl DesktopRenderer {
                 framebuffer,
                 age,
                 &elements,
-                [
-                    state.appearance.background[0],
-                    state.appearance.background[1],
-                    state.appearance.background[2],
-                    1.,
-                ],
+                background,
             )
             .map(|r| r.sync)
             .map_err(|e| format!("Desktop rendering: {e}").into())

@@ -55,6 +55,11 @@ path = "src/bin/dome-preview.rs"
 debug = 0
 
 [[bin]]
+name = "dome-bdf-font"
+path = "src/bin/dome-bdf-font.rs"
+required-features = ["nested"]
+
+[[bin]]
 name="dome-xr"
 path="src/bin/dome-xr.rs"
 required-features=["xr"]

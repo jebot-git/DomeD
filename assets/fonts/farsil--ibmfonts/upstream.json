@@ -1,0 +1,127 @@
+{
+  "repository": "https://github.com/farsil/ibmfonts",
+  "revision": "320d2fccf874b4ef954882079a5f5f15664fd0aa",
+  "format": "BDF only; original bitmap pixels; legacy character codes mapped to Unicode for session text",
+  "files": {
+    "LICENSE": "c5d4f1b9ac9045b6f4d832d8818c84e8f6b957a99ea3c3d4d4c202d7af45264f",
+    "README.md": "1da48d711ed39813702f8733af2a43f0c4ec022aa12a8a023c89cbca3cad4e6f",
+    "bdf/ib16x16u.bdf": "8ac6662b103f7dc0213b30c84a3b16c190abbcac1dd411f7486c7f1f022b78b8",
+    "bdf/ib16x8u.bdf": "883402635b3afa31f243ad68dc6d3ea0cfaaadd0866b8ffe83cae84924e254c6",
+    "bdf/ib8x16u.bdf": "b7898c2eb2fb59f0555f12ed8cf6ad311b35702c95c090b84985d0542827e3df",
+    "bdf/ib8x8u.bdf": "8c380af5f5013ae38abf4db57f4e23ea438390671c84ae1d858755a6d63f78f9",
+    "bdf/ic16x16u.bdf": "045e04646745bc0a4f368a902d84adc238209ca46af631710415121ef2beb560",
+    "bdf/ic8x16u.bdf": "82854176723c20190681eef4a2bfc5fdd47817722725c78eb456bcf647ff16f9",
+    "bdf/ic8x8u.bdf": "1635fd4bc41e45e4a4035e4d67658598989923f6e1db26d60360d1b063debf5b",
+    "bdf/icl16x16u.bdf": "10e41e2a96061757eb8b5f42559a8999547ae60d41a052eaafc4c64f4e922b89",
+    "bdf/icl8x16u.bdf": "e237dc121e30d6459b4a8c2e5f71eca2c35e387f3c4329862c6c515da5107743",
+    "bdf/icl8x8u.bdf": "8f85a17bbc38e7ab9ed97e5e2bdce4da014e90758577974e2ccfbe74f774d55f",
+    "bdf/ie16x14u.bdf": "9eeafe735ad23e1c752102ec229ee02cce7c12c8a9ad1084bf94467429e882da",
+    "bdf/ie18x14u.bdf": "6e3f002a086d656e309769d7e25c4a587a87b8429ecb29f369b668c0d8940970",
+    "bdf/ie8x14u.bdf": "cda78390114abb4e9cd95a557a3aeeefe65418acaf35097e06829272776139f1",
+    "bdf/ie9x14u.bdf": "280a29aef71252b750c4e6cc04ac6a66412ddbefc68544de6a59c951789ca0f8",
+    "bdf/im9x14u.bdf": "6ea3428f981e2060829d6f94c79011d4b7422a4ed58a39847d5b55bc924ea240",
+    "bdf/iv16x16u.bdf": "6dca6ffa662e12c26c89cbb1dc93bf9173bc184fd9c7db050099e945c3457257",
+    "bdf/iv18x16u.bdf": "b80ee23ca1abd045a117ee11be4a122924f747f507012777540c387406920ae7",
+    "bdf/iv8x16u.bdf": "c979c6f355ceebdcc72ac2b2d7bef753a156c3f5105d2185019b66dd16af177f",
+    "bdf/iv9x16u.bdf": "e676d5538ff6095a9f5eac0feabbb9460c0be45f48fb5070c6e7f5239d9d0760"
+  },
+  "fonts": {
+    "bdf/ib16x16u.bdf": {
+      "source_sha256": "afdc6e7d0af654d0979909573b676af5e1b46abe067acbcaf0962466f42c62df",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/ib16x8u.bdf": {
+      "source_sha256": "04e9ac61d0c0285d923ccb0f4282ee52a2e4c8634f39ca3c1a104334e1a42ec0",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/ib8x16u.bdf": {
+      "source_sha256": "ea86a53d88917a89e9772067f4619cfa023cfb86cd1b464c56436c500dcf59f6",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/ib8x8u.bdf": {
+      "source_sha256": "140eb941726a0331b1b04606f26fd4fcc2d2aec9dded8c81e08c5e082d22514b",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/ic16x16u.bdf": {
+      "source_sha256": "dfd9e60212c874b3d51ae9da91d477946e3063d6524a416a085603dbadf645f4",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/ic8x16u.bdf": {
+      "source_sha256": "b4f7948946bf40a46953417991a7ebaa908f585f053e81f794a06475c4b3412f",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/ic8x8u.bdf": {
+      "source_sha256": "8d1f64d99f8add4a8e4a3f8f5e59ee897e6753315c0817a42c41fe70529f66d8",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/icl16x16u.bdf": {
+      "source_sha256": "f9ee083fdb67c8e58d02b1633b761511caeb8bdb69a4fb744c7dea3b0f975246",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/icl8x16u.bdf": {
+      "source_sha256": "a99b54a8a37049093d8fb5902d48a6f059de66758f2ca2c0fb39f23822df2b3e",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/icl8x8u.bdf": {
+      "source_sha256": "8318bfc17fb1c5daa09dd1501633a8d131f3c9ea2a41d99993ed9059a2cdef88",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/ie16x14u.bdf": {
+      "source_sha256": "fab8f9b0343a5b6d6e98384e626cbfebe3b0848f44ce257d21ecc30b3e074503",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/ie18x14u.bdf": {
+      "source_sha256": "77783d5b00d5c3a741b60994ad3b757eba52eac8d6dcf6f98b9bb5a21b2b9d56",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/ie8x14u.bdf": {
+      "source_sha256": "a19926cae285d7d3c9050f736f39c1b9abcd65d51cea1fbcf2700c448c3dcf2c",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/ie9x14u.bdf": {
+      "source_sha256": "164e78e89b398af9e1fa5185c3cad3a0e11c924f322bbc7de33a546f1c455a1d",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/im9x14u.bdf": {
+      "source_sha256": "e1dc70c7cbc09b73eb77ab042d6cc977c877fae3f4ca1545e9c61413e3913bf0",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/iv16x16u.bdf": {
+      "source_sha256": "298e07d2e253367dea8930a77fd17960fe870d70035a0132c9550e09dfd7ca24",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/iv18x16u.bdf": {
+      "source_sha256": "eb20e2790d95c8c6e392537aacd6dbeb06fa61c230dec1a6f0ea32cf1c538899",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/iv8x16u.bdf": {
+      "source_sha256": "a6265fb1ec9c560cc8a81da86531f98c0fdca724f96c4727794cb107ea277ff5",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/iv9x16u.bdf": {
+      "source_sha256": "736c3a7b58375ff2969d5ba5ec92bd400ccff97210c46e6147b2c9f8859f98e1",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    }
+  },
+  "skipped": [],
+  "source_sha256": "f2cd2aea56a342021e015ccdc38fc53e67df06b357a80d4ab8eda9fdcf8c7ad4"
+}

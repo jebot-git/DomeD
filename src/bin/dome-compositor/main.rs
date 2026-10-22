@@ -147,11 +147,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Initialize our offscreen Qt chrome before exporting the client toolkit environment.
     crate::qt::bitmap_fonts();
-    let toolkit_appearance = toolkit_appearance::ToolkitAppearance::start(&dome::appearance::Appearance::load())
+    let mut appearance = dome::appearance::Appearance::load();
+    crate::qt::normalize_appearance(&mut appearance);
+    let _ = crate::qt::resolved_font(&appearance);
+    let toolkit_appearance = toolkit_appearance::ToolkitAppearance::start(&appearance)
         .unwrap_or_else(|error| { eprintln!("Toolkit appearance service: {error}"); None });
     let display: Display<Dome> = Display::new()?;
     let display_handle = display.handle();
     let mut state = Dome::new(&mut event_loop, display);
+    state.appearance = appearance;
     state.toolkit_appearance = toolkit_appearance;
     event_loop.handle().insert_source(
         smithay::reexports::calloop::timer::Timer::from_duration(std::time::Duration::from_millis(20)),

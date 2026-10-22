@@ -22,7 +22,7 @@ fn write_if_changed(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 /// Export every registered face and a Fontconfig allowlist for distributions
 /// that disable bitmap fonts. Re-running this repairs an older session's export
 /// without replacing its themes or restarting the compositor.
-pub fn export(root: &Path, inherited: &str, families: &[String]) -> std::io::Result<PathBuf> {
+pub fn export(root: &Path, inherited: &str, _families: &[String]) -> std::io::Result<PathBuf> {
     let directory = root.join("fonts");
     let mut accepted = String::new();
     for (name, bytes) in crate::bundled_fonts::FONTS {
@@ -33,14 +33,15 @@ pub fn export(root: &Path, inherited: &str, families: &[String]) -> std::io::Res
             xml(&path.to_string_lossy())
         ));
     }
-    for family in families {
-        accepted.push_str(&format!(
-            "<pattern><patelt name=\"family\"><string>{}</string></patelt></pattern>",
-            xml(family)
-        ));
-    }
+    let index = include_bytes!("../assets/fonts/fonts.index");
+    write_if_changed(&directory.join("fonts.index"), index)?;
+    let cache = std::env::var_os("XDG_CACHE_HOME").map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".cache"))
+        .join("de-xr/bdf2x-v1");
+    std::fs::create_dir_all(&cache)?;
+    accepted.push_str("<pattern><patelt name=\"fontformat\"><string>BDF</string></patelt></pattern>");
     let path = root.join("fonts.conf");
-    let configuration = format!("<?xml version=\"1.0\"?><!DOCTYPE fontconfig SYSTEM \"urn:fontconfig:fonts.dtd\"><fontconfig><include ignore_missing=\"yes\">{}</include><dir>{}</dir><cachedir>{}</cachedir><selectfont><acceptfont>{accepted}</acceptfont></selectfont></fontconfig>", xml(inherited), xml(&directory.to_string_lossy()), xml(&root.join("font-cache").to_string_lossy()));
+    let configuration = format!("<?xml version=\"1.0\"?><!DOCTYPE fontconfig SYSTEM \"urn:fontconfig:fonts.dtd\"><fontconfig><include ignore_missing=\"yes\">{}</include><dir>{}</dir><dir>{}</dir><cachedir>{}</cachedir><selectfont><rejectfont><glob>*</glob></rejectfont><acceptfont><glob>*.bdf</glob><glob>*.bdf.gz</glob><glob>*.BDF</glob><glob>*.BDF.gz</glob>{accepted}</acceptfont></selectfont></fontconfig>", xml(inherited), xml(&directory.to_string_lossy()), xml(&cache.to_string_lossy()), xml(&root.join("font-cache").to_string_lossy()));
     write_if_changed(&path, configuration.as_bytes())?;
     Ok(path)
 }
@@ -91,7 +92,7 @@ mod tests {
         std::fs::write(root.join("fonts.conf"), "old session").unwrap();
         let config = export(&root, "/etc/fonts/fonts.conf", &["A&B".into()]).unwrap();
         let data = std::fs::read_to_string(&config).unwrap();
-        assert!(data.contains("A&amp;B"));
+        assert!(!data.contains("A&amp;B"), "Family aliases must not admit outline fonts with the same name");
         assert!(data.contains("dunggeunmo-v1.3/DungGeunMo.bdf"));
         for (name, bytes) in crate::bundled_fonts::FONTS {
             assert_eq!(

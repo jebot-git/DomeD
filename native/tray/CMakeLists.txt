@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.21)
 project(dome-tray LANGUAGES CXX)
 find_package(FLTK 1.4.5 EXACT CONFIG REQUIRED)
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(FONTCONFIG REQUIRED IMPORTED_TARGET fontconfig)
+pkg_check_modules(FONTCONFIG REQUIRED IMPORTED_TARGET fontconfig zlib)
 find_package(Threads REQUIRED)
 
 foreach(size 24 48)

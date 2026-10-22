@@ -21,15 +21,15 @@ static QApplication *app() {
 }
 #include "bitmap_fonts.hpp"
 // Shared by painting and hit testing: close left, zoom then depth at right.
-static QRect workbenchGadget(int width,int hit) {
-    if(hit==1)return QRect(0,0,30,30);
-    if(hit==3)return QRect(width-60,0,30,30);
-    if(hit==6)return QRect(width-30,0,30,30);
+static QRect workbenchGadget(int width,int hit,int caption=30) {
+    if(hit==1)return QRect(0,0,30,caption);
+    if(hit==3)return QRect(width-60,0,30,caption);
+    if(hit==6)return QRect(width-30,0,30,caption);
     return {};
 }
-extern "C" int dome_qt_hit(int width,int height,int x,int y) {
+extern "C" int dome_qt_hit(int width,int height,int x,int y,int caption=30) {
     if(x<0||y<0||x>=width||y>=height)return 0;
-    if(y<30){for(int hit:{1,3,6})if(workbenchGadget(width,hit).contains(x,y))return hit;return 4;}
+    if(y<caption){for(int hit:{1,3,6})if(workbenchGadget(width,hit,caption).contains(x,y))return hit;return 4;}
     if(x<4||x>=width-4||y>=height-4)return 5;
     return 0;
 }
@@ -79,7 +79,7 @@ extern "C" int dome_qt_paint(const char *json,unsigned char *pixels,int length) 
     QColor muted=light?QColor(104,116,132):QColor(146,154,165);
     QColor selection=light?QColor(199,213,232):QColor(63,77,96);
     QColor accent(appearance["accent"].toString("#6babff"));
-    QColor barBackground=background;barBackground.setAlpha(appearance["opacity"].toInt(248));
+    QColor barBackground=background;barBackground.setAlpha(appearance["opacity"].toInt(255));
     QPalette menuPalette=app()->palette();
     for(auto group:{QPalette::Active,QPalette::Inactive,QPalette::Disabled}){
         auto text=group==QPalette::Disabled?muted:foreground;
@@ -89,18 +89,19 @@ extern "C" int dome_qt_paint(const char *json,unsigned char *pixels,int length) 
         menuPalette.setColor(group,QPalette::Mid,muted);
     }
     if(o["kind"].toString()=="frame") {
+        int captionHeight=qMax(30,appearance["font_size"].toInt(16)*appearance["font_scale"].toInt(1)+8);
         bool active=o["active"].toBool();
         QColor border=active?accent:muted;border.setAlpha(active?96:64);
-        p.fillRect(QRect(0,30,4,h-30),border);p.fillRect(QRect(w-4,30,4,h-30),border);p.fillRect(QRect(0,h-4,w,4),border);
+        p.fillRect(QRect(0,captionHeight,4,h-captionHeight),border);p.fillRect(QRect(w-4,captionHeight,4,h-captionHeight),border);p.fillRect(QRect(0,h-4,w,4),border);
         QColor caption=active?(light?accent.lighter(145):accent.darker(190)):background;
-        p.setOpacity(appearance["opacity"].toInt(248)/255.0);
-        p.fillRect(QRect(0,0,w,30),caption);
-        QRect label(38,0,w-106,30);
+        p.setOpacity(appearance["opacity"].toInt(255)/255.0);
+        p.fillRect(QRect(0,0,w,captionHeight),caption);
+        QRect label(38,0,w-106,captionHeight);
         p.setPen(foreground);p.drawText(label,Qt::AlignLeft|Qt::AlignVCenter,p.fontMetrics().elidedText(o["title"].toString(),Qt::ElideRight,label.width()));
         // Workbench relief, square close gadget, size toggle and overlapping depth planes.
         p.setRenderHint(QPainter::Antialiasing,false);
         for(int hit:{1,3,6}){
-            QRect button=workbenchGadget(w,hit).adjusted(1,1,-1,-1);
+            QRect button=workbenchGadget(w,hit,captionHeight).adjusted(1,1,-1,-1);
             bool down=o["pressed"].toInt()==hit;
             p.fillRect(button,down?selection:caption);
             p.setPen(down?caption.darker(180):caption.lighter(160));
@@ -241,10 +242,10 @@ extern "C" int dome_qt_paint(const char *json,unsigned char *pixels,int length) 
     }
     if(o["about"].toBool()){QRect box((w-440)/2,(h-200)/2,440,200);p.fillRect(box,background);p.setPen(foreground);auto info=o["app_info"].toObject();QString text=o["about_is_app"].toBool()?info["name"].toString()+"\n"+info["comment"].toString()+"\n"+info["desktop_id"].toString():"Dome\nExperimental Rust / Smithay compositor\nQt6 desktop chrome · Native OpenXR";p.drawText(box.adjusted(24,24,-24,-24),Qt::AlignCenter|Qt::TextWordWrap,text+"\n\nClick or press a key to close");}
     if(o["appearance_open"].toBool()&&o["keyboard_settings"].isNull()){
-        QRect box((w-600)/2,(h-500)/2,600,500);p.fillRect(box,background);p.setPen(foreground);
+        QRect box((w-600)/2,(h-560)/2,600,560);p.fillRect(box,background);p.setPen(foreground);
         p.drawText(box.adjusted(24,18,-24,-440),Qt::AlignLeft|Qt::AlignVCenter,"Appearance & Input");
         int opacity=barBackground.alpha();
-        QString opacityPreset=opacity==208?"Translucent · 82% (1/3)":opacity==248?"Nearly opaque · 97% (2/3)":opacity==255?"Opaque · 100% (3/3)":QString("Custom · %1%").arg(qRound(opacity*100./255));
+        QString opacityPreset=QString("%1%").arg(qRound(opacity*100./255));
         QString fontName="No Unicode bitmap fonts available",fontSize="Unavailable";
         QString chosen=appearance["font"].toString("Unifont / Sans-Serif");
         for(int i=0;i<bitmapFonts.size();++i){auto f=bitmapFonts[i].toObject();if(f["id"].toString()!=chosen)continue;
@@ -253,12 +254,12 @@ extern "C" int dome_qt_paint(const char *json,unsigned char *pixels,int length) 
             auto sizes=f["sizes"].toArray();int size=app()->font().pixelSize(),sizeIndex=0;for(int n=0;n<sizes.size();++n)if(sizes[n].toInt()==size)sizeIndex=n;
             fontSize=QString("%1 px · native (%2/%3)").arg(size).arg(sizeIndex+1).arg(sizes.size());break;}
         if(!bitmapFonts.isEmpty()&&fontSize=="Unavailable"){fontName="Saved font unavailable";fontSize=QString("%1 px · fallback").arg(app()->font().pixelSize());}
-        QStringList names={"Colour scheme","Accent colour","Desktop background","Chrome opacity · 3 presets","Global font · bitmap only","Font size","Reset settings"};
-        QStringList values={light?"Light":"Dark",accent.name(),"Change",opacityPreset,fontName,fontSize,"Reset"};
+        QStringList names={"Colour scheme","Accent colour","Chrome opacity","Font family · BDF only","Font face","Native size","Font scale","Reset settings"};
+        QStringList values={light?"Light":"Dark",accent.name(),opacityPreset,chosen.section(" / ",0,0),chosen.section(" / ",1),fontSize,QString::number(appearance["font_scale"].toInt(1))+"x","Reset"};
         for(int n=0;n<names.size();++n){int y=box.y()+60+n*48;if(n==o["shell_selection"].toInt()){p.setPen(accent);p.drawRect(QRect(box.x()+12,y-2,576,44));}p.setPen(foreground);p.drawText(QRect(box.x()+24,y,270,40),Qt::AlignVCenter,p.fontMetrics().elidedText(names[n],Qt::ElideRight,270));p.fillRect(QRect(box.x()+300,y,276,40),selection);p.drawText(QRect(box.x()+308,y,260,40),Qt::AlignCenter,p.fontMetrics().elidedText(values[n],Qt::ElideRight,260));}
-        p.setPen(muted);p.drawText(QRect(box.x()+24,box.y()+408,552,28),Qt::AlignCenter,"↑/↓ select · ←/→ adjust · Enter activates");
-        p.fillRect(QRect(box.x()+24,box.y()+452,260,36),selection);p.fillRect(QRect(box.x()+316,box.y()+452,260,36),selection);
-        if(o["shell_selection"].toInt()>=7){p.setPen(accent);p.drawRect(QRect(box.x()+(o["shell_selection"].toInt()==7?24:316),box.y()+452,260,36).adjusted(0,0,-1,-1));}p.setPen(foreground);p.drawText(QRect(box.x()+24,box.y()+452,260,36),Qt::AlignCenter,"Default applications…");p.drawText(QRect(box.x()+316,box.y()+452,260,36),Qt::AlignCenter,"Close · Esc");
+        p.setPen(muted);p.drawText(QRect(box.x()+24,box.y()+468,552,28),Qt::AlignCenter,"↑/↓ select · ←/→ adjust · Enter activates");
+        p.fillRect(QRect(box.x()+24,box.y()+512,260,36),selection);p.fillRect(QRect(box.x()+316,box.y()+512,260,36),selection);
+        if(o["shell_selection"].toInt()>=8){p.setPen(accent);p.drawRect(QRect(box.x()+(o["shell_selection"].toInt()==8?24:316),box.y()+512,260,36).adjusted(0,0,-1,-1));}p.setPen(foreground);p.drawText(QRect(box.x()+24,box.y()+512,260,36),Qt::AlignCenter,"Default applications…");p.drawText(QRect(box.x()+316,box.y()+512,260,36),Qt::AlignCenter,"Close · Esc");
     }
     if(o["appearance_open"].toBool()&&o["keyboard_settings"].isObject()){
         auto k=o["keyboard_settings"].toObject();QRect box((w-600)/2,(h-400)/2,600,400);p.fillRect(box,background);p.setPen(foreground);p.drawText(box.adjusted(24,18,-24,-340),Qt::AlignVCenter,"Keyboard Layouts · desktop and XR");
@@ -355,3 +356,5 @@ extern "C" int dome_qt_paint(const char *json,unsigned char *pixels,int length) 
     }
     return 1;
 }
+
+#include "bdf_font_ffi.hpp"

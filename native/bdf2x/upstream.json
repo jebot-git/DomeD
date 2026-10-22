@@ -1,0 +1,10 @@
+{
+  "repository": "https://github.com/Francesco149/bdf2x",
+  "revision": "68055df8fba05333386f9f74929fa36cda23bf55",
+  "files": {
+    "bdf2x.c": "850eb0303d26c0bb18cad2bf03b2795c9627ccf592285a03c6230cf395a7f35b",
+    "UNLICENSE": "7e12e5df4bae12cb21581ba157ced20e1986a0508dd10d0e8a4ab9a4cf94e85c",
+    "README.md": "5b5dff137d2bdeb09e70354f9de591d8b9f10afef3558ac38fa290a1c3eb0837"
+  },
+  "integration": "../bdf_font.hpp adapts the 2x bitmap algorithm; fixes metadata, negative metrics and padded rows without changing font format."
+}

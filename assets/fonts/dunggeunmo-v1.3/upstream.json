@@ -10,8 +10,8 @@
   "conversion": "uv run --no-project --with freetype-py python assets/fonts/dunggeunmo-v1.3/convert.py /path/to/DungGeunMo.ttf",
   "freetype_version": "2.13.2",
   "files": {
-    "convert.py": "e424980cbeb7e27b2ebc75c74b95cd0f20580dd0bc453f646e255b245cc2bf75",
+    "DungGeunMo.bdf": "1b4fe81216641b32797666b4daa316b87c886561b65e1d670e9d04be1a323eb1",
     "LICENSE": "30c911d29b1bbdbf5a2ffe72732d809760c110aaf87b1d9c46ddd1b573eae6e9",
-    "DungGeunMo.bdf": "1b4fe81216641b32797666b4daa316b87c886561b65e1d670e9d04be1a323eb1"
+    "convert.py": "e424980cbeb7e27b2ebc75c74b95cd0f20580dd0bc453f646e255b245cc2bf75"
   }
 }

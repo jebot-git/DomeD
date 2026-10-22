@@ -26,19 +26,20 @@ enum PortalError {
 fn string(value: impl Into<String>) -> OwnedValue {
     OwnedValue::from(Str::from(value.into()))
 }
-fn family(appearance: &Appearance) -> &str {
-    appearance
-        .font
-        .split_once(" / ")
-        .map_or(appearance.font.as_str(), |(family, _)| family)
+fn family(appearance: &Appearance) -> String {
+    let (family, face) = appearance.font.split_once(" / ").unwrap_or((&appearance.font, "Regular"));
+    let variant = face.find(" [").map(|at| &face[at..]).unwrap_or("");
+    format!("{}{}{}", if appearance.font_scale == 2 { "Dome 2x " } else { "" }, family, variant)
+}
+fn style(appearance: &Appearance) -> &str {
+    let face = appearance.font.split_once(" / ").map_or("Regular", |(_, face)| face);
+    face.split(" [").next().unwrap_or("Regular")
 }
 fn font_name(appearance: &Appearance) -> String {
-    // Dome stores physical pixels; toolkit font descriptions use points at 96 dpi.
-    format!(
-        "{} {}",
-        family(appearance),
-        appearance.font_size as f64 * 0.75
-    )
+    let style = style(appearance);
+    let suffix = if style == "Regular" || style == "Sans-Serif" { String::new() } else { format!(" {style}") };
+    format!("{}{} {}", family(appearance), suffix,
+        appearance.font_size as f64 * appearance.font_scale as f64 * 0.75)
 }
 fn settings(snapshot: &Snapshot) -> Settings {
     let a = &snapshot.appearance;
@@ -139,9 +140,11 @@ fn write_theme(root: &Path, appearance: Appearance) -> std::io::Result<Snapshot>
     let accent = &appearance.accent;
     let colors = format!("@define-color theme_bg_color {bg};\n@define-color theme_fg_color {fg};\n@define-color theme_base_color {base};\n@define-color theme_text_color {fg};\n@define-color theme_selected_bg_color {accent};\n@define-color theme_selected_fg_color #101820;\n@define-color insensitive_fg_color {muted};\n@define-color insensitive_bg_color {bg};\n@define-color insensitive_base_color {base};\n@define-color theme_unfocused_bg_color {bg};\n@define-color theme_unfocused_fg_color {fg};\n@define-color theme_unfocused_text_color {fg};\n@define-color theme_unfocused_selected_bg_color {accent};\n@define-color theme_unfocused_selected_fg_color #101820;\n@define-color accent_bg_color {accent};\n@define-color accent_fg_color #101820;\n");
     let font = format!(
-        "* {{ font-family: {}; font-size: {}px; }}\n",
-        css_string(family(&appearance)),
-        appearance.font_size
+        "* {{ font-family: {}; font-size: {}px; font-weight: {}; font-style: {}; }}\n",
+        css_string(&family(&appearance)),
+        appearance.font_size * appearance.font_scale as u16,
+        if style(&appearance).to_lowercase().contains("bold") { "bold" } else { "normal" },
+        if style(&appearance).to_lowercase().contains("italic") || style(&appearance).to_lowercase().contains("oblique") { "italic" } else { "normal" }
     );
     let gtk3 = format!("@import url(\"resource:///org/gtk/libgtk/theme/Adwaita/gtk-contained{dark}.css\");\n{colors}{font}window, .background {{ background-color: @theme_bg_color; color: @theme_fg_color; }}\nentry, textview text {{ background-color: @theme_base_color; color: @theme_text_color; }}\n*:selected, selection {{ background-color: @theme_selected_bg_color; color: @theme_selected_fg_color; }}\n");
     atomic_write(

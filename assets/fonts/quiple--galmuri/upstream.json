@@ -1,0 +1,66 @@
+{
+  "repository": "https://github.com/quiple/galmuri",
+  "revision": "v2.40.4",
+  "format": "BDF only; original bitmap pixels; legacy character codes mapped to Unicode for session text",
+  "files": {
+    "Galmuri-v2.40.4/Galmuri11-Bold.bdf": "904b61a0962748fe5f7aba263d1511d515cf6b896790f2b38f52c5479ec4bf94",
+    "Galmuri-v2.40.4/Galmuri11-Condensed.bdf": "0fd92db8f3d4af045a436411a170620ead31970cc2e2c00cae342fcfa4fd5d82",
+    "Galmuri-v2.40.4/Galmuri11.bdf": "d4293053a79f77c5bf31fdafbff63799e0d72ee94271a434bd3f419cd9bd5ba3",
+    "Galmuri-v2.40.4/Galmuri14.bdf": "b7a9b0e08f01dbcffd43b0c85e41545c5e2b85e603ef65f52cc99422e5437f92",
+    "Galmuri-v2.40.4/Galmuri7.bdf": "53c6ff2358ecd3d41de32e801b650be997359963b91cccc5df97c830a6dad9b6",
+    "Galmuri-v2.40.4/Galmuri9.bdf": "1cf2059bf3e9a3334ee23e260a716d874f4dbee9686778b4d15c7d3bd9bd6f4b",
+    "Galmuri-v2.40.4/GalmuriMono11.bdf": "80e7bb09063d3dc782211ab6729bdda3d8b00e69814d4c24b88e9248c1d8f584",
+    "Galmuri-v2.40.4/GalmuriMono7.bdf": "5570c08d6ca74edab8c320e4883ff0841dd7012332f2d076c3683b445ca124be",
+    "Galmuri-v2.40.4/GalmuriMono9.bdf": "1c327d6fcb71823a8c17b5739c5505c5a280d18073886c2b3253eecf0e61cbc2",
+    "Galmuri-v2.40.4/LICENSE.txt": "86a3ee9495f942f0243f18c103da9faca27adb88142613edb8bb852e56c892c1"
+  },
+  "fonts": {
+    "Galmuri-v2.40.4/Galmuri11-Bold.bdf": {
+      "source_sha256": "a206ee58122d22e71d5691d353933650828b94364d1a427e6380557753195352",
+      "encoding": "iso10646-1",
+      "unicode_mapping": false
+    },
+    "Galmuri-v2.40.4/Galmuri11-Condensed.bdf": {
+      "source_sha256": "5adbdedb3d118e99cc7e114b746b3cf6f6a46a4642e0ff215d6a431e55901995",
+      "encoding": "iso10646-1",
+      "unicode_mapping": false
+    },
+    "Galmuri-v2.40.4/Galmuri11.bdf": {
+      "source_sha256": "98716d08aa5762e6ce440d5a757d107cb5d3f32a53861878be06c00aacc23304",
+      "encoding": "iso10646-1",
+      "unicode_mapping": false,
+      "family_alias": "Galmuri11 [quiple Galmuri11]"
+    },
+    "Galmuri-v2.40.4/Galmuri14.bdf": {
+      "source_sha256": "316afc1e7b48abf3bbd261b572148610a5fcad9da8e96a7c9de7e910af973bf4",
+      "encoding": "iso10646-1",
+      "unicode_mapping": false
+    },
+    "Galmuri-v2.40.4/Galmuri7.bdf": {
+      "source_sha256": "0ec6b8707e8c47d85995b5b2b507180aed7bcc724792fe5477e998d41f8b075f",
+      "encoding": "iso10646-1",
+      "unicode_mapping": false
+    },
+    "Galmuri-v2.40.4/Galmuri9.bdf": {
+      "source_sha256": "cc9b6d6f660d8391016be7691b3fc3f864bfa3b095f67bc5e830e9b03ce42162",
+      "encoding": "iso10646-1",
+      "unicode_mapping": false
+    },
+    "Galmuri-v2.40.4/GalmuriMono11.bdf": {
+      "source_sha256": "0a27e951cbcd79369a362bd1cf69b41f526fab747058f3ea01fefdcc5ddefb4a",
+      "encoding": "iso10646-1",
+      "unicode_mapping": false
+    },
+    "Galmuri-v2.40.4/GalmuriMono7.bdf": {
+      "source_sha256": "089d8f9cbb4f037d39f136e23827caed7001f9cf1153de5c8069835e768709a4",
+      "encoding": "iso10646-1",
+      "unicode_mapping": false
+    },
+    "Galmuri-v2.40.4/GalmuriMono9.bdf": {
+      "source_sha256": "29e7733dbd1b1109de8d54a861e36cc24f6d6634e4468cbc050f46deccf77679",
+      "encoding": "iso10646-1",
+      "unicode_mapping": false
+    }
+  },
+  "skipped": []
+}

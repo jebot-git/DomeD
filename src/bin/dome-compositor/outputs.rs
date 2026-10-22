@@ -77,8 +77,8 @@ impl Dome {
                 (g.loc.x + g.size.w - 80).max(g.loc.x) as f32,
             );
             let y = w.desktop.y.clamp(
-                (g.loc.y + 66) as f32,
-                (g.loc.y + g.size.h - 100).max(g.loc.y + 66) as f32,
+                (g.loc.y + 36 + self.appearance.caption_height()) as f32,
+                (g.loc.y + g.size.h - 100).max(g.loc.y + 36 + self.appearance.caption_height()) as f32,
             );
             w.desktop.x = x;
             w.desktop.y = y;

@@ -56,6 +56,14 @@ fltk_runtime="$HOME/.local/lib/domed/fltk"
 if [[ "${DOME_FLTK_HOOKS:-1}" != 0 && -f "$fltk_runtime/libfltk.so.1.4" ]]; then
     export LD_LIBRARY_PATH="$fltk_runtime${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 fi
+# Private Pango restores raw BDF shaping/metrics for GTK controls.
+pango_runtime="${DE_XR_FLTK_PREFIX:-/opt/fltk-vr/toolkit}/lib"
+if [[ -f "$pango_runtime/libpangoft2-1.0.so.0" ]]; then
+    export LD_LIBRARY_PATH="$pango_runtime${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+fi
+if [[ -f /usr/local/lib/domed/bitmap/libpangoft2-1.0.so.0 ]]; then
+    export LD_LIBRARY_PATH="/usr/local/lib/domed/bitmap${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+fi
 export DOME_LOGIN_SESSION=1 DOME_BACKEND=drm
 export LIBSEAT_BACKEND="${LIBSEAT_BACKEND:-logind}"
 export DOME_START_XR="${DOME_START_XR:-1}"

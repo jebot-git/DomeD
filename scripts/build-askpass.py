@@ -52,7 +52,8 @@ def main():
     cflags = '-O3 -DNDEBUG -flto'
     includes = subprocess.check_output(['pkg-config', '--cflags', 'fontconfig'], text=True).strip()
     env.update(CFLAGS=cflags, CXXFLAGS=f'{cflags} -std=c++17 {includes} -I{ROOT / "native"} -I{ROOT / "native/pinentry"}',
-               LDFLAGS=f'-flto -Wl,-rpath,{libraries}')
+               LDFLAGS=f'-flto -Wl,-rpath,{libraries}',
+               LIBS=subprocess.check_output(['pkg-config', '--libs', 'fontconfig', 'zlib'], text=True).strip())
     configure = [source / 'configure', '--prefix=/usr/local', '--enable-pinentry-fltk',
                  '--disable-fallback-curses', '--disable-pinentry-curses', '--disable-pinentry-tty',
                  '--disable-pinentry-emacs', '--disable-inside-emacs', '--disable-pinentry-efl',

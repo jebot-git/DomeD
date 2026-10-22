@@ -1,0 +1,20 @@
+{
+  "repository": "https://github.com/akahuku/ufo",
+  "revision": "3bf2333b911a3f1a1c2071c2a849eca3a7032a4f",
+  "format": "BDF only; original bitmap pixels; legacy character codes mapped to Unicode for session text",
+  "files": {
+    "COPYING": "e5d2855a0030128e460e58411d61d91ca846e41cd94e5dce8bd42c8bbab4f7c5",
+    "README.md": "793d10bd73a787b19fc8e3b79ae9052fb85bbf6df595a4dd7969e2795f06cfa6",
+    "build/ufo.bdf": "acb7781a8f33712e7fdb5ca51ba651e07d12c319aa82fddbd9bad87ee30fce0d",
+    "src/COPYRIGHT": "ab1a49c412f34fbbfd9d94a71050ba344d970221898dc3075efcd8f35fe75d5d"
+  },
+  "fonts": {
+    "build/ufo.bdf": {
+      "source_sha256": "acb7781a8f33712e7fdb5ca51ba651e07d12c319aa82fddbd9bad87ee30fce0d",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    }
+  },
+  "skipped": [],
+  "source_sha256": "5cc53c39db9fe7c23559f33839f006c1e3903979acb94f4494c25ee328004b0b"
+}

@@ -1,0 +1,19 @@
+{
+  "repository": "https://github.com/stark/siji",
+  "revision": "c691f200c1c66e76daa2afc9cbbd1aa39045c906",
+  "format": "BDF only; original bitmap pixels; legacy character codes mapped to Unicode for session text",
+  "files": {
+    "LICENSE": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643",
+    "Readme.md": "7c5ac8bf9240a04831319fc0460f9d9bd7d4de5bcba0547ebbc78a8a9210433d",
+    "bdf/siji.bdf": "aa7c7d26a2a48e861c2c6e3be1fa5516c6c78b778eeb9492525e44e45e8f5bf2"
+  },
+  "fonts": {
+    "bdf/siji.bdf": {
+      "source_sha256": "a8fb7e661573794b9ddba3661dccb84407dfb7b290e999f063156edb9c26ca2f",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    }
+  },
+  "skipped": [],
+  "source_sha256": "d29a7e038dc43a0f5478d345c3f046b7fb5d7252b8344ac63f4c3342e9bcd0b2"
+}

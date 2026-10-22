@@ -5,8 +5,9 @@
   "source": "https://github.com/quiple/x10y12pxDenkiChipHangul/releases/download/v1.213/x10y12pxDenkiChipHangul.bdf",
   "license": "OFL-1.1",
   "files": {
-    "DenkiChipHangul.bdf": "b2688edf3771fb88a0324fba00f4060cd6ce69dee0aa2dafed4841311d4dfc7b",
+    "DenkiChipHangul.bdf": "229724f1d7d6d6618d084560c74508fc1a49b9c4b17c40fce6eb51209d2047da",
     "OFL.txt": "f171314087e4dda519c07f95186b629b85c8089a319be0152e151f7ef2bfeea4",
+    "normalize.py": "3a8e2d864da62e37f126b0ea9106dd0bd605d162f14c90a69f552d41ec546cc7",
     "upstream.bdf": "1178b5f04f5ef84d8304009c584ccff232cfbce3ed84db2c57a2cfbf96d7f0d1"
   },
   "normalization": "Added final newline, XLFD family/style and ISO10646 charset metadata; set 72 dpi and explicit 12 px metrics. Glyph encodings, advances, bounding boxes and bitmaps are unchanged."

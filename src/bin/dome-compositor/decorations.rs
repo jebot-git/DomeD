@@ -22,10 +22,10 @@ impl Dome {
             }
             let pos = self.space.element_location(window)?;
             let width = w.desktop.w as i32 + 8;
-            let height = w.desktop.h as i32 + 34;
-            let (px, py) = (x - pos.x as f64 + 4., y - pos.y as f64 + 30.);
+            let height = w.desktop.h as i32 + self.appearance.caption_height() + 4;
+            let (px, py) = (x - pos.x as f64 + 4., y - pos.y as f64 + self.appearance.caption_height() as f64);
             if px >= 0. && py >= 0. && px < width as f64 && py < height as f64 {
-                let hit = crate::qt::hit(width, height, px as i32, py as i32);
+                let hit = crate::qt::hit(width, height, px as i32, py as i32, self.appearance.caption_height());
                 return if hit == 0 { None } else { Some((id, hit)) };
             }
         }
@@ -51,7 +51,7 @@ impl Dome {
                     resize: hit == 5,
                     edges: [
                         x < rect.x as f64,
-                        y < (rect.y - 26.) as f64,
+                        y < (rect.y - (self.appearance.caption_height() - 4) as f32) as f64,
                         x >= (rect.x + rect.w) as f64,
                         y >= (rect.y + rect.h) as f64,
                     ],
@@ -97,7 +97,7 @@ impl Dome {
                     },
                     y: if top {
                         (d.rect.y + d.rect.h - h)
-                            .max(self.output_geometry_at((x, y).into()).loc.y as f32 + 66.)
+                            .max(self.output_geometry_at((x, y).into()).loc.y as f32 + (36 + self.appearance.caption_height()) as f32)
                     } else {
                         d.rect.y
                     },
@@ -108,7 +108,7 @@ impl Dome {
             self.action(Action::DesktopMove {
                 id: d.id,
                 x: d.rect.x + dx,
-                y: (d.rect.y + dy).max(self.output_geometry_at((x, y).into()).loc.y as f32 + 66.),
+                y: (d.rect.y + dy).max(self.output_geometry_at((x, y).into()).loc.y as f32 + (36 + self.appearance.caption_height()) as f32),
             });
         }
         true
@@ -164,9 +164,9 @@ impl Dome {
         );
         let preset = dome::Rect {
             x: g.loc.x as f32 + 4.,
-            y: g.loc.y as f32 + 66.,
+            y: g.loc.y as f32 + (36 + self.appearance.caption_height()) as f32,
             w: (g.size.w - 8).max(160) as f32,
-            h: (g.size.h - 130).max(100) as f32,
+            h: (g.size.h - (100 + self.appearance.caption_height())).max(100) as f32,
         };
         let state = self.workbench_zoom.entry(id).or_insert(ZoomState {
             normal: rect,

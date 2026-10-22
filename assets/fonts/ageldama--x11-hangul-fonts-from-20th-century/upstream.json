@@ -1,0 +1,226 @@
+{
+  "repository": "https://github.com/ageldama/x11-hangul-fonts-from-20th-century",
+  "revision": "852514fb25a3f1595a0868ca0a1d489316fae035",
+  "format": "BDF only; original bitmap pixels; legacy character codes mapped to Unicode for session text",
+  "files": {
+    "99.archive/hanterm304fonts.tar.gz-files/README": "ff0a7627cabbff9459c793da29d1e59c45ed59329022290a0fc24f44f43d83c7",
+    "99.archive/hanyang-font-pcf.tar.gz-files/README.hanyang-font": "4ea82c5e8eda83601d21d12920dc7ee1878d3a6ff2a1cb0c6e19a2a02c1d0ec0",
+    "batang10.bdf": "4ffede4d2ee872df4494169e0adaed08b84576189f25ac3887595c571b0f599a",
+    "batang10b.bdf": "275191447503eec5db556b1d2df737af7d5d2237c920538bc9c53ed6151bdd9a",
+    "gulim10.bdf": "0d3d4b9199c38b8c5178783750c4006298a00633faf1a33165f340ed6fef57e1",
+    "gulim10b.bdf": "dd8d7c071324752078f99b6f485fc013c60913abb1e31659233279209537b160",
+    "iyagi16.bdf": "b40a01e8b4b2c11052b5dcc11e8b8f5d58ed82e6863f89b97406ac707b48caed",
+    "iyagis16.bdf": "c1a42aeae276e474fa18c6e86ea14d022aff746e667c617783e0cc3c8805c736",
+    "johabg16.bdf": "2b1e66538ca4306915f1fac1722ff714d13bd03d72356d35960ea16d480def92",
+    "johabm16.bdf": "93b7ce395da8be9ab335f1675a991334bbcee99866bdc25e9e83df2efdc6e1b3",
+    "johabp16.bdf": "56072a5bdfe23951348f7fc084b3e18b3ec94a23cb8b1a37d7e949042fc4184d",
+    "johabsg16.bdf": "3d6eb030123e13cbcfcefa2349743ff9f67d391055f9a002b8b73df462dcbbdd",
+    "johabshg16.bdf": "4ce8f105e42081c7d369a63b6a4c83696891a875cc47af678f19a0960b8b3882",
+    "johabshm16.bdf": "390385a6c3086cd9523c391fe03a82e5146ad3b8dc6c386ee79b933a401ad8f4",
+    "johabshp16.bdf": "2461a730fd6dfca3f13f885d76c03bb910188a25473345727ef696dfdc4dd809",
+    "johabsm16.bdf": "236c5c5cd1825e4488815fb5693c5942a3bafdc956c85339346d5cc096366bcd",
+    "johabsp16.bdf": "97ede31674f74921e9fcc78d7bd3c6fede21d46dbb6d35dcfcc8fdb8c875988d",
+    "kaist-newmj16.bdf": "e80918e5c5f3680bf0ec64eb123febde1e60cbf75b22973f658808c197dcfcea",
+    "kaist-newmj18.bdf": "8b21ac0fbbdeebddfbbc310bdb36afec696e9bbcde99e6ac708b99fc780adf1d",
+    "ks_iyagi16.bdf": "0772ae9cfb64cbc6b48b781bebea4b7e637f3a228aac9c1fc09116e1351e27a1",
+    "ks_philgi16.bdf": "e117e865f2855080afd725b6de20c17b103a8b87d92642a8bb9966577832dfd2",
+    "ptpB08.bdf": "b1b80d96980c78dc0586e077c2916039722bca6d983d65d898e34c3248fa4513",
+    "ptpB10.bdf": "f045aec3c78f86491a13f27c6c1a4995562fc1f68b6ae4e7ad9632227e99e665",
+    "ptpB12.bdf": "3636b714575cdc86fbe4963f8b4d1e6e430ba2232bc94bca03655b5ea17c5d8e",
+    "ptpB14.bdf": "6d9e281b6a8a11aab7861a914428e0e57587b29d9e45c135ac2407750d628ed3",
+    "ptpB18.bdf": "fca1658f8d879b2d5097b18c5c29f57e424c7c1ca05661461a295cad05269bf1",
+    "ptpB24.bdf": "78839df2e0ef26859f32675e6618572b14e18dc7a8f9b1abc188881d220f4d34",
+    "ptpR08.bdf": "dd4c0dd82d81670d897696754cfe0454fe15156f934532c3b3b5941303c5b363",
+    "ptpR10.bdf": "ab197357dab2c416a1caf68cd4aab007aeb2e7fb5cb611b8faa5a52637f5878b",
+    "ptpR12.bdf": "c66ca2d5c3f66ce84d788cda3fc3e0a8e240cda105b70946f7aa7e1d791f2a51",
+    "ptpR14.bdf": "0d68c2cb5045d1967150b9b66e0fc39cb6feed6b5f84872bcde4446a58c5c4e5",
+    "ptpR18.bdf": "49bb6011d5a0c3547950bbedc96d214d608b4628077b58c6a850253fadaf39fd",
+    "ptpR24.bdf": "27662981b06c533206bf053cad6f68993e855d31a61597c5680602a9252df581",
+    "ptptB14.bdf": "33dd07451d91381c964cfb8b39619c5b6fc4131ba3d38a5e1ba0450f2606dffe",
+    "pttpB14.bdf": "daf09b91f1e98db785aeda46abce1fa1dd31f1ff6f7ce12ab638aac32085c5c2"
+  },
+  "fonts": {
+    "batang10.bdf": {
+      "source_sha256": "78b99b6d362182c6635ada9b50c4bf2a94514c9c1fdfc3cc40d8d84816a2a5f8",
+      "encoding": "KSX1001.1997-0",
+      "unicode_mapping": true
+    },
+    "batang10b.bdf": {
+      "source_sha256": "96ebde62e14457865ce9ec12a64b69440bcfc63743e9c4e77d3e51d9fcc229f1",
+      "encoding": "KSX1001.1997-0",
+      "unicode_mapping": true
+    },
+    "gulim10.bdf": {
+      "source_sha256": "954cc3f2e445bc828f90050276aa8c5904398df70fa90fc7d650a9af934ea8e8",
+      "encoding": "KSX1001.1997-0",
+      "unicode_mapping": true
+    },
+    "gulim10b.bdf": {
+      "source_sha256": "56c56f404099677239b3b7ecde87e5c90af6db44ef332fc8158a05a303e00e33",
+      "encoding": "KSX1001.1997-0",
+      "unicode_mapping": true
+    },
+    "iyagi16.bdf": {
+      "source_sha256": "661dcde01d890dba3aae219169a5e0734d57d0561273424dfae0d6613a203ed2",
+      "encoding": "johab-1",
+      "unicode_mapping": true
+    },
+    "iyagis16.bdf": {
+      "source_sha256": "0ba53950aa15a18dd75a22a466b56423ec06a67c4da6e51bfef6cbe88c5732b7",
+      "encoding": "johabsh-1",
+      "unicode_mapping": true,
+      "family_alias": "iyagi [ageldama iyagis16]"
+    },
+    "johabg16.bdf": {
+      "source_sha256": "d90e2e4c1bb7e8aae6f08e5576da1acab4bf5a7abe61db331343357e27156193",
+      "encoding": "JOHAB-1",
+      "unicode_mapping": true
+    },
+    "johabm16.bdf": {
+      "source_sha256": "7247b5045da951fa050790039a3df8a282518b63078ffe34e38773f63b703eb3",
+      "encoding": "JOHAB-1",
+      "unicode_mapping": true
+    },
+    "johabp16.bdf": {
+      "source_sha256": "fb9eea06530291d03c22a46e22f1b9e8cc4cd9135544503a8a07ca20229c2b2d",
+      "encoding": "JOHAB-1",
+      "unicode_mapping": true
+    },
+    "johabsg16.bdf": {
+      "source_sha256": "07decd5cb4145408be9a78308255e3b8fdf9d492af32bdd3204413621c9e11ca",
+      "encoding": "JOHABS-1",
+      "unicode_mapping": true,
+      "family_alias": "Gothic [ageldama johabsg16]"
+    },
+    "johabshg16.bdf": {
+      "source_sha256": "d2ce2a9998a6a7b6f58f22bc750575cca14b50ae2e2e88663442c28f911e07fb",
+      "encoding": "JOHABSH-1",
+      "unicode_mapping": true,
+      "family_alias": "Gothic [ageldama johabshg16]"
+    },
+    "johabshm16.bdf": {
+      "source_sha256": "34a01fc1e70a6dc17c2b1124ee711fd50d0e7ebee75d2a9c1cdd82985f720a84",
+      "encoding": "JOHABSH-1",
+      "unicode_mapping": true,
+      "family_alias": "Myeongjo [ageldama johabshm16]"
+    },
+    "johabshp16.bdf": {
+      "source_sha256": "ac482ae69a9dc6c960c237fd79b3ae9b746f31800cd7c66d78c93ba7d724895b",
+      "encoding": "JOHABSH-1",
+      "unicode_mapping": true,
+      "family_alias": "Philgi [ageldama johabshp16]"
+    },
+    "johabsm16.bdf": {
+      "source_sha256": "b5b2b7cca256dff4b32561b65b718be84930510cdf08412c8567dcb143987c3b",
+      "encoding": "JOHABS-1",
+      "unicode_mapping": true,
+      "family_alias": "Myeongjo [ageldama johabsm16]"
+    },
+    "johabsp16.bdf": {
+      "source_sha256": "1f236ac4bd02649f2b21db9b56eef7794919a0b65939b9bb2f5c254e5b5bfac4",
+      "encoding": "JOHABS-1",
+      "unicode_mapping": true,
+      "family_alias": "Philgi [ageldama johabsp16]"
+    },
+    "kaist-newmj16.bdf": {
+      "source_sha256": "250fb21a394dd7c5c4c2cd825daaf19ac584629c60544fb09e29307f08835a04",
+      "encoding": "ksc5601.1987-0",
+      "unicode_mapping": true
+    },
+    "kaist-newmj18.bdf": {
+      "source_sha256": "614ba9c4b2823ec1b91fc477e34ec89efb0a11e90c1bc35a01e2fec968ca53c9",
+      "encoding": "ksc5601.1987-0",
+      "unicode_mapping": true
+    },
+    "ks_iyagi16.bdf": {
+      "source_sha256": "1f5bc282e6a7c3c90418f3d86d1bec5af036d55398d71e2d40e6bcdb9468c10e",
+      "encoding": "ksc5601.1987-0",
+      "unicode_mapping": true,
+      "family_alias": "iyagi [ageldama ks_iyagi16]"
+    },
+    "ks_philgi16.bdf": {
+      "source_sha256": "c12abe64c84b450ed3674b143571980ce1e82136c0b5b640d490aaa2f444457e",
+      "encoding": "ksc5601.1987-0",
+      "unicode_mapping": true
+    },
+    "ptpB08.bdf": {
+      "source_sha256": "482fd77baf1a228596bb30622a5d4cfc4af4ccc4c983548bb3eaa4a929e18b81",
+      "encoding": "ksc5601.1987-0",
+      "unicode_mapping": true
+    },
+    "ptpB10.bdf": {
+      "source_sha256": "f0d48d81392a02cf541d0121a095710b84fdc4dddba90996278e1b589e8fa8c5",
+      "encoding": "ksc5601.1987-0",
+      "unicode_mapping": true
+    },
+    "ptpB12.bdf": {
+      "source_sha256": "76708707a4b1600beedc0d1caf0a6c26e11d7fb1403f38db5f17bf0990c8eb24",
+      "encoding": "ksc5601.1987-0",
+      "unicode_mapping": true
+    },
+    "ptpB14.bdf": {
+      "source_sha256": "d01c540da6cad15110752e7c2b02be9dbb01993ea7964681f07ee054b53f195c",
+      "encoding": "ksc5601.1987-0",
+      "unicode_mapping": true
+    },
+    "ptpB18.bdf": {
+      "source_sha256": "5e6e4fbee2dee0e536e8994e2ed37e039c21065acd7b5e93df8dcaccbb9df0f4",
+      "encoding": "ksc5601.1987-0",
+      "unicode_mapping": true
+    },
+    "ptpB24.bdf": {
+      "source_sha256": "518043814a6ea18644d8e666025154197c58f91e061fa9cec9e88fe9538aa55f",
+      "encoding": "ksc5601.1987-0",
+      "unicode_mapping": true
+    },
+    "ptpR08.bdf": {
+      "source_sha256": "1271bcd2ad1180ffb5e99a6d15b699f78165670c26a853a6158f0e4802b75fa3",
+      "encoding": "ksc5601.1987-0",
+      "unicode_mapping": true,
+      "family_alias": "pinetree.precomposed [ageldama ptpR08]"
+    },
+    "ptpR10.bdf": {
+      "source_sha256": "48170c398de71b07efeeb5bf35f1e2c0018c2bcd8e8f33b0d3f1eb346876a025",
+      "encoding": "ksc5601.1987-0",
+      "unicode_mapping": true,
+      "family_alias": "pinetree.precomposed [ageldama ptpR10]"
+    },
+    "ptpR12.bdf": {
+      "source_sha256": "1c8621cf66132c0de4f47c0c0b0d02bd4c38d48fb28271c465f4f8e3866a9cea",
+      "encoding": "ksc5601.1987-0",
+      "unicode_mapping": true,
+      "family_alias": "pinetree.precomposed [ageldama ptpR12]"
+    },
+    "ptpR14.bdf": {
+      "source_sha256": "120d67da543d0b64026f74643a4926ccfa46f31a22b84eb7e2d1a7551a866358",
+      "encoding": "ksc5601.1987-0",
+      "unicode_mapping": true,
+      "family_alias": "pinetree.precomposed [ageldama ptpR14]"
+    },
+    "ptpR18.bdf": {
+      "source_sha256": "510135a04e365754e8030f6b799e7c7d10eb0295f3c8bc72d3c9de2bf12ac269",
+      "encoding": "ksc5601.1987-0",
+      "unicode_mapping": true,
+      "family_alias": "pinetree.precomposed [ageldama ptpR18]"
+    },
+    "ptpR24.bdf": {
+      "source_sha256": "5f2842dacba2946258edf69272ae07fc8392e8499dc11dc4e74adc9eaa2dd006",
+      "encoding": "ksc5601.1987-0",
+      "unicode_mapping": true,
+      "family_alias": "pinetree.precomposed [ageldama ptpR24]"
+    },
+    "ptptB14.bdf": {
+      "source_sha256": "f2dec3ac4487ee11336797a364915a461c28580f62a64c19a24e90d7aedef3bb",
+      "encoding": "KSC5601.1987-0",
+      "unicode_mapping": true
+    },
+    "pttpB14.bdf": {
+      "source_sha256": "913cd80171412bfc9eea4cb434713e8d78a346961a8ea84d6bfce80dc81374a2",
+      "encoding": "KSC5601.1987-0",
+      "unicode_mapping": true
+    }
+  },
+  "skipped": [],
+  "source_sha256": "d2a3391b59e7070e22b80d8fdb8475cd94d2bd5bfa9b38618828292029145c2d",
+  "component_fonts": "JOHAB, JOHABS and JOHABSH files contain component glyphs, not complete text faces. All source glyphs are retained at supplementary private-use indices; excluded from the text picker."
+}

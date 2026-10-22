@@ -13,7 +13,7 @@
  	application = *argv;
  	pinentry_init(PGMNAME);
 +	dome_pinentry::session_environment(argc >= 2 && !strcmp(argv[1], "--askpass"));
-+	if (dx::dome()) dx::init();
++	dx::init();
 +	if (argc >= 2 && !strcmp(argv[1], "--askpass")) {
 +		dome_pinentry::sudo_mode = true;
 +		return dome_pinentry::askpass(argc, argv, pinentry_cmd_handler);

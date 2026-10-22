@@ -710,8 +710,9 @@ session it releases DRM/input ownership and returns to SDDM. Dome has its own
 DRM backend; logind/libseat supply session ownership. No secure screen locker is
 implemented yet, so Lock is offered only when an external locker is available.
 
-Desktop titlebars use Workbench-style gadgets: close on the left, zoom and depth
-on the right, with square glyphs and raised/pressed bevels. Zoom toggles between
+Desktop titlebars use Workbench-style gadgets: a solid close square on the left,
+two-size zoom and overlapping depth planes on the right. These drawings are
+independent of the font and icon theme, with raised/pressed bevels. Zoom toggles between
 two size/position presets (initially the monitor work area and original geometry),
 remembering changes made in either state. Depth sends a front window behind the
 others, or brings a rear window forward; Shift-depth always sends it behind.
@@ -721,8 +722,10 @@ through the Window menu, taskbar and Super+M. Border resizing and Shift-drag til
 continue to work. These gadgets apply to desktop frames; XR client panels retain
 their existing presentation.
 
-Appearance offers a light/dark colour scheme, accent, desktop background, chrome
+Appearance offers a light/dark colour scheme, accent, chrome
 opacity, global bitmap font and native pixel size, persisted in `$XDG_CONFIG_HOME/dome/appearance.json`.
+The desktop background follows the colour scheme: dark grey (`#303030`) or light
+grey (`#d0d0d0`). Older saved background colours are ignored.
 Window titlebars and borders follow the selected theme, accent and chrome opacity;
 existing windows repaint immediately, including inactive decorations. The global
 menu bar and taskbar use the same colours and opacity, in desktop and
@@ -763,44 +766,64 @@ XR shell overlays take input priority over application surfaces beneath them.
 Expanded settings and other modal panels block application clicks, scrolling and
 focus changes, including while an application previously held mouse capture.
 
-The global font applies to all Dome-owned menus, panels, dialogs, notifications
-and window captions in desktop and XR. The picker offers only fixed-strike fonts
-with a Unicode character map and Latin text coverage, with each font's available
-native pixel sizes from 12–24 px. Fonts smaller than 12 px are excluded even
-when installed on the host. GNU Unifont remains the 16 px default (its actual
-font family is `Unifont`). The distribution bundles these true bitmap faces:
+The global font applies to Dome-owned menus, panels, dialogs, notifications and
+window captions in desktop and XR, and to the suite’s FLTK controls. Appearance
+provides separate **Font family**, **Font face**, **Native size**, and **Font scale**
+controls. Chrome opacity cycles through **25%, 50%, 75%, and 100%**
+(alpha 64, 128, 191, and 255); older settings snap to the nearest preset.
+Native strikes from 4–64 px are supported; scale is **1x** or **2x**.
+Build the private GTK font runtime with `python3 scripts/prepare-pango-bdf.py`
+(or pass its toolkit prefix through `DOME_FONT_RUNTIME_PREFIX` when staging).
+The native FLTK Cairo/Wayland backend uses Fontconfig and FreeType directly for
+font enumeration, descriptors, measurement and drawing. Its bundled Cairo
+decorations use the same bitmap face; external GTK decoration plugins are not
+loaded. It does not link Pango.
+GTK and WebKit retain their separate patched Pango runtime for text layout.
+The system FFmpeg SVG decoder also brings Pango into qimgvr through libavcodec;
+FLTK controls and libass subtitle text use their independent bitmap paths.
+The 2x option replicates every bitmap pixel into a 2×2 block using the bdf2x
+algorithm. It writes another BDF to the user cache, with doubled advances and
+metrics, and never resizes a glyph with filtering. Unifont 16 px at 1x is the default.
 
-| Family | Native sizes (px) | Coverage and terminal symbols |
-| --- | --- | --- |
-| [GNU Unifont](https://unifoundry.com/unifont/) | 16 | All requested script samples: Cyrillic, Japanese, Korean, simplified/traditional Chinese, Thai, Arabic, Czech and German |
-| [kirsch](https://github.com/molarmanful/kirsch) | 16 | Latin, Cyrillic and hand-drawn Nerd Font/Powerline glyphs; Nerd Font coverage is partial |
-| [Cozette](https://github.com/the-moonwitch/Cozette) | 13 | Czech, German, Cyrillic, Japanese sample glyphs, partial Nerd Font coverage and Powerline |
-| [UW ttyp0](https://people.mpi-inf.mpg.de/~uwe/misc/uw-ttyp0/) | 12, 13, 14, 15, 16, 17, 18, 22 | Czech, German, Cyrillic, Thai and Powerline; regular/bold, plus italic at 15–18 |
-| [Tamzen for Powerline](https://github.com/sunaku/tamzen-font) | 12, 13, 14, 15, 16, 20 | Latin-1 and Powerline; regular/bold; use other faces for broader language coverage |
-| [Spleen](https://github.com/fcambus/spleen) | 12, 16, 24 | Latin-1; Czech and Powerline at 16/24; the 12 px strike has a smaller repertoire |
-| [Fusion Pixel](https://github.com/TakWolf/fusion-pixel-font) | 12 | Chinese, Japanese and Korean, with zh-Hans, zh-Hant, ja and ko regional variants; Czech/German sample coverage |
-| [DungGeunMo + Fixedsys](https://cactus.tistory.com/193) | 16 | All 11,172 modern Hangul syllables; also passes Cyrillic, Czech, Thai and Arabic samples; reproducible monochrome BDF conversion of the public-domain original |
-| [DenkiChip Hangul](https://quiple.dev/font/denkichip-hangul) | 12 | Japanese and Korean |
-| [Galmuri](https://quiple.dev/font/galmuri) | 12, 16, 21 | Japanese/Korean; the names Galmuri9/11/14 refer to these actual native strikes |
+BDF is the only session font format. LightXR is independent of session settings
+and retains its own PCF for login. Fontconfig’s configured directories, system
+font directories, `~/.fonts`, `$XDG_DATA_HOME/fonts` (normally
+`~/.local/share/fonts`), and the bundled directory are searched for raw BDFs
+(including `.bdf.gz`). Installed TTF, OTF, OTB and PCF fonts are not offered or
+used as session fallbacks. A private Fontconfig configuration allows only BDF;
+the host configuration is preserved. Font files are read directly by FreeType,
+FLTK CPU/GL rendering, the private patched Pango for GTK, Ghostty, and the patched libass used by mpvr and qimgvr.
 
-Galmuri7's 10 px face is removed. Existing smaller saved selections migrate to
-Unifont 16 px while preserving colours and opacity. Bitmap files, Unicode
-sample coverage, native strikes and source checksums are audited with
-`uv run --no-project --with freetype-py python scripts/audit-bitmap-fonts.py`;
-the report is written to `artifacts/bitmap-fonts/coverage.json`. Sample coverage
-does not imply complete coverage of every language or Unicode block. Arabic
-joining and Thai mark positioning also depend on the application's shaping engine.
+The full testing bundle currently contains 748 BDF files, including Unifont,
+DenkiChip, DungGeunMo, Galmuri, Fusion Pixel, Cozette, kirsch, all Spleen and
+ttyp0 native sizes, Tamzen, UFO, Artwiz WL, X11 Fixed 10x20, Robotron 1715,
+Classic Mac, IBM/OldSchool PC, Hiro’s X11 fonts, OEM12x20, the historical Hangul
+collection, Terminus, uni16m, Zpix, Dina, the Tecate collection, Monomacs and Siji.
+The test bundle will be narrowed after evaluation; collection manifests and the
+separate font directory also support distributing the remainder as another package.
 
-Font sources, licenses and reproducible build/conversion details are retained
-under `assets/fonts/`; notices are installed with the distribution. Fusion
-Pixel uses upstream PCF files because its current OTB release is missing tables
-required by FreeType. Outline-only Nerd Font patches are excluded; terminal
-symbol compatibility does not mean every Nerd Font icon is available.
-Installed PCF, BDF and OTB fonts are discovered at compositor startup, including
-user fonts in the usual data directories. No system Fontconfig policy is changed. Settings save automatically; existing chrome repaints when
-the font changes. Qt and GTK application controls inherit the session font, size,
-light/dark mode and accent. Existing toolkit windows update when these settings
-change; application-specific editor and document preferences still apply.
+Each collection retains its source revision, SHA-256 checksums, and available
+upstream terms in `assets/fonts/*/upstream.json`. Zpix is bundled for personal
+and education use at the user’s request; commercial product use requires its
+separate upstream license. Historical collections may have individual embedded
+notices rather than a collection-wide license; those notices are preserved.
+Legacy character codes are mapped to Unicode during packaging without changing
+glyph pixels. Ambiguous names receive source aliases, displayed as separate faces
+within their original family. Symbol-only and non-Latin-only fonts remain
+available for fallback and are excluded from the global Latin text picker.
+
+`scripts/index-bdf-fonts.py` rebuilds the verified metadata index after imports;
+the picker reads this index without eagerly loading every glyph. Modified and
+user-installed files are inspected normally. Run
+`uv run --no-project --with freetype-py python scripts/audit-bitmap-fonts.py`
+to verify the bundle, native sizes, checksums and Unicode sample coverage.
+`scripts/test-bdf-fonts.cpp` verifies exact doubled glyph masks and advances;
+`scripts/test-fltk-bdf.cpp` checks actual FLTK CPU and OpenGL pixels at both scales.
+Sample coverage does not imply complete language coverage; Arabic shaping and
+Thai mark positioning also depend on the application’s text engine.
+
+Qt and GTK application controls inherit the session palette and BDF font.
+Application-specific editor, document and web content preferences still apply.
 
 The login session publishes a desktop Settings portal and generates private GTK
 themes and a Fontconfig configuration under its runtime directory. A GTK bridge
@@ -1080,6 +1103,7 @@ Its own F12 handler hides it while it owns the keyboard. Alt+F4 retains the stan
 | Alt+Tab / Shift+Alt+Tab | XR: next / previous window in the same lane, recentered; desktop: next / previous window |
 | Alt+F4 | Close window |
 | Super+Q | Close windows of active application |
+| Super+X | Switch physical input focus between desktop and the running XR session |
 | Shift+Super+X | Send focused window and its dialogs to the other desktop / XR view |
 | Super+M / Super+Enter | Minimize / toggle maximize |
 | Super+1…8 / Shift+Super+1…8 | Switch desktop / move window to desktop |
@@ -1099,7 +1123,8 @@ Its own F12 handler hides it while it owns the keyboard. Alt+F4 retains the stan
 
 **Window → Send Window to XR / Send Window to Desktop** transfers the focused DomeD-managed
 Wayland or X11 window without restarting its application. Shift+Super+X is
-configurable in keybindings. Transfers are exclusive to the destination; normal
+configurable in keybindings. Super+X switches physical input focus without moving windows or changing XR
+visibility. Both commands are configurable; shortcut dispatch matches modifiers exactly. Transfers are exclusive to the destination; normal
 launches retain their existing shared presentation. **Show Window on Both**
 restores simultaneous presentation of that window and its dialogs. Desktop geometry and XR
 placement survive a round trip. Dialogs follow their parent, while other windows

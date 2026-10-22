@@ -1,14 +1,24 @@
 //! Persistent shell colours and font preferences.
 use serde::{Deserialize, Serialize};
+/// Alpha bytes nearest to the four percentage presets.
+pub const CHROME_OPACITIES: [u8; 4] = [64, 128, 191, 255];
+fn deserialize_opacity<'de, D: serde::Deserializer<'de>>(deserializer:D) -> Result<u8,D::Error> {
+    let value=u8::deserialize(deserializer)?;
+    if value < CHROME_OPACITIES[0] { return Ok(value); }
+    Ok(*CHROME_OPACITIES.iter().min_by_key(|preset| preset.abs_diff(value)).unwrap())
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Appearance {
     pub light: bool,
     pub accent: String,
-    pub background: [f32; 3],
+    #[serde(rename = "background", deserialize_with = "crate::scene::discard_retired_setting", skip_serializing)]
+    pub retired_background: (),
+    #[serde(deserialize_with = "deserialize_opacity")]
     pub opacity: u8,
     pub font: String,
     pub font_size: u16,
+    pub font_scale: u8,
     #[serde(rename = "hand_resume_ms", deserialize_with = "crate::scene::discard_retired_setting", skip_serializing)]
     pub retired_pointer_delay: (),
 }
@@ -26,10 +36,21 @@ mod font_tests {
         let restored: Appearance = serde_json::from_slice(&serde_json::to_vec(&appearance).unwrap()).unwrap();
         assert_eq!(restored.font, appearance.font);
         assert_eq!(restored.font_size, appearance.font_size);
+        assert_eq!(restored.desktop_background(), [208. / 255.; 3]);
+        assert!(serde_json::to_value(&appearance).unwrap().get("background").is_none());
+    }
+    #[test]
+    fn desktop_background_follows_the_colour_scheme() {
+        let mut appearance = Appearance::default();
+        assert_eq!(appearance.desktop_background(), [48. / 255.; 3]);
+        appearance.light = true;
+        assert_eq!(appearance.desktop_background(), [208. / 255.; 3]);
+        appearance.light = false;
+        assert_eq!(appearance.desktop_background(), Appearance::default().desktop_background());
     }
     #[test]
     fn retired_strikes_migrate_without_resetting_other_preferences() {
-        for (name, size) in [("Galmuri7Bitmap / Regular", 10), ("Fixed / Regular", 11), ("GNU Unifont / Sans-Serif", 16)] {
+        for (name, size) in [("Galmuri7Bitmap / Regular", 10), ("GNU Unifont / Sans-Serif", 16)] {
             let mut appearance = Appearance::default();
             appearance.font = name.into();
             appearance.font_size = size;
@@ -48,10 +69,14 @@ mod font_tests {
         let mut appearance = Appearance::default();
         appearance.font_size = 0;
         assert!(appearance.validate().is_err());
-        appearance.font_size = 11;
+        appearance.font_size = 3;
         assert!(appearance.validate().is_err());
         appearance.font_size = 12;
+        appearance.font_scale = 2;
         assert!(appearance.validate().is_ok());
+        appearance.font_scale = 3;
+        assert!(appearance.validate().is_err());
+        appearance.font_scale = 1;
         appearance.font_size = 16;
         appearance.font = "bad\nfont".into();
         assert!(appearance.validate().is_err());
@@ -62,28 +87,32 @@ impl Default for Appearance {
         Self {
             light: false,
             accent: "#6babff".into(),
-            background: [0.025, 0.045, 0.06],
-            opacity: 248,
+            retired_background: (),
+            opacity: 255,
             font: "Unifont / Sans-Serif".into(),
             font_size: 16,
+            font_scale: 1,
             retired_pointer_delay: (),
         }
     }
 }
 impl Appearance {
+    pub fn caption_height(&self) -> i32 {
+        30.max(self.font_size as i32 * self.font_scale as i32 + 8)
+    }
+    pub fn desktop_background(&self) -> [f32; 3] {
+        [if self.light { 208. / 255. } else { 48. / 255. }; 3]
+    }
     pub fn validate(&self) -> Result<(), String> {
         if self.accent.len() != 7
             || !self.accent.starts_with('#')
             || !self.accent[1..].bytes().all(|b| b.is_ascii_hexdigit())
-            || self.opacity < 160
+            || !CHROME_OPACITIES.contains(&self.opacity)
             || self.font.is_empty()
             || self.font.len() > 256
             || self.font.chars().any(char::is_control)
-            || !(12..=24).contains(&self.font_size)
-            || self
-                .background
-                .iter()
-                .any(|v| !v.is_finite() || !(0. ..=1.).contains(v))
+            || !(4..=64).contains(&self.font_size)
+            || !matches!(self.font_scale, 1 | 2)
         {
             return Err("Invalid appearance settings".into());
         }
@@ -103,7 +132,7 @@ impl Appearance {
         if self.font == "GNU Unifont / Sans-Serif" {
             self.font = Self::default().font;
         }
-        if (8..12).contains(&self.font_size) || self.font.starts_with("Galmuri7Bitmap / ") {
+        if self.font.starts_with("Galmuri") && self.font.contains("Bitmap / ") {
             self.font = Self::default().font;
             self.font_size = Self::default().font_size;
         }
@@ -145,5 +174,22 @@ impl SessionAction {
             Self::Restart => "Restart",
             Self::Shutdown => "Shut Down",
         }
+    }
+}
+
+#[cfg(test)]
+mod opacity_tests {
+    use super::*;
+    #[test]
+    fn percentage_presets_round_trip_and_old_alpha_values_migrate() {
+        for alpha in CHROME_OPACITIES {
+            let appearance:Appearance=serde_json::from_value(serde_json::json!({"opacity":alpha})).unwrap();
+            assert_eq!(appearance.opacity,alpha);assert!(appearance.validate().is_ok());
+        }
+        for (old,expected) in [(208,191),(248,255)] {
+            let appearance:Appearance=serde_json::from_value(serde_json::json!({"opacity":old,"light":true})).unwrap();
+            assert_eq!(appearance.opacity,expected);assert!(appearance.light);
+        }
+        let mut appearance=Appearance::default();appearance.opacity=0;assert!(appearance.validate().is_err());
     }
 }

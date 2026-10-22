@@ -37,16 +37,16 @@ impl crate::Dome {
     pub fn shell_panel_key(&mut self, key: u32) -> bool {
         if self.clock_key(key) { return true; }
         if self.appearance_open && self.keyboard_draft.is_none() {
-            if let Some(row) = selection(self.shell_selection, 9, key) {
+            if let Some(row) = selection(self.shell_selection, 10, key) {
                 self.shell_selection = row;
             } else {
                 match key {
                     0xff1b => self.appearance_open = false,
-                    0xff51 | 0xff53 if self.shell_selection < 6 => {
+                    0xff51 | 0xff53 if self.shell_selection < 7 => {
                         self.appearance_activate(self.shell_selection, if key == 0xff51 { -1 } else { 1 });
                     }
-                    0xff51 | 0xff53 if self.shell_selection >= 7 => {
-                        self.shell_selection = if key == 0xff51 { 7 } else { 8 };
+                    0xff51 | 0xff53 if self.shell_selection >= 8 => {
+                        self.shell_selection = if key == 0xff51 { 8 } else { 9 };
                     }
                     0xff0d | 0xff8d | 0x20 => self.appearance_activate(self.shell_selection, 1),
                     _ => (),
@@ -127,8 +127,8 @@ mod tests {
     }
     #[test]
     fn appearance_values_cycle_in_both_directions() {
-        assert_eq!(cycle(&[208, 248, 255], &208, -1), Some(255));
-        assert_eq!(cycle(&[208, 248, 255], &255, 1), Some(208));
+        assert_eq!(cycle(&dome::appearance::CHROME_OPACITIES, &64, -1), Some(255));
+        assert_eq!(cycle(&dome::appearance::CHROME_OPACITIES, &255, 1), Some(64));
         assert_eq!(cycle::<i32>(&[], &0, 1), None);
     }
 }

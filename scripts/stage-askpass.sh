@@ -16,5 +16,6 @@ for name in dome_pinentry.h session_environment.h pinentry-1.3.3-dome.patch; do
     install -D -m 0644 "$root/native/pinentry/$name" "$documentation/$name"
 done
 install -D -m 0644 "$root/native/fltk_appearance.h" "$documentation/fltk_appearance.h"
+install -D -m 0644 "$root/native/bdf_font.hpp" "$documentation/bdf_font.hpp"
 install -D -m 0644 "$root/scripts/build-askpass.py" "$documentation/build-askpass.py"
 echo "Staged native FLTK askpass: $stage/usr/local/bin/dome-askpass"

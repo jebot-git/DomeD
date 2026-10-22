@@ -18,6 +18,7 @@ files=(
     usr/local/bin/dome-xr
     usr/local/bin/dome-preview
     usr/local/bin/dome-portal-picker
+    usr/local/bin/dome-bdf-font
     usr/local/bin/dome-session
     usr/local/share/doc/domed/TRAY_FRONTENDS.md
     usr/local/share/doc/domed/FLTK_GPU_AUDIT.md
@@ -41,12 +42,15 @@ files=(
     usr/local/share/doc/domed/protocols/gtk-shell.xml
     usr/local/share/doc/domed/protocols/COPYING.gtk
 )
-for name in COPYING source.sha256 pinentry-1.3.3.tar.bz2 dome_pinentry.h pinentry-1.3.3-dome.patch session_environment.h fltk_appearance.h build-askpass.py; do
+for name in COPYING source.sha256 pinentry-1.3.3.tar.bz2 dome_pinentry.h pinentry-1.3.3-dome.patch session_environment.h fltk_appearance.h bdf_font.hpp build-askpass.py; do
     files+=("usr/local/share/doc/domed/pinentry/$name")
 done
 while IFS= read -r name; do
     files+=("usr/local/share/doc/domed/fonts/$name")
 done < "$root/packaging/font-notices.list"
+while IFS= read -r -d "" file; do
+    files+=("${file#"$stage/"}")
+done < <(find "$stage/usr/local/share/fonts/domed" "$stage/usr/local/lib/domed/bitmap" "$stage/usr/local/share/doc/domed/pango-bdf" -type f -print0)
 for file in "${files[@]}"; do
     [[ -f "$stage/$file" && ! -L "$stage/$file" ]] || { echo "Missing staged file: $file" >&2; exit 1; }
 done

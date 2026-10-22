@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import os
+import shutil
 import tempfile
 from pathlib import Path
 import subprocess
@@ -24,7 +25,7 @@ expected='eede1fb2b8e9c2e581e77082e15252145855c79aad30070ee3b24aabe2f926f1'
 if hashlib.sha256(archive.read_bytes()).hexdigest()!=expected:
     raise SystemExit('FLTK source archive checksum mismatch')
 source=deps/'fltk-1.4.5'
-patch_names=['fltk-1.4.5-bitmap-fonts.patch','fltk-1.4.5-popup-done.patch','fltk-1.4.5-depth-buffer.patch','fltk-1.4.5-borderless-app-id.patch','fltk-1.4.5-bitmap-styles.patch','fltk-1.4.5-window-close.patch','fltk-1.4.5-first-configure.patch','fltk-1.4.5-empty-gl-text.patch','fltk-1.4.5-bitmap-refresh.patch']
+patch_names=['fltk-1.4.5-bitmap-fonts.patch','fltk-1.4.5-popup-done.patch','fltk-1.4.5-depth-buffer.patch','fltk-1.4.5-borderless-app-id.patch','fltk-1.4.5-bitmap-styles.patch','fltk-1.4.5-window-close.patch','fltk-1.4.5-first-configure.patch','fltk-1.4.5-empty-gl-text.patch','fltk-1.4.5-bitmap-refresh.patch','fltk-1.4.5-bdf-only.patch','fltk-1.4.5-bdf-ink.patch','fltk-1.4.5-freetype-only.patch','fltk-1.4.5-freetype-decor.patch']
 patches=[repo/'native/toolkit-hooks'/name for name in patch_names]
 digest=hashlib.sha256(b''.join(p.read_bytes() for p in patches)).hexdigest()
 stamp=source/'.dome-patches.sha256'
@@ -43,8 +44,11 @@ env=dict(os.environ)
 sysroot=deps/'sysroot/usr'
 if sysroot.is_dir():
     env['PKG_CONFIG_PATH']=str(sysroot/'lib/x86_64-linux-gnu/pkgconfig')+':'+env.get('PKG_CONFIG_PATH','')
-args=['cmake','-S',str(source),'-B',str(deps/'build'),'-G','Ninja','-DCMAKE_BUILD_TYPE=Release',f'-DCMAKE_INSTALL_PREFIX={prefix}',f'-DCMAKE_PREFIX_PATH={sysroot}','-DFLTK_BACKEND_WAYLAND=ON','-DFLTK_BACKEND_X11=ON','-DFLTK_BUILD_SHARED_LIBS=ON','-DFLTK_BUILD_TEST=OFF','-DFLTK_BUILD_EXAMPLES=OFF','-DFLTK_BUILD_FLUID=OFF','-DFLTK_BUILD_FLTK_OPTIONS=OFF','-DFLTK_BUILD_FORMS=OFF','-DFLTK_BUILD_GL=ON','-DFLTK_USE_DBUS=OFF','-DFLTK_OPTION_CAIRO_WINDOW=ON']
+args=['cmake','-S',str(source),'-B',str(deps/'build'),'-G','Ninja','-DCMAKE_BUILD_TYPE=Release',f'-DCMAKE_INSTALL_PREFIX={prefix}',f'-DCMAKE_PREFIX_PATH={sysroot}','-DFLTK_BACKEND_WAYLAND=ON','-DFLTK_BACKEND_X11=ON','-DFLTK_BUILD_SHARED_LIBS=ON','-DFLTK_BUILD_TEST=OFF','-DFLTK_BUILD_EXAMPLES=OFF','-DFLTK_BUILD_FLUID=OFF','-DFLTK_BUILD_FLTK_OPTIONS=OFF','-DFLTK_BUILD_FORMS=OFF','-DFLTK_BUILD_GL=ON','-DFLTK_USE_DBUS=OFF','-DFLTK_USE_PANGO=OFF','-DFLTK_USE_SYSTEM_LIBDECOR=OFF','-DFLTK_USE_LIBDECOR_GTK=OFF','-DFLTK_OPTION_CAIRO_WINDOW=ON']
 subprocess.run(args,env=env,check=True)
 subprocess.run(['cmake','--build',str(deps/'build'),'--parallel','4'],check=True)
 subprocess.run(['cmake','--install',str(deps/'build')],check=True)
+notices=prefix/'share/fltk-bdf-source'
+notices.mkdir(parents=True,exist_ok=True)
+for item in [archive,source/'COPYING',*patches]:shutil.copy2(item,notices/item.name)
 print('Isolated FLTK 1.4.5:',prefix)

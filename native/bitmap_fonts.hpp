@@ -1,117 +1,67 @@
 // SPDX-License-Identifier: MIT
 #pragma once
-#include <algorithm>
-#include <QtCore/QFile>
+#include "bdf_font.hpp"
 #include <QtGui/QFontDatabase>
-#include <QtCore/QDirIterator>
-#include <QtCore/QStandardPaths>
-#include <QtCore/QSet>
-#include <fontconfig/fontconfig.h>
-#include <ft2build.h>
-#include FT_FREETYPE_H
-
-// Keep the actual fixed strikes. Neither outline fonts nor symbol-only bitmaps
-// are useful choices for the global interface font.
+#include <QtCore/QJsonArray>
+#include <QtCore/QJsonObject>
+#include <QtCore/QJsonDocument>
+#include <QtCore/QByteArray>
+#include <set>
+#include <unistd.h>
 static QJsonArray bitmapFonts;
 static QList<QByteArray> extraBitmapFonts;
 extern "C" void dome_qt_queue_bitmap_font(const unsigned char *data, int length) {
-    extraBitmapFonts.append(QByteArray(reinterpret_cast<const char*>(data),length));
+    if (data && length > 0) extraBitmapFonts.append(QByteArray((const char *)data,length));
 }
-static void addBitmapFont(FT_Face face, const QByteArray &data, const QString &path) {
-    if (FT_IS_SCALABLE(face) || !face->num_fixed_sizes ||
-        FT_Select_Charmap(face, FT_ENCODING_UNICODE) ||
-        !FT_Get_Char_Index(face, 'A') ||
-        !(FT_Get_Char_Index(face, 0x00e9) || FT_Get_Char_Index(face, 0x3042) || FT_Get_Char_Index(face, 0xac00))) return;
-    QJsonArray sizes;
-    QList<int> strikes;
-    for (int i=0; i<face->num_fixed_sizes; ++i) {
-        int size=qRound(face->available_sizes[i].y_ppem/64.);
-        // Keep desktop text within the existing controls' usable range.
-        if(size>=12 && size<=24 && !strikes.contains(size)) strikes.append(size);
-    }
-    std::sort(strikes.begin(),strikes.end());
-    for(int size:strikes) sizes.append(size);
-    if(sizes.isEmpty())return;
-    int id = data.isEmpty() ? QFontDatabase::addApplicationFont(path)
-                           : QFontDatabase::addApplicationFontFromData(data);
-    if (id < 0) return;
-    for(const auto &family:QFontDatabase::applicationFontFamilies(id)) {
-        QString style=QString::fromUtf8(face->style_name ? face->style_name : "Regular");
-        QString key=family+" / "+style;
-        bool found=false;
-        for(int index=0;index<bitmapFonts.size();++index) {
-            auto font=bitmapFonts[index].toObject();
-            if(font["id"].toString()!=key)continue;
-            auto existing=font["sizes"].toArray();
-            for(auto size:sizes)if(!existing.contains(size))existing.append(size);
-            QList<int> merged;for(auto size:existing)merged.append(size.toInt());
-            std::sort(merged.begin(),merged.end());existing={};for(auto size:merged)existing.append(size);
-            font["sizes"]=existing;bitmapFonts[index]=font;found=true;break;
-        }
-        if(!found) bitmapFonts.append(QJsonObject{{"id",key},{"family",family},{"style",style},{"sizes",sizes}});
-    }
-}
-extern "C" const char *dome_qt_font_catalog(const unsigned char *bundled, int length) {
-    app();
-    static QByteArray json;
-    if(!json.isEmpty())return json.constData();
-    FT_Library library;
-    if(FT_Init_FreeType(&library)) { json="[]";return json.constData(); }
-    FT_Face face;
-    if(!FT_New_Memory_Face(library,bundled,length,0,&face)) {
-        addBitmapFont(face,QByteArray(reinterpret_cast<const char*>(bundled),length),{});
-        FT_Done_Face(face);
-    }
-    for(const auto &data:extraBitmapFonts) {
-        if(!FT_New_Memory_Face(library,reinterpret_cast<const FT_Byte*>(data.constData()),data.size(),0,&face)) {
-            addBitmapFont(face,data,{});FT_Done_Face(face);
-        }
+extern "C" const char *dome_qt_font_catalog(const unsigned char *data, int length) {
+    app(); static QByteArray json; static std::set<std::string> registered;
+    dome_qt_queue_bitmap_font(data,length);
+    for (const auto &bytes : extraBitmapFonts) {
+        if (!bytes.startsWith("STARTFONT ")) continue;
+        unsigned long long hash=14695981039346656037ull;
+        for(unsigned char c:bytes){hash^=c;hash*=1099511628211ull;}
+        auto directory=std::filesystem::temp_directory_path()/("dome-bdf-"+std::to_string(getuid()));
+        std::filesystem::create_directories(directory);
+        auto path=directory/(std::to_string(hash)+".bdf");
+        if(!std::filesystem::is_regular_file(path)){std::ofstream out(path,std::ios::binary);out.write(bytes.data(),bytes.size());}
+        FcConfigAppFontAddFile(nullptr,(const FcChar8*)path.c_str());
     }
     extraBitmapFonts.clear();
-    QSet<QString> paths;
-    auto query=FcPatternCreate();
-    FcPatternAddBool(query,FC_SCALABLE,FcFalse);
-    auto objects=FcObjectSetBuild(FC_FILE,nullptr);
-    auto fonts=FcFontList(nullptr,query,objects);
-    if(fonts) {
-        for(int i=0;i<fonts->nfont;++i) {
-            FcChar8 *file=nullptr;
-            if(FcPatternGetString(fonts->fonts[i],FC_FILE,0,&file)==FcResultMatch)
-                paths.insert(QString::fromUtf8(reinterpret_cast<const char*>(file)));
-        }
-        FcFontSetDestroy(fonts);
-    }
-    FcObjectSetDestroy(objects);FcPatternDestroy(query);
-    // Explicit application loading also supports desktops which disable bitmap
-    // fonts in their system Fontconfig policy, without changing that policy.
-    QStringList directories={"/usr/share/fonts","/usr/local/share/fonts",QDir::homePath()+"/.fonts"};
-    for(const auto &directory:QStandardPaths::standardLocations(QStandardPaths::GenericDataLocation))
-        directories.append(directory+"/fonts");
-    directories.removeDuplicates();
-    for(const auto &directory:directories) {
-        QDirIterator files(directory,{"*.pcf","*.pcf.gz","*.bdf","*.bdf.gz","*.otb","*.fon","*.fnt"},QDir::Files,QDirIterator::Subdirectories);
-        while(files.hasNext())paths.insert(files.next());
-    }
-    auto ordered=paths.values();std::sort(ordered.begin(),ordered.end());
-    for(const auto &path:ordered) {
-        auto file=QFile::encodeName(path);
-        if(!FT_New_Face(library,file.constData(),0,&face)) {
-            addBitmapFont(face,{},path);FT_Done_Face(face);
+    auto faces=bdf_fonts::discover();
+    bitmapFonts={}; std::map<std::string,int> indices;
+    for(const auto &face:faces){
+        if(!face.text || face.pixels>64)continue;
+        auto found=indices.find(face.id());
+        if(found==indices.end()){
+            indices[face.id()]=bitmapFonts.size();
+            bitmapFonts.append(QJsonObject{{"id",QString::fromStdString(face.id())},{"family",QString::fromStdString(face.family)},
+                {"style",QString::fromStdString(face.style)},{"file",QString::fromStdString(face.file)},{"sizes",QJsonArray{face.pixels}}});
+        }else{
+            auto entry=bitmapFonts[found->second].toObject();auto sizes=entry["sizes"].toArray();
+            if(!sizes.contains(face.pixels))sizes.append(face.pixels);
+            std::vector<int> ordered;for(auto size:sizes)ordered.push_back(size.toInt());
+            std::sort(ordered.begin(),ordered.end());sizes={};for(int size:ordered)sizes.append(size);
+            entry["sizes"]=sizes;bitmapFonts[found->second]=entry;
         }
     }
-    FT_Done_FreeType(library);
-    json=QJsonDocument(bitmapFonts).toJson(QJsonDocument::Compact);
-    return json.constData();
+    json=QJsonDocument(bitmapFonts).toJson(QJsonDocument::Compact);return json.constData();
 }
 static QFont interfaceFont(const QJsonObject &appearance) {
-    QString selected=appearance["font"].toString("Unifont / Sans-Serif");
-    QJsonObject choice;
-    for(const auto &font:bitmapFonts)if(font.toObject()["id"].toString()==selected){choice=font.toObject();break;}
-    if(choice.isEmpty() && !bitmapFonts.isEmpty())choice=bitmapFonts.first().toObject();
-    if(choice.isEmpty())return app()->font();
-    auto sizes=choice["sizes"].toArray();int size=appearance["font_size"].toInt(16);
-    if(!sizes.contains(size))size=sizes.first().toInt();
-    QFont font(choice["family"].toString());font.setStyleName(choice["style"].toString());font.setPixelSize(size);
-    font.setStyleStrategy(QFont::StyleStrategy(QFont::PreferBitmap|QFont::NoAntialias));
+    auto id=appearance["font"].toString("Unifont / Sans-Serif");
+    auto split=id.indexOf(" / "); auto family=id.left(split).toStdString(),style=id.mid(split+3).toStdString();
+    int pixels=appearance["font_size"].toInt(16),scale=appearance["font_scale"].toInt(1);
+    bdf_fonts::Face selected;
+    try{selected=bdf_fonts::resolve(family,style,pixels,scale);}
+    catch(const std::exception &){selected=bdf_fonts::resolve("Unifont","Sans-Serif",16,scale);}
+    selected=bdf_fonts::qt_alias(selected);
+    static std::map<std::string,QString> families;
+    if(!families.count(selected.file)){
+        int loaded=QFontDatabase::addApplicationFont(QString::fromStdString(selected.file));
+        auto names=QFontDatabase::applicationFontFamilies(loaded);
+        if(names.isEmpty())throw std::runtime_error("Qt cannot load BDF");
+        families[selected.file]=names.first();
+    }
+    QFont font(families[selected.file]);font.setStyleName(QString::fromStdString(selected.style));font.setPixelSize(selected.pixels);
+    font.setStyleStrategy(QFont::StyleStrategy(QFont::PreferBitmap|QFont::NoAntialias|QFont::NoFontMerging));
     return font;
 }

@@ -169,6 +169,7 @@ impl Dome {
             }
             StartXr => !self.xr_bridge.lock().unwrap().visible(),
             StopXr => self.xr_bridge.lock().unwrap().visible(),
+            SwitchInputRealm => self.xr_bridge.lock().unwrap().visible(),
             SendToOtherRealm => {
                 s.focused.and_then(|id| s.window(id)).is_some_and(|w| !w.minimized)
                     && (self.input_realm == dome::Realm::Xr || self.xr_bridge.lock().unwrap().visible())
@@ -210,6 +211,10 @@ impl Dome {
         let id = s.focused;
         use Command::*;
         match c {
+            SwitchInputRealm => {
+                self.input_focus_xr = Some(!self.input_xr_active);
+                self.sync_input_route();
+            }
             ToggleXrBars | ToggleXrTop | ToggleXrBottom | ToggleXrDesktop => {
                 let p = s.presentation;
                 let both = !(p.top || p.bottom);

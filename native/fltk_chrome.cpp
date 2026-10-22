@@ -15,6 +15,8 @@
 #include <glib.h>
 #include <memory>
 #include FT_FREETYPE_H
+#include FT_FONT_FORMATS_H
+#include "bdf_font.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -32,22 +34,21 @@ struct Font {
   FT_Face face;
   std::string id;
   std::vector<int> sizes;
+  std::string file;
 };
 std::vector<Font> fonts;
 std::vector<std::vector<unsigned char>> bundled;
-void add(FT_Face face) {
-  if (FT_IS_SCALABLE(face) || !face->num_fixed_sizes ||
-      FT_Select_Charmap(face, FT_ENCODING_UNICODE) ||
-      !FT_Get_Char_Index(face, 'A') ||
-      !(FT_Get_Char_Index(face, 0xe9) || FT_Get_Char_Index(face, 0x3042) ||
-        FT_Get_Char_Index(face, 0xac00))) {
+std::vector<bdf_fonts::Face> available;
+void add(FT_Face face, const std::string &file = "") {
+  if (!FT_Get_Font_Format(face) || std::strcmp(FT_Get_Font_Format(face), "BDF") || FT_IS_SCALABLE(face) || !face->num_fixed_sizes ||
+      FT_Select_Charmap(face, FT_ENCODING_UNICODE)) {
     FT_Done_Face(face);
     return;
   }
   std::vector<int> sizes;
   for (int i = 0; i < face->num_fixed_sizes; ++i) {
     int n = std::lround(face->available_sizes[i].y_ppem / 64.);
-    if (n >= 12 && n <= 24)
+    if (n >= 4 && n <= 64)
       sizes.push_back(n);
   }
   if (sizes.empty()) {
@@ -58,9 +59,39 @@ void add(FT_Face face) {
   sizes.erase(std::unique(sizes.begin(), sizes.end()), sizes.end());
   fonts.push_back(
       {face,
-       std::string(face->family_name ? face->family_name : "Bitmap") + " / " +
-           (face->style_name ? face->style_name : "Regular"),
-       sizes});
+       bdf_fonts::identity(face->family_name ? face->family_name : "Bitmap",
+           face->style_name ? face->style_name : "Regular"),
+       sizes, file});
+}
+void ensureFont(const std::string &id, int pixels) {
+  for (const auto &font : fonts)
+    if (font.id == id && std::find(font.sizes.begin(),font.sizes.end(),pixels)!=font.sizes.end()) return;
+  for (const auto &font : available) {
+    if (font.id()!=id || font.pixels!=pixels) continue;
+    FT_Face face;
+    if (!FT_New_Face(library,font.file.c_str(),0,&face)) add(face,font.file);
+    return;
+  }
+}
+FT_Face scaledFace(FT_Face face, int scale) {
+  if (scale == 1) return face;
+  struct Enlarged { std::string data; FT_Face face = nullptr; };
+  static std::map<FT_Face, Enlarged> cache;
+  auto &entry = cache[face];
+  if (!entry.face) {
+    std::string source;
+    if (face->stream->base) source.assign((char *)face->stream->base, face->stream->size);
+    else {
+      auto found = std::find_if(fonts.begin(), fonts.end(), [face](const Font &f) { return f.face == face; });
+      if (found == fonts.end()) throw std::runtime_error("Missing BDF source");
+      source = bdf_fonts::read(found->file);
+    }
+    entry.data = bdf_fonts::twice(source, face->family_name);
+    if (FT_New_Memory_Face(library, (const FT_Byte *)entry.data.data(), entry.data.size(), 0, &entry.face) ||
+        FT_Select_Charmap(entry.face, FT_ENCODING_UNICODE) || FT_Select_Size(entry.face, 0))
+      throw std::runtime_error("Cannot load 2x BDF");
+  }
+  return entry.face;
 }
 std::string str(const J &o, const char *k, std::string d = "") {
   return o.contains(k) && o[k].is_string() ? o[k].get<std::string>() : d;
@@ -95,6 +126,7 @@ struct Paint {
   cairo_t *c;
   FT_Face face = nullptr;
   int size = 16;
+  int scale = 1;
   Color bg, fg, muted, sel, accent;
   double opacity = 1;
   Paint(cairo_t *cr, const J &a) : c(cr) {
@@ -104,16 +136,18 @@ struct Paint {
     muted = light ? Color{.41, .45, .52} : Color{.57, .60, .65};
     sel = light ? Color{.78, .84, .91} : Color{.247, .302, .376};
     accent = hex(str(a, "accent", "#6babff"), {.42, .67, 1});
-    opacity = std::clamp(num(a, "opacity", 248), 0, 255) / 255.;
+    opacity = std::clamp(num(a, "opacity", 255), 0, 255) / 255.;
     auto id = str(a, "font", "Unifont / Sans-Serif");
+    size = num(a, "font_size", 16);
+    scale = num(a, "font_scale", 1) == 2 ? 2 : 1;
+    ensureFont(id, size);
     for (auto &f : fonts)
-      if (f.id == id) {
+      if (f.id == id && std::find(f.sizes.begin(), f.sizes.end(), size) != f.sizes.end()) {
         face = f.face;
         break;
       }
     if (!face && !fonts.empty())
       face = fonts[0].face;
-    size = num(a, "font_size", 16);
     if (face) {
       bool found = false;
       for (int i = 0; i < face->num_fixed_sizes; ++i)
@@ -126,6 +160,8 @@ struct Paint {
         FT_Select_Size(face, 0);
         size = face->available_sizes[0].y_ppem / 64;
       }
+      face = scaledFace(face, scale);
+      size *= scale;
     }
   }
   void color(Color a) { cairo_set_source_rgba(c, a.r, a.g, a.b, a.a); }
@@ -153,11 +189,6 @@ struct Paint {
     double baseline = y + (h + size) / 2 - 2;
     int cursor = x + (center ? 8 : 0);
     if (!face) {
-      cairo_select_font_face(c, "sans", CAIRO_FONT_SLANT_NORMAL,
-                             CAIRO_FONT_WEIGHT_NORMAL);
-      cairo_set_font_size(c, size);
-      cairo_move_to(c, cursor, baseline);
-      cairo_show_text(c, s.c_str());
       cairo_restore(c);
       return;
     }
@@ -183,7 +214,7 @@ struct Paint {
       if (!FT_Get_Char_Index(glyph_face, cp)) {
         for (auto &fallback : fonts) {
           if (!FT_Get_Char_Index(fallback.face, cp)) continue;
-          glyph_face = fallback.face;
+          glyph_face = scaledFace(fallback.face, scale);
           int strike = 0, distance = 1000000;
           for (int n = 0; n < glyph_face->num_fixed_sizes; ++n) {
             int diff = std::abs(int(glyph_face->available_sizes[n].y_ppem / 64) - size);
@@ -364,15 +395,41 @@ struct Paint {
     rect(x, y, w, h, sel);
     if (selected)
       border(x, y, w, h, accent);
-    if (label == "■" || label == "□" || label == "▣") {
-      int cx = x + w / 2, cy = y + h / 2;
-      color(fg); cairo_set_line_width(c, 1.5);
-      if (label == "■") { cairo_move_to(c, cx - 5, cy + 4); cairo_line_to(c, cx + 5, cy + 4); }
-      else if (label == "□") cairo_rectangle(c, cx - 5, cy - 5, 10, 10);
-      else { cairo_move_to(c, cx - 5, cy - 5); cairo_line_to(c, cx + 5, cy + 5);
-             cairo_move_to(c, cx + 5, cy - 5); cairo_line_to(c, cx - 5, cy + 5); }
-      cairo_stroke(c);
-    } else text(x + 8, y, w - 16, h, label, fg);
+    text(x + 8, y, w - 16, h, label, fg);
+  }
+  // Hit IDs match dome_qt_hit and Rust's release actions: close, zoom, depth.
+  // Draw the Workbench gadgets directly; their meaning must not depend on fonts
+  // or the generic minimize/maximize/close icons supplied by an icon theme.
+  void workbenchGadget(int x, int hit, Color caption, bool active, bool down,
+                       bool zoomed, int height) {
+    cairo_save(c);
+    cairo_set_antialias(c, CAIRO_ANTIALIAS_NONE);
+    auto fill = down ? sel : caption;
+    auto ink = active ? fg : muted;
+    auto shine = caption, shadow = caption;
+    for (auto channel : {&shine.r, &shine.g, &shine.b})
+      *channel += (1 - *channel) * .35;
+    for (auto channel : {&shadow.r, &shadow.g, &shadow.b})
+      *channel *= .55;
+    rect(x, 1, 28, height - 2, fill);
+    auto top = down ? shadow : shine, bottom = down ? shine : shadow;
+    rect(x, 1, 28, 1, top); rect(x, 1, 1, height - 2, top);
+    rect(x, height - 2, 28, 1, bottom); rect(x + 27, 1, 1, height - 2, bottom);
+    int cx = x + 13 + int(down), cy = height / 2 - 1 + int(down);
+    if (hit == 1) {
+      rect(cx - 4, cy - 4, 9, 9, ink);
+    } else if (hit == 3) {
+      // Two remembered size/position presets, rather than maximization.
+      border(cx - 7, cy - 5, 15, 11, ink);
+      if (zoomed) rect(cx - 5, cy - 3, 6, 5, ink);
+      else border(cx - 5, cy - 3, 6, 5, ink);
+    } else if (hit == 6) {
+      // The foreground plane occludes the rear plane: change stacking depth.
+      border(cx - 7, cy - 5, 11, 9, ink);
+      rect(cx - 2, cy - 1, 11, 9, fill);
+      border(cx - 2, cy - 1, 11, 9, ink);
+    }
+    cairo_restore(c);
   }
   void panelRows(const J &panel, const std::string &title, int rowHeight,
                  int top = 40) {
@@ -435,55 +492,41 @@ extern "C" void dome_qt_queue_bitmap_font(const unsigned char *data,
 extern "C" const char *dome_qt_font_catalog(const unsigned char *data,
                                             int length) {
   static std::string result;
-  if (!result.empty())
-    return result.c_str();
-  if (FT_Init_FreeType(&library)) {
-    result = "[]";
-    return result.c_str();
-  }
-  dome_qt_queue_bitmap_font(data, length);
-  for (auto &bytes : bundled) {
-    FT_Face f;
-    if (!FT_New_Memory_Face(library, bytes.data(), bytes.size(), 0, &f))
-      add(f);
-  }
-  std::set<std::string> paths;
-  auto query = FcPatternCreate();
-  FcPatternAddBool(query, FC_SCALABLE, FcFalse);
-  auto objects = FcObjectSetBuild(FC_FILE, nullptr);
-  auto matches = FcFontList(nullptr, query, objects);
-  if (matches) {
-    for (int i = 0; i < matches->nfont; ++i) {
-      FcChar8 *file;
-      if (FcPatternGetString(matches->fonts[i], FC_FILE, 0, &file) ==
-          FcResultMatch)
-        paths.emplace((char *)file);
+  static bool initialized = false;
+  if (!initialized) {
+    if (FT_Init_FreeType(&library)) { result = "[]"; return result.c_str(); }
+    dome_qt_queue_bitmap_font(data, length);
+    for (auto &bytes : bundled) {
+      FT_Face face;
+      if (!FT_New_Memory_Face(library, bytes.data(), bytes.size(), 0, &face)) add(face);
     }
-    FcFontSetDestroy(matches);
+    initialized = true;
   }
-  FcObjectSetDestroy(objects);
-  FcPatternDestroy(query);
-  for (auto &path : paths) {
-    FT_Face f;
-    if (!FT_New_Face(library, path.c_str(), 0, &f))
-      add(f);
-  }
+  available = bdf_fonts::discover();
   J catalog = J::array();
-  std::set<std::string> seen;
-  for (auto &f : fonts)
-    if (seen.insert(f.id).second)
-      catalog.push_back(
-          {{"id", f.id},
-           {"family", f.face->family_name},
-           {"style", f.face->style_name ? f.face->style_name : "Regular"},
-           {"sizes", f.sizes}});
+  std::map<std::string, size_t> indices;
+  for (const auto &font : available) {
+    if (!font.text || font.pixels > 64) continue;
+    auto found = indices.find(font.id());
+    if (found == indices.end()) {
+      indices[font.id()] = catalog.size();
+      catalog.push_back({{"id",font.id()},{"family",font.family},{"style",font.style},{"sizes",J::array({font.pixels})}});
+    } else {
+      auto sizes=catalog[found->second]["sizes"].get<std::vector<int>>();
+      sizes.push_back(font.pixels);std::sort(sizes.begin(),sizes.end());sizes.erase(std::unique(sizes.begin(),sizes.end()),sizes.end());
+      catalog[found->second]["sizes"]=sizes;
+    }
+  }
+  // Unifont covers ordinary interface text. Siji supplies the separate icon repertoire.
+  for (const auto &font : available)
+    if (font.family=="Unifont" || font.family=="Siji" || font.family=="siji") ensureFont(font.id(),font.pixels);
   result = catalog.dump();
   return result.c_str();
 }
-extern "C" int dome_qt_hit(int w, int h, int x, int y) {
+extern "C" int dome_qt_hit(int w, int h, int x, int y, int caption = 30) {
   if (x < 0 || y < 0 || x >= w || y >= h)
     return 0;
-  if (y < 30) {
+  if (y < caption) {
     if (x < 30)
       return 1;
     if (x >= w - 60 && x < w - 30)
@@ -510,18 +553,24 @@ extern "C" int dome_qt_paint(const char *json, unsigned char *pixels,
   (void)image_handlers;
   Paint p(c, obj(o, "appearance"));
   if (str(o, "kind") == "frame") {
-    auto caption = yes(o, "active") ? p.sel : p.bg;
-    caption.a = p.opacity;
-    p.rect(0, 0, w, 30, caption);
+    int bar_height = std::max(30, num(obj(o, "appearance"), "font_size", 16) * num(obj(o, "appearance"), "font_scale", 1) + 8);
+    bool active = yes(o, "active");
+    auto caption = active ? p.sel : p.bg;
+    cairo_push_group(c);
+    p.rect(0, 0, w, bar_height, caption);
+    p.text(38, 0, w - 106, bar_height, str(o, "title"), p.fg);
+    for (int hit : {1, 3, 6}) {
+      int x = hit == 1 ? 1 : hit == 3 ? w - 59 : w - 29;
+      p.workbenchGadget(x, hit, caption, active, num(o, "pressed") == hit,
+                        yes(o, "zoomed"), bar_height);
+    }
+    cairo_pop_group_to_source(c);
+    cairo_paint_with_alpha(c, p.opacity);
     auto border = p.accent;
-    border.a = .4;
-    p.rect(0, 30, 4, h - 30, border);
-    p.rect(w - 4, 30, 4, h - 30, border);
+    border.a = .4 * p.opacity;
+    p.rect(0, bar_height, 4, h - bar_height, border);
+    p.rect(w - 4, bar_height, 4, h - bar_height, border);
     p.rect(0, h - 4, w, 4, border);
-    p.text(38, 0, w - 106, 30, str(o, "title"), p.fg);
-    p.button(1, 1, 28, 28, "■", num(o, "pressed") == 1);
-    p.button(w - 59, 1, 28, 28, "□", num(o, "pressed") == 3);
-    p.button(w - 29, 1, 28, 28, "▣", num(o, "pressed") == 6);
   } else if (str(o, "kind") != "notifications") {
     auto bar = p.bg;
     bar.a = p.opacity;
@@ -748,8 +797,8 @@ extern "C" int dome_qt_paint(const char *json, unsigned char *pixels,
     if (yes(o, "appearance_open")) {
       bool keyboard =
           o.contains("keyboard_settings") && o["keyboard_settings"].is_object();
-      int x = (w - 600) / 2, y = (h - (keyboard ? 400 : 500)) / 2;
-      p.rect(x, y, 600, keyboard ? 400 : 500, p.bg);
+      int x = (w - 600) / 2, y = (h - (keyboard ? 400 : 560)) / 2;
+      p.rect(x, y, 600, keyboard ? 400 : 560, p.bg);
       p.text(x + 24, y + 18, 552, 32,
              keyboard ? "Keyboard Layouts · desktop and XR"
                       : "Appearance & Input",
@@ -758,28 +807,30 @@ extern "C" int dome_qt_paint(const char *json, unsigned char *pixels,
         auto a = obj(o, "appearance");
         std::vector<std::string> labels = {"Colour scheme",
                                            "Accent colour",
-                                           "Desktop background",
                                            "Chrome opacity",
-                                           "Global font · bitmap only",
+                                           "Font family · BDF only",
+                                           "Font face",
                                            "Font size",
+                                           "Font scale",
                                            "Reset settings"};
         std::vector<std::string> values = {yes(a, "light") ? "Light" : "Dark",
                                            str(a, "accent"),
-                                           "Change",
-                                           std::to_string(num(a, "opacity")),
-                                           str(a, "font"),
+                                           std::to_string((num(a, "opacity", 255) * 100 + 127) / 255) + "%",
+                                           str(a, "font").substr(0, str(a, "font").find(" / ")),
+                                           str(a, "font").substr(str(a, "font").find(" / ") + 3),
                                            std::to_string(num(a, "font_size")) +
                                                " px · native",
+                                           std::to_string(num(a, "font_scale", 1)) + "x",
                                            "Reset"};
-        for (int n = 0; n < 7; ++n) {
+        for (int n = 0; n < int(labels.size()); ++n) {
           p.text(x + 24, y + 60 + n * 48, 270, 40, labels[n], p.fg);
           p.button(x + 300, y + 60 + n * 48, 276, 40, values[n],
                    num(o, "shell_selection") == n);
         }
-        p.button(x + 24, y + 452, 260, 36, "Default applications...",
-                 num(o, "shell_selection") == 7);
-        p.button(x + 316, y + 452, 260, 36, "Close · Esc",
+        p.button(x + 24, y + 512, 260, 36, "Default applications...",
                  num(o, "shell_selection") == 8);
+        p.button(x + 316, y + 512, 260, 36, "Close · Esc",
+                 num(o, "shell_selection") == 9);
       } else {
         auto k = obj(o, "keyboard_settings");
         std::vector<std::string> keys = {"layout", "variant", "options"};
@@ -851,3 +902,5 @@ extern "C" int dome_qt_paint(const char *json, unsigned char *pixels,
 } catch (...) {
   return 0;
 }
+
+#include "bdf_font_ffi.hpp"

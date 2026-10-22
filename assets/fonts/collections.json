@@ -1,0 +1,90 @@
+{
+  "purpose": "Full testing bundle; may later be split into a smaller core and optional font package.",
+  "sources": [
+    {
+      "name": "UFO",
+      "url": "https://github.com/akahuku/ufo",
+      "directory": "akahuku--ufo"
+    },
+    {
+      "name": "Artwiz WL",
+      "url": "https://codeberg.org/whitelynx/artwiz-fonts-wl",
+      "directory": "whitelynx--artwiz-fonts-wl"
+    },
+    {
+      "name": "X11 Fixed 10x20",
+      "url": "https://github.com/pagecp/x11-fixed-10x20",
+      "directory": "pagecp--x11-fixed-10x20"
+    },
+    {
+      "name": "Robotron 1715",
+      "url": "https://github.com/kolontsov/robotron1715-font",
+      "directory": "kolontsov--robotron1715-font"
+    },
+    {
+      "name": "Classic Mac",
+      "url": "https://github.com/jcs/classic-mac-fonts",
+      "directory": "jcs--classic-mac-fonts"
+    },
+    {
+      "name": "IBM",
+      "url": "https://github.com/farsil/ibmfonts",
+      "directory": "farsil--ibmfonts"
+    },
+    {
+      "name": "OldSchool PC",
+      "url": "https://github.com/elementarythings/font_OldSchool_PC",
+      "directory": "elementarythings--font_OldSchool_PC"
+    },
+    {
+      "name": "Hiro X11",
+      "url": "https://github.com/h-ohsaki/x11-fonts",
+      "directory": "h-ohsaki--x11-fonts"
+    },
+    {
+      "name": "OEM12x20",
+      "url": "https://github.com/edragoev1/OEM12x20",
+      "directory": "edragoev1--OEM12x20"
+    },
+    {
+      "name": "Historical Hangul",
+      "url": "https://github.com/ageldama/x11-hangul-fonts-from-20th-century",
+      "directory": "ageldama--x11-hangul-fonts-from-20th-century"
+    },
+    {
+      "name": "Terminus",
+      "url": "https://terminus-font.sourceforge.net",
+      "directory": "terminus-4.49.1"
+    },
+    {
+      "name": "uni16m",
+      "url": "https://github.com/bluebat/uni16m",
+      "directory": "bluebat--uni16m"
+    },
+    {
+      "name": "Zpix",
+      "url": "https://github.com/SolidZORO/zpix-pixel-font",
+      "directory": "SolidZORO--zpix-pixel-font"
+    },
+    {
+      "name": "Dina",
+      "url": "https://www.donationcoder.com/dcmembers/jibsen/download/61/",
+      "directory": "Tecate--bitmap-fonts/bitmap/dina"
+    },
+    {
+      "name": "Tecate",
+      "url": "https://github.com/Tecate/bitmap-fonts/tree/master",
+      "directory": "Tecate--bitmap-fonts"
+    },
+    {
+      "name": "Monomacs",
+      "url": "https://github.com/brdjns-zz/monomacs",
+      "directory": "brdjns-zz--monomacs"
+    },
+    {
+      "name": "Siji",
+      "url": "https://github.com/stark/siji",
+      "directory": "stark--siji"
+    }
+  ]
+}

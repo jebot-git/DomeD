@@ -1,0 +1,2 @@
+Bundled at the user's request for personal/education use. See README.md License and Pricing for upstream terms. Commercial product use requires a separate license from SolidZORO.
+Bitmap strike extracted from the pinned SFD with FontForge; glyph pixels are not rasterized from outlines.
