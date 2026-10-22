@@ -65,7 +65,7 @@ with tempfile.TemporaryDirectory(prefix='dome-tray-ui-') as directory:
    if ctrl:xtest.fake_input(d,X.KeyRelease,d.keysym_to_keycode(XK.string_to_keysym('Control_L')))
    d.sync();time.sleep(.15)
   def click(w,x,y):
-   pos=w.translate_coords(d.screen().root,0,0);xtest.fake_input(d,X.MotionNotify,x=pos.x+x,y=pos.y+y)
+   pos=w.translate_coords(d.screen().root,0,0);xtest.fake_input(d,X.MotionNotify,x=pos.x+x,y=pos.y+y-28)
    xtest.fake_input(d,X.ButtonPress,1);xtest.fake_input(d,X.ButtonRelease,1);d.sync();time.sleep(.3)
   menu='/TrayApplications/Menu'
   layout=dbus(menu,'com.canonical.dbusmenu.GetLayout','0','1','[]')
@@ -74,6 +74,7 @@ with tempfile.TemporaryDirectory(prefix='dome-tray-ui-') as directory:
   assert window() is None,'Unknown menu events must not open a page'
   for row,page in enumerate(['tray','devices','input','wallets','translator','screenshot'],1):
    dbus(menu,'com.canonical.dbusmenu.Event',str(row),'clicked','<0>','0');w=wait(window);w.set_input_focus(X.RevertToParent,X.CurrentTime);d.sync();time.sleep(.6)
+   assert w.get_geometry().height==632, 'DomeD manager must reclaim the local menu bar space'
    geo=w.get_geometry();raw=w.get_image(0,0,geo.width,geo.height,X.ZPixmap,0xffffffff)
    img=Image.frombytes('RGB',(geo.width,geo.height),raw.data,'raw','BGRX')
    img.save(out/('ui-'+page+'.png'))
@@ -131,6 +132,13 @@ with tempfile.TemporaryDirectory(prefix='dome-tray-ui-') as directory:
   w=wait(window);w.set_input_focus(X.RevertToParent,X.CurrentTime);d.sync();time.sleep(.5)
   key('w',ctrl=True);wait(lambda:window() is None)
   dbus(menu,'com.canonical.dbusmenu.Event','1','clicked','<0>','0');wait(window)
+  w=wait(window)
+  service_name=wait(lambda:window().get_full_property(d.intern_atom('_KDE_NET_WM_APPMENU_SERVICE_NAME'),X.AnyPropertyType)).value.decode()
+  object_path=w.get_full_property(d.intern_atom('_KDE_NET_WM_APPMENU_OBJECT_PATH'),X.AnyPropertyType).value.decode()
+  layout=subprocess.run(['gdbus','call','--session','--dest',service_name,'--object-path',object_path,
+   '--method','com.canonical.dbusmenu.GetLayout','0','2','[]'],env=env,capture_output=True,text=True,timeout=4)
+  assert layout.returncode==0,layout.stderr
+  for label in ['_File','_Refresh','_Close','_Quit','_View']:assert label in layout.stdout,layout.stdout
   second=subprocess.run([str(BUILD/'dome-tray'),'--devices'],env=env,capture_output=True,timeout=4);assert second.returncode==0
   assert len([w for w in d.screen().root.query_tree().children if w.get_wm_class() and 'org.domed.Tray' in w.get_wm_class()])==1
   translator=start([str(ROOT/'build/translator/dome-translator'),'--tray'],env,'ui-translator.log')
@@ -153,12 +161,17 @@ with tempfile.TemporaryDirectory(prefix='dome-tray-ui-') as directory:
   assert not service('menu',item=item,parent=0)[4]['enabled']
   print('PASS: translator has one manager entry, live toggle state, working settings and Quit, and returns to launchable state')
   log=(out/'ui-frontend.log').read_text();assert 'FLTK GPU widgets:' in log,log
-  w=wait(window);w.set_input_focus(X.RevertToParent,X.CurrentTime);d.sync();key('q',ctrl=True);assert manager.wait(timeout=4)==0
+  w=wait(window);w.set_input_focus(X.RevertToParent,X.CurrentTime);d.sync();time.sleep(.3);key('q',ctrl=True);assert manager.wait(timeout=4)==0
   # Starting directly on a service page must also survive closing the window.
   manager=start([str(BUILD/'fcitx5-configuration-fltk'),'fcitx://config/global'],env,'ui-direct-frontend.log')
   w=wait(window);w.set_input_focus(X.RevertToParent,X.CurrentTime);d.sync();key('w',ctrl=True)
   wait(lambda:window() is None);assert manager.poll() is None
   dbus(menu,'com.canonical.dbusmenu.Event','1','clicked','<0>','0');wait(window)
+  w=wait(window);w.set_input_focus(X.RevertToParent,X.CurrentTime);d.sync();time.sleep(.3);key('q',ctrl=True);assert manager.wait(timeout=4)==0
+  fallback=start([str(BUILD/'dome-tray'),'--tray'],{**env,'XDG_CURRENT_DESKTOP':'Other'},'ui-fallback.log')
+  w=wait(window);assert w.get_geometry().height==660,'Other desktops must retain the local menu layout'
+  w.set_input_focus(X.RevertToParent,X.CurrentTime);d.sync();time.sleep(.3);key('q',ctrl=True);assert fallback.wait(timeout=4)==0
+  print('PASS: DomeD hides the local menu, exports its commands, preserves shortcuts, and other desktops retain the fallback')
   print('PASS: one tray entry, four pages, two utility shortcuts, flags, Fcitx method/group/configuration submenus, fcitx5-configuration-fltk URI routing, GPU presentation, close/restore and explicit Quit')
  finally:
   for p in reversed(processes):p.terminate()

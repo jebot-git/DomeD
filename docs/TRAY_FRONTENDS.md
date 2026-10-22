@@ -105,3 +105,8 @@ The direct PrintScreen/panel shortcuts remain available. Older running composito
 versions show a disabled capture action until the next session; installation never
 restarts an active session. `dome-tray --translator` and `--screenshot` select these
 entries directly, as do the corresponding manager tray-menu shortcuts.
+
+Inside DomeD the manager exports its File/View/Input methods/Wallet commands to
+the universal menu and hides the in-window menu bar, reclaiming its vertical
+space. Shortcuts remain active while the local widget is hidden. Other desktop
+environments retain the local menu bar as a fallback.

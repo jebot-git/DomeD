@@ -922,7 +922,15 @@ public:
     status.align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE | FL_ALIGN_WRAP);
     end();
     xclass("org.domed.Tray");
-    size_range(940, 660);
+    if (dx::dome()) {
+      // Keep the command model for DBusMenu; DomeD draws the only menu bar.
+      menu.hide();
+      menu.global(); // Hidden menu widgets still own the application shortcuts.
+      tabs.position(tabs.x(), tabs.y() - menu.h());
+      status.position(status.x(), status.y() - menu.h());
+      size(w(), h() - menu.h());
+    }
+    size_range(w(), h());
     dx::style(this);
     callback([](Fl_Widget *, void *p) { ((Manager *)p)->close(); }, this);
     Fl::add_timeout(.04, tick, this);

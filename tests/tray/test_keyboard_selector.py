@@ -82,6 +82,13 @@ try:
   time.sleep(.3)
   shot('06-fltk-configuration')
   assert manager.poll() is None
+  # Invoke the manager's real File > Close through the compositor's universal menu.
+  # The hidden local menu must remain exported and closing must keep the tray alive.
+  click(255,18);time.sleep(.4);shot('07-universal-file')
+  key('Home');key('Down');key('Return')
+  wait(lambda:not any(w['app_id']=='org.domed.Tray' for w in scene()['windows']))
+  assert manager.poll() is None
+  print('PASS: native Wayland universal File > Close hides the manager and preserves its tray service')
   print('PASS: flag updates, Fcitx SNI suppression, keyboard submenu navigation and native Wayland configuration frontend')
 finally:
  for p in reversed(children):p.terminate()
