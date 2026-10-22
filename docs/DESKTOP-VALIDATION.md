@@ -44,6 +44,30 @@ The report and captures are in `artifacts/desktop/`. Non-fatal Xvfb diagnostics
 about missing XSETTINGS and a zero-millimetre virtual monitor are expected. Qt
 fixture portal-registration warnings do not come from the compositor.
 
+## Cursor authority and Appearance
+
+`scripts/test-cursor.py` compiles a small raw Wayland client and runs DomeD on a
+private Xvfb display. The client requests a magenta cursor, a hidden cursor, an
+offset hotspot and an animated cursor surface. Framebuffer assertions verify
+that DomeD's arrow remains visible through those requests, button delivery,
+pointer leave/reentry and client disconnection. XFixes verifies that the nested
+host cursor is transparent. The real Appearance controls switch dark → light →
+dark while the test checks the cursor fill, outline and XR control transport.
+
+```sh
+DOME_COMPOSITOR="$PWD/target/release/dome-compositor" \
+  uv run --no-project --with python-xlib --with pillow python scripts/test-cursor.py
+DOME_RENDERER=vulkan DOME_COMPOSITOR="$PWD/target/release/dome-compositor" \
+  uv run --no-project --with python-xlib --with pillow python scripts/test-cursor.py
+```
+
+Requires `wayland-scanner`, `wayland-protocols`, `wayland-client` development
+files, a C compiler, Xvfb and Mesa. Reports and screenshots are saved under
+`artifacts/cursor-gles/` and `artifacts/cursor-vulkan/`. The Rust transport test
+also checks compatibility with an older compositor's control schema and verifies
+that changing reticle colours preserves its shape and opaque outline.
+Both renderers passed all 35 checks on 2026-10-22; 24 XR-related Rust tests passed.
+
 ## Bugs found and fixed
 
 1. **Stacking reverted on repaint.** Scene synchronization called Smithay's

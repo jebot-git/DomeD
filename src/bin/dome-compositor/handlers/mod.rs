@@ -31,9 +31,10 @@ impl SeatHandler for Dome {
     fn cursor_image(
         &mut self,
         _seat: &Seat<Self>,
-        image: smithay::input::pointer::CursorImageStatus,
+        _image: smithay::input::pointer::CursorImageStatus,
     ) {
-        self.cursor_status = image;
+        // DomeD owns cursor appearance and visibility. Accept protocol requests
+        // without allowing client surfaces, hotspots or hide requests to override it.
     }
 
     fn led_state_changed(&mut self, _seat: &Seat<Self>, leds: smithay::input::keyboard::LedState) {

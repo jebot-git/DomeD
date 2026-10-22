@@ -303,8 +303,9 @@ pub fn window_order(scene: &Scene, id: u64) -> u8 {
     else { 1 }
 }
 
-/// Cyan/white reticle with an opaque dark outline on light and dark content.
-pub fn cursor_pixels() -> Vec<u8> {
+/// Appearance-contrasting reticle using the desktop cursor palette.
+pub fn cursor_pixels(light: bool) -> Vec<u8> {
+    let (fill, edge) = crate::visual_feedback::cursor_colors(light);
     let mut pixels = vec![0; 32 * 32 * 4];
     for y in 0..32 {
         for x in 0..32 {
@@ -315,9 +316,8 @@ pub fn cursor_pixels() -> Vec<u8> {
             let cross = (dx <= 1. && dy <= 6.) || (dy <= 1. && dx <= 6.);
             let outline = (8.0..=13.5).contains(&radius)
                 || (dx <= 2.5 && dy <= 7.5) || (dy <= 2.5 && dx <= 7.5);
-            let color = if cross { [255, 255, 255, 255] }
-                else if ring { [40, 235, 255, 255] }
-                else if outline { [8, 12, 18, 255] } else { [0; 4] };
+            let color = if cross || ring { fill }
+                else if outline { edge } else { [0; 4] };
             pixels[(y * 32 + x) * 4..(y * 32 + x) * 4 + 4].copy_from_slice(&color);
         }
     }

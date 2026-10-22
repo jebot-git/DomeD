@@ -12,7 +12,6 @@ use smithay::{
         gles::{GlesRenderer, GlesTarget},
         sync::SyncPoint,
     },
-    input::pointer::{CursorImageStatus, CursorImageSurfaceData},
     output::Output,
     utils::{Physical, Size, Transform},
 };
@@ -26,7 +25,7 @@ smithay::backend::renderer::element::render_elements! {
 pub struct DesktopRenderer {
     decoration_buffers: std::collections::HashMap<u64, (String, MemoryRenderBuffer)>,
     shell_buffer: Option<(String, MemoryRenderBuffer)>,
-    cursor: Option<MemoryRenderBuffer>,
+    cursor: Option<(bool, MemoryRenderBuffer)>,
     snap_buffer: Option<SolidColorBuffer>,
     focus_buffers: std::collections::HashMap<u64, Vec<SolidColorBuffer>>,
 }
@@ -123,6 +122,7 @@ impl DesktopRenderer {
         }
         {
             let mut bridge = state.xr_bridge.lock().unwrap();
+            bridge.light = state.appearance.light;
             bridge.accent = dome::visual_feedback::accent(&state.appearance.accent);
             for (id, f) in &mut bridge.frames {
                 if dome::xr_transport::is_shell(*id) {
@@ -138,7 +138,6 @@ impl DesktopRenderer {
         framebuffer: &mut GlesTarget<'_>,
         damage_tracker: &mut OutputDamageTracker,
         age: usize,
-        software_cursor: bool,
     ) -> Result<SyncPoint, Box<dyn std::error::Error>> {
         self.render_at(
             state,
@@ -146,7 +145,6 @@ impl DesktopRenderer {
             framebuffer,
             damage_tracker,
             age,
-            software_cursor,
             (0, 0).into(),
         )
     }
@@ -157,7 +155,6 @@ impl DesktopRenderer {
         framebuffer: &mut GlesTarget<'_>,
         damage_tracker: &mut OutputDamageTracker,
         age: usize,
-        software_cursor: bool,
         origin: smithay::utils::Point<i32, smithay::utils::Logical>,
     ) -> Result<SyncPoint, Box<dyn std::error::Error>> {
         state.export_notification_windows(renderer);
@@ -351,13 +348,11 @@ impl DesktopRenderer {
         }
         let mut cursors = Vec::new();
         if !state.input_xr_active { self.cursor_elements(state, renderer, &mut cursors); }
-        let cursor_count = cursors.len();
         cursors.extend(elements);
         elements = cursors;
         if let Some(output) = &capture_output {
             crate::screencast::render(renderer, output, origin, &elements, 2, background);
         }
-        if !software_cursor { elements.drain(..cursor_count); }
         let elements: Vec<_> = elements
             .into_iter()
             .map(|e| {
@@ -391,57 +386,39 @@ impl DesktopRenderer {
         elements: &mut Vec<DesktopElement>,
     ) {
         let location = state.seat.get_pointer().unwrap().current_location();
-        match &state.cursor_status {
-            CursorImageStatus::Hidden => (),
-            CursorImageStatus::Surface(surface) => {
-                let hotspot = smithay::wayland::compositor::with_states(surface, |states| {
-                    states
-                        .data_map
-                        .get::<CursorImageSurfaceData>()
-                        .map(|attrs| attrs.lock().unwrap().hotspot)
-                        .unwrap_or_default()
-                });
-                elements.extend(smithay::backend::renderer::element::surface::render_elements_from_surface_tree::<GlesRenderer,DesktopElement>(
-                    renderer,surface,(location.x.round() as i32-hotspot.x,location.y.round() as i32-hotspot.y),1.,1.,Kind::Cursor));
-            }
-            CursorImageStatus::Named(_) => {
-                let buffer = self.cursor.get_or_insert_with(|| {
-                    let mut pixels = vec![0u8; 24 * 32 * 4];
-                    for y in 0..27usize {
-                        for x in 0..18usize {
-                            if x <= y * 2 / 3 && (x < 5 || y < 19) {
-                                let edge = x == 0 || x == y * 2 / 3 || y == 26;
-                                let color = if edge {
-                                    [20, 20, 20, 255]
-                                } else {
-                                    [245, 245, 245, 255]
-                                };
-                                pixels[(y * 24 + x) * 4..(y * 24 + x) * 4 + 4]
-                                    .copy_from_slice(&color);
-                            }
-                        }
+        let light = state.appearance.light;
+        if self.cursor.as_ref().is_none_or(|(old, _)| *old != light) {
+            let (fill, outline) = dome::visual_feedback::cursor_colors(light);
+            let mut pixels = vec![0u8; 24 * 32 * 4];
+            for y in 0..27usize {
+                for x in 0..18usize {
+                    if x <= y * 2 / 3 && (x < 5 || y < 19) {
+                        let edge = x == 0 || x == y * 2 / 3 || y == 26;
+                        let color = if edge { outline } else { fill };
+                        pixels[(y * 24 + x) * 4..(y * 24 + x) * 4 + 4]
+                            .copy_from_slice(&color);
                     }
-                    MemoryRenderBuffer::from_slice(
-                        &pixels,
-                        smithay::backend::allocator::Fourcc::Argb8888,
-                        (24, 32),
-                        1,
-                        Transform::Normal,
-                        None,
-                    )
-                });
-                if let Ok(cursor) = MemoryRenderBufferRenderElement::from_buffer(
-                    renderer,
-                    (location.x, location.y),
-                    buffer,
-                    None,
-                    None,
-                    None,
-                    Kind::Cursor,
-                ) {
-                    elements.push(cursor.into());
                 }
             }
+            self.cursor = Some((light, MemoryRenderBuffer::from_slice(
+                &pixels,
+                smithay::backend::allocator::Fourcc::Argb8888,
+                (24, 32),
+                1,
+                Transform::Normal,
+                None,
+            )));
+        }
+        if let Ok(cursor) = MemoryRenderBufferRenderElement::from_buffer(
+            renderer,
+            (location.x, location.y),
+            &self.cursor.as_ref().unwrap().1,
+            None,
+            None,
+            None,
+            Kind::Cursor,
+        ) {
+            elements.push(cursor.into());
         }
     }
 }

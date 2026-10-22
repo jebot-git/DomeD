@@ -49,6 +49,10 @@ Supply the STAGE floor extent in metres when the runtime does not expose bounds.
 .SH ENVIRONMENT
 XR_RUNTIME_JSON selects the OpenXR runtime manifest. Use a runtime that supports the required composition layers.
 .SH INTERACTION FEEDBACK
+The compositor owns the cursor. The XR reticle follows DomeD Appearance changes
+live: light in dark mode and dark in light mode, with a contrasting outline.
+Client cursor images and hide requests do not affect it.
+.PP
 Double-clicking the physical mouse's middle button shows three short
 accent-coloured rings contracting onto the current view cursor. The animation
 lasts 660 milliseconds and preserves ordinary middle-button events.

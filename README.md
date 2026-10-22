@@ -269,8 +269,11 @@ all options. The selected row stays visible and hit testing follows the viewport
 **Ctrl+Alt+F1…F12** switches VTs through libseat. Seat deactivation stops scanout and
 input, balances held buttons/keys, stops XR input and hides the terminal overlay.
 Reactivation restores scanout and client focus. Native Wayland clients can use
-DMA-BUF buffers; client cursor surfaces and a fallback software cursor are drawn
-by Dome. The nested and native backends share shell, popup and XR rendering.
+DMA-BUF buffers. DomeD owns the cursor globally: client cursor images, hotspots
+and hide requests cannot replace or hide it. Native and nested sessions draw the
+same DomeD arrow, with the nested host cursor hidden. Appearance changes repaint
+the cursor immediately: light fill in dark mode, dark fill in light mode, with a
+contrasting outline. The nested and native backends share shell, popup and XR rendering.
 
 The session requests XR and the native Ghostty overlay at startup. If the headset
 or runtime is unavailable, the desktop remains usable; use **Start XR** when it
@@ -581,8 +584,9 @@ recenter the window; moving a pulled-out panel returns it to the dome.
 **Super+Alt+Left/Right** reorders it horizontally within its lane, stopping at
 both ends. **Super+Equals/Minus** grows/shrinks it by 10% within 0.25–4× scale.
 The focused window renders over its neighbours; enlarged unfocused windows
-render underneath them. The larger cyan/white cursor has a dark outline for
-contrast over light and dark content. These actions can be rebound in Settings.
+render underneath them. The larger XR reticle follows the same Appearance palette
+as the desktop cursor, with a contrasting outline over application content.
+These actions can be rebound in Settings.
 Saved profiles retire stock duplicate shortcuts while preserving custom remaps.
 
 Inactive desktops with XR windows remain visible as progressively deeper, faded
@@ -1175,6 +1179,8 @@ python3 scripts/test-service.py
 python3 scripts/test-native.py
 # Full desktop input and framebuffer tests on an isolated display (requires Xvfb):
 uv run --no-project --with PySide6 --with python-xlib --with pillow --with dbus-next python scripts/test-desktop.py
+# Cursor override prevention and live dark/light Appearance changes on a private display:
+uv run --no-project --with python-xlib --with pillow python scripts/test-cursor.py
 # With dome-preview running, optional offscreen visual/interaction check:
 uv run --no-project --with PySide6 python scripts/preview-smoke.py
 ```

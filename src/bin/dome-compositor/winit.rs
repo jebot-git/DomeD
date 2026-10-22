@@ -45,6 +45,8 @@ pub fn init_winit(
             smithay::reexports::winit::window::Fullscreen::Borderless(None),
         ));
     }
+    // Render the same DomeD cursor as native outputs; never show a second host cursor.
+    backend.window().set_cursor_visible(false);
     let mode = Mode {
         size: backend.window_size(),
         refresh: 60_000,
@@ -145,7 +147,6 @@ pub fn init_winit(
                                 &mut target,
                                 &mut damage_tracker,
                                 0,
-                                false,
                             )
                             .unwrap();
                         sync.wait().unwrap();
@@ -217,7 +218,6 @@ pub fn init_winit(
                                 &mut framebuffer,
                                 &mut damage_tracker,
                                 0,
-                                false,
                             )
                             .unwrap();
                         if let Some(path) = std::env::var_os("DOME_RENDER_CAPTURE") {

@@ -288,7 +288,6 @@ impl Native {
                         &mut framebuffer,
                         &mut output.damage,
                         age as usize,
-                        true,
                         origin,
                     )?;
                     if let Some(path) = &self.capture {
@@ -311,7 +310,6 @@ impl Native {
                     &mut framebuffer,
                     &mut output.damage,
                     0,
-                    true,
                     origin,
                 )?;
                 sync.wait()?;

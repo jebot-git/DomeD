@@ -6,6 +6,14 @@ pub const FINDER_SIZE: u32 = 128;
 pub const FINDER_DURATION: f32 = 0.66;
 pub const ACCENT: [u8; 3] = [107, 171, 255];
 
+/// Cursor fill contrasts with the shell theme; the inverse outline stays visible
+/// when the pointer crosses application content of either brightness.
+pub fn cursor_colors(light: bool) -> ([u8; 4], [u8; 4]) {
+    let dark = [20, 20, 20, 255];
+    let pale = [245, 245, 245, 255];
+    if light { (dark, pale) } else { (pale, dark) }
+}
+
 #[derive(Default)]
 pub struct CursorFinder {
     last: Option<(Instant, Realm, [f64; 2])>,

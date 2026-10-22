@@ -83,6 +83,14 @@ mouse selection; a stationary XR mouse ray does not replace keyboard selection.
 Inactive desktops containing XR windows remain visible as deeper, faded dome
 layers. Only the active desktop accepts input; switching desktops brings the
 selected desktop to the front. Minimized and desktop-only windows are omitted.
+.SH CURSOR
+DomeD owns cursor appearance and visibility globally. Applications cannot replace
+the cursor image or hotspot, or hide it. Native and nested backends draw the
+DomeD arrow; the nested host cursor is hidden to avoid duplicate pointers.
+Appearance changes take effect immediately: dark mode uses a light cursor and
+light mode uses a dark cursor, each with a contrasting outline. The XR reticle
+uses the same palette. Cursor visibility during desktop/XR input handover remains
+under compositor control.
 .SH CURSOR FINDER
 Double-click the middle mouse button within 400 milliseconds, with at most
 eight logical pixels of desktop pointer movement (a nearby ray position in XR),

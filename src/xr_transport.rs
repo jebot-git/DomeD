@@ -44,6 +44,7 @@ pub struct Bridge {
     pub cursor: Option<Cursor>,
     pub finder_started: Option<Instant>,
     pub accent: [u8; 3],
+    pub light: bool,
     pub mouse_angles: Option<[f32; 2]>,
     pub last_mouse: Option<Instant>,
     pub mouse_buttons: std::collections::HashSet<u32>,
@@ -68,6 +69,7 @@ impl Default for Bridge {
             cursor: None,
             finder_started: None,
             accent: crate::visual_feedback::ACCENT,
+            light: false,
             mouse_angles: None,
             last_mouse: None,
             mouse_buttons: Default::default(),
@@ -114,6 +116,9 @@ pub struct Control {
     pub finder_seconds: Option<f32>,
     #[serde(default = "default_accent")]
     pub accent: [u8; 3],
+    /// Shell Appearance mode; older compositors default to the dark theme.
+    #[serde(default)]
+    pub light: bool,
     pub input_realm: crate::Realm,
     pub visible: bool,
     pub mouse: bool,
@@ -170,6 +175,7 @@ impl Bridge {
             finder_seconds: self.finder_started.map(|t| t.elapsed().as_secs_f32())
                 .filter(|t| self.input_realm == crate::Realm::Xr && *t < crate::visual_feedback::FINDER_DURATION),
             accent: self.accent,
+            light: self.light,
             input_realm: self.input_realm,
             visible: self.visible(),
             mouse: self.mouse_owned(),
@@ -229,6 +235,27 @@ impl Bridge {
 mod tests {
     use super::*;
     use std::time::Duration;
+    #[test]
+    fn cursor_appearance_crosses_transport_and_preserves_reticle_geometry() {
+        let mut bridge = Bridge::default();
+        let mut legacy = serde_json::to_value(bridge.control()).unwrap();
+        legacy.as_object_mut().unwrap().remove("light");
+        assert!(!serde_json::from_value::<Control>(legacy).unwrap().light);
+        bridge.light = true;
+        let control: Control = serde_json::from_value(serde_json::to_value(bridge.control()).unwrap()).unwrap();
+        let dark = crate::xr_input::cursor_pixels(false);
+        let light = crate::xr_input::cursor_pixels(control.light);
+        let center = (15 * 32 + 15) * 4;
+        assert_eq!(&dark[center..center + 4], &[245, 245, 245, 255]);
+        assert_eq!(&light[center..center + 4], &[20, 20, 20, 255]);
+        for (a, b) in dark.chunks_exact(4).zip(light.chunks_exact(4)) {
+            assert_eq!(a[3], b[3]);
+            if a[3] != 0 {
+                assert_eq!(a[0] as u16 + b[0] as u16, 265);
+                assert_eq!(a[3], 255);
+            }
+        }
+    }
     #[test]
     fn runtime_timing_tracks_rate_changes_and_expires_with_the_session() {
         assert_eq!(serde_json::from_str::<Session>("{}").unwrap().frame_period_ns, 0);

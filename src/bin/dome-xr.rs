@@ -850,7 +850,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         geometry.push(finder);
                     }
                     let id = reticle.id;
-                    let rgba = dome::xr_input::cursor_pixels();
+                    let rgba = dome::xr_input::cursor_pixels(control.light);
                     images.insert(
                         id,
                         Image {
@@ -858,7 +858,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             height: 32,
                             rgba,
                             gpu: None,
-                            serial: 1,
+                            // Invalidate the uploaded texture on live Appearance changes.
+                            serial: 1 + u64::from(control.light),
                         },
                     );
                     geometry.push(reticle);
