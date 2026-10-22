@@ -398,17 +398,11 @@ impl DesktopRenderer {
                 )
             })
             .collect();
-        let sync=damage_tracker.render_output(renderer,framebuffer,age,&elements,background)
-            .map_err(|e|format!("Desktop rendering: {e}"))?.sync;
-        if let Some(size)=state.screenshot.selection.as_ref()
-            .filter(|s|s.pixels.is_none()&&s.bounds.loc==origin).map(|s|s.bounds.size) {
-            sync.wait()?;
-            state.capture_screenshot(renderer,framebuffer,origin);
-            use smithay::backend::renderer::{Renderer,Frame};
-            // Readback changes the current EGL target; restore it before presentation.
-            return Ok(renderer.render(framebuffer,(size.w,size.h).into(),Transform::Flipped180)?.finish()?);
-        }
-        Ok(sync)
+        // Capture before the selection overlay exists, into a normalized target.
+        // render_output below rebinds the real target and preserves its transform.
+        state.capture_screenshot(renderer, &elements, origin, background);
+        Ok(damage_tracker.render_output(renderer, framebuffer, age, &elements, background)
+            .map_err(|e| format!("Desktop rendering: {e}"))?.sync)
     }
 
     fn cursor_elements(

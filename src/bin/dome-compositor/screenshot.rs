@@ -2,12 +2,40 @@
 use dome::screenshot::Pixels;
 use smithay::{
     backend::renderer::{
-        gles::{GlesRenderer, GlesTarget},
-        ExportMem, TextureMapping,
+        damage::OutputDamageTracker,
+        element::RenderElement,
+        gles::{GlesRenderer, GlesTexture, GlesTarget},
+        Bind, ExportMem, Offscreen, TextureMapping,
     },
-    utils::{Logical, Point, Rectangle},
+    utils::{Logical, Physical, Point, Rectangle, Size, Transform},
 };
 use std::{sync::mpsc, time::Instant};
+/// Render in logical desktop orientation, independently of the presentation target.
+/// Native DRM uses Normal while nested presentation uses Flipped180. Reading
+/// either presentation framebuffer and only checking mapping.flipped() cannot
+/// account for that difference. Keep screenshot pixels top-down in both cases.
+fn capture_pixels<E: RenderElement<GlesRenderer>>(
+    renderer: &mut GlesRenderer,
+    elements: &[E],
+    size: Size<i32, Physical>,
+    background: [f32; 4],
+) -> Result<Pixels, Box<dyn std::error::Error>> {
+    let mut texture: GlesTexture = renderer.create_buffer(
+        smithay::backend::allocator::Fourcc::Abgr8888, (size.w, size.h).into())?;
+    let mut target: GlesTarget<'_> = renderer.bind(&mut texture)?;
+    let mut damage = OutputDamageTracker::new(size, 1., Transform::Flipped180);
+    damage.render_output(renderer, &mut target, 0, elements, background)?.sync.wait()?;
+    let mapping = renderer.copy_framebuffer(
+        &target, Rectangle::from_size((size.w, size.h).into()),
+        smithay::backend::allocator::Fourcc::Abgr8888)?;
+    let flipped = mapping.flipped();
+    let bytes = renderer.map_texture(&mapping)?;
+    let stride = size.w as usize * 4;
+    let rgba = if flipped {
+        bytes.chunks_exact(stride).rev().flatten().copied().collect()
+    } else { bytes.to_vec() };
+    Ok(Pixels { width: size.w as u32, height: size.h as u32, rgba })
+}
 pub struct Selection {
     pub bounds: Rectangle<i32, Logical>,
     pub pixels: Option<Pixels>,
@@ -145,11 +173,12 @@ impl crate::Dome {
         }
         true
     }
-    pub fn capture_screenshot(
+    pub fn capture_screenshot<E: RenderElement<GlesRenderer>>(
         &mut self,
         renderer: &mut GlesRenderer,
-        target: &GlesTarget<'_>,
+        elements: &[E],
         origin: Point<i32, Logical>,
+        background: [f32; 4],
     ) {
         let Some(selection) = self
             .screenshot
@@ -160,31 +189,7 @@ impl crate::Dome {
             return;
         };
         let size = selection.bounds.size;
-        let result = (|| -> Result<Pixels, Box<dyn std::error::Error>> {
-            let mapping = renderer.copy_framebuffer(
-                target,
-                Rectangle::from_size((size.w, size.h).into()),
-                smithay::backend::allocator::Fourcc::Abgr8888,
-            )?;
-            let flipped = mapping.flipped();
-            let bytes = renderer.map_texture(&mapping)?;
-            let stride = size.w as usize * 4;
-            let rgba = if flipped {
-                bytes
-                    .chunks_exact(stride)
-                    .rev()
-                    .flatten()
-                    .copied()
-                    .collect()
-            } else {
-                bytes.to_vec()
-            };
-            Ok(Pixels {
-                width: size.w as u32,
-                height: size.h as u32,
-                rgba,
-            })
-        })();
+        let result = capture_pixels(renderer, elements, (size.w, size.h).into(), background);
         match result {
             Ok(pixels) => selection.pixels = Some(pixels),
             Err(e) => {
@@ -235,6 +240,43 @@ impl crate::Dome {
                 }
                 Err(e) => self.screenshot_notice("Screenshot failed", &e),
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use smithay::backend::renderer::element::{
+        memory::{MemoryRenderBuffer, MemoryRenderBufferRenderElement}, Kind,
+    };
+
+    #[test]
+    fn desktop_capture_keeps_rows_columns_and_crop_in_both_presentations() {
+        let mut renderer = crate::rendering::offscreen().expect("offscreen EGL renderer");
+        // Every pixel differs in both axes, so reflection or rotation cannot pass.
+        let size: Size<i32, Physical> = (7, 5).into();
+        let rgba: Vec<u8> = (0..5).flat_map(|y| (0..7).flat_map(move |x|
+            [x * 31, y * 47, (x + y) * 17, 255])).collect();
+        let buffer = MemoryRenderBuffer::from_slice(&rgba,
+            smithay::backend::allocator::Fourcc::Abgr8888, (7, 5), 1, Transform::Normal, None);
+        let element = MemoryRenderBufferRenderElement::from_buffer(
+            &mut renderer, (0., 0.), &buffer, None, None, None, Kind::Unspecified).unwrap();
+        let elements = [element];
+        for transform in [Transform::Normal, Transform::Flipped180] {
+            let mut presentation: GlesTexture = renderer.create_buffer(
+                smithay::backend::allocator::Fourcc::Abgr8888, (7, 5).into()).unwrap();
+            let mut target: GlesTarget<'_> = renderer.bind(&mut presentation).unwrap();
+            let mut damage = OutputDamageTracker::new(size, 1., transform);
+            damage.render_output(&mut renderer, &mut target, 0, &elements, [0., 0., 0., 1.])
+                .unwrap().sync.wait().unwrap();
+            let pixels = capture_pixels(&mut renderer, &elements, size, [0., 0., 0., 1.]).unwrap();
+            assert_eq!(pixels.rgba, rgba, "presentation transform: {transform:?}");
+            let crop = pixels.crop([5, 4], [1, 1]).unwrap();
+            let expected: Vec<u8> = (1..4).flat_map(|y| (1..5).flat_map(move |x|
+                [x * 31, y * 47, (x + y) * 17, 255])).collect();
+            assert_eq!(crop.rgba, expected, "crop orientation: {transform:?}");
+            assert_eq!((crop.width, crop.height), (4, 3));
         }
     }
 }

@@ -10,7 +10,9 @@ works. Escape or the right mouse button cancels; an empty region creates no
 file. The selection uses a frozen compositor image from the output containing
 the pointer. Its dimming and outline are excluded from the result. Selection
 is limited to that output; move the pointer to another monitor before invoking
-capture to select there.
+capture to select there. Desktop capture renders into a separate, consistently
+oriented buffer, so native DRM and nested desktops produce the same top-down
+pixels without changing the displayed output.
 
 The resulting PNG is copied to the session clipboard as `image/png` and saved
 under **Screenshots** in the XDG Pictures folder. DomeD reads `user-dirs.dirs`
@@ -53,3 +55,9 @@ eye separation, SBS texture ordering (including odd widths), cylindrical
 surfaces, alpha composition and invalid dimensions/FOVs. The integration XR
 endpoint test supplies a deterministic SBS fixture; it does not require or
 claim a live headset capture.
+
+The compositor GPU regression `desktop_capture_keeps_rows_columns_and_crop_in_both_presentations`
+checks an asymmetric image pixel by pixel, including crop coordinates, while
+Normal (native DRM) and Flipped180 (nested) presentation targets are bound.
+Run it with both `DOME_RENDERER=gles` and `DOME_RENDERER=vulkan` to cover both
+rendering paths without taking control of a physical display.
