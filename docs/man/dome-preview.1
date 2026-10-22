@@ -1,4 +1,4 @@
-.TH DOME-PREVIEW 1 "2026-10-20" "de-xr" "User Commands"
+.TH DOME-PREVIEW 1 "2026-10-21" "de-xr" "User Commands"
 .SH NAME
 dome\-preview \- run the DomeD layout laboratory
 .SH SYNOPSIS
@@ -7,6 +7,10 @@ dome\-preview
 .fi
 .SH DESCRIPTION
 Serve an interactive layout laboratory with synthetic windows on http://127.0.0.1:49640. No headset or running compositor is required. Geometry edits are session\-local; export a JSON profile to reuse them.
+.PP
+Configuration uses environment variables; there are no command-line options.
+The service runs until terminated. It serves synthetic surfaces, not live
+Wayland client captures, and does not create an OpenXR session.
 .SH ENVIRONMENT
 DOME_PREVIEW_PORT overrides port 49640. DOME_CONFIG selects an exported geometry JSON profile.
 .SH EXAMPLES

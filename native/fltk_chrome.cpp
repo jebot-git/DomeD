@@ -3,6 +3,10 @@
 // never open a toolkit connection to the Wayland server owned by this process.
 // Legacy C ABI names preserve the Rust-owned compositor/input boundary.
 #include "suite-icons.h"
+#include "theme_icons.hpp"
+#include <FL/Fl_Shared_Image.H>
+#include <FL/Fl_PNG_Image.H>
+#include <FL/Fl_Pixmap.H>
 #include <FL/Fl_SVG_Image.H>
 #include <cairo.h>
 #include <fontconfig/fontconfig.h>
@@ -174,11 +178,25 @@ struct Paint {
         cursor = x;
         continue;
       }
-      if (FT_Load_Char(face, cp,
+      FT_Face glyph_face = face;
+      if (!FT_Get_Char_Index(glyph_face, cp)) {
+        for (auto &fallback : fonts) {
+          if (!FT_Get_Char_Index(fallback.face, cp)) continue;
+          glyph_face = fallback.face;
+          int strike = 0, distance = 1000000;
+          for (int n = 0; n < glyph_face->num_fixed_sizes; ++n) {
+            int diff = std::abs(int(glyph_face->available_sizes[n].y_ppem / 64) - size);
+            if (diff < distance) { strike = n; distance = diff; }
+          }
+          FT_Select_Size(glyph_face, strike);
+          break;
+        }
+      }
+      if (FT_Load_Char(glyph_face, cp,
                        FT_LOAD_RENDER | FT_LOAD_MONOCHROME |
                            FT_LOAD_TARGET_MONO))
         continue;
-      auto &b = face->glyph->bitmap;
+      auto &b = glyph_face->glyph->bitmap;
       if (b.width && b.rows) {
         int stride = cairo_format_stride_for_width(CAIRO_FORMAT_A8, b.width);
         std::vector<unsigned char> data(stride * b.rows);
@@ -193,11 +211,11 @@ struct Paint {
           }
         auto surface = cairo_image_surface_create_for_data(
             data.data(), CAIRO_FORMAT_A8, b.width, b.rows, stride);
-        cairo_mask_surface(c, surface, cursor + face->glyph->bitmap_left,
-                           baseline - face->glyph->bitmap_top);
+        cairo_mask_surface(c, surface, cursor + glyph_face->glyph->bitmap_left,
+                           baseline - glyph_face->glyph->bitmap_top);
         cairo_surface_destroy(surface);
       }
-      cursor += face->glyph->advance.x / 64;
+      cursor += glyph_face->glyph->advance.x / 64;
       if (cursor > x + w)
         break;
     }
@@ -236,12 +254,13 @@ struct Paint {
     cairo_surface_destroy(surface);
     return true;
   }
-  void icon(int x, int y, int extent, std::string name, Color tint) {
+  void icon(int x, int y, int extent, std::string name, Color tint,
+            const std::string &theme_path = "", bool themed = true) {
     char color[8];
     snprintf(color, sizeof(color), "#%02x%02x%02x", int(tint.r * 255),
              int(tint.g * 255), int(tint.b * 255));
     auto role = dx_icon::role(name);
-    auto key = role + color + std::to_string(extent);
+    auto key = (themed ? name + theme_path : role) + color + std::to_string(extent);
     struct Raster {
       std::vector<uint32_t> pixels;
       int w = 0, h = 0;
@@ -250,9 +269,24 @@ struct Paint {
     auto it = cache.find(key);
     if (it == cache.end()) {
       auto svg = dx_icon::svg(role, color);
-      Fl_SVG_Image image(nullptr, svg.c_str());
-      image.resize(extent, extent);
-      image.normalize();
+      std::unique_ptr<Fl_Image> source;
+      if (themed) {
+        auto path = theme_icons::resolve(name, theme_path, extent);
+        if (!path.empty()) {
+          auto shared = Fl_Shared_Image::get(path.c_str());
+          if (shared) {
+            if (auto pixmap = dynamic_cast<const Fl_Pixmap *>(shared->image())) {
+              Fl_RGB_Image rgb(pixmap);
+              source.reset(rgb.copy(extent, extent));
+            } else source.reset(shared->image()->copy(extent, extent));
+            shared->release();
+          }
+        }
+      }
+      if (!source || source->fail()) source = std::make_unique<Fl_SVG_Image>(nullptr, svg.c_str());
+      auto &image = *source;
+      if (auto vector = dynamic_cast<Fl_SVG_Image *>(&image)) vector->resize(extent, extent);
+      if (auto rgb = dynamic_cast<Fl_RGB_Image *>(&image)) rgb->normalize();
       if (image.fail() || !image.data() || !image.data()[0])
         return;
       Raster raster;
@@ -264,10 +298,11 @@ struct Paint {
       for (int row = 0; row < raster.h; ++row)
         for (int col = 0; col < raster.w; ++col) {
           auto p = data + row * stride + col * image.d();
-          unsigned a = image.d() == 4 ? p[3] : 255;
+          unsigned a = image.d() == 4 ? p[3] : image.d() == 2 ? p[1] : 255;
+          unsigned r = p[0], g = image.d() < 3 ? p[0] : p[1], b = image.d() < 3 ? p[0] : p[2];
           raster.pixels[row * raster.w + col] =
-              (a << 24) | ((p[0] * a / 255) << 16) | ((p[1] * a / 255) << 8) |
-              (p[2] * a / 255);
+              (a << 24) | ((r * a / 255) << 16) | ((g * a / 255) << 8) |
+              (b * a / 255);
         }
       if (cache.size() > 256)
         cache.clear();
@@ -327,7 +362,15 @@ struct Paint {
     rect(x, y, w, h, sel);
     if (selected)
       border(x, y, w, h, accent);
-    text(x + 8, y, w - 16, h, label, fg);
+    if (label == "■" || label == "□" || label == "▣") {
+      int cx = x + w / 2, cy = y + h / 2;
+      color(fg); cairo_set_line_width(c, 1.5);
+      if (label == "■") { cairo_move_to(c, cx - 5, cy + 4); cairo_line_to(c, cx + 5, cy + 4); }
+      else if (label == "□") cairo_rectangle(c, cx - 5, cy - 5, 10, 10);
+      else { cairo_move_to(c, cx - 5, cy - 5); cairo_line_to(c, cx + 5, cy + 5);
+             cairo_move_to(c, cx + 5, cy - 5); cairo_line_to(c, cx - 5, cy + 5); }
+      cairo_stroke(c);
+    } else text(x + 8, y, w - 16, h, label, fg);
   }
   void panelRows(const J &panel, const std::string &title, int rowHeight,
                  int top = 40) {
@@ -458,6 +501,8 @@ extern "C" int dome_qt_paint(const char *json, unsigned char *pixels,
   auto surface = cairo_image_surface_create_for_data(
       pixels, CAIRO_FORMAT_ARGB32, w, h, w * 4);
   auto c = cairo_create(surface);
+  static const bool image_handlers = [] { fl_register_images(); return true; }();
+  (void)image_handlers;
   Paint p(c, obj(o, "appearance"));
   if (str(o, "kind") == "frame") {
     auto caption = yes(o, "active") ? p.sel : p.bg;
@@ -529,7 +574,7 @@ extern "C" int dome_qt_paint(const char *json, unsigned char *pixels,
                : key == "dome.clipboard"     ? "clipboard"
                : key == "dome.notifications" ? "bell"
                                              : str(item, "icon"),
-               p.fg);
+               p.fg, str(item, "icon_theme_path"), key.rfind("dome.", 0) != 0);
       if (yes(item, "attention"))
         p.rect(x + 7, 32, 8, 2, p.accent);
     }

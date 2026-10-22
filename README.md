@@ -22,6 +22,32 @@ localization remains future work.
 
 ![Dome layout laboratory](docs/preview.png)
 
+## Build and toolkit selection
+
+FLTK is the default Cargo feature. Native compositor builds require the patched
+FLTK 1.4.5 installation, Cairo, FreeType, Fontconfig, GIO and PipeWire development
+files, in addition to the Rust/Wayland/DRM dependencies below. Set its prefix
+before using the local build script (the prefix must contain `include/` and `lib/`):
+
+```sh
+export DOME_FLTK_PREFIX=/path/to/patched-fltk-1.4.5
+./scripts/build-local.sh --release
+```
+
+Qt6 is an explicit alternative, built separately so Cargo does not enable both
+shell adapters:
+
+```sh
+cargo build --locked --release --no-default-features \
+  --features nested,standalone,xr,qt6
+```
+
+Only this alternative needs Qt6 Widgets development files. The standalone
+`dome-preview` layout service does not build a native shell and needs neither
+FLTK nor Qt. See [the FLTK notes](FLTK_EXPERIMENT.md) for toolkit patches and
+current limitations. Qt-based third-party applications and KDE portal services
+remain separate runtime dependencies where used.
+
 ## Native tray applications and rendering audit
 
 DomeD starts native FLTK/OpenGL managers for KDE Connect, Fcitx5 and KWallet.
@@ -116,10 +142,10 @@ arguments leaves an empty desktop. `--command PROGRAM ARGS...` still launches a
 custom client. The local runner forwards explicit arguments unchanged.
 
 The local build includes `dome-compositor`, `dome-preview` and `dome-xr` and runs
-the Rust tests. On this Nobara/Fedora workstation the missing Qt6 development
-headers are extracted under `.local-deps/root`, and `build-local.sh` uses those
-headers with the installed `/usr/lib64` Qt runtime. No system installation is
-needed. To recreate this optional local dependency setup:
+the Rust tests. It uses the default FLTK shell and requires `DOME_FLTK_PREFIX`
+as described above. For the optional Qt6 build, this workstation can extract
+missing development headers under `.local-deps/root`; these are not required by
+the default shell. To recreate that optional dependency setup:
 
 ```sh
 ./scripts/prepare-local-deps.sh
@@ -140,8 +166,10 @@ texture transport without a headset; headset appearance still needs visual testi
 Install a Rust toolchain, C linker, `pkg-config`, Wayland/EGL/GLES and xkbcommon
 development packages. On Ubuntu/Debian the development packages are typically
 `build-essential pkg-config libwayland-dev libegl1-mesa-dev libgles2-mesa-dev
-libxkbcommon-dev qt6-base-dev libfontconfig1-dev libfreetype-dev libglib2.0-dev`. Qt6 Widgets 6.4 or newer supplies shell fonts,
-menu styling and server-side window decorations. Then run from an existing Wayland or X11 desktop:
+libxkbcommon-dev libfontconfig1-dev libfreetype-dev libglib2.0-dev
+libcairo2-dev libpipewire-0.3-dev libgbm-dev libdrm-dev libinput-dev libseat-dev`.
+The default shell also requires the patched FLTK prefix above. Add `qt6-base-dev`
+(Qt6 Widgets 6.4 or newer) only when building the explicit Qt6 alternative. Then run from an existing Wayland or X11 desktop:
 
 ```sh
 cargo run --locked --features nested --bin dome-compositor -- --terminal
@@ -155,7 +183,7 @@ screen, install the session described below. Additional clients can connect usin
 WAYLAND_DISPLAY=wayland-N your-wayland-app
 ```
 
-The native shell supports click-to-focus, Qt6 title-bar controls/dragging, client-initiated move/resize,
+The native shell supports click-to-focus, native title-bar controls/dragging, client-initiated move/resize,
 minimize/maximize/close, app launch (also Super+Shift+Space) and desktop switching/creation.
 Its local web panel controls the same live window/workspace model; its geometry
 preview still uses sample surface content. App launching requires `gio`, installed
@@ -371,9 +399,9 @@ the application GTK appearance bridge. Portal service
 units must inherit `XDG_CURRENT_DESKTOP=Dome` rather than forcing `KDE`.
 
 WayVR and other portal clients can share one or several monitors after choosing
-sources in a Qt6 dialog. Each chosen monitor has its own PipeWire node and logical
+sources in the native sharing picker (FLTK by default). Each chosen monitor has its own PipeWire node and logical
 position and size. Capture includes desktop windows, decorations and shell, with
-hidden or embedded cursors. A Qt6 sharing control stays visible until sharing
+hidden or embedded cursors. A native sharing control stays visible until sharing
 ends; **Stop sharing**, closing that control, closing the portal session, output
 removal or resize, and a frontend exit all revoke the capture. Requests from
 arbitrary D-Bus peers cannot bypass the frontend. Permissions are per session;
@@ -389,7 +417,7 @@ frontend, and the installed `dome-portal-picker` next to the compositor. Install
 the new compositor and log back into DomeD before using desktop capture.
 
 The integration test uses a private D-Bus, Xvfb display, PipeWire graph and
-WirePlumber policy profile. It checks the real frontend, Qt6 consent/cancellation,
+WirePlumber policy profile. It checks the real frontend, consent/cancellation,
 actual captured Wayland pixels, stream teardown and frontend access controls:
 
 ```sh
@@ -521,16 +549,19 @@ profiles gain it automatically unless Super+P is already assigned, in which
 case the new action starts disabled. A third pull leaves that window on the
 dome. Scaling grows panels outward from the central gap.
 
-The same Qt6 menu/tray/taskbar is rendered into two XR shell layers,
+The same native menu/tray/taskbar is rendered into two XR shell layers,
 with adjustable bar heights and automatic lane attachment. Menu and preview expansion
 keeps the original top/bottom edges fixed. Mouse clicks invoke native shell
 commands, including application actions, task previews and status menus. Horizontal
 bar widths automatically fit the runtime field of view; no width or offset settings are needed.
 
-Real Wayland surfaces and shell images travel through a CPU bridge into Vulkan
-swapchains. The compositor thread owns input and Wayland resource lifetimes. This
-is an initial implementation, not a zero-copy renderer; window captures are capped
-at about 20 Hz.
+Compatible Wayland window buffers travel through the private DMA-BUF bridge into
+Vulkan swapchains without CPU pixel readback. `dome-xr --transport auto` falls back
+to RGBA transport per window; `--transport cpu` forces compatibility transport and
+`--transport gpu` requires GPU sharing. Shell images still use CPU rasterization
+and upload. Diagnostic `--capture` uses CPU transport. The compositor thread owns
+input and Wayland resource lifetimes; GPU sharing still renders into OpenXR
+swapchains and does not guarantee dedicated VRAM placement.
 
 Mouse and keyboard are the only input methods. The XR renderer requests no hand
 or eye tracking extensions and emits no tracked input. The mouse cursor follows

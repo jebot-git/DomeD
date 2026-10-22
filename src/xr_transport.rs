@@ -84,8 +84,19 @@ pub struct Session {
     pub focused: bool,
     pub head: crate::Pose,
     pub horizontal_fov_deg: f32,
+    /// Runtime-predicted display period; zero means an older renderer without timing.
+    pub frame_period_ns: u64,
     /// Shared eye viewport angles in radians: left, right, down, up.
     pub mouse_viewport: Option<[f32; 4]>,
+}
+impl Session {
+    pub fn wire_value(&self, timing_supported: bool) -> serde_json::Value {
+        let mut value = serde_json::to_value(self).unwrap();
+        // A renderer may be restarted after installation while the previous
+        // compositor still owns the desktop; its strict legacy schema must work.
+        if !timing_supported { value.as_object_mut().unwrap().remove("frame_period_ns"); }
+        value
+    }
 }
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Cursor {
@@ -94,6 +105,9 @@ pub struct Cursor {
 }
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct Control {
+    /// Presence advertises support for runtime timing in session heartbeats.
+    #[serde(default)]
+    pub frame_period_ns: Option<u64>,
     #[serde(default)]
     pub gpu_socket: Option<String>,
     #[serde(default)]
@@ -109,7 +123,24 @@ pub struct Control {
     pub exit_requested: bool,
 }
 fn default_accent() -> [u8; 3] { crate::visual_feedback::ACCENT }
+/// Zero preserves compatibility with renderers that do not report timing.
+pub fn frame_interval(period_ns: u64) -> Option<std::time::Duration> {
+    (1_000_000..=100_000_000).contains(&period_ns)
+        .then(|| std::time::Duration::from_nanos(period_ns))
+}
+pub fn refresh_millihz(period_ns: u64) -> Option<i32> {
+    frame_interval(period_ns).map(|_| ((1_000_000_000_000u64 + period_ns / 2) / period_ns) as i32)
+}
+/// Keep deadlines on the requested cadence without accumulating render time or
+/// replaying missed frames after a stall or a runtime rate change.
+pub fn next_frame_deadline(previous: Instant, now: Instant, interval: std::time::Duration) -> Instant {
+    let next = previous + interval;
+    if next > now { next } else { now + interval }
+}
 impl Bridge {
+    pub fn frame_interval(&self) -> Option<std::time::Duration> {
+        self.visible().then(|| frame_interval(self.session.frame_period_ns)).flatten()
+    }
     /// Keep identity stable across unrelated shell invalidations. GPU consumers
     /// may retain the corresponding texture until these pixels actually change.
     pub fn update_surface(&mut self, id: u64, surface: Surface) {
@@ -134,6 +165,7 @@ impl Bridge {
     }
     pub fn control(&self) -> Control {
         Control {
+            frame_period_ns: Some(self.frame_interval().map_or(0, |period| period.as_nanos() as u64)),
             gpu_socket: self.gpu_socket.clone(),
             finder_seconds: self.finder_started.map(|t| t.elapsed().as_secs_f32())
                 .filter(|t| self.input_realm == crate::Realm::Xr && *t < crate::visual_feedback::FINDER_DURATION),
@@ -148,6 +180,9 @@ impl Bridge {
     }
     pub fn heartbeat(&mut self, session: Session) -> Result<(), String> {
         session.head.validate()?;
+        if session.frame_period_ns != 0 && frame_interval(session.frame_period_ns).is_none() {
+            return Err("Invalid XR display period".into());
+        }
         if !session.horizontal_fov_deg.is_finite()
             || !(0. ..=170.).contains(&session.horizontal_fov_deg)
         {
@@ -194,6 +229,26 @@ impl Bridge {
 mod tests {
     use super::*;
     use std::time::Duration;
+    #[test]
+    fn runtime_timing_tracks_rate_changes_and_expires_with_the_session() {
+        assert_eq!(serde_json::from_str::<Session>("{}").unwrap().frame_period_ns, 0);
+        assert!(Session::default().wire_value(false).get("frame_period_ns").is_none());
+        assert_eq!(Session::default().wire_value(true)["frame_period_ns"], 0);
+        let mut b = Bridge::default();
+        for (period, rate) in [(13_888_889, 72_000), (11_111_111, 90_000), (8_333_333, 120_000)] {
+            b.heartbeat(Session { visible: true, frame_period_ns: period, ..Default::default() }).unwrap();
+            assert_eq!(b.frame_interval().unwrap().as_nanos(), period as u128);
+            assert_eq!(refresh_millihz(period), Some(rate));
+        }
+        for period in [1, 999_999, 100_000_001, u64::MAX] {
+            assert!(b.heartbeat(Session { frame_period_ns: period, ..Default::default() }).is_err());
+        }
+        b.last_session = Some(Instant::now() - Duration::from_secs(3));
+        assert!(b.frame_interval().is_none());
+        let now = Instant::now(); let interval = Duration::from_nanos(8_333_333);
+        assert_eq!(next_frame_deadline(now, now + Duration::from_millis(2), interval), now + interval);
+        assert_eq!(next_frame_deadline(now, now + Duration::from_secs(1), interval), now + Duration::from_secs(1) + interval);
+    }
     #[test]
     fn mouse_viewport_accepts_legacy_sessions_and_rejects_invalid_bounds() {
         let legacy: Session = serde_json::from_str("{}").unwrap();

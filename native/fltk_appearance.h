@@ -87,7 +87,7 @@ inline void style_new_windows(void *) {
                     [w](const auto &item) { return item->widget() == w; });
     if (!known) {
       style(w);
-      if (getenv("DE_XR_APPEARANCE_TRACE")) fprintf(stderr,"DX_STYLE %s font=%d size=%d color=%u\n",w->label()?w->label():"?",font,size,Fl::get_color(FL_BACKGROUND_COLOR));
+      if (getenv("DE_XR_APPEARANCE_TRACE")) fprintf(stderr,"DX_STYLE %s font=%d name=%s size=%d color=%u\n",w->label()?w->label():"?",font,font_name.c_str(),size,Fl::get_color(FL_BACKGROUND_COLOR));
       w->redraw();
       styled_windows.push_back(std::make_unique<Fl_Widget_Tracker>(w));
     }

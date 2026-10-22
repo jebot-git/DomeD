@@ -362,7 +362,7 @@ fn display_profiles_migrate_and_reject_invalid_coordinates_without_mutation() {
 }
 
 #[test]
-fn horizontal_arrangement_reorders_only_its_lane_and_stops_at_edges() {
+fn horizontal_arrangement_reorders_only_its_lane_and_wraps_both_edges() {
     let mut s = Scene::new("test");
     let a = s.add("a", "app");
     let b = s.add("b", "app");
@@ -372,6 +372,8 @@ fn horizontal_arrangement_reorders_only_its_lane_and_stops_at_edges() {
     s.apply(Action::Reorder { id: b, delta: -1 }).unwrap();
     assert_eq!(s.workspaces[0].lanes[1].windows, vec![b, a, c]);
     s.apply(Action::Reorder { id: b, delta: -1 }).unwrap();
+    assert_eq!(s.workspaces[0].lanes[1].windows, vec![a, c, b]);
+    s.apply(Action::Reorder { id: b, delta: 1 }).unwrap();
     assert_eq!(s.workspaces[0].lanes[1].windows, vec![b, a, c]);
     s.apply(Action::Reorder { id: b, delta: 1 }).unwrap();
     assert_eq!(s.workspaces[0].lanes[1].windows, vec![a, b, c]);

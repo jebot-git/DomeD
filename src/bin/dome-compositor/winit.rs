@@ -81,12 +81,20 @@ pub fn init_winit(
     crate::activate_client_socket(state);
 
     let backend = std::rc::Rc::new(std::cell::RefCell::new(backend));
+    let vulkan = std::rc::Rc::new(std::cell::RefCell::new(vulkan));
+    let tick_renderer = vulkan.clone();
     let tick = backend.clone();
     event_loop.handle().insert_source(
         smithay::reexports::calloop::timer::Timer::from_duration(Duration::from_millis(16)),
-        move |_, _, _| {
+        move |deadline, _, data| {
+            if let Some(renderer) = tick_renderer.borrow_mut().as_mut() {
+                data.state.tick_xr(renderer);
+            } else {
+                data.state.tick_xr(tick.borrow_mut().renderer());
+            }
             tick.borrow().window().request_redraw();
-            smithay::reexports::calloop::timer::TimeoutAction::ToDuration(Duration::from_millis(16))
+            smithay::reexports::calloop::timer::TimeoutAction::ToInstant(
+                dome::xr_transport::next_frame_deadline(deadline, std::time::Instant::now(), data.state.xr_tick_interval()))
         },
     )?;
     let mut desktop = crate::desktop::DesktopRenderer::default();
@@ -114,6 +122,7 @@ pub fn init_winit(
                 WinitEvent::Redraw => {
                     let size = backend.window_size();
                     desktop.prepare(state, size);
+                    let mut vulkan = vulkan.borrow_mut();
                     if let Some(compositor) = vulkan.as_mut() {
                         if vulkan_target.as_ref().is_none_or(|(old, _)| *old != size) {
                             vulkan_target = Some((

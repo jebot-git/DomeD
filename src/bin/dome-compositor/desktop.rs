@@ -446,9 +446,12 @@ impl DesktopRenderer {
     }
 }
 pub fn finish_frame(state: &mut Dome, output: &Output) {
+    let xr_active = state.xr_refresh.active && state.xr_bridge.lock().unwrap().visible();
+    let scene = state.scene.lock().unwrap().clone();
     state
         .registry
         .iter()
+        .filter(|(id, _)| !xr_active || !scene.window(*id).is_some_and(|w| w.xr_visible && !w.minimized))
         .map(|(_, w)| w)
         .filter(|w| {
             let outputs = state.space.outputs_for_element(w);

@@ -674,15 +674,17 @@ impl Dome {
                 }
             }
         }
-        let gpu_request = {
+        // Inspect every requested surface. An unchanged surface keeps its
+        // publication stamp, so choosing only the oldest publication starves
+        // every other window once that surface becomes idle. Capture's damage
+        // signatures and pending fences already skip unnecessary GPU work.
+        let gpu_requests: Vec<_> = {
             let b = self.xr_bridge.lock().unwrap();
-            b.gpu_requested.keys().filter(|id| live.contains(id) && !dome::xr_transport::is_shell(**id))
-                .filter_map(|id| {
-                    let age = b.gpu_frames.get(id).map_or(100., |f| f.stamp.elapsed().as_secs_f32());
-                    (age >= 0.05).then_some((*id, age))
-                }).max_by(|a,b| a.1.total_cmp(&b.1)).map(|x| x.0)
+            b.gpu_requested.keys()
+                .filter(|id| live.contains(id) && !dome::xr_transport::is_shell(**id))
+                .copied().collect()
         };
-        if let Some(id) = gpu_request {
+        for id in gpu_requests {
             if let Some((surface, geo)) = self.popup_surface(id) {
                 if geo.size.w > 0 && geo.size.h > 0 && geo.size.w <= 4096 && geo.size.h <= 4096 {
                     let scene = self.scene.lock().unwrap();

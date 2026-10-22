@@ -12,7 +12,7 @@ documentation="$stage/usr/local/share/doc/domed/pinentry"
 install -D -m 0644 "$build/COPYING.pinentry" "$documentation/COPYING"
 install -D -m 0644 "$build/source.sha256" "$documentation/source.sha256"
 install -D -m 0644 "$build/pinentry-1.3.3.tar.bz2" "$documentation/pinentry-1.3.3.tar.bz2"
-for name in dome_pinentry.h pinentry-1.3.3-dome.patch; do
+for name in dome_pinentry.h session_environment.h pinentry-1.3.3-dome.patch; do
     install -D -m 0644 "$root/native/pinentry/$name" "$documentation/$name"
 done
 install -D -m 0644 "$root/native/fltk_appearance.h" "$documentation/fltk_appearance.h"

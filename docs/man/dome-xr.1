@@ -1,10 +1,12 @@
-.TH DOME-XR 1 "2026-10-20" "de-xr" "User Commands"
+.TH DOME-XR 1 "2026-10-21" "de-xr" "User Commands"
 .SH NAME
 dome\-xr \- present the DomeD desktop in OpenXR
 .SH SYNOPSIS
 .nf
 dome\-xr [\-\-server URL] [\-\-frames N] [\-\-capture DIR]
         [\-\-report FILE] [\-\-standalone] [\-\-placement N]
+        [\-\-transport auto|cpu|gpu] [\-\-webxr-socket PATH]
+        [\-\-music-floor-only] [\-\-floor-size WIDTHxDEPTH]
 .fi
 .SH DESCRIPTION
 Connect to the local DomeD bridge and submit live Wayland client textures and shell surfaces to OpenXR. The default mode requests an overlay or transparent blend mode when supported.
@@ -30,6 +32,20 @@ Write a diagnostic report.
 .TP
 .B "\-\-help"
 Show usage.
+.TP
+.B "\-\-transport auto|cpu|gpu"
+Use compatible DMA-BUF window sharing with per-window RGBA fallback (auto,
+default), require CPU transport, or require GPU window sharing. Diagnostic
+capture forces CPU transport. Shell surfaces retain CPU uploads.
+.TP
+.B "\-\-webxr-socket PATH"
+Select the WebXR session bridge socket.
+.TP
+.B "\-\-music-floor-only"
+Run a passive audio-reactive floor overlay without a desktop server.
+.TP
+.B "\-\-floor-size WIDTHxDEPTH"
+Supply the STAGE floor extent in metres when the runtime does not expose bounds.
 .SH ENVIRONMENT
 XR_RUNTIME_JSON selects the OpenXR runtime manifest. Use a runtime that supports the required composition layers.
 .SH INTERACTION FEEDBACK

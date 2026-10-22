@@ -1,4 +1,4 @@
-.TH DOME-COMPOSITOR 1 "2026-10-20" "de-xr" "User Commands"
+.TH DOME-COMPOSITOR 1 "2026-10-21" "de-xr" "User Commands"
 .SH NAME
 dome\-compositor \- Wayland desktop and XR session compositor
 .SH SYNOPSIS
@@ -8,6 +8,10 @@ dome\-compositor [\-\-backend drm|nested] [\-\-renderer vulkan|gles]
 .fi
 .SH DESCRIPTION
 DomeD manages a conventional desktop and a shared spatial desktop. Its native DRM backend owns the seat and displays; the nested backend opens a development window in an existing desktop. The dome\-xr process presents live client textures through OpenXR.
+.SH TOOLKIT
+The default native shell uses patched FLTK 1.4.5 with Cairo/FreeType rendering.
+Qt6 is a build-time alternative selected with Cargo --no-default-features and
+--features nested,standalone,xr,qt6. It is not a runtime switch.
 .SH OPTIONS
 .TP
 .B "\-\-backend drm|nested"

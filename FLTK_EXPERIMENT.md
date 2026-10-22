@@ -7,7 +7,7 @@ collection. The collection provides a staged local installer with backups;
 running desktop and display-manager sessions are never restarted by installation.
 
 ```sh
-DOME_FLTK_PREFIX=<FLTK prefix> cargo build --features nested,xr --bin dome-compositor --bin dome-xr --bin dome-portal-picker
+DOME_FLTK_PREFIX=/path/to/patched-fltk-1.4.5 cargo build --locked --release --features nested,xr --bin dome-compositor --bin dome-xr --bin dome-portal-picker
 ```
 
 The Qt frontend remains selectable with Cargo `--no-default-features --features nested,qt6`.

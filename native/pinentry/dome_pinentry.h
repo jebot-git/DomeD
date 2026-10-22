@@ -2,6 +2,7 @@
 // Dome integration for the upstream Pinentry FLTK frontend.
 #pragma once
 #include "fltk_appearance.h"
+#include "session_environment.h"
 #include <cerrno>
 #include <csignal>
 #include <cstring>

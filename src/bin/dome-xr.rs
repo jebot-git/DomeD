@@ -124,20 +124,20 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let mut last_heartbeat = Instant::now() - Duration::from_secs(1);
         while r.load(Ordering::Relaxed) {
             if last_heartbeat.elapsed() >= Duration::from_millis(5) {
-                let mut status = {
+                let (mut status, timing_supported) = {
                     let state = n.lock().unwrap();
                     let mut status = state.session.clone();
                     status.visible &= state
                         .sampled
                         .is_some_and(|t| t.elapsed() < Duration::from_millis(750));
-                    status
+                    (status, state.control.frame_period_ns.is_some())
                 };
                 if !r.load(Ordering::Relaxed) {
                     status.visible = false;
                 }
                 let _ = agent
                     .post(&format!("{base}/api/xr-session"))
-                    .send_json(serde_json::to_value(status).unwrap());
+                    .send_json(status.wire_value(timing_supported));
                 if let Ok(response) = agent.get(&format!("{base}/api/xr-control")).call() {
                     if let Ok(control) = response.into_json::<dome::xr_transport::Control>() {
                         let mut state = n.lock().unwrap();
@@ -150,11 +150,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             std::thread::sleep(Duration::from_millis(1));
         }
         let _ = agent.post(&format!("{base}/api/xr-session")).send_json(
-            serde_json::to_value(dome::xr_transport::Session {
+            dome::xr_transport::Session {
                 id: session_id,
                 ..Default::default()
-            })
-            .unwrap(),
+            }.wire_value(n.lock().unwrap().control.frame_period_ns.is_some()),
         );
     });
     let n = network.clone();
@@ -177,6 +176,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let mut serial = 0;
         let mut gpu_waiting = HashMap::<u64,Instant>::new();
         let mut last_server = Instant::now();
+        let mut deadline = Instant::now();
         while r.load(Ordering::Relaxed) {
             if let Ok(response) = agent.get(&format!("{base}/api/state")).call() {
                 last_server = Instant::now();
@@ -328,7 +328,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             if last_server.elapsed() > Duration::from_secs(3) {
                 r.store(false, Ordering::Relaxed);
             }
-            std::thread::sleep(Duration::from_millis(10));
+            let interval = dome::xr_transport::frame_interval(n.lock().unwrap().session.frame_period_ns)
+                .unwrap_or(Duration::from_millis(10));
+            deadline = dome::xr_transport::next_frame_deadline(deadline, Instant::now(), interval);
+            std::thread::sleep(deadline.saturating_duration_since(Instant::now()));
         }
     });
     let entry = unsafe {
@@ -802,6 +805,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         focused,
                         head: head_pose,
                         horizontal_fov_deg: horizontal.max(30.),
+                        frame_period_ns: frame.predicted_display_period.as_nanos().max(0) as u64,
                         mouse_viewport,
                     };
                     state.sampled = Some(Instant::now());

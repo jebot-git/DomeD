@@ -13,7 +13,7 @@ with tempfile.TemporaryDirectory(prefix='dome-askpass-wayland-') as directory:
   with os.fdopen(rd) as f:disp=':'+f.readline().strip()
   with socket.socket() as s:s.bind(('127.0.0.1',0));port=s.getsockname()[1]
   probe=r/'probe.py';marker=r/'result.json'
-  probe.write_text('import os,subprocess,json\nfrom pathlib import Path\np=subprocess.run([os.environ["SUDO_ASKPASS"],"Disposable Wayland test"],capture_output=True)\nPath('+repr(str(marker))+').write_text(json.dumps({"helper":os.environ["SUDO_ASKPASS"],"code":p.returncode,"correct":p.stdout==b"ab5\\n"}))\n')
+  probe.write_text('import os,subprocess,json\nfrom pathlib import Path\np=subprocess.run([os.environ["SUDO_ASKPASS"],"Disposable Wayland test"],capture_output=True,env={**os.environ,"WAYLAND_DISPLAY":"wayland-missing","DISPLAY":":99999","XDG_CURRENT_DESKTOP":"KDE"})\nPath('+repr(str(marker))+').write_text(json.dumps({"helper":os.environ["SUDO_ASKPASS"],"code":p.returncode,"correct":p.stdout==b"ab5\\n"}))\n')
   sibling=root/'target/release/dome-askpass';assert not sibling.exists(), 'Test helper path already exists';sibling.write_text('#!/bin/sh\nexec "'+str(root/'build/askpass-stage/usr/local/bin/dome-askpass')+'" "$@"\n');sibling.chmod(0o755)
   env={**os.environ,'DISPLAY':disp,'XDG_RUNTIME_DIR':directory,'XDG_CURRENT_DESKTOP':'Dome','DOME_LOGIN_SESSION':'0','DOME_START_XR':'0','DOME_START_IME':'0','DOME_RENDERER':'gles','DOME_PREVIEW_PORT':str(port),'LIBGL_ALWAYS_SOFTWARE':'1','RUST_LOG':'warn','XDG_CONFIG_HOME':str(r/'config'),'XDG_STATE_HOME':str(r/'state'),'XDG_DATA_HOME':str(r/'data'),'FLTK_BACKEND':'wayland'}
   for key in ['WAYLAND_DISPLAY','WAYLAND_SOCKET','SUDO_ASKPASS']:env.pop(key,None)
@@ -37,7 +37,7 @@ with tempfile.TemporaryDirectory(prefix='dome-askpass-wayland-') as directory:
    time.sleep(.05)
   result=json.loads(marker.read_text());assert result['correct'] and result['code']==0,result
   (out/'wayland-result.json').write_text(json.dumps(result,indent=2))
-  print('PASS native Wayland entry and compositor default inheritance')
+  print('PASS native Wayland entry, compositor inheritance and recovery from stale display/desktop environment')
  finally:
   for p in reversed(procs):p.terminate()
   for p in reversed(procs):

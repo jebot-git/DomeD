@@ -850,7 +850,7 @@ impl Scene {
                 if w.pullout_slot.is_some() { return Err("Return window to dome before arranging its lane".into()); }
                 let windows = &mut self.workspaces[w.workspace].lanes[w.lane].windows;
                 let index = windows.iter().position(|i| *i == id).ok_or("Window missing from lane")?;
-                let next = (index as i64 + i64::from(delta)).clamp(0, windows.len() as i64 - 1) as usize;
+                let next = (index as i64 + i64::from(delta)).rem_euclid(windows.len() as i64) as usize;
                 let id = windows.remove(index);
                 windows.insert(next, id);
             }

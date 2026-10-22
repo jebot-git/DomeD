@@ -187,10 +187,9 @@ impl Dome {
             MoveLane(delta) => s.focused.and_then(|id| s.window(id)).is_some_and(|w| {
                 !w.minimized && (0..3).contains(&(w.lane as i32 + delta))
             }),
-            MoveHorizontal(delta) => s.focused.and_then(|id| s.window(id)).is_some_and(|w| {
+            MoveHorizontal(_) => s.focused.and_then(|id| s.window(id)).is_some_and(|w| {
                 let lane = &s.workspaces[w.workspace].lanes[w.lane].windows;
-                !w.minimized && w.pullout_slot.is_none() && lane.iter().position(|id| *id == w.id)
-                    .is_some_and(|i| (0..lane.len() as i64).contains(&(i as i64 + i64::from(delta))))
+                !w.minimized && w.pullout_slot.is_none() && lane.len() > 1 && lane.contains(&w.id)
             }),
             Separator => false,
             Close | QuitApp | Minimize | Maximize | Scale(_) | ResetSpatial | Undo | Redo | Cut | Copy | Paste

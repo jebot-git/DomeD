@@ -267,6 +267,7 @@ impl Native {
         if !self.active || Instant::now() < self.retry_after {
             return Ok(());
         }
+        state.tick_xr(&mut self.renderer);
         for output in &mut self.outputs {
             if output.pending {
                 continue;
@@ -696,7 +697,7 @@ pub fn init(event_loop: &mut EventLoop<CalloopData>, data: &mut CalloopData) -> 
     let mut applied_displays = data.state.scene.lock().unwrap().config.displays.clone();
     event_loop.handle().insert_source(
         Timer::from_duration(Duration::from_millis(16)),
-        move |_, _, data| {
+        move |deadline, _, data| {
             let profiles = data.state.scene.lock().unwrap().config.displays.clone();
             if profiles != applied_displays {
                 for gpu in tick.borrow().iter() {
@@ -710,7 +711,8 @@ pub fn init(event_loop: &mut EventLoop<CalloopData>, data: &mut CalloopData) -> 
             for gpu in tick.borrow().iter() {
                 gpu.borrow_mut().draw_or_recover(&mut data.state);
             }
-            TimeoutAction::ToDuration(Duration::from_millis(16))
+            TimeoutAction::ToInstant(dome::xr_transport::next_frame_deadline(
+                deadline, Instant::now(), data.state.xr_tick_interval()))
         },
     )?;
     crate::activate_client_socket(&mut data.state);

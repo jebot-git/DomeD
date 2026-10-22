@@ -8,10 +8,11 @@
  
  #define CONFIRM_STRING "Confirm"
  #define REPEAT_ERROR_STRING "Texts do not match"
-@@ -328,6 +329,11 @@
+@@ -328,6 +329,12 @@
  {
  	application = *argv;
  	pinentry_init(PGMNAME);
++	dome_pinentry::session_environment(argc >= 2 && !strcmp(argv[1], "--askpass"));
 +	if (dx::dome()) dx::init();
 +	if (argc >= 2 && !strcmp(argv[1], "--askpass")) {
 +		dome_pinentry::sudo_mode = true;

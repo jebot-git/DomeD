@@ -43,6 +43,7 @@ mod toolkit_appearance;
 mod tray;
 mod winit;
 mod xr_bridge;
+mod xr_refresh;
 mod xr_gpu;
 mod xr_settings;
 

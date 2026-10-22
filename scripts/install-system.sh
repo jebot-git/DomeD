@@ -40,7 +40,7 @@ files=(
     usr/local/share/doc/domed/protocols/gtk-shell.xml
     usr/local/share/doc/domed/protocols/COPYING.gtk
 )
-for name in COPYING source.sha256 pinentry-1.3.3.tar.bz2 dome_pinentry.h pinentry-1.3.3-dome.patch fltk_appearance.h build-askpass.py; do
+for name in COPYING source.sha256 pinentry-1.3.3.tar.bz2 dome_pinentry.h pinentry-1.3.3-dome.patch session_environment.h fltk_appearance.h build-askpass.py; do
     files+=("usr/local/share/doc/domed/pinentry/$name")
 done
 while IFS= read -r name; do

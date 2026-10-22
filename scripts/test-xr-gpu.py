@@ -10,7 +10,7 @@ if '--client' in sys.argv:
     from PySide6.QtWidgets import QApplication, QWidget
     from PySide6.QtGui import QPainter, QColor
     from PySide6.QtCore import QTimer
-    app = QApplication([]); app.setApplicationName('dome-density-fixture'); app.setDesktopFileName('dome-density-fixture')
+    app = QApplication([]); app.setApplicationName('dome-density-fixture'); app.setDesktopFileName('dome-static-fixture' if '--static' in sys.argv else 'dome-density-fixture')
     journal = Path(sys.argv[-1])
     class Client(QWidget):
         def paintEvent(self, event):
@@ -22,7 +22,7 @@ if '--client' in sys.argv:
                 p.fillRect(x, int(self.height()*dpr/2), 1, 4, QColor('white' if x%2 else 'black'))
         def record(self):
             journal.write_text(json.dumps({'width':self.width(), 'height':self.height(), 'dpr':self.devicePixelRatioF()}))
-            self.update()
+            if '--static' not in sys.argv:self.update()
     widget = Client(); widget.resize(720,460); widget.setWindowTitle('XR density fixture'); widget.show()
     timer=QTimer();timer.timeout.connect(widget.record);timer.start(100)
     raise SystemExit(app.exec())
@@ -81,7 +81,7 @@ with tempfile.TemporaryDirectory(prefix='dome-gpu-') as directory:
              'XDG_DATA_HOME':str(runtime/'data'),'XDG_STATE_HOME':str(runtime/'state'),'DOME_PREVIEW_PORT':str(port),
              'DOME_START_XR':'0','DOME_RENDERER':'vulkan','RUST_LOG':'warn','XR_RUNTIME_JSON':str(runtime/'no-openxr.json')}
         for key in ('WAYLAND_DISPLAY','WAYLAND_SOCKET','LIBGL_ALWAYS_SOFTWARE','GALLIUM_DRIVER','MESA_LOADER_DRIVER_OVERRIDE'):env.pop(key,None)
-        start([root/'target/debug/dome-compositor','--backend','nested'],'compositor',env);wait(state)
+        start([os.environ.get('DOME_TEST_COMPOSITOR',str(root/'target/debug/dome-compositor')),'--backend','nested'],'compositor',env);wait(state)
         xr=next(p for p in runtime.glob('*.dome-session.json') if json.loads(p.read_text())['realm']=='xr')
         client_env={**env,'WAYLAND_DISPLAY':str(xr).removesuffix('.dome-session.json'),'QT_QPA_PLATFORM':'wayland','WAYLAND_DEBUG':'1'}
         journal=runtime/'client.json';start([sys.executable,__file__,'--client',journal],'client',client_env)
@@ -103,6 +103,21 @@ with tempfile.TemporaryDirectory(prefix='dome-gpu-') as directory:
         release(first);fourth=wait(lambda:next_frame(third))
         assert fourth[2]['serial']>third[2]['serial']
         for f in list(leases):release(f)
+        # An idle publication must not monopolize capture scheduling while a
+        # second application continues committing new buffers.
+        static_journal=runtime/'static.json'
+        start([sys.executable,__file__,'--client','--static',static_journal],'static-client',client_env)
+        static_id=wait(lambda:next((w['id'] for w in state()['windows'] if w['app_id']=='dome-static-fixture'),None))
+        idle=wait(lambda:gpu_frame(path,static_id));release(idle)
+        serials=set();end=time.monotonic()+1.2
+        while time.monotonic()<end:
+            for target in (static_id,id):
+                f=gpu_frame(path,target)
+                if f:
+                    if target==id:serials.add(f[2]['serial'])
+                    release(f)
+            time.sleep(.02)
+        assert len(serials)>=4,('Idle window starved changing window',serials)
         def cpu_frame():
             with request(f'/api/xr-frame/{id}') as r:
                 return int(r.headers['X-Dome-Width']),int(r.headers['X-Dome-Height']),float(r.headers['X-Dome-Scale']),r.read()
@@ -118,7 +133,7 @@ with tempfile.TemporaryDirectory(prefix='dome-gpu-') as directory:
         larger=wait(lambda:(f if f[2]['width']==1440 else (release(f) or None)) if (f:=gpu_frame(path,id)) else None)
         assert larger[2]['height']==920;release(larger)
         assert state()['windows'][0]['desktop']==window['desktop'],'Density changed logical geometry'
-        print('PASS: GPU descriptors, leases, bounded pool reuse, 150–200% real Qt buffers and retained pixel detail')
+        print('PASS: GPU descriptors, leases, bounded pool reuse, 150–200% real Qt buffers and retained pixel detail, idle-window fairness')
     finally:
         for f in list(leases):release(f)
         for p in reversed(children):
