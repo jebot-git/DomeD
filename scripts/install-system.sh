@@ -54,7 +54,7 @@ done < <(find "$stage/usr/local/share/fonts/domed" "$stage/usr/local/lib/domed/b
 for file in "${files[@]}"; do
     [[ -f "$stage/$file" && ! -L "$stage/$file" ]] || { echo "Missing staged file: $file" >&2; exit 1; }
 done
-[[ -x /usr/local/bin/ghostty-xr-launch ]] || { echo 'Install Ghostty XR first.' >&2; exit 1; }
+[[ -x /usr/local/bin/flterm-xr-launch || -x /usr/local/bin/ghostty-xr-launch ]] || { echo 'Install FLTerm XR or Ghostty XR first.' >&2; exit 1; }
 /usr/bin/desktop-file-validate "$stage/usr/share/wayland-sessions/dome.desktop" "$stage/usr/local/share/applications/org.domed.Compositor.desktop"
 backup="/var/backups/domed/$(date +%Y%m%d-%H%M%S)"
 for file in "${files[@]}"; do

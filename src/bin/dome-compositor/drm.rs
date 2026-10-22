@@ -803,9 +803,7 @@ impl Dome {
         drop(bridge);
         let _ = self.display_handle.flush_clients();
         if std::env::var("DOME_LOGIN_SESSION").as_deref() == Ok("1") {
-            let _ = std::process::Command::new("/usr/local/bin/ghostty-xrctl")
-                .arg("hide")
-                .spawn();
+            let _ = dome::terminal::hide();
         }
     }
 }

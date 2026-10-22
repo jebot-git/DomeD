@@ -67,7 +67,9 @@ fi
 export DOME_LOGIN_SESSION=1 DOME_BACKEND=drm
 export LIBSEAT_BACKEND="${LIBSEAT_BACKEND:-logind}"
 export DOME_START_XR="${DOME_START_XR:-1}"
-export DOME_TERMINAL="${DOME_TERMINAL:-/usr/local/bin/ghostty-xr-launch}"
+# Prefer FLTerm when installed; retain explicit terminal/backend overrides.
+if [[ -n "${DOME_TERMINAL:-}" ]]; then export DOME_TERMINAL; fi
+export DOME_TERMINAL_BACKEND="${DOME_TERMINAL_BACKEND:-auto}"
 export DOME_TERMINAL_MODE="${DOME_TERMINAL_MODE:-overlay}"
 export RUST_LOG="${RUST_LOG:-warn}"
 echo "Starting standalone DomeD (DRM/KMS, libseat and libinput); log: $DOME_SESSION_LOG"

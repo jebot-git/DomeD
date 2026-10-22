@@ -319,7 +319,7 @@ pub fn action_label(command: Command) -> String {
         XrSettings => "Settings".into(),
         AnchorHere => "Anchor dome here".into(),
         Launch => "Application launcher".into(),
-        Terminal => "Ghostty XR terminal".into(),
+        Terminal => "Terminal (desktop / XR)".into(),
         FileManager => "File manager".into(),
         Cycle(false) => "Next window".into(),
         Cycle(true) => "Previous window".into(),

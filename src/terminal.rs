@@ -2,6 +2,45 @@
 use std::{io, process::Command};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Backend { Ghostty, FlTerm }
+impl Backend {
+    pub fn configured() -> Self {
+        let configured = std::env::var("DOME_TERMINAL_BACKEND").ok();
+        let custom = std::env::var_os("DOME_TERMINAL");
+        Self::select(configured.as_deref(), custom.as_deref(), program_exists("flterm-xr"))
+    }
+    fn select(configured: Option<&str>, custom: Option<&std::ffi::OsStr>, flterm_available: bool) -> Self {
+        match configured {
+            Some("flterm") => Self::FlTerm,
+            Some("ghostty") => Self::Ghostty,
+            _ if custom.is_some() => {
+                if std::path::Path::new(custom.unwrap()).file_name()
+                    .is_some_and(|name| name.to_string_lossy().starts_with("flterm-xr")) { Self::FlTerm } else { Self::Ghostty }
+            }
+            _ if flterm_available => Self::FlTerm,
+            _ => Self::Ghostty,
+        }
+    }
+    pub fn socket_name(self) -> &'static str {
+        match self { Self::FlTerm => "flterm-xr/control.sock", Self::Ghostty => "ghostty-xr/control.sock" }
+    }
+    fn binary(self, mode: Mode) -> &'static str {
+        match (self, mode) {
+            (Self::FlTerm, Mode::Wayland) => "flterm-xr",
+            (Self::FlTerm, Mode::Overlay) => "flterm-xr-launch",
+            (Self::Ghostty, Mode::Wayland) => "ghostty-xr",
+            (Self::Ghostty, Mode::Overlay) => "ghostty-xr-launch",
+        }
+    }
+}
+fn program_exists(name: &str) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::env::var_os("PATH").is_some_and(|path| std::env::split_paths(&path).any(|dir| {
+        std::fs::metadata(dir.join(name)).is_ok_and(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
+    }))
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Mode { Overlay, Wayland }
 impl Mode {
     pub fn for_realm(self, realm: crate::Realm) -> Self {
@@ -15,8 +54,8 @@ pub fn command(socket: &str, realm: crate::Realm) -> Command {
     command_for_mode(socket, Mode::configured().for_realm(realm))
 }
 fn command_for_mode(socket: &str, mode: Mode) -> Command {
-    let binary = std::env::var_os("DOME_TERMINAL").unwrap_or_else(||
-        if mode == Mode::Wayland { "ghostty-xr".into() } else { "ghostty-xr-launch".into() });
+    let binary = std::env::var_os("DOME_TERMINAL")
+        .unwrap_or_else(|| Backend::configured().binary(mode).into());
     command_for(socket, binary, mode)
 }
 pub fn command_for(socket: &str, binary: std::ffi::OsString, mode: Mode) -> Command {
@@ -33,11 +72,20 @@ pub fn show_shortcut(key: u32, mods: crate::shortcuts::Mods, realm: crate::Realm
         && (mods.logo || (realm == crate::Realm::Xr && mode == Mode::Overlay))
 }
 
+/// Hide only the selected backend, including during seat/VT deactivation.
+/// A missing overlay is never started by this operation.
+pub fn hide() -> io::Result<()> {
+    let runtime = std::env::var_os("XDG_RUNTIME_DIR")
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "XDG_RUNTIME_DIR is unset"))?;
+    overlay_socket(&std::path::PathBuf::from(runtime).join(Backend::configured().socket_name()))?.send(b"hide")?;
+    Ok(())
+}
+
 /// Show or start the independent overlay in either realm, without adding a tab.
 /// DOME_TERMINAL_MODE controls new terminals, never the overlay shortcut.
 pub fn show(socket: &str) -> io::Result<()> {
     if let Some(dir) = std::env::var_os("XDG_RUNTIME_DIR") {
-        if show_overlay(&std::path::PathBuf::from(dir).join("ghostty-xr/control.sock")).is_ok() {
+        if show_overlay(&std::path::PathBuf::from(dir).join(Backend::configured().socket_name())).is_ok() {
             return Ok(());
         }
     }
@@ -76,7 +124,7 @@ pub fn launch(socket: &str, realm: crate::Realm) -> io::Result<()> {
     let mut command = command(socket, realm);
     if Mode::configured().for_realm(realm) == Mode::Overlay {
         if let Some(dir) = std::env::var_os("XDG_RUNTIME_DIR") {
-            if reuse_overlay(&std::path::PathBuf::from(dir).join("ghostty-xr/control.sock")).is_ok() {
+            if reuse_overlay(&std::path::PathBuf::from(dir).join(Backend::configured().socket_name())).is_ok() {
                 return Ok(());
             }
         }
@@ -90,6 +138,20 @@ pub fn launch(socket: &str, realm: crate::Realm) -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn backend_selection_preserves_custom_terminals_and_separate_control_sockets() {
+        use super::*;
+        assert_eq!(Backend::select(None, None, true), Backend::FlTerm);
+        assert_eq!(Backend::select(None, None, false), Backend::Ghostty);
+        assert_eq!(Backend::select(Some("ghostty"), None, true), Backend::Ghostty);
+        assert_eq!(Backend::select(None, Some("/opt/bin/ghostty-xr".as_ref()), true), Backend::Ghostty);
+        assert_eq!(Backend::select(None, Some("/opt/bin/flterm-xr".as_ref()), false), Backend::FlTerm);
+        assert_eq!(Backend::select(Some("flterm"), Some("/opt/bin/custom-terminal".as_ref()), false), Backend::FlTerm);
+        assert_ne!(Backend::FlTerm.socket_name(), Backend::Ghostty.socket_name());
+        assert_eq!(Backend::FlTerm.binary(Mode::Overlay), "flterm-xr-launch");
+        assert_eq!(Backend::FlTerm.binary(Mode::Wayland), "flterm-xr");
+    }
+
     #[test]
     fn f12_show_is_realm_and_modifier_aware() {
         use super::*;

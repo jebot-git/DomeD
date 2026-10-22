@@ -118,11 +118,12 @@ loopback URL; the development API intentionally rejects foreign origins/hosts.
 
 ## Run real Wayland clients
 
-Ghostty XR is DomeD's default terminal and retains its independent native XR
-overlay, input focus and positioning controls. In the XR input realm, **Super+T**
+DomeD prefers [FLTerm XR](docs/FLTERM.md) when installed; Ghostty XR remains
+available through `DOME_TERMINAL_BACKEND=ghostty` and as the fallback. Both retain
+an independent native XR overlay, input focus and positioning controls. In the XR input realm, **Super+T**
 opens it or creates and selects a new tab in its existing overlay. In the desktop
 realm, including while XR is suspended, it opens an independent Wayland terminal
-without changing the XR terminal. **F12** hides Ghostty and releases keyboard input back to
+without changing the XR terminal. **F12** hides the selected overlay and releases keyboard input back to
 Dome. In XR, **F12** or **Super+F12** reopens the overlay without adding a tab;
 **Super+T** still creates a new tab. **Super+F12** always shows or starts the
 independent XR overlay, including in desktop mode and with
@@ -136,8 +137,9 @@ Bare F12 remains available to desktop applications. The overlay uses placement
 ```
 
 `DOME_TERMINAL` selects the executable (a path without arguments). The local
-runner prefers `/usr/local/bin/ghostty-xr-launch`, with the sibling build as a
-fallback. `DOME_TERMINAL_MODE=wayland` explicitly selects the separate Wayland
+runner prefers the sibling FLTerm XR build or its installed binary, with
+Ghostty XR as the fallback. `DOME_TERMINAL_BACKEND=flterm|ghostty` selects the
+control protocol for custom executables; see [FLTerm integration](docs/FLTERM.md). `DOME_TERMINAL_MODE=wayland` explicitly selects the separate Wayland
 terminal mode in the XR realm as well. Desktop launches always use Wayland.
 `dome-compositor --terminal` requests an initial terminal; launching without
 arguments leaves an empty desktop. `--command PROGRAM ARGS...` still launches a
@@ -275,7 +277,7 @@ same DomeD arrow, with the nested host cursor hidden. Appearance changes repaint
 the cursor immediately: light fill in dark mode, dark fill in light mode, with a
 contrasting outline. The nested and native backends share shell, popup and XR rendering.
 
-The session requests XR and the native Ghostty overlay at startup. If the headset
+The session requests XR and the selected terminal at startup. If the headset
 or runtime is unavailable, the desktop remains usable; use **Start XR** when it
 becomes available. `DOME_START_XR=0` disables automatic XR startup and
 `DOME_SESSION_TERMINAL=0` starts without a terminal. The saved XR layout at
@@ -1092,14 +1094,14 @@ row and press Enter or click its value to record a replacement chord. Escape
 cancels; Backspace disables that binding. Changes persist in `dome/xr.json`.
 Duplicate chords are rejected. Bare function keys pass to qimgvr, mpvr, fsv-xr
 and Ghostty XR: Dome’s menu uses Super+F10. Super+F12 shows the independent
-Ghostty XR overlay from either view; bare F12 also shows it in XR overlay mode.
+terminal overlay from either view; bare F12 also shows it in XR overlay mode.
 Its own F12 handler hides it while it owns the keyboard. Alt+F4 retains the standard window-close behavior.
 
 | Shortcut | Action |
 | --- | --- |
 | Super+Space | Cycle input methods: English, Japanese, Czech, Korean, Serbian Cyrillic |
 | Super+Shift+Space | Search and launch apps |
-| Super+T | Open Ghostty XR terminal in the active desktop/XR realm |
+| Super+T | Open terminal in the active desktop/XR realm |
 | Alt+Tab / Shift+Alt+Tab | XR: next / previous window in the same lane, recentered; desktop: next / previous window |
 | Alt+F4 | Close window |
 | Super+Q | Close windows of active application |
