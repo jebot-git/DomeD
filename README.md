@@ -605,10 +605,11 @@ Their placement follows the active projection:
 * **Room dome:** a flat panel 14 cm forward and 4 cm above the parent's upper edge.
   A thin blue beam connects its lower edge to the origin on the parent surface.
   The beam is decorative and never captures mouse input.
-* **Desktop:** a separate panel to the right with an 8 logical pixel gap, or over
-  the parent when space is tight. DomeD announces this placement in the Wayland
-  popup configure event so GTK, Chromium and other clients use the same coordinates
-  for submenu navigation. Placement stays within the work area between shell bars.
+* **Desktop:** popups open at the client-provided hierarchy anchor. Nested menus
+  respect the requested edge flips when approaching the work-area boundary. A popup
+  without an anchor opens 8 logical pixels below the cursor. DomeD announces the
+  placement in the Wayland popup configure event so rendering, input and submenu
+  navigation share coordinates. Placement stays within the shell bars.
 
 Popup textures are captured separately from parent textures, and pointer UVs map
 to the actual popup surface. Popups follow parent movement, scale, workspaces and

@@ -122,6 +122,15 @@ impl Dome {
                 w.desktop.w = geo.size.w as f32;
                 w.desktop.h = geo.size.h as f32;
             }
+            // Transient toplevels have no xdg_positioner. Capture the cursor
+            // once so the fallback follows the parent rather than pointer motion.
+            let origin = scene.popups.iter().find(|p| p.id == *id)
+                .map(|p| [p.anchor.x, p.anchor.y])
+                .unwrap_or_else(|| {
+                    let cursor = self.seat.get_pointer().unwrap().current_location();
+                    let parent_rect = scene.window(*parent).map_or(owner.desktop, |w| w.desktop);
+                    [cursor.x as f32 - parent_rect.x, cursor.y as f32 + 8. - parent_rect.y]
+                });
             descriptors.push(Popup {
                 context_at: None,
                 viewport: None,
@@ -129,8 +138,8 @@ impl Dome {
                 parent: *parent,
                 root,
                 anchor: Rect {
-                    x: owner.desktop.w / 2.,
-                    y: owner.desktop.h / 2.,
+                    x: origin[0],
+                    y: origin[1],
                     w: geo.size.w as f32,
                     h: geo.size.h as f32,
                 },
@@ -214,7 +223,7 @@ impl Dome {
                             ..anchor
                         }
                     } else {
-                        dome::spatial_popup::desktop_rect(parent, [anchor.w, anchor.h], work)
+                        dome::spatial_popup::desktop_rect(parent, Some([anchor.x, anchor.y]), [parent.x, parent.y], [anchor.w, anchor.h], work)
                     };
                     anchor.x = placed.x - parent.x;
                     anchor.y = placed.y - parent.y;

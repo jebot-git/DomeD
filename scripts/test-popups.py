@@ -219,6 +219,8 @@ try:
         popup = state()["popups"][0]
         assert popup["root"] == parent and popup["parent"] == parent
         assert len(state()["windows"]) == 1
+        assert abs(popup["anchor"]["x"] - 200) <= 1, popup
+        assert abs(popup["anchor"]["y"] - 100) <= 1, popup
         rect = state()["windows"][0]["desktop"]
         x, y = rect["x"] + popup["anchor"]["x"], rect["y"] + popup["anchor"]["y"]
         time.sleep(.2)

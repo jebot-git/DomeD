@@ -369,7 +369,23 @@ impl Dome {
                     h: size.h as f32,
                 }
             } else {
-                dome::spatial_popup::desktop_rect(parent, [size.w as f32, size.h as f32], work)
+                // Respect the client's tree/menu anchor, including edge flips for
+                // nested submenus. Only an absent anchor uses the cursor fallback.
+                let positioner = state.positioner;
+                let has_anchor = positioner.anchor_rect.size.w > 0
+                    && positioner.anchor_rect.size.h > 0;
+                let geometry = positioner.get_unconstrained_geometry(Rectangle::new(
+                    ((work.x - parent.x) as i32, (work.y - parent.y) as i32).into(),
+                    (work.w as i32, work.h as i32).into(),
+                ));
+                let cursor = self.seat.get_pointer().unwrap().current_location();
+                dome::spatial_popup::desktop_rect(
+                    parent,
+                    has_anchor.then_some([geometry.loc.x as f32, geometry.loc.y as f32]),
+                    [cursor.x as f32, cursor.y as f32],
+                    [size.w as f32, size.h as f32],
+                    work,
+                )
             };
             // Publish DomeD's placement to the client. Moving only the drawn
             // surface leaves GTK/Chromium's submenu navigation in the wrong space.

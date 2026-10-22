@@ -26,28 +26,17 @@ fn fixture(projection: Projection) -> (Scene, u64, u64) {
 }
 
 #[test]
-fn desktop_prefers_right_panel_and_falls_back_in_front_within_work_area() {
-    let work = Rect {
-        x: 0.,
-        y: 36.,
-        w: 1280.,
-        h: 704.,
-    };
-    let parent = Rect {
-        x: 100.,
-        y: 80.,
-        w: 720.,
-        h: 460.,
-    };
-    let side = spatial_popup::desktop_rect(parent, [240., 180.], work);
-    assert_eq!(side.x, 828.);
-    assert_eq!(side.y, 80.);
-    let front = spatial_popup::desktop_rect(Rect { x: 500., ..parent }, [240., 180.], work);
-    assert!(front.x >= 500. && front.x + front.w <= 1220.);
-    let tall = spatial_popup::desktop_rect(parent, [240., 700.], work);
-    assert!(tall.y >= work.y && tall.y + tall.h <= work.y + work.h);
-    let exact = spatial_popup::desktop_rect(parent, [452., 180.], work);
-    assert_eq!(exact.x, 828.);
+fn desktop_uses_hierarchy_anchor_or_cursor_and_keeps_popups_on_screen() {
+    let work = Rect { x: 0., y: 36., w: 1280., h: 704. };
+    let parent = Rect { x: 100., y: 80., w: 720., h: 460. };
+    let anchored = spatial_popup::desktop_rect(parent, Some([120., 30.]), [900., 400.], [240., 180.], work);
+    assert_eq!((anchored.x, anchored.y), (220., 110.));
+    let cursor = spatial_popup::desktop_rect(parent, None, [450., 250.], [240., 180.], work);
+    assert_eq!((cursor.x, cursor.y), (450., 258.));
+    let edge = spatial_popup::desktop_rect(parent, None, [1270., 730.], [240., 180.], work);
+    assert_eq!((edge.x, edge.y), (1040., 560.));
+    let oversized = spatial_popup::desktop_rect(parent, None, [450., 250.], [1400., 900.], work);
+    assert_eq!((oversized.x, oversized.y, oversized.w, oversized.h), (0., 36., 1400., 900.));
 }
 
 #[test]

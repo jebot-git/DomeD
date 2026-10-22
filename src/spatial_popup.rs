@@ -36,17 +36,20 @@ impl Popup {
 }
 
 /// Keep the client size. If it exceeds the work area, clipping is unavoidable.
-pub fn desktop_rect(parent: Rect, size: [f32; 2], work: Rect) -> Rect {
+pub fn desktop_rect(
+    parent: Rect,
+    anchor: Option<[f32; 2]>,
+    cursor: [f32; 2],
+    size: [f32; 2],
+    work: Rect,
+) -> Rect {
     let [w, h] = size;
-    let right = parent.x + parent.w + 8.;
-    let x = if right + w <= work.x + work.w {
-        right
-    } else {
-        parent.x + (parent.w - w) / 2.
-    };
+    let [x, y] = anchor.map_or([cursor[0], cursor[1] + 8.], |[x, y]| {
+        [parent.x + x, parent.y + y]
+    });
     Rect {
         x: x.clamp(work.x, (work.x + work.w - w).max(work.x)),
-        y: parent.y.clamp(work.y, (work.y + work.h - h).max(work.y)),
+        y: y.clamp(work.y, (work.y + work.h - h).max(work.y)),
         w,
         h,
     }
@@ -102,7 +105,7 @@ impl Scene {
                             )
                         } else {
                             if self.window(popup.id).is_some() {
-                                desktop_rect(parent, [popup.anchor.w, popup.height()], work)
+                                desktop_rect(parent, Some([popup.anchor.x, popup.anchor.y]), [parent.x, parent.y], [popup.anchor.w, popup.height()], work)
                             } else {
                                 // Use the geometry DomeD configured to the client, relative
                                 // to its parent. Moving it again here would desynchronize
