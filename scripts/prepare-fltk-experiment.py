@@ -24,7 +24,7 @@ expected='eede1fb2b8e9c2e581e77082e15252145855c79aad30070ee3b24aabe2f926f1'
 if hashlib.sha256(archive.read_bytes()).hexdigest()!=expected:
     raise SystemExit('FLTK source archive checksum mismatch')
 source=deps/'fltk-1.4.5'
-patch_names=['fltk-1.4.5-bitmap-fonts.patch','fltk-1.4.5-popup-done.patch','fltk-1.4.5-depth-buffer.patch','fltk-1.4.5-borderless-app-id.patch','fltk-1.4.5-bitmap-styles.patch','fltk-1.4.5-window-close.patch','fltk-1.4.5-first-configure.patch','fltk-1.4.5-empty-gl-text.patch']
+patch_names=['fltk-1.4.5-bitmap-fonts.patch','fltk-1.4.5-popup-done.patch','fltk-1.4.5-depth-buffer.patch','fltk-1.4.5-borderless-app-id.patch','fltk-1.4.5-bitmap-styles.patch','fltk-1.4.5-window-close.patch','fltk-1.4.5-first-configure.patch','fltk-1.4.5-empty-gl-text.patch','fltk-1.4.5-bitmap-refresh.patch']
 patches=[repo/'native/toolkit-hooks'/name for name in patch_names]
 digest=hashlib.sha256(b''.join(p.read_bytes() for p in patches)).hexdigest()
 stamp=source/'.dome-patches.sha256'

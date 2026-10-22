@@ -107,6 +107,7 @@ impl Portal {
         2
     }
 }
+#[cfg(test)]
 fn xml(value: &str) -> String {
     value
         .replace('&', "&amp;")
@@ -153,36 +154,22 @@ fn write_theme(root: &Path, appearance: Appearance) -> std::io::Result<Snapshot>
     )?;
     Ok(Snapshot { appearance, theme })
 }
-fn write_fonts(root: &Path) -> std::io::Result<PathBuf> {
-    let fonts = dome::bundled_fonts::FONTS;
-    let directory = root.join("fonts");
-    for (name, bytes) in fonts {
-        atomic_write(&directory.join(name), bytes)?;
-    }
-    let inherited = std::env::var("FONTCONFIG_FILE")
-        .ok()
-        .filter(|file| Path::new(file).is_file() && !file.contains("/dome-appearance-"))
-        .unwrap_or_else(|| "/etc/fonts/fonts.conf".into());
-    // Fontconfig's pattern allowlist overrides distro policies which reject bitmap faces.
-    let mut accepted: String = fonts
-        .iter()
-        .map(|(name, _)| {
-            format!(
-                "<pattern><patelt name=\"file\"><string>{}</string></patelt></pattern>",
-                xml(&directory.join(name).to_string_lossy())
-            )
-        })
-        .collect();
-    for font in crate::qt::bitmap_fonts() {
-        let family = font.id.split_once(" / ").map_or(font.id.as_str(), |(family, _)| family);
-        accepted.push_str(&format!(
-            "<pattern><patelt name=\"family\"><string>{}</string></patelt></pattern>",
-            xml(family)
-        ));
-    }
-    let path = root.join("fonts.conf");
-    atomic_write(&path, format!("<?xml version=\"1.0\"?><!DOCTYPE fontconfig SYSTEM \"urn:fontconfig:fonts.dtd\"><fontconfig><include ignore_missing=\"yes\">{}</include><dir>{}</dir><cachedir>{}</cachedir><selectfont><acceptfont>{accepted}</acceptfont></selectfont></fontconfig>", xml(&inherited), xml(&directory.to_string_lossy()), xml(&root.join("font-cache").to_string_lossy())))?;
-    Ok(path)
+fn font_families() -> Vec<String> {
+    crate::qt::bitmap_fonts().iter().map(|font| {
+        font.id.split_once(" / ").map_or(font.id.as_str(), |(family, _)| family).to_owned()
+    }).collect()
+}
+fn inherited_fontconfig(root: &Path) -> String {
+    std::env::var("FONTCONFIG_FILE").ok()
+        .filter(|file| Path::new(file).is_file() && Path::new(file) != root.join("fonts.conf")
+            && !file.contains("/dome-appearance-") && !file.contains("/dome-fonts/"))
+        .unwrap_or_else(|| "/etc/fonts/fonts.conf".into())
+}
+pub(crate) fn write_fonts(root: &Path) -> std::io::Result<PathBuf> {
+    dome::font_export::export(root, &inherited_fontconfig(root), &font_families())
+}
+pub(crate) fn refresh_session_fonts(runtime: &Path) -> std::io::Result<PathBuf> {
+    dome::font_export::refresh_session(runtime, &inherited_fontconfig(runtime), &font_families())
 }
 
 pub struct ToolkitAppearance {
@@ -203,12 +190,13 @@ impl ToolkitAppearance {
         {
             return Ok(None);
         }
-        let root = PathBuf::from(
+        let runtime = PathBuf::from(
             std::env::var_os("XDG_RUNTIME_DIR").ok_or("XDG_RUNTIME_DIR is required")?,
-        )
-        .join(format!("dome-appearance-{}", std::process::id()));
+        );
+        let root = runtime.join(format!("dome-appearance-{}", std::process::id()));
         let snapshot = write_theme(&root, appearance.clone())?;
-        let fonts = write_fonts(&root)?;
+        let fonts = refresh_session_fonts(&runtime)?;
+        let font_root = runtime.join("dome-fonts");
         let shared = Arc::new(Mutex::new(snapshot));
         let connection = zbus::blocking::connection::Builder::session()?
             .name(BUS)?
@@ -242,6 +230,12 @@ impl ToolkitAppearance {
         let (send, receive) = mpsc::channel();
         std::thread::spawn(move || {
             for appearance in receive {
+                // Repair missing or outdated font exports before telling clients
+                // to resolve the newly selected face.
+                if let Err(error) = write_fonts(&font_root) {
+                    eprintln!("Toolkit font export: {error}");
+                    continue;
+                }
                 match write_theme(&root, appearance) {
                     Ok(next) => {
                         let new = settings(&next);

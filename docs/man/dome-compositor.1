@@ -23,6 +23,12 @@ Select Vulkan through Mesa Zink (default), or GLES.
 .B "\-\-check\-backend"
 Report compiled backend support without opening a seat. Combine with \-\-backend.
 .TP
+.B "\-\-refresh\-session\-fonts"
+Update the stable font export in XDG_RUNTIME_DIR/dome-fonts and refresh older DomeD font export paths for launchers which outlived a compositor upgrade. No logout or display connection is required.
+.TP
+.B "\-\-export\-fonts DIRECTORY"
+Export the shell's complete bitmap font bundle and a fonts.conf file without opening a display or starting a session. Use the parent directory of the session's FONTCONFIG_FILE to refresh its fonts after upgrading DomeD. Existing themes and the selected font remain unchanged.
+.TP
 .B "\-\-terminal"
 Launch the configured terminal initially.
 .TP

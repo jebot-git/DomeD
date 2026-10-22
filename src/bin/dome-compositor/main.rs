@@ -61,6 +61,23 @@ pub struct CalloopData {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
+    if args.as_slice() == ["--refresh-session-fonts"] {
+        let runtime = std::path::PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR").ok_or("XDG_RUNTIME_DIR is required")?);
+        let configuration = toolkit_appearance::refresh_session_fonts(&runtime)?;
+        println!("Refreshed session bitmap fonts; FONTCONFIG_FILE={}", configuration.display());
+        return Ok(());
+    }
+    if args.first().is_some_and(|arg| arg == "--export-fonts") {
+        if args.len() != 2 {
+            return Err("Usage: dome-compositor --export-fonts DIRECTORY".into());
+        }
+        let requested = std::path::PathBuf::from(&args[1]);
+        let root = if requested.is_absolute() { requested } else { std::env::current_dir()?.join(requested) };
+        let configuration = toolkit_appearance::write_fonts(&root)?;
+        println!("Exported {} bitmap font files; FONTCONFIG_FILE={}",
+            dome::bundled_fonts::FONTS.len(), configuration.display());
+        return Ok(());
+    }
     let mut backend = std::env::var("DOME_BACKEND").unwrap_or_else(|_| {
         if std::env::var_os("WAYLAND_DISPLAY").is_some() || std::env::var_os("DISPLAY").is_some() {
             "nested"
@@ -89,7 +106,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err("DOME_RENDERER must be vulkan or gles".into());
     }
     if args.first().is_some_and(|a| a == "--help" || a == "-h") {
-        println!("dome-compositor [--backend drm|nested] [--renderer vulkan|gles] [--terminal | --command PROGRAM ARGS...]\n  drm: native libseat/libinput/DRM compositor (login screen or unused TTY)\n  nested: development window in an existing Wayland/X11 desktop\n  --renderer: Vulkan via Mesa Zink (default), or native GLES\n  --check-backend: report backend support without opening a seat or display");
+        println!("dome-compositor [--backend drm|nested] [--renderer vulkan|gles] [--terminal | --command PROGRAM ARGS...]\n  drm: native libseat/libinput/DRM compositor (login screen or unused TTY)\n  nested: development window in an existing Wayland/X11 desktop\n  --renderer: Vulkan via Mesa Zink (default), or native GLES\n  --refresh-session-fonts: update stable and legacy session font exports\n  --export-fonts DIRECTORY: refresh bitmap assets and Fontconfig configuration without starting a session\n  --check-backend: report backend support without opening a seat or display");
         return Ok(());
     }
     if !matches!(backend.as_str(), "drm" | "nested") {
