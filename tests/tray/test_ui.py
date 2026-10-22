@@ -65,7 +65,7 @@ with tempfile.TemporaryDirectory(prefix='dome-tray-ui-') as directory:
    if ctrl:xtest.fake_input(d,X.KeyRelease,d.keysym_to_keycode(XK.string_to_keysym('Control_L')))
    d.sync();time.sleep(.15)
   def click(w,x,y):
-   pos=w.translate_coords(d.screen().root,0,0);xtest.fake_input(d,X.MotionNotify,x=pos.x+x,y=pos.y+y-28)
+   pos=d.screen().root.translate_coords(w,0,0);xtest.fake_input(d,X.MotionNotify,x=pos.x+x,y=pos.y+y-28)
    xtest.fake_input(d,X.ButtonPress,1);xtest.fake_input(d,X.ButtonRelease,1);d.sync();time.sleep(.3)
   menu='/TrayApplications/Menu'
   layout=dbus(menu,'com.canonical.dbusmenu.GetLayout','0','1','[]')
@@ -138,7 +138,8 @@ with tempfile.TemporaryDirectory(prefix='dome-tray-ui-') as directory:
   layout=subprocess.run(['gdbus','call','--session','--dest',service_name,'--object-path',object_path,
    '--method','com.canonical.dbusmenu.GetLayout','0','2','[]'],env=env,capture_output=True,text=True,timeout=4)
   assert layout.returncode==0,layout.stderr
-  for label in ['_File','_Refresh','_Close','_Quit','_View']:assert label in layout.stdout,layout.stdout
+  for label in ['_File','_Refresh','_Close','_View']:assert label in layout.stdout,layout.stdout
+  assert '_Quit' not in layout.stdout
   second=subprocess.run([str(BUILD/'dome-tray'),'--devices'],env=env,capture_output=True,timeout=4);assert second.returncode==0
   assert len([w for w in d.screen().root.query_tree().children if w.get_wm_class() and 'org.domed.Tray' in w.get_wm_class()])==1
   translator=start([str(ROOT/'build/translator/dome-translator'),'--tray'],env,'ui-translator.log')
@@ -153,6 +154,18 @@ with tempfile.TemporaryDirectory(prefix='dome-tray-ui-') as directory:
    result=json.loads(driver.stdout.readline());assert result['ok'],result
    return result['value']
   items=service('tray');assert len([i for i in items if i['Id']=='dome.translator'])==1
+  selected=next(i for i in items if i['Id']=='dome.translator')
+  subprocess.run([str(BUILD/'dome-tray'),'--translator'],env=env,check=True,timeout=4)
+  w=wait(window);time.sleep(.6)
+  w.set_input_focus(X.RevertToParent,X.CurrentTime);d.sync();time.sleep(.2)
+  click(w,250,524)
+  geo=w.get_geometry();raw=w.get_image(0,0,geo.width,geo.height,X.ZPixmap,0xffffffff)
+  Image.frombytes('RGB',(geo.width,geo.height),raw.data,'raw','BGRX').save(out/'ui-placement-out.png')
+  wait(lambda:not next(i for i in service('tray') if i['Id']=='dome.translator')['managed'])
+  time.sleep(.3);click(w,100,524)
+  wait(lambda:next(i for i in service('tray') if i['Id']=='dome.translator')['managed'])
+  print('PASS: native placement buttons move Translator out of and back into the manager')
+
   item=next(i for i in items if i['Id']=='dome.translator')
   rows=service('menu',item=item,parent=0);assert len(rows)==6 and rows[5]['checkable'] and not rows[5]['checked']
   service('event',item=item,id=4)
@@ -161,18 +174,21 @@ with tempfile.TemporaryDirectory(prefix='dome-tray-ui-') as directory:
   assert not service('menu',item=item,parent=0)[4]['enabled']
   print('PASS: translator has one manager entry, live toggle state, working settings and Quit, and returns to launchable state')
   log=(out/'ui-frontend.log').read_text();assert 'FLTK GPU widgets:' in log,log
-  w=wait(window);w.set_input_focus(X.RevertToParent,X.CurrentTime);d.sync();time.sleep(.3);key('q',ctrl=True);assert manager.wait(timeout=4)==0
+  w=wait(window);w.set_input_focus(X.RevertToParent,X.CurrentTime);d.sync();time.sleep(.3);key('q',ctrl=True);assert manager.poll() is None
+  manager.terminate();assert manager.wait(timeout=4)==-15
   # Starting directly on a service page must also survive closing the window.
   manager=start([str(BUILD/'fcitx5-configuration-fltk'),'fcitx://config/global'],env,'ui-direct-frontend.log')
   w=wait(window);w.set_input_focus(X.RevertToParent,X.CurrentTime);d.sync();key('w',ctrl=True)
   wait(lambda:window() is None);assert manager.poll() is None
   dbus(menu,'com.canonical.dbusmenu.Event','1','clicked','<0>','0');wait(window)
-  w=wait(window);w.set_input_focus(X.RevertToParent,X.CurrentTime);d.sync();time.sleep(.3);key('q',ctrl=True);assert manager.wait(timeout=4)==0
+  w=wait(window);w.set_input_focus(X.RevertToParent,X.CurrentTime);d.sync();time.sleep(.3);key('q',ctrl=True);assert manager.poll() is None
+  manager.terminate();assert manager.wait(timeout=4)==-15
   fallback=start([str(BUILD/'dome-tray'),'--tray'],{**env,'XDG_CURRENT_DESKTOP':'Other'},'ui-fallback.log')
   w=wait(window);assert w.get_geometry().height==660,'Other desktops must retain the local menu layout'
-  w.set_input_focus(X.RevertToParent,X.CurrentTime);d.sync();time.sleep(.3);key('q',ctrl=True);assert fallback.wait(timeout=4)==0
+  w.set_input_focus(X.RevertToParent,X.CurrentTime);d.sync();time.sleep(.3);key('q',ctrl=True);assert fallback.poll() is None
+  fallback.terminate();assert fallback.wait(timeout=4)==-15
   print('PASS: DomeD hides the local menu, exports its commands, preserves shortcuts, and other desktops retain the fallback')
-  print('PASS: one tray entry, four pages, two utility shortcuts, flags, Fcitx method/group/configuration submenus, fcitx5-configuration-fltk URI routing, GPU presentation, close/restore and explicit Quit')
+  print('PASS: one tray entry, four pages, two utility shortcuts, flags, Fcitx method/group/configuration submenus, fcitx5-configuration-fltk URI routing, GPU presentation, close/restore and permanent service')
  finally:
   for p in reversed(processes):p.terminate()
   for p in reversed(processes):

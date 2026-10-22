@@ -25,10 +25,8 @@ impl Dome {
         if m == 1 {
             let scene = self.shell_scene();
             let w = scene.focused.and_then(|id| scene.window(id));
-            let app = w.and_then(|w| self.apps.iter().find(|a| a.matches(&w.app_id)));
-            let name = app
-                .map(|a| a.name.as_str())
-                .or_else(|| w.map(|w| w.app_id.as_str()))
+            let app = w.and_then(|w| dome::desktop_entries::resolve(&self.apps, &w.app_id));
+            let name = w.map(|w| dome::desktop_entries::display_name(app, &w.title))
                 .unwrap_or("Desktop");
             let mut items = vec![(format!("About {name}"), "", AppInfo)];
             if let Some(app) = app {

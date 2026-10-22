@@ -145,6 +145,10 @@ class Item(ServiceInterface):
  @dbus_property(access=PropertyAccess.READ)
  def Status(self)->'s':return 'Active'
  @dbus_property(access=PropertyAccess.READ)
+ def ItemIsMenu(self)->'b':return True
+ @dbus_property(access=PropertyAccess.READ)
+ def IconPixmap(self)->'a(iiay)':return [[16,16,bytes([255,0,255,0])*256]]
+ @dbus_property(access=PropertyAccess.READ)
  def Menu(self)->'o':return '/Menu'
 class Menu(ServiceInterface):
  def __init__(self):super().__init__('com.canonical.dbusmenu')
@@ -153,7 +157,8 @@ class Menu(ServiceInterface):
  @method()
  def GetLayout(self,parent:'i',depth:'i',properties:'as')->'u(ia{sv}av)':return [1,[0,{},[Variant('(ia{sv}av)',[10,{'label':Variant('s','Do _something'),'enabled':Variant('b',True),'toggle-type':Variant('s','checkmark'),'toggle-state':Variant('i',1)},[]])]]]
  @method()
- def Event(self,id:'i',event:'s',value:'v',timestamp:'u'):assert id==10 and event=='clicked'
+ def Event(self,id:'i',event:'s',value:'v',timestamp:'u'):
+  assert id==10 and event=='clicked';Path(os.environ['TRAY_FIXTURE_READY']+'.event').touch()
 class FcitxItem(ServiceInterface):
  def __init__(self):super().__init__('org.kde.StatusNotifierItem')
  @dbus_property(access=PropertyAccess.READ)

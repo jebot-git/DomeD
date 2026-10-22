@@ -42,6 +42,7 @@ void walletAction(const std::string &action, int handle,
                   const std::string &folder, const std::string &key,
                   const std::string &value);
 Json trayItems();
+void trayPlacement(const Json &item, bool managed);
 Json trayMenu(const Json &item, int parent);
 void trayEvent(const Json &item, int id);
 std::string frontend(const std::string &identity);

@@ -8,10 +8,12 @@ install -D -m 0755 "$root/packaging/dome-session" "$stage/usr/local/bin/dome-ses
 for doc in TRAY_FRONTENDS.md FLTK_GPU_AUDIT.md SCREENSHOTS.md; do
     install -D -m 0644 "$root/docs/$doc" "$stage/usr/local/share/doc/domed/$doc"
 done
-for app in Connect InputMethods Wallets; do
+for app in Tray Connect InputMethods Wallets; do
     install -D -m 0644 "$root/packaging/org.domed.$app.desktop" "$stage/usr/local/share/applications/org.domed.$app.desktop"
     desktop-file-validate "$stage/usr/local/share/applications/org.domed.$app.desktop"
 done
+
+install -D -m 0644 "$root/native/icons/tray-applications.svg" "$stage/usr/local/share/icons/hicolor/scalable/apps/org.domed.Tray.svg"
 
 if [[ "${DOME_BUILD_TRANSLATOR:-1}" != 0 ]]; then
     "$root/scripts/stage-translator.sh" "$stage"

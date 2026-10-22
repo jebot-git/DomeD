@@ -1,5 +1,4 @@
 //! Session-bus StatusNotifier host. D-Bus calls run off the compositor thread.
-pub const BUILTIN_COUNT: usize = 4;
 use serde::Serialize;
 use std::{
     collections::HashMap,
@@ -44,6 +43,17 @@ pub struct Row {
     pub icon: String,
     pub radio: bool,
 }
+fn placements() -> HashMap<String, bool> {
+    let config = std::env::var_os("XDG_CONFIG_HOME").map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".config"))
+        .join("dome/tray-applications.json");
+    std::fs::metadata(&config).ok().filter(|m| m.len() <= 65536)
+        .and_then(|_| std::fs::read(config).ok())
+        .and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
+}
+fn managed_item(settings: &HashMap<String, bool>, id: &str) -> bool {
+    settings.get(id).copied().unwrap_or(id == "dome.translator")
+}
 fn loading_rows() -> Vec<Row> {
     vec![Row {
         id: 0, text: "Loading input methods…".into(), enabled: false,
@@ -60,6 +70,7 @@ pub struct Snapshot {
     pub selected: Option<usize>,
     pub error: String,
     pub keyboard_menu: bool,
+    pub screenshot_managed: bool,
 }
 impl Snapshot {
     fn active_item(&self) -> Option<Item> {
@@ -583,9 +594,11 @@ fn run(
         // The keyboard selector is the single language indicator, regardless
         // of when Fcitx registers or which service frontend is preferred.
         let managed = dbus.call::<_, _, bool>("NameHasOwner", &("org.domed.Tray",)).unwrap_or(false);
+        let settings = placements();
+        let screenshot_managed = managed && managed_item(&settings, "dome.screenshot");
         items.retain(|item| {
             let identity = format!("{} {} {}", item.id, item.title, item.service).to_lowercase();
-            !identity.contains("fcitx") && !(item.id == "dome.translator" && managed)
+            !identity.contains("fcitx") && (item.id == "dome.tray" || !managed || !managed_item(&settings, &item.id))
         });
         if !owner {
             // An item may register before exporting its properties, and live
@@ -614,8 +627,9 @@ fn run(
         }
         let mut s = state.lock().unwrap();
         let before = serde_json::to_string(&s.items)?;
-        if serde_json::to_string(&items)? != before {
+        if serde_json::to_string(&items)? != before || s.screenshot_managed != screenshot_managed {
             s.items = items;
+            s.screenshot_managed = screenshot_managed;
             if !s.keyboard_menu {
                 s.menu = None;
                 s.rows.clear();
@@ -632,7 +646,7 @@ impl crate::Dome {
     pub fn visible_tray(&self, width: i32) -> Snapshot {
         let mut state = self.tray.state();
         if let Some(index) = state.menu.as_mut().filter(|_| !state.keyboard_menu) {
-            *index += BUILTIN_COUNT;
+            *index += if state.screenshot_managed { 3 } else { 4 };
         }
         let own = |key: &str, title: &str, attention: bool| Item {
             key: key.into(),
@@ -662,19 +676,12 @@ impl crate::Dome {
             "unavailable"
         }
         .into();
-        state.items.splice(
-            0..0,
-            [
-                speaker,
-                own("dome.clipboard", "Clipboard history", false),
-                own(
-                    "dome.notifications",
-                    "Notification history",
-                    self.notifications.unread(),
-                ),
-                own("dome.screenshot", "Screenshot (PrintScreen)", false),
-            ],
-        );
+        let mut builtins = vec![speaker, own("dome.clipboard", "Clipboard history", false),
+            own("dome.notifications", "Notification history", self.notifications.unread())];
+        if !state.screenshot_managed {
+            builtins.push(own("dome.screenshot", "Screenshot (PrintScreen)", false));
+        }
+        state.items.splice(0..0, builtins);
         state.items.truncate(((width - 484 - self.clock_reserve()).max(0) / 28) as usize);
         if !state.keyboard_menu && state.menu.is_some_and(|i| i >= state.items.len()) {
             state.menu = None;

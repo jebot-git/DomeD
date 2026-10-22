@@ -486,10 +486,8 @@ impl Dome {
         let ime = self.ime.snapshot();
         let scene = self.shell_scene();
         let focused = scene.focused.and_then(|id| scene.window(id));
-        let entry = focused.and_then(|w| self.apps.iter().find(|a| a.matches(&w.app_id)));
-        let app = entry
-            .map(|a| a.name.as_str())
-            .or_else(|| focused.map(|w| w.app_id.as_str()))
+        let entry = focused.and_then(|w| dome::desktop_entries::resolve(&self.apps, &w.app_id));
+        let app = focused.map(|w| dome::desktop_entries::display_name(entry, &w.title))
             .unwrap_or("Desktop");
         let tasks = dome::taskbar::tasks(&scene, &self.apps, &self.pins);
         let items:Vec<_>=self.menu.map(|m|self.menu_items(m)).unwrap_or_default().iter().map(|(text,shortcut,command)|{let bindings=&scene.config.keybindings;let chord=if dome::shortcuts::defaults().iter().any(|b|b.command==*command){bindings.iter().find(|b|b.enabled&&b.command==*command).map(|b|b.label()).unwrap_or_default()}else{shortcut.to_string()};serde_json::json!({"text":text,"shortcut":chord,"enabled":self.command_enabled(*command),"separator":matches!(command,dome::shortcuts::Command::Separator)})}).collect();

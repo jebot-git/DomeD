@@ -17,10 +17,13 @@ does not depend on an installed icon theme.
 `dome-tray` (or `--daemon`) registers this single tray entry without showing a
 window. `--tray`, `--devices`, `--input`, `--wallets` open the relevant page.
 Additional invocations route to the existing instance. Ctrl+R refreshes, Ctrl+W/Escape closes
-the window, Ctrl+Q quits the companion, Alt+1..4 selects a page, and normal Tab /
+the window, Alt+1..4 selects a page, and normal Tab /
 arrow navigation uses the native widgets. Closing the window always clears the
 password field and keeps the tray entry available, including when started with
-a page option. Only the explicit File > Quit action terminates the companion.
+a page option. There is no Quit action: the manager is a permanent session service.
+The compositor supervises its process and restarts it after a crash, with bounded
+backoff for repeated startup failures. The supervisor ends with the compositor;
+diagnostic sessions can still disable service startup.
 
 * KDE Connect: discovery, pairing/accept/cancel/unpair, verification/battery state,
   ping, find-phone, file/URL/text sharing and plugin enable/disable.
@@ -110,3 +113,26 @@ Inside DomeD the manager exports its File/View/Input methods/Wallet commands to
 the universal menu and hides the in-window menu bar, reclaiming its vertical
 space. Shortcuts remain active while the local widget is hidden. Other desktop
 environments retain the local menu bar as a fallback.
+
+The manager has no applications-menu launcher. Its hidden canonical desktop
+metadata (`org.domed.Tray`) supplies the correct application name and icon;
+Connect/InputMethods/Wallets compatibility entries also remain hidden.
+
+Select a tray application and use **Move to manager** or **Move to tray**. The
+list marks the current placement; applications with individual icons remain in
+the list so they can be moved back. Moving into the manager suppresses only the
+individual icon; its live menu and process continue working. Moving out restores
+the individual icon. Native service items offer **Open native controls** so
+selecting them still leaves the placement buttons accessible. Placement is saved atomically in
+`$XDG_CONFIG_HOME/dome/tray-applications.json` (normally `~/.config/dome`).
+Translator defaults to the manager; other applications retain their existing
+individual placement until moved. Screenshot can also move between its built-in
+icon and manager entry. The manager and keyboard selector have fixed placements.
+If the manager is temporarily unavailable, individual application icons and the
+Screenshot shortcut become visible until it recovers.
+
+The universal menu's application header uses the resolved desktop entry's
+human-readable name and icon. Exact desktop IDs take priority over window-class
+aliases; unambiguous reverse-DNS client aliases can resolve a short desktop ID or
+StartupWMClass (for example `com.vrcx-0.app` to `VRCX-0.desktop`). Unknown windows
+use their title rather than exposing the protocol app ID as their display name.

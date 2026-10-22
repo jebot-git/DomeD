@@ -7,6 +7,7 @@ pub struct Header {
     pub x: i32,
     pub width: i32,
     pub enabled: bool,
+    pub icon: String,
 }
 #[derive(Serialize)]
 pub struct Panel {
@@ -77,6 +78,15 @@ fn universal_menus(mut exported: Vec<Node>, shell: Vec<Node>) -> Vec<Node> {
     if let Some(help) = help { menus.push(help); }
     menus
 }
+fn application_header(apps: &[dome::desktop_entries::App], window: Option<&dome::Window>) -> Header {
+    let entry = window.and_then(|w| dome::desktop_entries::resolve(apps, &w.app_id));
+    Header {
+        text: window.map(|w| dome::desktop_entries::display_name(entry, &w.title))
+            .unwrap_or("Desktop").to_owned(),
+        icon: entry.map(|a| a.icon.clone()).unwrap_or_default(),
+        x: 46, width: 184, enabled: true,
+    }
+}
 impl Dome {
     fn universal_menus(&self) -> Vec<Node> {
         let scene = self.shell_scene();
@@ -112,24 +122,15 @@ impl Dome {
     pub fn menu_headers(&self) -> Vec<Header> {
         let scene = self.shell_scene();
         let focused = scene.focused.and_then(|id| scene.window(id));
-        let entry = focused.and_then(|w| self.apps.iter().find(|a| a.matches(&w.app_id)));
-        let name = entry
-            .map(|a| a.name.clone())
-            .or_else(|| focused.map(|w| w.app_id.clone()))
-            .unwrap_or("Desktop".into());
         let mut headers = vec![
             Header {
                 text: "◉".into(),
+                icon: String::new(),
                 x: 0,
                 width: 46,
                 enabled: true,
             },
-            Header {
-                text: name,
-                x: 46,
-                width: 184,
-                enabled: true,
-            },
+            application_header(&self.apps, focused),
         ];
         let mut x = 230;
         for node in self.universal_menus() {
@@ -137,7 +138,7 @@ impl Dome {
                 "File" => 50, "Edit" => 52, "View" => 58, "Window" => 80, "Help" => 58,
                 _ => (node.text.chars().count() as i32 * 8 + 24).clamp(48, 200),
             };
-            headers.push(Header { text: node.text, x, width, enabled: node.enabled });
+            headers.push(Header { text: node.text, x, width, enabled: node.enabled, icon: String::new() });
             x += width;
         }
         headers
@@ -360,6 +361,18 @@ impl Dome {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn application_header_uses_desktop_name_and_icon_for_client_alias() {
+        let app = dome::desktop_entries::parse(
+            "[Desktop Entry]\nType=Application\nName=Friendly Application\nExec=fixture\nIcon=fixture-icon\nStartupWMClass=vrcx-0\n",
+            "/tmp/VRCX-0.desktop".into(), "VRCX-0.desktop".into(), "C", &["Dome"]).unwrap();
+        let mut scene = dome::Scene::new("test");
+        let id = scene.add("Document title", "com.vrcx-0.app");
+        let header = application_header(&[app], scene.window(id));
+        assert_eq!((header.text.as_str(), header.icon.as_str()), ("Friendly Application", "fixture-icon"));
+        assert_eq!(application_header(&[], scene.window(id)).text, "Document title");
+        assert_eq!(application_header(&[], None).text, "Desktop");
+    }
     fn shell() -> Vec<Node> {
         ["File", "Edit", "View", "Window", "Help"].into_iter().map(|text| Node {
             text: text.into(), enabled: true, submenu: true,

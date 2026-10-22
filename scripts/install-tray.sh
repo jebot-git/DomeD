@@ -13,6 +13,8 @@ exec 9>/run/lock/domed-install.lock
 flock -x 9
 files=(usr/local/bin/dome-tray usr/local/bin/dome-session
     usr/local/bin/fcitx5-configuration-fltk
+    usr/local/share/applications/org.domed.Tray.desktop
+    usr/local/share/icons/hicolor/scalable/apps/org.domed.Tray.svg
     usr/local/share/applications/org.domed.Connect.desktop
     usr/local/share/applications/org.domed.InputMethods.desktop
     usr/local/share/applications/org.domed.Wallets.desktop

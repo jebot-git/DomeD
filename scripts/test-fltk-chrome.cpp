@@ -39,6 +39,12 @@ int main(int argc, char **argv) try {
   std::ofstream(icon) << "<svg xmlns='http://www.w3.org/2000/svg' width='22' height='22'><rect width='22' height='22' fill='#ec172a'/></svg>";
   require(theme_icons::resolve("unique-test-icon", dir.string(), 22) == icon, "Inherited theme icon was not found");
   require(theme_icons::resolve(icon.string(), "", 22) == icon, "Absolute icon was not found");
+  auto overlay = dir / "overlay";
+  std::filesystem::create_directories(overlay / "hicolor/22x22/apps");
+  auto overlayIcon = overlay / "hicolor/22x22/apps/unique-overlay-icon.svg";
+  std::filesystem::copy_file(icon, overlayIcon, std::filesystem::copy_options::overwrite_existing);
+  require(theme_icons::resolve("unique-overlay-icon", overlay.string(), 22) == overlayIcon,
+          "Icon overlay without its own index.theme was not found");
   p.icon(0, 0, 22, "unique-test-icon", p.fg, dir.string());
   cairo_surface_flush(surface);
   auto pixels = (uint32_t *)cairo_image_surface_get_data(surface);
@@ -68,6 +74,17 @@ int main(int argc, char **argv) try {
     y += 28;
   }
   require(checked, "No missing-glyph fallback case exercised");
+  // Menu-bar identity must paint the application's real icon beside its name.
+  auto iconPath = std::string(argv[2]) + ".header.svg";
+  { std::ofstream icon(iconPath); icon << "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24'><rect width='24' height='24' fill='#00ff00'/></svg>"; }
+  J header = {{"kind", "shell"}, {"width", 640}, {"height", 160},
+      {"menu_headers", J::array({{{"text", "Friendly Application"}, {"icon", std::filesystem::absolute(iconPath).string()}, {"x", 46}, {"width", 184}, {"enabled", true}}})}};
+  std::vector<uint32_t> headerPixels(640 * 160);
+  require(dome_qt_paint(header.dump().c_str(), reinterpret_cast<unsigned char *>(headerPixels.data()), headerPixels.size() * 4) == 1,
+          "Application header painting failed");
+  require((headerPixels[18 * 640 + 63] & 0xFFFFFF) == 0x00FF00,
+          "Application icon missing from universal menu bar");
+  std::filesystem::remove(iconPath);
   // Button pixels must be identical across fonts and native sizes.
   std::vector<unsigned char> reference;
   for (auto &font : fonts) {

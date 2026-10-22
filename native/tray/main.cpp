@@ -59,6 +59,7 @@ class Manager : public dx::GpuWindow {
   Fl_Hold_Browser *trayList, *trayRows, *deviceList, *plugins, *available,
       *enabled, *folderList, *entryList, *configList;
   Fl_Multiline_Output *deviceInfo;
+  Fl_Button *moveToManager, *moveToTray;
   Fl_Choice *groups, *configTarget;
   Fl_Input *layout, *entryName;
   Fl_Secret_Input *password;
@@ -90,7 +91,6 @@ class Manager : public dx::GpuWindow {
   }
   int handle = -1;
   Fl_Choice *walletList;
-  bool quitting = false;
   std::future<Json> pending;
   std::function<void(Json)> completed;
   std::deque<std::function<void()>> callbacks;
@@ -191,9 +191,8 @@ class Manager : public dx::GpuWindow {
       trayData = std::move(data);
       trayList->clear();
       for (auto &item : trayData)
-        trayList->add(
-            item.value("Title", item.value("Id", std::string("Application")))
-                .c_str());
+        trayList->add((item.value("Title", item.value("Id", std::string("Application"))) +
+            (item.value("movable", false) ? (item.value("managed", false) ? " [manager]" : " [tray]") : "")).c_str());
       for (size_t i = 0; i < trayData.size(); ++i)
         if (trayData[i].value("Id", std::string()) == selected) {
           trayList->value(i + 1);
@@ -207,13 +206,9 @@ class Manager : public dx::GpuWindow {
     if (index < 0 || size_t(index) >= trayData.size())
       return;
     selectedTray = trayData[index];
-    auto native =
-        services::frontend(selectedTray.value("Id", std::string()) + " " +
-                           selectedTray.value("Title", std::string()));
-    if (!native.empty()) {
-      showPage(native);
-      return;
-    }
+    moveToManager->deactivate(); moveToTray->deactivate();
+    if (selectedTray.value("movable", false))
+      (selectedTray.value("managed", false) ? moveToTray : moveToManager)->activate();
     parents = {0};
     loadTrayMenu(0);
   }
@@ -247,6 +242,11 @@ class Manager : public dx::GpuWindow {
     auto row = rows[i];
     if (!row.value("enabled", true) || row.value("separator", false))
       return;
+    if (row.value("id", 0) == -1) {
+      showPage(services::frontend(selectedTray.value("Id", std::string()) + " " +
+                                 selectedTray.value("Title", std::string())));
+      return;
+    }
     if (row.value("submenu", false)) {
       parents.push_back(row.at("id"));
       loadTrayMenu(parents.back());
@@ -608,14 +608,6 @@ public:
         "&File/&Close", FL_CTRL + 'w',
         [](Fl_Widget *, void *p) { ((Manager *)p)->close(); }, this);
     menu.add(
-        "&File/&Quit", FL_CTRL + 'q',
-        [](Fl_Widget *, void *p) {
-          auto s = (Manager *)p;
-          s->quitting = true;
-          s->hide();
-        },
-        this);
-    menu.add(
         "&View/&Tray", FL_ALT + '1',
         [](Fl_Widget *, void *p) { ((Manager *)p)->showPage("tray"); }, this);
     menu.add(
@@ -702,6 +694,16 @@ public:
         parents.pop_back();
       loadTrayMenu(parents.back());
     });
+    moveToManager = button(28, 508, 158, "Move to manager", [this] {
+      auto item = selectedTray;
+      command([item] { services::trayPlacement(item, true); }, [this] { refreshTray(); });
+    });
+    moveToTray = button(192, 508, 158, "Move to tray", [this] {
+      auto item = selectedTray;
+      command([item] { services::trayPlacement(item, false); }, [this] { refreshTray(); });
+    });
+    moveToManager->deactivate(); moveToTray->deactivate();
+    trayList->size(330, 398);
     trayTab->end();
     deviceTab = new Fl_Group(12, 66, 916, 538, "KDE Connect");
     deviceList = new Fl_Hold_Browser(28, 90, 330, 330);
@@ -967,7 +969,6 @@ public:
     else
       refreshTray();
   }
-  bool running() { return !quitting; }
 };
 int main(int argc, char **argv) try {
 #ifdef DOME_FCITX_CONFIGURATION
@@ -990,7 +991,7 @@ int main(int argc, char **argv) try {
       puts("fcitx5-configuration-fltk [fcitx://config/global|fcitx://config/inputmethod/ID|fcitx://config/addon/ID]");
 #else
       puts("dome-tray [--daemon|--tray|--devices|--input|--wallets|--translator|--screenshot]\n"
-           "Close hides the manager; File > Quit exits the tray companion.");
+           "Close hides the permanent session tray manager.");
 #endif
       return 0;
     } else if (a.rfind("fcitx://config/", 0) == 0) {
@@ -1008,7 +1009,7 @@ int main(int argc, char **argv) try {
   Notifier notifier([&window](const std::string &p) { window.showPage(p); });
   if (showWindow)
     window.showPage(page);
-  while (window.running())
+  while (true)
     Fl::wait(.1);
   return 0;
 } catch (const std::exception &e) {

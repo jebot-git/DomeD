@@ -598,7 +598,10 @@ extern "C" int dome_qt_paint(const char *json, unsigned char *pixels,
       int x = num(header, "x"), width = num(header, "width");
       if (num(o, "menu", -1) == i)
         p.rect(x, 0, width, 35, p.sel);
-      p.text(x + 7, 0, width - 14, 35, str(header, "text"), p.fg);
+      const auto icon = str(header, "icon");
+      const int inset = icon.empty() ? 7 : 36;
+      if (!icon.empty()) p.icon(x + 5, 6, 24, icon, p.fg);
+      p.text(x + inset, 0, width - inset - 7, 35, str(header, "text"), p.fg);
       ++i;
     }
     cairo_restore(c);

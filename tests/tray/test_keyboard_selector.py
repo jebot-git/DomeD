@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Exercise the real FLTK shell selector on a private bus, Wayland server and Xvfb."""
-import json,os,re,signal,socket,subprocess,sys,tempfile,time,urllib.request
+import json,os,re,signal,socket,subprocess,sys,tempfile,time,urllib.request,shutil
 from pathlib import Path
 from Xlib import display,X,XK
 from Xlib.ext import xtest
@@ -30,6 +30,11 @@ try:
   env={**os.environ,'DISPLAY':disp,'XDG_RUNTIME_DIR':directory,'XDG_CONFIG_HOME':str(runtime/'config'),'XDG_DATA_HOME':str(runtime/'data'),'XDG_STATE_HOME':str(runtime/'state'),'XDG_CURRENT_DESKTOP':'Dome','DOME_LOGIN_SESSION':'0','DOME_START_IME':'0','DOME_START_XR':'0','DOME_SESSION_RESTORE':'0','DOME_RENDERER':'gles','LIBGL_ALWAYS_SOFTWARE':'1','DOME_PREVIEW_PORT':str(port),'TRAY_FIXTURE_READY':str(runtime/'ready')}
   for key in ['WAYLAND_DISPLAY','WAYLAND_SOCKET']:env.pop(key,None)
   env['TRAY_FIXTURE_CONFIG_REQUESTS']=str(runtime/'config-requests')
+  applications=runtime/'data/applications';applications.mkdir(parents=True)
+  shutil.copy2(ROOT/'packaging/org.domed.Tray.desktop',applications/'org.domed.Tray.desktop')
+  icon=runtime/'data/icons/hicolor/scalable/apps/org.domed.Tray.svg';icon.parent.mkdir(parents=True)
+  shutil.copy2(ROOT/'native/icons/tray-applications.svg',icon)
+
   start([sys.executable,str(ROOT/'tests/tray/mock_services.py')],env,'services');wait(lambda:(runtime/'ready').exists())
   start([os.environ.get('DOME_COMPOSITOR',str(ROOT/'target/debug/dome-compositor')),'--backend','nested'],env,'compositor')
   def scene():return json.load(urllib.request.urlopen(f'http://127.0.0.1:{port}/api/state',timeout=2))['scene']
@@ -54,6 +59,8 @@ try:
    image=Image.frombytes('RGB',(g.width,g.height),raw.data,'raw','BGRX');image.save(out/(name+'.png'));return image
   def method():
    return subprocess.run(['gdbus','call','--session','--dest','org.fcitx.Fcitx5','--object-path','/controller','--method','org.fcitx.Fcitx.Controller1.CurrentInputMethod'],env=env,capture_output=True,text=True,check=True).stdout
+  catalog=json.load(urllib.request.urlopen(f'http://127.0.0.1:{port}/api/apps',timeout=2))
+  assert not any(a['desktop_id']=='org.domed.Tray.desktop' for a in catalog), 'Permanent manager must not appear in launcher'
   before=shot('01-us-selector');width=before.width
   assert (255,0,255) not in [color for _,color in before.crop((0,0,width,36)).getcolors(width*36)],'Duplicate Fcitx SNI was rendered'
   assert not scene()['windows'],'Selector must not open a manager window automatically'
@@ -89,6 +96,24 @@ try:
   wait(lambda:not any(w['app_id']=='org.domed.Tray' for w in scene()['windows']))
   assert manager.poll() is None
   print('PASS: native Wayland universal File > Close hides the manager and preserves its tray service')
+  driver=subprocess.Popen([str(BUILD/'tray-service-driver')],env=native,stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True);children.append(driver)
+  def service(op,**args):
+   driver.stdin.write(json.dumps({'op':op,**args})+'\n');driver.stdin.flush()
+   value=json.loads(driver.stdout.readline());assert value['ok'],value;return value['value']
+  fixture=next(i for i in service('tray') if i['Id']=='fixture')
+  screenshot=next(i for i in service('tray') if i['Id']=='dome.screenshot')
+  def green():
+   image=shot('08-tray-placement')
+   return [(x,y) for y in range(6,30) for x in range(width) if image.getpixel((x,y))==(0,255,0)]
+  assert green(),'Fixture icon must begin in its individual tray placement'
+  service('placement',item=fixture,managed=True);wait(lambda:not green())
+  assert next(i for i in service('tray') if i['Id']=='fixture')['managed']
+  service('placement',item=fixture,managed=False);wait(green)
+  service('placement',item=screenshot,managed=True);time.sleep(.4)
+  point=green()[0];click(point[0]+4,18);key('Return')
+  wait(lambda:Path(str(runtime/'ready')+'.event').exists())
+  service('placement',item=screenshot,managed=False)
+  print('PASS: move applications into/out of manager live, persist placement, and route tray actions after screenshot moves')
   print('PASS: flag updates, Fcitx SNI suppression, keyboard submenu navigation and native Wayland configuration frontend')
 finally:
  for p in reversed(children):p.terminate()

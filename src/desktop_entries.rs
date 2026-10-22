@@ -50,6 +50,36 @@ impl App {
                 .all(|word| text.contains(word))
     }
 }
+/// Resolve presentation metadata without letting an alias override a desktop ID.
+/// Some clients announce reverse-DNS IDs ending in `.app` while their installed
+/// desktop file and StartupWMClass use the final application component.
+pub fn resolve<'a>(apps: &'a [App], app_id: &str) -> Option<&'a App> {
+    let id = app_id.strip_suffix(".desktop").unwrap_or(app_id);
+    if id.is_empty() { return None; }
+    let short = id.strip_suffix(".app").unwrap_or(id).rsplit('.').next().unwrap_or(id);
+    let mut best = None;
+    let mut best_rank = (0, false);
+    let mut ambiguous = false;
+    for app in apps {
+        let desktop = app.desktop_id.trim_end_matches(".desktop");
+        let class = app.startup_wm_class.as_str();
+        let score = if desktop == id { 4 }
+            else if desktop.eq_ignore_ascii_case(id) { 3 }
+            else if !class.is_empty() && class.eq_ignore_ascii_case(id) { 2 }
+            else if (!desktop.contains('.') && desktop.eq_ignore_ascii_case(short))
+                || (!class.is_empty() && !class.contains('.') && class.eq_ignore_ascii_case(short)) { 1 }
+            else { 0 };
+        if score == 0 { continue; }
+        let rank = (score, app.visible);
+        if rank > best_rank { best = Some(app); best_rank = rank; ambiguous = false; }
+        else if rank == best_rank { ambiguous = true; }
+    }
+    if ambiguous { None } else { best }
+}
+pub fn display_name<'a>(entry: Option<&'a App>, title: &'a str) -> &'a str {
+    entry.map(|app| app.name.as_str()).unwrap_or_else(||
+        if title.trim().is_empty() { "Application" } else { title })
+}
 fn unescape(s: &str) -> String {
     let mut out = String::new();
     let mut chars = s.chars();
@@ -364,6 +394,38 @@ pub fn launch_action(app: &App, action: &str, socket: &str) -> Result<(), String
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn fixture(id: &str, class: &str, visible: bool) -> App {
+        parse(&format!("[Desktop Entry]\nType=Application\nName={id}\nExec=fixture\nStartupWMClass={class}\nNoDisplay={}\n", !visible),
+            format!("/tmp/{id}").into(), id.into(), "C", &["Dome"]).unwrap()
+    }
+    #[test]
+    fn resolves_reverse_dns_aliases_and_prefers_canonical_desktop_ids() {
+        let apps = vec![fixture("VRCX-0.desktop", "vrcx-0", true),
+            fixture("org.domed.Connect.desktop", "org.domed.Tray", false),
+            fixture("org.domed.Tray.desktop", "org.domed.Tray", true)];
+        assert_eq!(resolve(&apps, "com.vrcx-0.app").unwrap().desktop_id, "VRCX-0.desktop");
+        assert_eq!(resolve(&apps, "org.domed.Tray").unwrap().desktop_id, "org.domed.Tray.desktop");
+        assert_eq!(resolve(&apps, "vrcx-0.desktop").unwrap().desktop_id, "VRCX-0.desktop");
+        assert!(resolve(&apps, "com.unrelated.app").is_none());
+        assert!(resolve(&apps, "").is_none());
+    }
+    #[test]
+    fn ambiguous_short_aliases_do_not_claim_another_application() {
+        let apps = vec![fixture("one.desktop", "editor", true), fixture("two.desktop", "editor", true)];
+        assert!(resolve(&apps, "com.example.editor").is_none());
+        assert_eq!(resolve(&apps, "two").unwrap().desktop_id, "two.desktop");
+        assert_eq!(display_name(None, "Document title"), "Document title");
+        assert_eq!(display_name(None, ""), "Application");
+    }
+    #[test]
+    fn tray_metadata_stays_hidden_and_retains_its_desktop_identity() {
+        let app = parse(&include_str!("../packaging/org.domed.Tray.desktop").replace("TryExec=dome-tray\n", ""),
+            "/tmp/org.domed.Tray.desktop".into(), "org.domed.Tray.desktop".into(), "C", &["Dome"]).unwrap();
+        assert!(!app.visible);
+        assert_eq!(app.name, "DomeD Tray Applications");
+        assert_eq!(app.icon, "org.domed.Tray");
+        assert!(app.matches("org.domed.Tray"));
+    }
     #[test]
     fn localized_catalog_metadata_visibility_and_actions() {
         let text="[Desktop Entry]\nType=Application\nName=Editor\nName[cs]=Editor CS\nExec=edit %U\nIcon=editor\nCategories=Utility;TextEditor;\nKeywords=write;code;\nStartupWMClass=Edit\nTerminal=true\nActions=new;\n[Desktop Action new]\nName=New Window\nName[cs]=Nové okno\nExec=edit --new\n";

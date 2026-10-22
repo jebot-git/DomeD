@@ -159,12 +159,12 @@ impl Dome {
             0 => self.toggle_audio(),
             1 => self.open_history(Kind::Clipboard),
             2 => self.open_history(Kind::Notifications),
-            3 => self.start_screenshot(),
+            3 if !self.tray.state().screenshot_managed => self.start_screenshot(),
             _ => {
                 self.history_panel = None;
                 self.close_audio();
                 self.tray
-                    .activate(index - crate::tray::BUILTIN_COUNT, x, y, context);
+                    .activate(index - if self.tray.state().screenshot_managed { 3 } else { 4 }, x, y, context);
             }
         }
     }

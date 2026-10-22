@@ -47,13 +47,19 @@ inline std::string resolve(const std::string &name, const std::string &extra,
     const auto theme = themes[i];
     if (theme.find('/') != std::string::npos || theme == ".." || !seen.insert(theme).second) continue;
     std::string best; int score = 1000000;
-    for (const auto &root : roots) {
-      auto base = root / theme;
-      if (!extra.empty() && root == fs::path(extra) && file(root / "index.theme")) base = root;
-      auto index = g_key_file_new();
-      if (!g_key_file_load_from_file(index, (base / "index.theme").c_str(), G_KEY_FILE_NONE, nullptr)) {
-        g_key_file_unref(index); continue;
+    auto baseFor = [&](const fs::path &root) {
+      return !extra.empty() && root == fs::path(extra) && file(root / "index.theme")
+          ? root : root / theme;
+    };
+    // A user or /usr/local icon overlay normally has no index.theme of its own.
+    // Use the theme metadata from the first available root for every overlay.
+    auto index = g_key_file_new();
+    bool loaded = false;
+    for (const auto &root : roots)
+      if (g_key_file_load_from_file(index, (baseFor(root) / "index.theme").c_str(), G_KEY_FILE_NONE, nullptr)) {
+        loaded = true; break;
       }
+    if (!loaded) { g_key_file_unref(index); continue; }
       auto inherits = g_key_file_get_string(index, "Icon Theme", "Inherits", nullptr);
       if (inherits) {
         auto parts = g_strsplit(inherits, ",", -1);
@@ -62,6 +68,8 @@ inline std::string resolve(const std::string &name, const std::string &extra,
         themes.insert(themes.begin() + i + 1, inherited.begin(), inherited.end());
         g_strfreev(parts); g_free(inherits);
       }
+    for (const auto &root : roots) {
+      auto base = baseFor(root);
       for (auto field : {"Directories", "ScaledDirectories"}) {
         auto value = g_key_file_get_string(index, "Icon Theme", field, nullptr);
         if (!value) continue;
@@ -80,8 +88,8 @@ inline std::string resolve(const std::string &name, const std::string &extra,
         }
         g_strfreev(parts); g_free(value);
       }
-      g_key_file_unref(index);
     }
+    g_key_file_unref(index);
     if (!best.empty()) return best;
   }
   for (const auto &root : roots) if (auto p = match(root); !p.empty()) return p;

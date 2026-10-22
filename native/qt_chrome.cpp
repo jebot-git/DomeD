@@ -131,7 +131,7 @@ extern "C" int dome_qt_paint(const char *json,unsigned char *pixels,int length) 
     auto clock=o["clock"].toObject();int clockWidth=clock["width"].toInt(176),reserve=clockWidth+44;
     int menuRight=w-reserve-o["tray"].toObject()["items"].toArray().size()*28;
     p.save();p.setClipRect(QRect(0,0,qMax(0,menuRight),36));
-    for(int i=0;i<headers.size();++i){auto header=headers[i].toObject();int width=header["width"].toInt();QRect rect(header["x"].toInt(),0,width,35);QFont font=app()->font();font.setBold(i==1);p.setFont(font);if(i==menu)p.fillRect(rect,selection);p.setPen(header["enabled"].toBool()?foreground:muted);p.drawText(rect,Qt::AlignCenter,p.fontMetrics().elidedText(header["text"].toString(),Qt::ElideRight,width-14));}
+    for(int i=0;i<headers.size();++i){auto header=headers[i].toObject();int width=header["width"].toInt();QRect rect(header["x"].toInt(),0,width,35);QFont font=app()->font();font.setBold(i==1);p.setFont(font);if(i==menu)p.fillRect(rect,selection);p.setPen(header["enabled"].toBool()?foreground:muted);auto iconName=header["icon"].toString();if(!iconName.isEmpty()){QIcon icon=QFileInfo(iconName).isAbsolute()?QIcon(iconName):QIcon::fromTheme(iconName);icon.paint(&p,QRect(rect.x()+5,6,24,24));rect.adjust(36,0,-7,0);}p.drawText(rect,Qt::AlignCenter,p.fontMetrics().elidedText(header["text"].toString(),Qt::ElideRight,rect.width()-14));}
     p.restore();
     p.setFont(app()->font());p.setPen(foreground);
     auto secondary=clock["secondary"].toString();

@@ -33,7 +33,7 @@ pub fn tasks(scene: &Scene, apps: &[App], pins: &[String]) -> Vec<Task> {
         .iter()
         .filter(|w| w.workspace == scene.active_workspace)
     {
-        let app = apps.iter().find(|a| a.matches(&w.app_id));
+        let app = crate::desktop_entries::resolve(apps, &w.app_id);
         let key = app
             .map(|a| a.desktop_id.clone())
             .unwrap_or(w.app_id.clone());
@@ -42,7 +42,7 @@ pub fn tasks(scene: &Scene, apps: &[App], pins: &[String]) -> Vec<Task> {
         } else {
             result.push(Task {
                 key,
-                name: app.map(|a| a.name.clone()).unwrap_or(w.app_id.clone()),
+                name: crate::desktop_entries::display_name(app, &w.title).to_owned(),
                 icon: app.map(|a| a.icon.clone()).unwrap_or_default(),
                 app: app.map(|a| a.id),
                 windows: vec![],

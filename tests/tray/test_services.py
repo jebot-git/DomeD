@@ -17,7 +17,7 @@ with tempfile.TemporaryDirectory(prefix='tray-services-') as directory:
   translator=Path(directory)/'dome-translator'
   translator.write_text('#!/bin/sh\nprintf \'%s\\n\' "$@" > "'+str(Path(directory)/'launched')+'"\n')
   translator.chmod(0o755)
-  driver=subprocess.Popen([str(BUILD/'tray-service-driver')],stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True,env={**os.environ,'PATH':directory+':'+os.environ['PATH']})
+  driver=subprocess.Popen([str(BUILD/'tray-service-driver')],stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True,env={**os.environ,'PATH':directory+':'+os.environ['PATH'],'XDG_CONFIG_HOME':str(Path(directory)/'config')})
   def call(op,**args):
    driver.stdin.write(json.dumps({'op':op,**args})+'\n');driver.stdin.flush();out=json.loads(driver.stdout.readline());assert out['ok'],out;return out['value']
   assert call('devices')[0]['name']=='Fixture Phone'
@@ -55,6 +55,11 @@ with tempfile.TemporaryDirectory(prefix='tray-services-') as directory:
   assert (Path(directory)/'launched').read_text().strip()=='--settings'
   assert call('menu',item=screenshot,parent=0)[0]['enabled']
   call('event',item=screenshot,id=1);assert Path(str(ready)+'.capture').exists()
+  call('placement',item=translator,managed=False)
+  assert not next(i for i in call('tray') if i['Id']=='dome.translator')['managed']
+  call('placement',item=translator,managed=True)
+  assert next(i for i in call('tray') if i['Id']=='dome.translator')['managed']
+  assert (Path(directory)/'config/dome/tray-applications.json').stat().st_mode&0o777==0o600
   item=next(i for i in items if i['Id']=='fixture');assert item['Title']=='Fixture Tray';assert call('menu',item=item,parent=0)[0]['checked']
   call('event',item=item,id=10)
   driver.stdin.close();assert driver.wait(timeout=3)==0

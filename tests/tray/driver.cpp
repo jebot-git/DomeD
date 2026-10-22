@@ -48,6 +48,8 @@ int main() {
             r.value("key", std::string()), r.value("value", std::string()));
       else if (op == "tray")
         out = trayItems();
+      else if (op == "placement")
+        trayPlacement(r.at("item"), r.at("managed"));
       else if (op == "menu")
         out = trayMenu(r.at("item"), r.at("parent"));
       else if (op == "event")

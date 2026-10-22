@@ -561,6 +561,44 @@ static bool owned(const char *name) {
 static Json suiteItem(const char *id, const char *title) {
   return {{"Id", id}, {"Title", title}, {"suite", id}};
 }
+static std::string placementPath() {
+  return std::string(g_get_user_config_dir()) + "/dome/tray-applications.json";
+}
+static Json placements() {
+  gchar *contents = nullptr; gsize length = 0;
+  if (!g_file_get_contents(placementPath().c_str(), &contents, &length, nullptr)) return Json::object();
+  std::string text(contents, length); g_free(contents);
+  if (length > 65536) throw std::runtime_error("Tray placement configuration is too large");
+  auto data = Json::parse(text);
+  if (!data.is_object()) throw std::runtime_error("Invalid tray placement configuration");
+  for (auto &value : data.items())
+    if (!value.value().is_boolean()) throw std::runtime_error("Invalid tray placement value");
+  return data;
+}
+static bool movable(const Json &item) {
+  auto id = item.value("Id", std::string());
+  auto identity = id + " " + item.value("Title", std::string());
+  std::transform(identity.begin(), identity.end(), identity.begin(), ::tolower);
+  return !id.empty() && id != "dome.tray" && identity.find("fcitx") == std::string::npos;
+}
+void trayPlacement(const Json &item, bool managed) {
+  if (!movable(item)) throw std::runtime_error("This session tray item has a fixed placement");
+  auto id = item.at("Id").get<std::string>();
+  if (id.size() > 256) throw std::runtime_error("Invalid tray application identity");
+  auto data = placements(); data[id] = managed;
+  auto path = placementPath();
+  auto parent = g_path_get_dirname(path.c_str());
+  if (g_mkdir_with_parents(parent, 0700) != 0) { g_free(parent); throw std::runtime_error("Cannot create tray settings directory"); }
+  g_free(parent);
+  auto file = g_file_new_for_path(path.c_str());
+  auto contents = data.dump(2) + "\n";
+  if (contents.size() > 65536) { g_object_unref(file); throw std::runtime_error("Too many tray placement settings"); }
+  GError *error = nullptr;
+  auto ok = g_file_replace_contents(file, contents.data(), contents.size(), nullptr, FALSE,
+      G_FILE_CREATE_PRIVATE, nullptr, nullptr, &error);
+  g_object_unref(file);
+  if (!ok) { std::string message = error->message; g_error_free(error); throw std::runtime_error(message); }
+}
 Json trayItems() {
   Json out = Json::array();
   auto *translator = g_find_program_in_path("dome-translator");
@@ -568,6 +606,13 @@ Json trayItems() {
     out.push_back(suiteItem("dome.translator", "DomeD Translator"));
   g_free(translator);
   out.push_back(suiteItem("dome.screenshot", "Screenshot (PrintScreen)"));
+  const auto settings = placements();
+  auto annotate = [&](Json &item) {
+    auto id = item.value("Id", std::string());
+    item["movable"] = movable(item);
+    item["managed"] = settings.value(id, id == "dome.translator");
+  };
+  for (auto &item : out) annotate(item);
   if (!owned("org.kde.StatusNotifierWatcher")) return out;
   auto r = call("org.kde.StatusNotifierWatcher", "/StatusNotifierWatcher",
                 "org.freedesktop.DBus.Properties", "Get",
@@ -589,6 +634,7 @@ Json trayItems() {
       if (item.value("Id", "") == "dome.translator") continue;
       item["service"] = service;
       item["path"] = path;
+      annotate(item);
       if (item.value("Status", "") != "Passive")
         out.push_back(item);
     } catch (...) {
@@ -597,6 +643,9 @@ Json trayItems() {
   return out;
 }
 Json trayMenu(const Json &item, int parent) {
+  auto native = frontend(item.value("Id", std::string()) + " " + item.value("Title", std::string()));
+  if (!native.empty())
+    return Json::array({{{"id", -1}, {"label", "Open native controls"}, {"enabled", true}}});
   const auto suite = item.value("suite", std::string());
   if (!suite.empty()) {
     Json rows = Json::array();
