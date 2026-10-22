@@ -78,11 +78,16 @@ try:
     check(len(list(folder.glob('*.png')))==1,'Escape cancels without saving or changing the clipboard')
     key('Print');time.sleep(.2);move(300,300);button(X.ButtonPress);button(X.ButtonRelease);time.sleep(.3)
     check(len(list(folder.glob('*.png')))==1,'A zero-area selection creates no file')
+    subprocess.run(['gdbus','call','--session','--dest','org.domed.Compositor',
+        '--object-path','/org/domed/Compositor','--method','org.domed.Compositor.Screenshot'],env=env,check=True,capture_output=True)
+    time.sleep(.4);move(220,220);button(X.ButtonPress);move(350,310);button(X.ButtonRelease)
+    wait(lambda:len(list(folder.glob('*.png')))==2)
+    check(True,'Manager session-bus screenshot action reaches the compositor region capture path')
     # The screenshot icon is the fourth built-in, directly before the keyboard.
     # Default clock label uses its 176px minimum, plus the 44px language selector.
     move(host.get_geometry().width-234,17);button(X.ButtonPress);button(X.ButtonRelease);time.sleep(.4);move(220,220);button(X.ButtonPress);move(350,310);button(X.ButtonRelease)
-    wait(lambda:len(list(folder.glob('*.png')))==2)
-    check(len({f.name for f in folder.glob('*.png')})==2,'The screenshot tray icon starts capture and repeated captures use unique filenames')
+    wait(lambda:len(list(folder.glob('*.png')))==3)
+    check(len({f.name for f in folder.glob('*.png')})==3,'The screenshot tray icon starts capture and repeated captures use unique filenames')
     # A fresh visible XR session routes physical PrintScreen through the XR realm.
     request('/api/xr-session',{'id':741,'visible':True,'focused':True})
     time.sleep(.15)

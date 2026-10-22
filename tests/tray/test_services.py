@@ -14,7 +14,10 @@ with tempfile.TemporaryDirectory(prefix='tray-services-') as directory:
    if ready.exists():break
    assert fixture.poll() is None;time.sleep(.05)
   assert ready.exists()
-  driver=subprocess.Popen([str(BUILD/'tray-service-driver')],stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True)
+  translator=Path(directory)/'dome-translator'
+  translator.write_text('#!/bin/sh\nprintf \'%s\\n\' "$@" > "'+str(Path(directory)/'launched')+'"\n')
+  translator.chmod(0o755)
+  driver=subprocess.Popen([str(BUILD/'tray-service-driver')],stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True,env={**os.environ,'PATH':directory+':'+os.environ['PATH']})
   def call(op,**args):
    driver.stdin.write(json.dumps({'op':op,**args})+'\n');driver.stdin.flush();out=json.loads(driver.stdout.readline());assert out['ok'],out;return out['value']
   assert call('devices')[0]['name']=='Fixture Phone'
@@ -40,7 +43,19 @@ with tempfile.TemporaryDirectory(prefix='tray-services-') as directory:
   call('wallet-action',action='remove',handle=h,folder='Passwords',key='renamed')
   call('wallet-action',action='create-folder',handle=h,folder='FixtureFolder');assert 'FixtureFolder' in call('folders',handle=h)
   call('wallet-action',action='remove-folder',handle=h,folder='FixtureFolder');call('wallet-action',action='lock',handle=h)
-  item=call('tray')[0];assert item['Title']=='Fixture Tray';assert call('menu',item=item,parent=0)[0]['checked']
+  items=call('tray')
+  translator=next(i for i in items if i['Id']=='dome.translator')
+  screenshot=next(i for i in items if i['Id']=='dome.screenshot')
+  assert len([i for i in items if i['Id']=='dome.translator'])==1
+  menu=call('menu',item=translator,parent=0);assert len(menu)==6 and not menu[4]['enabled']
+  call('event',item=translator,id=4)
+  for _ in range(100):
+   if (Path(directory)/'launched').exists():break
+   time.sleep(.02)
+  assert (Path(directory)/'launched').read_text().strip()=='--settings'
+  assert call('menu',item=screenshot,parent=0)[0]['enabled']
+  call('event',item=screenshot,id=1);assert Path(str(ready)+'.capture').exists()
+  item=next(i for i in items if i['Id']=='fixture');assert item['Title']=='Fixture Tray';assert call('menu',item=item,parent=0)[0]['checked']
   call('event',item=item,id=10)
   driver.stdin.close();assert driver.wait(timeout=3)==0
   print('PASS: KDE Connect, Fcitx groups/configuration, wallet lifecycle and DBusMenu calls on isolated bus')

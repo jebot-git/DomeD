@@ -68,7 +68,7 @@ class Manager : public dx::GpuWindow {
   Json selectedTray;
   std::vector<int> parents{0};
   std::string selectedDevice, walletName, selectedFolder, loadedEntry,
-      configUri, requestedInputConfig;
+      configUri, requestedInputConfig, requestedSuite;
   std::map<std::string, std::unique_ptr<Fl_RGB_Image>> flags;
   unsigned flagForeground = 0;
   Fl_Image *flag(const std::string &method, const std::string &language = "") {
@@ -185,12 +185,21 @@ class Manager : public dx::GpuWindow {
   }
   void refreshTray() {
     submit(services::trayItems, [this](Json data) {
+      const auto selected = requestedSuite.empty() && selectedTray.is_object()
+          ? selectedTray.value("Id", std::string()) : requestedSuite;
+      requestedSuite.clear();
       trayData = std::move(data);
       trayList->clear();
       for (auto &item : trayData)
         trayList->add(
             item.value("Title", item.value("Id", std::string("Application")))
                 .c_str());
+      for (size_t i = 0; i < trayData.size(); ++i)
+        if (trayData[i].value("Id", std::string()) == selected) {
+          trayList->value(i + 1);
+          openTray();
+          break;
+        }
     });
   }
   void openTray() {
@@ -243,6 +252,7 @@ class Manager : public dx::GpuWindow {
       loadTrayMenu(parents.back());
     } else {
       auto item = selectedTray;
+      if (item.value("suite", "") == "dome.screenshot") hide();
       command([item, row] { services::trayEvent(item, row.at("id")); },
               [this] { loadTrayMenu(parents.back()); });
     }
@@ -927,6 +937,8 @@ public:
   }
   void showPage(const std::string &name) {
     requestedInputConfig.clear();
+    requestedSuite = name == "translator" ? "dome.translator"
+                   : name == "screenshot" ? "dome.screenshot" : "";
     const bool input = name == "input" || name.rfind("input:fcitx://config/", 0) == 0;
     if (name.rfind("input:fcitx://config/", 0) == 0)
       requestedInputConfig = name.substr(6);
@@ -962,14 +974,14 @@ int main(int argc, char **argv) try {
     if (a == "--daemon")
       showWindow = false;
     else if (a == "--tray" || a == "--devices" || a == "--input" ||
-             a == "--wallets") {
+             a == "--wallets" || a == "--translator" || a == "--screenshot") {
       page = a.substr(2);
       showWindow = true;
     } else if (a == "--help") {
 #ifdef DOME_FCITX_CONFIGURATION
       puts("fcitx5-configuration-fltk [fcitx://config/global|fcitx://config/inputmethod/ID|fcitx://config/addon/ID]");
 #else
-      puts("dome-tray [--daemon|--tray|--devices|--input|--wallets]\n"
+      puts("dome-tray [--daemon|--tray|--devices|--input|--wallets|--translator|--screenshot]\n"
            "Close hides the manager; File > Quit exits the tray companion.");
 #endif
       return 0;

@@ -551,14 +551,30 @@ std::string frontend(const std::string &identity) {
     return "wallets";
   return {};
 }
+static bool owned(const char *name) {
+  auto reply = call("org.freedesktop.DBus", "/org/freedesktop/DBus",
+                    "org.freedesktop.DBus", "NameHasOwner", g_variant_new("(s)", name));
+  gboolean yes = FALSE;
+  g_variant_get(reply.get(), "(b)", &yes);
+  return yes;
+}
+static Json suiteItem(const char *id, const char *title) {
+  return {{"Id", id}, {"Title", title}, {"suite", id}};
+}
 Json trayItems() {
+  Json out = Json::array();
+  auto *translator = g_find_program_in_path("dome-translator");
+  if (translator || owned("org.domed.Translator"))
+    out.push_back(suiteItem("dome.translator", "DomeD Translator"));
+  g_free(translator);
+  out.push_back(suiteItem("dome.screenshot", "Screenshot (PrintScreen)"));
+  if (!owned("org.kde.StatusNotifierWatcher")) return out;
   auto r = call("org.kde.StatusNotifierWatcher", "/StatusNotifierWatcher",
                 "org.freedesktop.DBus.Properties", "Get",
                 g_variant_new("(ss)", "org.kde.StatusNotifierWatcher",
                               "RegisteredStatusNotifierItems"));
   auto wrapped = child(r.get(), 0);
   Variant list(g_variant_get_variant(wrapped.get()));
-  Json out = Json::array();
   for (auto &key : strings(list.get())) {
     auto k = key.get<std::string>();
     auto slash = k.find('/');
@@ -570,6 +586,7 @@ Json trayItems() {
       continue;
     try {
       auto item = properties(service, path, "org.kde.StatusNotifierItem");
+      if (item.value("Id", "") == "dome.translator") continue;
       item["service"] = service;
       item["path"] = path;
       if (item.value("Status", "") != "Passive")
@@ -580,6 +597,21 @@ Json trayItems() {
   return out;
 }
 Json trayMenu(const Json &item, int parent) {
+  const auto suite = item.value("suite", std::string());
+  if (!suite.empty()) {
+    Json rows = Json::array();
+    const std::vector<std::string> labels = suite == "dome.translator"
+        ? std::vector<std::string>{"Open translator", "Paste clipboard", "Paste primary selection",
+                                   "Settings", "Quit", "Translate selected text"}
+        : std::vector<std::string>{"Take screenshot"};
+    for (size_t i = 0; i < labels.size(); ++i)
+      rows.push_back({{"id", i + 1}, {"label", labels[i]}, {"enabled", suite == "dome.translator" ? i != 4 : owned("org.domed.Compositor")}});
+    if (suite == "dome.translator" && owned("org.domed.Translator")) {
+      // Use the live menu to preserve its selection toggle and Quit action.
+      return trayMenu({{"service", "org.domed.Translator"}, {"Menu", "/Translator/Menu"}}, parent);
+    }
+    return rows;
+  }
   auto service = item.at("service").get<std::string>(),
        path = item.value("Menu", std::string());
   if (path.empty() || path == "/")
@@ -620,6 +652,31 @@ Json trayMenu(const Json &item, int parent) {
   return out;
 }
 void trayEvent(const Json &item, int id) {
+  const auto suite = item.value("suite", std::string());
+  if (suite == "dome.screenshot") {
+    if (id != 1) throw std::runtime_error("Unknown screenshot action");
+    call("org.domed.Compositor", "/org/domed/Compositor", "org.domed.Compositor", "Screenshot", nullptr);
+    return;
+  }
+  if (suite == "dome.translator") {
+    if (owned("org.domed.Translator")) {
+      trayEvent({{"service", "org.domed.Translator"}, {"Menu", "/Translator/Menu"}}, id);
+      return;
+    }
+    const char *options[] = {nullptr, "--clipboard", "--primary", "--settings", nullptr, "--selection"};
+    if (id == 5) return;
+    if (id < 1 || id > 6) throw std::runtime_error("Unknown translator action");
+    const gchar *args[] = {"dome-translator", options[id - 1], nullptr};
+    GError *error = nullptr;
+    auto *process = g_subprocess_newv(args, G_SUBPROCESS_FLAGS_NONE, &error);
+    if (!process) {
+      std::string message = error->message;
+      g_error_free(error);
+      throw std::runtime_error(message);
+    }
+    g_object_unref(process);
+    return;
+  }
   call(item.at("service"), item.at("Menu"), "com.canonical.dbusmenu", "Event",
        g_variant_new("(isvu)", id, "clicked", g_variant_new_int32(0),
                      guint32(0)));

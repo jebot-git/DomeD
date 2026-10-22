@@ -69,10 +69,10 @@ with tempfile.TemporaryDirectory(prefix='dome-tray-ui-') as directory:
    xtest.fake_input(d,X.ButtonPress,1);xtest.fake_input(d,X.ButtonRelease,1);d.sync();time.sleep(.3)
   menu='/TrayApplications/Menu'
   layout=dbus(menu,'com.canonical.dbusmenu.GetLayout','0','1','[]')
-  for label in ['Tray applications','KDE Connect','Input methods','Wallets']:assert label in layout,layout
+  for label in ['Tray applications','KDE Connect','Input methods','Wallets','Translator','Screenshot']:assert label in layout,layout
   dbus(menu,'com.canonical.dbusmenu.Event','99','clicked','<0>','0')
   assert window() is None,'Unknown menu events must not open a page'
-  for row,page in enumerate(['tray','devices','input','wallets'],1):
+  for row,page in enumerate(['tray','devices','input','wallets','translator','screenshot'],1):
    dbus(menu,'com.canonical.dbusmenu.Event',str(row),'clicked','<0>','0');w=wait(window);w.set_input_focus(X.RevertToParent,X.CurrentTime);d.sync();time.sleep(.6)
    geo=w.get_geometry();raw=w.get_image(0,0,geo.width,geo.height,X.ZPixmap,0xffffffff)
    img=Image.frombytes('RGB',(geo.width,geo.height),raw.data,'raw','BGRX')
@@ -133,6 +133,25 @@ with tempfile.TemporaryDirectory(prefix='dome-tray-ui-') as directory:
   dbus(menu,'com.canonical.dbusmenu.Event','1','clicked','<0>','0');wait(window)
   second=subprocess.run([str(BUILD/'dome-tray'),'--devices'],env=env,capture_output=True,timeout=4);assert second.returncode==0
   assert len([w for w in d.screen().root.query_tree().children if w.get_wm_class() and 'org.domed.Tray' in w.get_wm_class()])==1
+  translator=start([str(ROOT/'build/translator/dome-translator'),'--tray'],env,'ui-translator.log')
+  def translator_owned():
+   return 'true' in subprocess.run(['gdbus','call','--session','--dest','org.freedesktop.DBus',
+    '--object-path','/org/freedesktop/DBus','--method','org.freedesktop.DBus.NameHasOwner',
+    'org.domed.Translator'],env=env,capture_output=True,text=True).stdout
+  wait(translator_owned)
+  driver=subprocess.Popen([str(BUILD/'tray-service-driver')],env=env,stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True);processes.append(driver)
+  def service(op,**args):
+   driver.stdin.write(json.dumps({'op':op,**args})+'\n');driver.stdin.flush()
+   result=json.loads(driver.stdout.readline());assert result['ok'],result
+   return result['value']
+  items=service('tray');assert len([i for i in items if i['Id']=='dome.translator'])==1
+  item=next(i for i in items if i['Id']=='dome.translator')
+  rows=service('menu',item=item,parent=0);assert len(rows)==6 and rows[5]['checkable'] and not rows[5]['checked']
+  service('event',item=item,id=4)
+  wait(lambda:any(w.get_wm_name()=='DeepL API Free settings' and w.get_attributes().map_state==X.IsViewable for w in d.screen().root.query_tree().children))
+  service('event',item=item,id=5);assert translator.wait(timeout=8)==0
+  assert not service('menu',item=item,parent=0)[4]['enabled']
+  print('PASS: translator has one manager entry, live toggle state, working settings and Quit, and returns to launchable state')
   log=(out/'ui-frontend.log').read_text();assert 'FLTK GPU widgets:' in log,log
   w=wait(window);w.set_input_focus(X.RevertToParent,X.CurrentTime);d.sync();key('q',ctrl=True);assert manager.wait(timeout=4)==0
   # Starting directly on a service page must also survive closing the window.
@@ -140,7 +159,7 @@ with tempfile.TemporaryDirectory(prefix='dome-tray-ui-') as directory:
   w=wait(window);w.set_input_focus(X.RevertToParent,X.CurrentTime);d.sync();key('w',ctrl=True)
   wait(lambda:window() is None);assert manager.poll() is None
   dbus(menu,'com.canonical.dbusmenu.Event','1','clicked','<0>','0');wait(window)
-  print('PASS: one tray entry, four pages, flags, Fcitx method/group/configuration submenus, fcitx5-configuration-fltk URI routing, GPU presentation, close/restore and explicit Quit')
+  print('PASS: one tray entry, four pages, two utility shortcuts, flags, Fcitx method/group/configuration submenus, fcitx5-configuration-fltk URI routing, GPU presentation, close/restore and explicit Quit')
  finally:
   for p in reversed(processes):p.terminate()
   for p in reversed(processes):

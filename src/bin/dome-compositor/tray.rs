@@ -3,7 +3,7 @@ pub const BUILTIN_COUNT: usize = 4;
 use serde::Serialize;
 use std::{
     collections::HashMap,
-    sync::{mpsc, Arc, Mutex},
+    sync::{mpsc, Arc, Mutex, atomic::{AtomicBool, Ordering}},
     time::Duration,
 };
 use zbus::{
@@ -87,6 +87,15 @@ enum Request {
 pub struct Tray {
     snapshot: Arc<Mutex<Snapshot>>,
     send: mpsc::SyncSender<Request>,
+    screenshot: Arc<AtomicBool>,
+}
+// Queue capture on the compositor thread; D-Bus never touches renderer state.
+struct SuiteControl {
+    screenshot: Arc<AtomicBool>,
+}
+#[zbus::interface(name = "org.domed.Compositor")]
+impl SuiteControl {
+    fn screenshot(&self) { self.screenshot.store(true, Ordering::Release); }
 }
 struct Watcher {
     items: Arc<Mutex<Vec<String>>>,
@@ -157,12 +166,17 @@ impl Tray {
         let snapshot = Arc::new(Mutex::new(Snapshot::default()));
         let (send, receive) = mpsc::sync_channel(32);
         let state = snapshot.clone();
+        let screenshot = Arc::new(AtomicBool::new(false));
+        let capture = screenshot.clone();
         std::thread::spawn(move || {
-            if let Err(e) = run(state.clone(), receive) {
+            if let Err(e) = run(state.clone(), receive, capture) {
                 state.lock().unwrap().error = e.to_string();
             }
         });
-        Self { snapshot, send }
+        Self { snapshot, send, screenshot }
+    }
+    pub fn take_screenshot_request(&self) -> bool {
+        self.screenshot.swap(false, Ordering::AcqRel)
     }
     pub fn state(&self) -> Snapshot {
         self.snapshot.lock().unwrap().clone()
@@ -283,8 +297,13 @@ fn open_native(connection: &Connection, page: &str) -> bool {
 fn run(
     state: Arc<Mutex<Snapshot>>,
     receive: mpsc::Receiver<Request>,
+    screenshot: Arc<AtomicBool>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let connection = Connection::session()?;
+    // A second diagnostic compositor on this bus must not take session control.
+    if connection.request_name("org.domed.Compositor").is_ok() {
+        connection.object_server().at("/org/domed/Compositor", SuiteControl { screenshot })?;
+    }
     let dbus = Proxy::new(
         &connection,
         "org.freedesktop.DBus",
@@ -563,9 +582,10 @@ fn run(
         }
         // The keyboard selector is the single language indicator, regardless
         // of when Fcitx registers or which service frontend is preferred.
+        let managed = dbus.call::<_, _, bool>("NameHasOwner", &("org.domed.Tray",)).unwrap_or(false);
         items.retain(|item| {
             let identity = format!("{} {} {}", item.id, item.title, item.service).to_lowercase();
-            !identity.contains("fcitx")
+            !identity.contains("fcitx") && !(item.id == "dome.translator" && managed)
         });
         if !owner {
             // An item may register before exporting its properties, and live

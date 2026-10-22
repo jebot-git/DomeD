@@ -195,6 +195,7 @@ impl crate::Dome {
         }
     }
     pub fn poll_screenshots(&mut self) {
+        if self.tray.take_screenshot_request() { self.start_screenshot(); }
         let result = self.xr_bridge.lock().unwrap().screenshot_result.take();
         if let Some(result) = result {
             let send = self.screenshot.send.clone();

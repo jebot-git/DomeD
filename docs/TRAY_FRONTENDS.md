@@ -5,7 +5,8 @@ shared patched FLTK 1.4.5 toolkit, OpenGL widgets, DomeD's live palette/fonts an
 its universal DBusMenu application-menu export. It does not link Qt.
 
 The default tray contains one **DomeD tray applications** entry. Its menu opens
-**Tray applications…**, **KDE Connect…**, **Input methods…**, or **Wallets…** in
+**Tray applications…**, **KDE Connect…**, **Input methods…**, **Wallets…**,
+**Translator…**, or **Screenshot…** in
 one shared manager window. All FLTK service frontends are pages of this manager;
 their compatibility desktop launchers are hidden from the applications menu.
 The compact three-applications-in-a-tray icon is maintained in
@@ -88,3 +89,19 @@ DeepL API Free, with independent clipboard/primary paste and local Japanese/Kore
 transcription. English, Czech and Serbian do not receive transliteration.
 Build it with `scripts/build-translator.sh`; it can run independently of the
 service companion above.
+
+Translator and Screenshot are permanent entries in the manager's Tray applications
+list (Translator requires the installed executable or a running service). Translator
+launches on demand; clipboard, primary selection, API settings and the opt-in
+selection translation toggle remain available there. A running translator's live
+DBusMenu is used, including its toggle state and Quit action, without a duplicate
+list entry. While the manager is running, the compositor folds the translator's
+panel icon into the manager; its standalone icon returns if the manager exits.
+
+Screenshot's **Take screenshot** action uses the compositor's session-bus control
+interface and the same capture path as PrintScreen, including region selection on
+the desktop and stereo capture in XR. The manager hides before starting capture.
+The direct PrintScreen/panel shortcuts remain available. Older running compositor
+versions show a disabled capture action until the next session; installation never
+restarts an active session. `dome-tray --translator` and `--screenshot` select these
+entries directly, as do the corresponding manager tray-menu shortcuts.

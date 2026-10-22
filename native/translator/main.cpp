@@ -332,11 +332,12 @@ int main(int argc,char **argv) {
   for(int i=1;i<argc;++i) {
     std::string a=argv[i];
     if(a=="--tray")tray=true;
+    else if(a=="--settings")action="settings";
     else if(a=="--primary")action="primary";
     else if(a=="--selection")action="selection";
     else if(a=="--clipboard")action="clipboard";
     else if(a=="--smoke-test"){smoke=true;++i;}
-    else if(a=="--help") {std::cout<<"dome-translator [--tray | --clipboard | --primary | --selection | --smoke-test FILE]\n";return 0;}
+    else if(a=="--help") {std::cout<<"dome-translator [--tray | --clipboard | --primary | --selection | --settings | --smoke-test FILE]\n";return 0;}
     else {std::cerr<<"Unknown option: "<<a<<'\n';return 2;}
   }
   if(!smoke && Notifier::showExisting(action))return 0;

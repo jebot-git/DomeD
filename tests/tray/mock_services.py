@@ -164,10 +164,15 @@ class FcitxItem(ServiceInterface):
  def Status(self)->'s':return 'Active'
  @dbus_property(access=PropertyAccess.READ)
  def IconPixmap(self)->'a(iiay)':return [[16,16,bytes([255,255,0,255])*256]]
+class Compositor(ServiceInterface):
+ def __init__(self):super().__init__('org.domed.Compositor')
+ @method()
+ def Screenshot(self):Path(os.environ['TRAY_FIXTURE_READY']+'.capture').touch()
 async def main():
  bus=await MessageBus().connect()
- for name in ['org.kde.kdeconnect','org.fcitx.Fcitx5','org.kde.kwalletd6','org.kde.StatusNotifierWatcher','org.domed.Fixture']:await bus.request_name(name)
+ for name in ['org.kde.kdeconnect','org.fcitx.Fcitx5','org.kde.kwalletd6','org.kde.StatusNotifierWatcher','org.domed.Fixture','org.domed.Compositor']:await bus.request_name(name)
  for path,service in [('/modules/kdeconnect',Daemon()),('/modules/kdeconnect/devices/test_phone',Device()),('/modules/kdeconnect/devices/test_phone/battery',Battery()),('/modules/kdeconnect/devices/test_phone/ping',Ping()),('/modules/kdeconnect/devices/test_phone/findmyphone',Find()),('/modules/kdeconnect/devices/test_phone/share',Share()),('/controller',Input()),('/modules/kwalletd6',Wallet()),('/StatusNotifierWatcher',Watcher()),('/Item',Item()),('/Menu',Menu())]:bus.export(path,service)
  bus.export('/Fcitx',FcitxItem())
+ bus.export('/org/domed/Compositor',Compositor())
  Path(os.environ['TRAY_FIXTURE_READY']).touch();await asyncio.Event().wait()
 asyncio.run(main())
