@@ -157,11 +157,6 @@ fn write_theme(root: &Path, appearance: Appearance) -> std::io::Result<Snapshot>
     )?;
     Ok(Snapshot { appearance, theme })
 }
-fn font_families() -> Vec<String> {
-    crate::qt::bitmap_fonts().iter().map(|font| {
-        font.id.split_once(" / ").map_or(font.id.as_str(), |(family, _)| family).to_owned()
-    }).collect()
-}
 fn inherited_fontconfig(root: &Path) -> String {
     std::env::var("FONTCONFIG_FILE").ok()
         .filter(|file| Path::new(file).is_file() && Path::new(file) != root.join("fonts.conf")
@@ -169,10 +164,13 @@ fn inherited_fontconfig(root: &Path) -> String {
         .unwrap_or_else(|| "/etc/fonts/fonts.conf".into())
 }
 pub(crate) fn write_fonts(root: &Path) -> std::io::Result<PathBuf> {
-    dome::font_export::export(root, &inherited_fontconfig(root), &font_families())
+    // Export uses bundled assets and file allowlists, not native family names.
+    // This also runs on the appearance worker: never enter the compositor's
+    // thread-confined native font catalog or rendering caches from here.
+    dome::font_export::export(root, &inherited_fontconfig(root), &[])
 }
 pub(crate) fn refresh_session_fonts(runtime: &Path) -> std::io::Result<PathBuf> {
-    dome::font_export::refresh_session(runtime, &inherited_fontconfig(runtime), &font_families())
+    dome::font_export::refresh_session(runtime, &inherited_fontconfig(runtime), &[])
 }
 
 pub struct ToolkitAppearance {
