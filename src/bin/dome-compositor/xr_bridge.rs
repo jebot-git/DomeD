@@ -353,6 +353,9 @@ impl Dome {
                     }
                 }
                 SeatEvent::Button { button, pressed } => {
+                    if pressed && !self.xr_target.is_some_and(|id|self.selection_tooltips.contains_key(&id)) {
+                        self.dismiss_selection_tooltips();
+                    }
                     if !pressed && button == 0x110 {
                         self.audio_drag = None;
                     }

@@ -7,7 +7,7 @@ Icon=org.domed.Translator
 Terminal=false
 Categories=Utility;
 StartupWMClass=org.domed.Translator
-Actions=Clipboard;Primary;
+Actions=Clipboard;Primary;Selection;
 
 [Desktop Action Clipboard]
 Name=Paste clipboard
@@ -16,3 +16,7 @@ Exec=dome-translator --clipboard
 [Desktop Action Primary]
 Name=Paste primary selection
 Exec=dome-translator --primary
+
+[Desktop Action Selection]
+Name=Toggle selected text translation
+Exec=dome-translator --selection

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "../fltk_appearance.h"
 #include "notifier.h"
+#include "selection-tip.h"
 #include <FL/Fl_Double_Window.H>
 #include <FL/Fl_Text_Editor.H>
 #include <FL/Fl_Button.H>
@@ -9,6 +10,8 @@
 #include <gio/gio.h>
 #include <functional>
 #include <iostream>
+#include <chrono>
+#include <FL/Fl_Check_Button.H>
 
 namespace {
 class Editor : public Fl_Text_Editor {
@@ -40,11 +43,19 @@ struct App {
   Fl_Secret_Input *key;
   std::vector<std::string> sourceCodes, targetCodes;
   std::unique_ptr<Notifier> notifier;
+  std::unique_ptr<SelectionTip> tip;
+  unsigned selectionRevision=0,monitorEpoch=0,selectionPasteRevision=0;
+  bool selectionBusy=false,selectionEnabled=false,monitorReading=false;
+  Fl_Check_Button *selectionToggle;
+  std::string monitorCandidate,lastSubmitted,lastSelectionOutput;
+  std::chrono::steady_clock::time_point candidateSince=std::chrono::steady_clock::now();
+  std::string selectedText,selectionSource,selectionTarget;
+  Json selectionResult;
   std::string worker;
   bool quit=false, translating=false, updating=false;
   unsigned revision=0;
   unsigned jobs=0;
-  struct Job { App *app; std::string action; unsigned revision; };
+  struct Job { App *app; std::string action; unsigned revision; bool selection=false; bool monitor=false; };
 
   void message(const std::string &text) { status->copy_label(text.c_str()); status->redraw(); }
   static Fl_Button *button(int x,int y,int w,const char *label,std::function<void()> fn) {
@@ -54,16 +65,18 @@ struct App {
     b->callback([](Fl_Widget*,void*p){(*static_cast<std::function<void()>*>(p))();},callback);
     return b;
   }
-  void request(Json task) {
-    auto job=new Job{this,task.at("action"),revision};
+  void request(Json task,bool selection=false,bool monitor=false) {
+    auto job=new Job{this,task.at("action"),monitor?monitorEpoch:selection?selectionRevision:revision,selection,monitor};
     const char *argv[]={"/usr/bin/python3","-B",worker.c_str(),nullptr};
     GError *error=nullptr;
     auto process=g_subprocess_newv(argv,GSubprocessFlags(G_SUBPROCESS_FLAGS_STDIN_PIPE |
                     G_SUBPROCESS_FLAGS_STDOUT_PIPE | G_SUBPROCESS_FLAGS_STDERR_PIPE),&error);
     if(!process) {
-      message("Could not start the translator worker.");
+      if(monitor)monitorReading=false;
+      else if(selection) {selectionBusy=false;tip->display("Could not start the translator worker.");}
+      else message("Could not start the translator worker.");
       if(error)g_error_free(error);
-      if(job->action=="translate"){translating=false;translate->activate();}
+      if(!selection && job->action=="translate"){translating=false;translate->activate();}
       delete job; return;
     }
     ++jobs;
@@ -110,8 +123,17 @@ struct App {
     auto n=c->value();return n>=0 && size_t(n)<codes.size() ? codes[n] : "";
   }
   void complete(const Job&job,const Json&data) {
+    if(job.monitor){
+      monitorReading=false;
+      if(job.revision==monitorEpoch && selectionEnabled)monitorText(data.value("ok",false)?data.value("paste",""):"");
+      return;
+    }
+    if(job.selection){completeSelection(job,data);return;}
     if(job.action=="translate") {translating=false;translate->activate();}
-    if(!data.value("ok",false)){message(data.value("error","Translator request failed."));return;}
+    if(!data.value("ok",false)){
+      if(selectionEnabled && job.action=="languages"){tip->display(data.value("error","Language discovery failed."),false,true);}
+      message(data.value("error","Translator request failed."));return;
+    }
     if(job.action=="copy-primary")message("Copied to primary selection.");
     else if(job.action=="languages")setLanguages(data);
     else if(job.action=="save-key") {
@@ -136,8 +158,81 @@ struct App {
       message(data.value("notice","").empty() ? "Translated. Detected source: " + data.value("detected","") : data.value("notice",""));
     }
   }
+  void cancelSelection() {
+    ++selectionRevision;
+    if(tip){tip->hide();tip->translated.clear();}
+  }
+  void selectionText(const std::string&text,unsigned generation) {
+    if(generation!=selectionRevision || !selectionEnabled || !tip->shown()){selectionBusy=false;return;}
+    if(text.find_first_not_of(" \t\r\n")==std::string::npos){selectionBusy=false;tip->display("The primary selection is empty or unavailable.");return;}
+    if(text.size()>20000){selectionBusy=false;tip->display("The selected text is too long (maximum 20,000 UTF-8 bytes).");return;}
+    selectedText=text;
+    tip->display("Translating selected text with DeepL API Free…");
+    request({{"action","translate"},{"text",text},{"source",selectionSource},{"target",selectionTarget}},true);
+  }
+  void setSelectionEnabled(bool enabled) {
+    if(selectionEnabled==enabled)return;
+    selectionEnabled=enabled;++monitorEpoch;cancelSelection();
+    monitorCandidate.clear();lastSubmitted.clear();lastSelectionOutput.clear();
+    candidateSince=std::chrono::steady_clock::now();
+    selectionToggle->value(enabled);
+    if(notifier)notifier->setSelectionEnabled(enabled);
+    privacy->copy_label(enabled ? "Selection translation is ON: selected text is sent to DeepL after a short pause."
+                              : "Translate sends the input to DeepL API Free. Pasting alone stays local.");
+    privacy->redraw();
+  }
+  void monitorText(const std::string&text) {
+    auto value=text;
+    if(value.size()>20000 || value.find_first_not_of(" \t\r\n")==std::string::npos || value==lastSelectionOutput)value.clear();
+    if(value==monitorCandidate)return;
+    monitorCandidate=value;candidateSince=std::chrono::steady_clock::now();
+    // Never show a late translation for a previous selection.
+    cancelSelection();
+  }
+  void pollSelection() {
+    if(!selectionEnabled||quit||targetCodes.empty())return;
+    if(!monitorReading) {
+      monitorReading=true;selectionPasteRevision=monitorEpoch;
+      if(getenv("WAYLAND_DISPLAY"))request({{"action","paste"},{"primary",true}},false,true);
+      else Fl::paste(*tip,0);
+    }
+    if(!selectionBusy && !monitorCandidate.empty() && monitorCandidate!=lastSubmitted &&
+       std::chrono::steady_clock::now()-candidateSince>=std::chrono::milliseconds(650)) {
+      selectionSource=code(source,sourceCodes);selectionTarget=code(target,targetCodes);
+      if(selectionTarget.empty())return;
+      lastSubmitted=monitorCandidate;++selectionRevision;selectionResult=Json();tip->translated.clear();
+      selectionBusy=true;tip->display("Translating selected text with DeepL API Free…",false,true);
+      selectionText(lastSubmitted,selectionRevision);
+    }
+  }
+  static void selectionTick(void *p) {
+    auto app=static_cast<App*>(p);app->pollSelection();
+    if(!app->quit)Fl::repeat_timeout(.25,selectionTick,p);
+  }
+  void completeSelection(const Job&job,const Json&data) {
+    if(job.revision!=selectionRevision || !selectionEnabled || !tip->shown()){selectionBusy=false;return;}
+    if(!data.value("ok",false)){selectionBusy=false;tip->display(data.value("error","Selection translation failed."));return;}
+    if(job.action=="paste") {selectionText(data.at("paste"),job.revision);return;}
+    selectionBusy=false;selectionResult=data;
+    tip->translated=data.at("text").get<std::string>();lastSelectionOutput=tip->translated;
+    auto body=tip->translated;
+    if(!data.value("reading","").empty())body+="\n\n"+data.at("reading").get<std::string>();
+    if(!data.value("notice","").empty())body+="\n\n"+data.at("notice").get<std::string>();
+    tip->display(body,true);
+  }
+  void openSelection() {
+    if(!selectionResult.is_object())return;
+    auto saved=selectionResult;auto original=selectedText;
+    tip->hide();window.show();
+    updating=true;input.text(original.c_str());
+    output.text(saved.at("text").get<std::string>().c_str());
+    reading.text(saved.value("reading","").c_str());
+    sourceReading.text(saved.value("source_reading","").c_str());updating=false;
+    ++revision;message("Selected text translation. No additional request was sent.");
+  }
   void changed() {
     if(updating)return;
+    cancelSelection();
     ++revision;output.text("");reading.text("");sourceReading.text("");
   }
   void paste(bool primary) {
@@ -164,13 +259,15 @@ struct App {
     request({{"action","translate"},{"text",value},{"source",code(source,sourceCodes)},{"target",dst}});
   }
   void action(const std::string&a) {
-    if(a=="quit"){quit=true;settings.hide();window.hide();}
+    if(a=="selection")setSelectionEnabled(!selectionEnabled);
+    else if(a=="quit"){quit=true;cancelSelection();settings.hide();window.hide();}
     else if(a=="settings"){window.show();settings.show();}
     else if(a=="clipboard")paste(false);
     else if(a=="primary")paste(true);
     else {window.show();editor->take_focus();}
   }
   ~App() {
+    Fl::remove_timeout(selectionTick,this);
     // Displays must detach before the member text buffers are destroyed.
     editor->buffer(nullptr);result->buffer(nullptr);sourceView->buffer(nullptr);readingView->buffer(nullptr);
   }
@@ -182,13 +279,15 @@ struct App {
     source=new Fl_Choice(95,16,300,30,"From:");
     target=new Fl_Choice(490,16,300,30,"To:");
     button(805,16,140,"Settings",[this]{action("settings");});
-    source->callback([](Fl_Widget*,void*p){static_cast<App*>(p)->changed();},this);
-    target->callback([](Fl_Widget*,void*p){static_cast<App*>(p)->changed();},this);
+    source->callback([](Fl_Widget*,void*p){auto a=static_cast<App*>(p);a->changed();a->lastSubmitted.clear();a->candidateSince=std::chrono::steady_clock::now();},this);
+    target->callback([](Fl_Widget*,void*p){auto a=static_cast<App*>(p);a->changed();a->lastSubmitted.clear();a->candidateSince=std::chrono::steady_clock::now();},this);
     button(15,58,155,"Paste clipboard",[this]{paste(false);});
     button(180,58,190,"Paste primary selection",[this]{paste(true);});
     button(380,58,160,"Refresh languages",[this]{request({{"action","languages"}});});
     translate=button(770,58,175,"Translate",[this]{startTranslation();});
-    editor=new Editor(15,116,930,155,"Input");editor->align(FL_ALIGN_TOP_LEFT);editor->buffer(&input);
+    selectionToggle=new Fl_Check_Button(15,89,930,24,"Translate selected text in popup (sends selections to DeepL)");
+    selectionToggle->callback([](Fl_Widget*w,void*p){static_cast<App*>(p)->setSelectionEnabled(static_cast<Fl_Check_Button*>(w)->value());},this);
+    editor=new Editor(15,140,930,131,"Input");editor->align(FL_ALIGN_TOP_LEFT);editor->buffer(&input);
     editor->wrap_mode(Fl_Text_Display::WRAP_AT_BOUNDS,0);
     editor->paste=[this](bool primary){paste(primary);};editor->translate=[this]{startTranslation();};
     sourceView=new Fl_Text_Display(15,300,930,67,"Input transcription (Japanese / Korean and other non-Latin scripts)");
@@ -219,6 +318,12 @@ struct App {
     button(480,145,150,"Cancel",[this]{key->value("");settings.hide();});
     settings.end();settings.set_non_modal();settings.callback([](Fl_Widget*w,void*p){static_cast<App*>(p)->key->value("");w->hide();},this);
     dx::style(&window);dx::style(&settings);
+    Fl_Group::current(nullptr);tip=std::make_unique<SelectionTip>();
+    tip->closed=[this]{cancelSelection();};
+    tip->copy=[this]{Fl::copy(tip->translated.data(),int(tip->translated.size()),1);};
+    tip->open=[this]{openSelection();};
+    tip->pasted=[this](const std::string&text){monitorReading=false;if(selectionEnabled&&selectionPasteRevision==monitorEpoch)monitorText(text);};
+    Fl::add_timeout(.25,selectionTick,this);
   }
 };
 }
@@ -228,9 +333,10 @@ int main(int argc,char **argv) {
     std::string a=argv[i];
     if(a=="--tray")tray=true;
     else if(a=="--primary")action="primary";
+    else if(a=="--selection")action="selection";
     else if(a=="--clipboard")action="clipboard";
     else if(a=="--smoke-test"){smoke=true;++i;}
-    else if(a=="--help") {std::cout<<"dome-translator [--tray | --clipboard | --primary | --smoke-test FILE]\n";return 0;}
+    else if(a=="--help") {std::cout<<"dome-translator [--tray | --clipboard | --primary | --selection | --smoke-test FILE]\n";return 0;}
     else {std::cerr<<"Unknown option: "<<a<<'\n';return 2;}
   }
   if(!smoke && Notifier::showExisting(action))return 0;

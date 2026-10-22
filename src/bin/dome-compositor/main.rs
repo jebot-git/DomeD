@@ -7,6 +7,7 @@ mod handlers;
 mod rendering;
 mod screencast;
 mod screenshot;
+mod selection_tooltips;
 
 mod audio;
 mod clock;

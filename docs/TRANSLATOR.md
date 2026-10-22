@@ -5,7 +5,8 @@ system toolkit, DomeD's live palette and the shared BDF font renderer. It has no
 Qt frontend and does not bundle a replacement FLTK. Launch it from the application
 menu or run `dome-translator`; `--tray` starts hidden, `--clipboard` and `--primary`
 open the existing instance and paste the corresponding selection. Closing the
-window hides it; **Quit** in its tray menu exits the application.
+window hides it; **Quit** in its tray menu exits the application. `--selection`
+toggles selected-text translation in the existing instance.
 
 The From/To menus follow the current Fcitx5 input group over D-Bus. When Fcitx is
 unavailable, the DomeD or standard Fcitx5 profile is used. **Refresh languages**
@@ -24,6 +25,38 @@ Press **Translate** or Ctrl+Enter to send the input to DeepL API Free. Requests 
 in separate workers so the editor and tray stay responsive. Input/language changes
 invalidate in-flight results, and a billable translation POST is never retried
 automatically. There is no history file and no logging of text or credentials.
+
+## Selected-text tooltip
+
+**Translate selected text in popup** is an on/off checkbox in the translator.
+The tray menu offers the same checked toggle, and `dome-translator --selection`
+toggles it without opening the editor. It starts **off** on each application
+launch and is not saved as an automatic opt-in for future sessions.
+
+While on, it monitors the primary selection, waits at least 650 ms for the text
+to settle, and sends the selected text to DeepL using the current From/To
+languages. A native FLTK tooltip shows the translation and optional reading.
+The normal clipboard is kept separate. Unchanged selections are not sent
+repeatedly; empty selections, selections over 20,000 UTF-8 bytes and the
+translator's own last output are ignored. A failed translation is not retried
+automatically. Selecting text while the toggle is off does not start workers or
+send text to DeepL.
+
+Turning off immediately stops monitoring and hides the tooltip. Already submitted
+HTTP requests may finish, but their results are discarded. Changing the selection
+invalidates any older result. **Copy translation** copies the full translated
+text to the clipboard without replacing the primary selection. **Open in
+translator** transfers the full source, translation and readings to the editor
+without sending another request. Long results are bounded in the tooltip; open
+them in the editor to read the entire result.
+
+The tooltip uses DomeD's live FLTK font, palette and accent. It expires after
+20 seconds away from the pointer, and can be closed directly. DomeD also dismisses
+it on Escape or an outside click. It inherits the source window's workspace and
+visibility, stays out of taskbar/window cycling, and does not take keyboard focus.
+In XR it uses the source panel's popup geometry and projected cursor origin,
+retaining the spatial popup beam. Outside DomeD, FLTK supplies the native tooltip
+window hint and screen-bound placement.
 
 **Settings** accepts a DeepL API Free key ending in `:fx`. It is stored at
 `$XDG_CONFIG_HOME/dome/translator/deepl-key` (default `~/.config/...`), mode 0600,

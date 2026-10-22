@@ -24,6 +24,8 @@ struct Notifier::Impl {
   std::vector<guint> registrations;
   std::vector<GDBusNodeInfo *> infos;
   guint watcher = 0;
+  bool selectionEnabled=false;
+  guint revision=1;
   std::vector<Icon> icons;
   std::function<void(const std::string &)> show;
   static GVariant *pixmaps() {
@@ -109,14 +111,18 @@ struct Notifier::Impl {
         if (!strcmp(method, "GetLayout")) {
           GVariantBuilder children;
           g_variant_builder_init(&children, G_VARIANT_TYPE("av"));
-          const char *labels[] = {"Open translator", "Paste clipboard", "Paste primary selection", "Settings", "Quit"};
-          for (int i = 0; i < 5; ++i) {
+          const char *labels[] = {"Open translator", "Paste clipboard", "Paste primary selection", "Settings", "Quit", "Translate selected text"};
+          for (int i = 0; i < 6; ++i) {
             GVariantBuilder p, c;
             g_variant_builder_init(&p, G_VARIANT_TYPE("a{sv}"));
             g_variant_builder_add(&p, "{sv}", "label",
                                   g_variant_new_string(labels[i]));
             g_variant_builder_add(&p, "{sv}", "enabled",
                                   g_variant_new_boolean(TRUE));
+            if(i==5) {
+              g_variant_builder_add(&p,"{sv}","toggle-type",g_variant_new_string("checkmark"));
+              g_variant_builder_add(&p,"{sv}","toggle-state",g_variant_new_int32(icon->owner->selectionEnabled?1:0));
+            }
             g_variant_builder_init(&c, G_VARIANT_TYPE("av"));
             g_variant_builder_add(&children, "v",
                                   g_variant_new("(i@a{sv}@av)", i + 1,
@@ -126,7 +132,7 @@ struct Notifier::Impl {
           GVariantBuilder props;
           g_variant_builder_init(&props, G_VARIANT_TYPE("a{sv}"));
           g_dbus_method_invocation_return_value(
-              reply, g_variant_new("(u(i@a{sv}@av))", guint32(1), 0,
+              reply, g_variant_new("(u(i@a{sv}@av))", icon->owner->revision, 0,
                                    g_variant_builder_end(&props),
                                    g_variant_builder_end(&children)));
           return;
@@ -138,8 +144,8 @@ struct Notifier::Impl {
           guint32 timestamp;
           g_variant_get(args, "(i&svu)", &id, &event, &value, &timestamp);
           g_variant_unref(value);
-          const char *pages[] = {"open", "clipboard", "primary", "settings", "quit"};
-          if (!strcmp(event, "clicked") && id >= 1 && id <= 5)
+          const char *pages[] = {"open", "clipboard", "primary", "settings", "quit", "selection"};
+          if (!strcmp(event, "clicked") && id >= 1 && id <= 6)
             icon->owner->show(pages[id - 1]);
         }
       } else if (strcmp(method, "Scroll"))
@@ -220,6 +226,11 @@ struct Notifier::Impl {
 Notifier::Notifier(std::function<void(const std::string &)> show)
     : impl(std::make_unique<Impl>(std::move(show))) {}
 Notifier::~Notifier() = default;
+void Notifier::setSelectionEnabled(bool enabled) {
+  impl->selectionEnabled=enabled;++impl->revision;
+  g_dbus_connection_emit_signal(impl->bus,nullptr,"/Translator/Menu","com.canonical.dbusmenu",
+      "LayoutUpdated",g_variant_new("(ui)",impl->revision,0),nullptr);
+}
 bool Notifier::showExisting(const std::string &page) {
   auto bus = g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, nullptr);
   if (!bus)

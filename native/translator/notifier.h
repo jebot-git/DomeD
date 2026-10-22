@@ -10,5 +10,6 @@ class Notifier {
 public:
   explicit Notifier(std::function<void(const std::string &)> show);
   ~Notifier();
+  void setSelectionEnabled(bool enabled);
   static bool showExisting(const std::string &page);
 };

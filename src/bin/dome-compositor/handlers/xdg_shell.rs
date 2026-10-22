@@ -47,6 +47,7 @@ impl XdgShellHandler for Dome {
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
         if let Some(id) = self.id_for(surface.wl_surface()) {
             self.notification_windows.previous_focus.remove(&id);
+            self.selection_tooltips.remove(&id);
             if self.notification_windows.entries.remove(&id).is_some() {
                 self.notifications.withdraw_surface(id);
             } else { self.action(dome::Action::Close { id }); }

@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.request
 
 signal.pthread_sigmask(signal.SIG_SETMASK, [])
 if os.environ.get('TRANSLATOR_PRIVATE_TEST_BUS') != '1':
@@ -67,12 +68,24 @@ try:
         with socket.socket() as s:
             s.bind(('127.0.0.1', 0))
             env['DOME_PREVIEW_PORT'] = str(s.getsockname()[1])
-        compositor = start([str(root / 'target/release/dome-compositor'), '--backend', 'nested'], env, 'compositor')
+        compositor = start([os.environ.get('DOME_COMPOSITOR',str(root / 'target/release/dome-compositor')), '--backend', 'nested'], env, 'compositor')
         def wayland():
             match = re.search(r'Dome Wayland socket: (\S+)', (artifacts / 'compositor.log').read_text())
             return match[1] if match else None
         env['WAYLAND_DISPLAY'] = wait(wayland)
+        def scene():
+            with urllib.request.urlopen('http://127.0.0.1:'+env['DOME_PREVIEW_PORT']+'/api/state',timeout=2) as response:
+                return json.load(response)['scene']
+        source=start([str(build/'translator-source-fixture')],env,'source-fixture')
+        source_id=wait(lambda:next((w['id'] for w in scene()['windows'] if w['app_id']=='dome.translator.source-fixture'),None))
         wl = start([str(build / 'translator-test-driver')], env, 'wayland')
+        def anchored():
+            s=scene()
+            ids=[w['id'] for w in s['windows'] if w['app_id']=='org.domed.Translator.Selection']
+            return s if any(p['id'] in ids and p['root']==source_id for p in s['popups']) else None
+        anchored_scene=wait(anchored)
+        assert anchored_scene['focused']==source_id, 'Selection tooltip stole source application focus'
+        print('PASS tooltip attaches to external source window without taking focus',flush=True)
         assert wl.wait(timeout=30) == 0, (artifacts / 'wayland.log').read_text()
         print('PASS isolated DomeD Wayland: independent UTF-8 clipboard and primary selection; native tray lifecycle', flush=True)
 finally:

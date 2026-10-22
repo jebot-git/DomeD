@@ -26,6 +26,7 @@ use crate::CalloopData;
 
 pub struct Dome {
     pub screenshot: crate::screenshot::Screenshots,
+    pub selection_tooltips: std::collections::HashMap<u64,crate::selection_tooltips::Anchor>,
     pub dmabuf_state: smithay::wayland::dmabuf::DmabufState,
     pub dmabuf_importer:
         Option<Box<dyn FnMut(&smithay::backend::allocator::dmabuf::Dmabuf) -> bool>>,
@@ -310,6 +311,7 @@ impl Dome {
             launch_index: 0,
             launch_navigation: Default::default(),
             screenshot: Default::default(),
+            selection_tooltips: Default::default(),
             binding_capture: None,
             appmenus: crate::appmenu::Menus::new(),
             appmenu_target: (None, None),

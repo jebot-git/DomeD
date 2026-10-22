@@ -274,7 +274,7 @@ impl DesktopRenderer {
                     Kind::Unspecified,
                 ),
             );
-            if w.maximized {
+            if w.maximized || state.selection_tooltips.contains_key(&id) {
                 continue;
             }
             let dw = geo.size.w + 8;

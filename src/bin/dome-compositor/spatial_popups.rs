@@ -75,7 +75,8 @@ impl Dome {
                 (r.loc.x, r.loc.y + r.size.h).into(),
             ));
         }
-        let parents: Vec<(u64, u64)> = self
+        self.selection_tooltips.retain(|id,_|self.registry.iter().any(|(i,_)|i==id));
+        let mut parents: Vec<(u64, u64)> = self
             .registry
             .iter()
             .filter_map(|(id, w)| {
@@ -92,6 +93,11 @@ impl Dome {
                 (parent != *id).then_some((*id, parent))
             })
             .collect();
+        for(id,anchor)in &self.selection_tooltips {
+            if let Some(parent)=anchor.parent.filter(|p|self.registry.iter().any(|(i,_)|i==p)) {
+                parents.retain(|(child,_)|child!=id);parents.push((*id,parent));
+            }
+        }
         let root_for = |id: u64| -> Option<u64> {
             let mut root = id;
             for _ in 0..=parents.len() {
@@ -126,13 +132,14 @@ impl Dome {
             // once so the fallback follows the parent rather than pointer motion.
             let origin = scene.popups.iter().find(|p| p.id == *id)
                 .map(|p| [p.anchor.x, p.anchor.y])
+                .or_else(||self.selection_tooltips.get(id).map(|a|a.offset))
                 .unwrap_or_else(|| {
                     let cursor = self.seat.get_pointer().unwrap().current_location();
                     let parent_rect = scene.window(*parent).map_or(owner.desktop, |w| w.desktop);
                     [cursor.x as f32 - parent_rect.x, cursor.y as f32 + 8. - parent_rect.y]
                 });
             descriptors.push(Popup {
-                context_at: None,
+                context_at: self.selection_tooltips.get(id).and_then(|a|a.point),
                 viewport: None,
                 id: *id,
                 parent: *parent,

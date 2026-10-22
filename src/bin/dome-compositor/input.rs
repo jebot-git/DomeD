@@ -74,6 +74,9 @@ impl Dome {
                             }
                             return FilterResult::Intercept(());
                         }
+                        if pressed && sym.raw()==0xff1b && state.menu.is_none() && state.dismiss_selection_tooltips() {
+                            state.shell_keys.insert(code);return FilterResult::Intercept(());
+                        }
                         if pressed && state.screenshot_key(sym.raw()) {
                             state.shell_keys.insert(code);
                             return FilterResult::Intercept(());
@@ -357,6 +360,10 @@ impl Dome {
                     return;
                 }
                 let pointer = self.seat.get_pointer().unwrap();
+                if event.state()==ButtonState::Pressed && !self.selection_tooltips.is_empty() &&
+                    !self.popup_under(pointer.current_location()).is_some_and(|(id,_,_)|self.selection_tooltips.contains_key(&id)) {
+                    self.dismiss_selection_tooltips();
+                }
                 let keyboard = self.seat.get_keyboard().unwrap();
 
                 let serial = SERIAL_COUNTER.next_serial();
@@ -482,7 +489,7 @@ impl Dome {
                             }
                         };
                         self.action(dome::Action::Focus { id: focus_id });
-                        if self.scene.lock().unwrap().window(id).is_some() {
+                        if !self.selection_tooltips.contains_key(&id) && self.scene.lock().unwrap().window(id).is_some() {
                             keyboard.set_focus(self, Some(surface), serial);
                         }
                     } else if let Some((window, _loc)) = self

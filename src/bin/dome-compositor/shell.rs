@@ -48,7 +48,12 @@ impl Dome {
             .find(|(_, w)| w.toplevel().unwrap().wl_surface() == surface)
             .map(|(id, _)| *id)
     }
-    pub fn action(&mut self, a: Action) {
+    pub fn action(&mut self, mut a: Action) {
+        if let Action::Focus{id}= &mut a {
+            if let Some(anchor)=self.selection_tooltips.get(id) {
+                if let Some(parent)=anchor.parent {*id=parent;}else{return;}
+            }
+        }
         if let Action::Focus { id } = &a {
             self.pending_raise = Some(*id);
             self.no_raise_focus = None;
@@ -59,6 +64,7 @@ impl Dome {
     }
     pub fn metadata(&mut self, surface: &WlSurface) {
         if self.capture_notification_window(surface) { return; }
+        self.selection_tooltip_metadata(surface);
         let x11_bridge = self.is_x11_bridge(surface);
         if let Some(id) = self.id_for(surface) {
             let (title, app) = with_states(surface, |s| {
@@ -136,7 +142,7 @@ impl Dome {
                 self.space.map_element(window.clone(), pos, false);
             }
             let toplevel = window.toplevel().unwrap();
-            let transient = with_states(toplevel.wl_surface(), |s| {
+            let transient = self.selection_tooltips.contains_key(id) || with_states(toplevel.wl_surface(), |s| {
                 s.data_map
                     .get::<XdgToplevelSurfaceData>()
                     .unwrap()
@@ -231,11 +237,13 @@ impl Dome {
     }
     pub fn shell_scene(&self) -> dome::Scene {
         let scene = self.scene.lock().unwrap();
-        if self.input_realm == dome::Realm::Desktop {
+        let mut shell=if self.input_realm == dome::Realm::Desktop {
             scene.desktop_scene()
         } else {
             scene.realm_scene(dome::Realm::Xr)
-        }
+        };
+        shell.windows.retain(|w|!self.selection_tooltips.contains_key(&w.id));
+        shell
     }
     pub fn launch_selected(&mut self) {
         let apps = self.matching_apps();

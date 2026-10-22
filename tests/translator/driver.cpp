@@ -65,6 +65,30 @@ int main() {
     check(contents(app.output).empty(),"stale translation cannot overwrite changed input");
     check(!app.translating && app.translate->active(),"translation control recovers after stale result");
     app.window.hide();check(!app.window.shown(),"window can hide while tray remains alive");
+    check(!app.selectionEnabled && !app.selectionToggle->value(),"selection translator defaults to off");
+    clipboard("SELECTED_Žluťoučký_日本語",true);
+    app.setSelectionEnabled(true);
+    check(app.selectionToggle->value(),"selection translator toggle turns on");
+    check(wait([&]{return app.tip->translated=="日本語";},7000),"stable primary selection translates in FLTK tooltip");
+    check(app.tip->tooltip_window() && !app.window.shown(),"tooltip works while the translator editor remains hidden");
+    check(app.selectedText=="SELECTED_Žluťoučký_日本語","popup uses primary selection independently of editor text");
+    unsigned selectedRevision=app.selectionRevision;
+    auto settle=std::chrono::steady_clock::now()+std::chrono::milliseconds(1300);
+    while(std::chrono::steady_clock::now()<settle){while(g_main_context_iteration(nullptr,FALSE)){}Fl::wait(.02);}
+    check(app.selectionRevision==selectedRevision && !app.selectionBusy,"unchanged selection is not translated repeatedly");
+    app.tip->open();
+    check(app.window.shown() && contents(app.input)=="SELECTED_Žluťoučký_日本語" && contents(app.output)=="日本語","open popup result in editor preserves input and full translation");
+    app.window.hide();
+    clipboard("NEW_SELECTION_IN_FLIGHT",true);
+    check(wait([&]{return app.selectionBusy;},7000),"new selection starts one asynchronous translation");
+    app.setSelectionEnabled(false);
+    check(wait([&]{return app.jobs==0;}),"disabled toggle lets in-flight worker finish safely");
+    check(!app.tip->shown() && !app.selectionToggle->value(),"switching off dismisses popup and rejects late response");
+    auto stoppedRevision=app.selectionRevision;
+    clipboard("SELECTION_WHILE_OFF",true);
+    settle=std::chrono::steady_clock::now()+std::chrono::milliseconds(1000);
+    while(std::chrono::steady_clock::now()<settle){while(g_main_context_iteration(nullptr,FALSE)){}Fl::wait(.02);}
+    check(app.selectionRevision==stoppedRevision && app.jobs==0 && !app.tip->shown(),"off stops reading and translating selections");
     // A second process must activate this instance, not create another translator.
     auto p=g_subprocess_new(G_SUBPROCESS_FLAGS_NONE,nullptr,TRANSLATOR_TEST_BINARY,nullptr);
     bool exited=false;
@@ -98,7 +122,13 @@ int main() {
     auto args=g_variant_new("(ii@as)",0,1,g_variant_new_strv(nullptr,0));
     auto layout=call("/Translator/Menu","com.canonical.dbusmenu","GetLayout",args);
     auto printable=g_variant_print(layout,FALSE);std::string menu=printable;g_free(printable);g_variant_unref(layout);
-    check(menu.find("Paste primary selection")!=std::string::npos && menu.find("Quit")!=std::string::npos,"tray menu offers separate paste actions and quit");
+    check(menu.find("Paste primary selection")!=std::string::npos && menu.find("Quit")!=std::string::npos && menu.find("Translate selected text")!=std::string::npos && menu.find("checkmark")!=std::string::npos,"tray menu offers separate paste actions and quit");
+    auto toggled=call("/Translator/Menu","com.canonical.dbusmenu","Event",g_variant_new("(isvu)",6,"clicked",g_variant_new_int32(0),0u));
+    if(toggled)g_variant_unref(toggled);
+    check(app.selectionEnabled && app.selectionToggle->value(),"tray checkmark enables the same selection toggle");
+    toggled=call("/Translator/Menu","com.canonical.dbusmenu","Event",g_variant_new("(isvu)",6,"clicked",g_variant_new_int32(0),0u));
+    if(toggled)g_variant_unref(toggled);
+    check(!app.selectionEnabled && !app.selectionToggle->value(),"tray checkmark disables the same selection toggle");
     auto reply=call("/Translator/Menu","com.canonical.dbusmenu","Event",g_variant_new("(isvu)",5,"clicked",g_variant_new_int32(0),0u));
     if(reply)g_variant_unref(reply);
     check(app.quit,"tray quit action exits application");
