@@ -21,6 +21,7 @@ files=(
     usr/local/bin/dome-bdf-font
     usr/local/bin/dome-session
     usr/local/share/doc/domed/TRAY_FRONTENDS.md
+    usr/local/share/doc/domed/SCREENSHOTS.md
     usr/local/share/doc/domed/FLTK_GPU_AUDIT.md
     usr/local/bin/dome-tray
     usr/local/bin/fcitx5-configuration-fltk

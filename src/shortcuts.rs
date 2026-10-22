@@ -18,6 +18,7 @@ pub enum Command {
     Session(crate::appearance::SessionAction),
     Launch,
     Terminal,
+    Screenshot,
     FileManager,
     Desktops,
     Close,
@@ -77,6 +78,7 @@ impl Binding {
             return "Disabled".into();
         }
         let key = match self.key {
+            0xff61 => "PrintScreen".into(),
             0xff09 => "Tab".into(),
             0xff0d => "Enter".into(),
             0xff51 => "Left".into(),
@@ -123,6 +125,7 @@ pub fn defaults() -> Vec<Binding> {
             ..Default::default()
         },
     );
+    add(Screenshot, 0xff61, Mods::default());
     add(Menu, 0xffc7, logo);
     add(PullOut, 'p' as u32, logo);
     add(SendToOtherRealm, 'x' as u32, Mods { shift: true, ..logo });
@@ -320,6 +323,7 @@ pub fn action_label(command: Command) -> String {
         AnchorHere => "Anchor dome here".into(),
         Launch => "Application launcher".into(),
         Terminal => "Terminal (desktop / XR)".into(),
+        Screenshot => "Screenshot (region / XR SBS)".into(),
         FileManager => "File manager".into(),
         Cycle(false) => "Next window".into(),
         Cycle(true) => "Previous window".into(),
@@ -570,7 +574,7 @@ pub fn deserialize_bindings<'de, D: serde::Deserializer<'de>>(
         } else { unique.push(binding); }
     }
     let mut bindings = unique;
-    for mut binding in defaults().into_iter().filter(|b| b.id.is_some() || matches!(b.command, Command::PullOut | Command::SendToOtherRealm | Command::SwitchInputRealm)) {
+    for mut binding in defaults().into_iter().filter(|b| b.id.is_some() || matches!(b.command, Command::PullOut | Command::SendToOtherRealm | Command::SwitchInputRealm | Command::Screenshot)) {
         let present = bindings.iter().any(|b| match &binding.id {
             Some(id) => b.id.as_ref() == Some(id),
             None => b.command == binding.command,
@@ -672,5 +676,33 @@ mod input_switch_tests {
         let profile:crate::Config=serde_json::from_value(serde_json::json!({"keybindings":old})).unwrap();
         validate(&profile.keybindings).unwrap();
         assert!(profile.keybindings.iter().any(|b|b.command==Command::SwitchInputRealm&&!b.enabled));
+    }
+}
+#[cfg(test)]
+mod screenshot_tests {
+    use super::*;
+    #[test]
+    fn print_screen_is_global_editable_and_keeps_application_keys_free() {
+        assert_eq!(resolve(0xff61,Mods::default()),Some(Command::Screenshot));
+        assert_eq!(resolve(0xffc9,Mods::default()),None);
+        assert_eq!(defaults().iter().find(|b|b.command==Command::Screenshot).unwrap().label(),"PrintScreen");
+        validate(&defaults()).unwrap();
+    }
+    #[test]
+    fn migration_preserves_remaps_disabled_actions_and_existing_print_owner() {
+        let mut old=defaults();old.retain(|b|b.command!=Command::Screenshot);
+        let p:crate::Config=serde_json::from_value(serde_json::json!({"keybindings":old})).unwrap();
+        assert_eq!(resolve_with(&p.keybindings,0xff61,Mods::default()),Some(Command::Screenshot));
+        let terminal=old.iter_mut().find(|b|b.command==Command::Terminal).unwrap();
+        terminal.key=0xff61;terminal.mods=Mods::default();
+        let p:crate::Config=serde_json::from_value(serde_json::json!({"keybindings":old})).unwrap();
+        validate(&p.keybindings).unwrap();
+        assert!(p.keybindings.iter().any(|b|b.command==Command::Screenshot&&!b.enabled));
+        let mut custom=defaults();let shot=custom.iter_mut().find(|b|b.command==Command::Screenshot).unwrap();
+        shot.enabled=false;shot.key='s' as u32;shot.mods.logo=true;
+        let p:crate::Config=serde_json::from_value(serde_json::json!({"keybindings":custom})).unwrap();
+        assert_eq!(p.keybindings.iter().filter(|b|b.command==Command::Screenshot).count(),1);
+        let shot=p.keybindings.iter().find(|b|b.command==Command::Screenshot).unwrap();
+        assert!(!shot.enabled&&shot.key=='s' as u32&&shot.mods.logo);
     }
 }

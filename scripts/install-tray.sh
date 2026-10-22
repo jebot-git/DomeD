@@ -17,6 +17,7 @@ files=(usr/local/bin/dome-tray usr/local/bin/dome-session
     usr/local/share/applications/org.domed.InputMethods.desktop
     usr/local/share/applications/org.domed.Wallets.desktop
     usr/local/share/doc/domed/TRAY_FRONTENDS.md
+    usr/local/share/doc/domed/SCREENSHOTS.md
     usr/local/share/doc/domed/FLTK_GPU_AUDIT.md)
 files+=("${compositor#/}")
 for file in "${files[@]}"; do

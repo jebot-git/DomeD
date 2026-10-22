@@ -9,7 +9,7 @@ description = "Experimental shared desktop and spatial Wayland compositor"
 default = ["fltk"]
 fltk = []
 qt6 = []
-xr = ["dep:openxr","dep:ash","dep:ureq","dep:ctrlc","dep:image"]
+xr = ["dep:openxr","dep:ash","dep:ureq","dep:ctrlc"]
 nested = ["dep:async-channel", "dep:smithay", "dep:tracing-subscriber", "dep:bitflags", "dep:zbus", "dep:wayland-protocols-plasma", "dep:wayland-server", "dep:wayland-scanner"]
 standalone = ["nested", "dep:calloop", "smithay/backend_drm", "smithay/backend_gbm", "smithay/backend_libinput", "smithay/backend_udev", "smithay/backend_session_libseat"]
 multi-gpu = ["standalone"]
@@ -36,7 +36,7 @@ openxr = {version="0.21.1",optional=true}
 ash = {version="0.38",optional=true}
 ureq = {version="2.12",default-features=false,features=["json"],optional=true}
 ctrlc = {version="3.4",optional=true}
-image = {version="0.25",default-features=false,features=["png"],optional=true}
+image = {version="0.25",default-features=false,features=["png"]}
 
 [build-dependencies]
 cc="1"

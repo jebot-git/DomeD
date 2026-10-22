@@ -28,6 +28,8 @@ pub struct ShellLayout {
     pub notifications: Option<[u32; 4]>,
 }
 pub struct Bridge {
+    pub screenshot_request: Option<u64>,
+    pub screenshot_result: Option<Result<Vec<u8>,String>>,
     pub gpu_socket: Option<String>,
     #[cfg(feature = "nested")]
     pub gpu_frames: HashMap<u64, Arc<crate::xr_gpu::Published>>,
@@ -53,6 +55,8 @@ pub struct Bridge {
 impl Default for Bridge {
     fn default() -> Self {
         Self {
+            screenshot_request: None,
+            screenshot_result: None,
             gpu_socket: None,
             #[cfg(feature = "nested")]
             gpu_frames: HashMap::new(),
@@ -107,6 +111,8 @@ pub struct Cursor {
 }
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct Control {
+    #[serde(default)]
+    pub screenshot_request: Option<u64>,
     /// Presence advertises support for runtime timing in session heartbeats.
     #[serde(default)]
     pub frame_period_ns: Option<u64>,
@@ -170,6 +176,7 @@ impl Bridge {
     }
     pub fn control(&self) -> Control {
         Control {
+            screenshot_request: self.screenshot_request,
             frame_period_ns: Some(self.frame_interval().map_or(0, |period| period.as_nanos() as u64)),
             gpu_socket: self.gpu_socket.clone(),
             finder_seconds: self.finder_started.map(|t| t.elapsed().as_secs_f32())

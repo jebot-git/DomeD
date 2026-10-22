@@ -159,6 +159,7 @@ impl Dome {
             0 => self.toggle_audio(),
             1 => self.open_history(Kind::Clipboard),
             2 => self.open_history(Kind::Notifications),
+            3 => self.start_screenshot(),
             _ => {
                 self.history_panel = None;
                 self.close_audio();

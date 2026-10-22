@@ -59,6 +59,25 @@ pub fn serve_native(
                 );
                 continue;
             }
+            if request.method() == &Method::Post && request.url().starts_with("/api/screenshot/xr/") {
+                let id=request.url().trim_start_matches("/api/screenshot/xr/").parse::<u64>().ok();
+                let png=request.headers().iter().any(|h|h.field.equiv("Content-Type")&&h.value.as_str()=="image/png");
+                let mut bytes=vec![];
+                let read=request.as_reader().take(134217729).read_to_end(&mut bytes);
+                let mut accepted=false;
+                if read.is_ok() && bytes.len()<=134217728 {
+                    if let Some(shared)=&bridge {
+                        let mut b=shared.lock().unwrap();
+                        if id.is_some() && id==b.screenshot_request {
+                            let result=if png && bytes.starts_with(b"\x89PNG\r\n\x1a\n") {Ok(bytes)}
+                                else {Err(String::from_utf8_lossy(&bytes[..bytes.len().min(4096)]).into_owned())};
+                            b.screenshot_result=Some(result);b.screenshot_request=None;accepted=true;
+                        }
+                    }
+                }
+                let _=request.respond(Response::from_string(if accepted {"ok"}else{"No matching screenshot request"}).with_status_code(if accepted {200}else{400}));
+                continue;
+            }
             if request.method() == &Method::Get && request.url() == "/api/keybindings/defaults" {
                 let _ = request.respond(Response::from_string(serde_json::to_string(&crate::shortcuts::defaults()).unwrap()).with_header(Header::from_bytes("Content-Type", "application/json").unwrap()));
                 continue;

@@ -13,6 +13,8 @@ use std::{
 };
 #[path = "dome-xr/gpu.rs"]
 mod gpu;
+#[path = "dome-xr/screenshot.rs"]
+mod screenshot;
 const VIEW_TYPE: xr::ViewConfigurationType = xr::ViewConfigurationType::PRIMARY_STEREO;
 #[derive(Clone)]
 struct Image {
@@ -168,6 +170,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         .next()
         .and_then(|s| s.parse::<u16>().ok())
         .unwrap_or(49640);
+    let screenshot_base=base.clone();
     let worker = std::thread::spawn(move || {
         if music_floor_only { return; }
         let agent = ureq::AgentBuilder::new()
@@ -590,6 +593,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let mut peak_stereo = 0;
         let mut peak_shell = 0;
         let mut captured = std::collections::HashSet::new();
+        let mut last_screenshot_request=0;
         'main: loop {
             while let Some(e) = xr_instance.poll_event(&mut event)? {
                 match e {
@@ -1070,6 +1074,21 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     .unwrap_or(0);
                 (group, std::cmp::Reverse(depth), order, q.dome.is_none())
             });
+            if let Some(id)=control.screenshot_request.filter(|id|*id!=last_screenshot_request) {
+                if frame.should_render && webxr_views.len()==2 {
+                    last_screenshot_request=id;
+                    let eyes=[0,1].map(|i|dome::screenshot::Eye{pose:pose(webxr_views[i].pose),
+                        fov:[webxr_views[i].fov.angle_left,webxr_views[i].fov.angle_right,
+                            webxr_views[i].fov.angle_down,webxr_views[i].fov.angle_up]});
+                    let sources=visible.iter().filter_map(|(q,_)|images.get(&q.id).map(|image|(
+                        (*q).clone(),image.clone(),stereo_windows.contains(&q.id),
+                        (transition.opacity*layer_opacities.get(&q.id).copied().unwrap_or(1.)).clamp(0.,1.)))).collect();
+                    let size=[eye_sizes.iter().map(|s|s[0]).max().unwrap_or(1024).min(2048),
+                              eye_sizes.iter().map(|s|s[1]).max().unwrap_or(1024).min(2048)];
+                    screenshot::capture(screenshot_base.clone(),id,sources,eyes,size,scene.as_ref().map_or(0,|s|s.config.window_border_px),
+                        scene.as_ref().and_then(|s|s.focused),control.accent,browser_visible);
+                }
+            }
             peak_stereo = peak_stereo.max(
                 visible
                     .iter()

@@ -74,6 +74,10 @@ impl Dome {
                             }
                             return FilterResult::Intercept(());
                         }
+                        if pressed && state.screenshot_key(sym.raw()) {
+                            state.shell_keys.insert(code);
+                            return FilterResult::Intercept(());
+                        }
                         if pressed && state.shell_keys.contains(&code) {
                             return FilterResult::Intercept(());
                         }
@@ -110,6 +114,13 @@ impl Dome {
                             )
                         {
                             state.shell_keys.insert(code);
+                            return FilterResult::Intercept(());
+                        }
+                        if pressed && state.resolve_shortcut(sym.raw(),dome::shortcuts::Mods{
+                            logo:mods.logo,ctrl:mods.ctrl,alt:mods.alt,shift:mods.shift,
+                        })==Some(dome::shortcuts::Command::Screenshot) {
+                            state.shell_keys.insert(code);
+                            state.command(dome::shortcuts::Command::Screenshot);
                             return FilterResult::Intercept(());
                         }
                         if pressed
@@ -314,6 +325,7 @@ impl Dome {
             InputEvent::PointerButton { event, .. } => {
                 if event.state() == ButtonState::Pressed { self.session_interacted(); }
                 let code = event.button_code();
+                if self.screenshot_button(code,event.state()==ButtonState::Pressed) {return;}
                 if event.state() == ButtonState::Released {
                     if code == 0x110 {
                         self.audio_drag = None;
@@ -518,6 +530,7 @@ impl Dome {
                 pointer.frame(self);
             }
             InputEvent::PointerAxis { event, .. } => {
+                if self.screenshot.selection.is_some() {return;}
                 let source = event.source();
 
                 let horizontal_amount = event.amount(Axis::Horizontal).unwrap_or_else(|| {
@@ -610,6 +623,11 @@ impl Dome {
     ) {
         let pos = self.clamp_desktop_pointer(pos);
         self.desktop_pointer = Some([pos.x, pos.y]);
+        if self.screenshot_motion(pos) {
+            let pointer=self.seat.get_pointer().unwrap();
+            pointer.motion(self,None,&MotionEvent{location:pos,serial:SERIAL_COUNTER.next_serial(),time});
+            pointer.frame(self);return;
+        }
         let size = self.output_geometry_at(pos).size;
         let serial = SERIAL_COUNTER.next_serial();
 

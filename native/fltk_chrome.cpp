@@ -638,6 +638,7 @@ extern "C" int dome_qt_paint(const char *json, unsigned char *pixels,
                                           : "speaker")
                : key == "dome.clipboard"     ? "clipboard"
                : key == "dome.notifications" ? "bell"
+               : key == "dome.screenshot"    ? "camera-photo"
                                              : str(item, "icon"),
                p.fg, str(item, "icon_theme_path"), key.rfind("dome.", 0) != 0);
       if (yes(item, "attention"))

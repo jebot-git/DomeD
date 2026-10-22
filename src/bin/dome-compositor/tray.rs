@@ -1,5 +1,5 @@
 //! Session-bus StatusNotifier host. D-Bus calls run off the compositor thread.
-pub const BUILTIN_COUNT: usize = 3;
+pub const BUILTIN_COUNT: usize = 4;
 use serde::Serialize;
 use std::{
     collections::HashMap,
@@ -652,6 +652,7 @@ impl crate::Dome {
                     "Notification history",
                     self.notifications.unread(),
                 ),
+                own("dome.screenshot", "Screenshot (PrintScreen)", false),
             ],
         );
         state.items.truncate(((width - 484 - self.clock_reserve()).max(0) / 28) as usize);

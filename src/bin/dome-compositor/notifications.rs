@@ -199,6 +199,11 @@ pub struct Notifications {
     send: mpsc::Sender<Request>,
 }
 impl Notifications {
+    pub fn screenshot(&self,title:&str,body:&str) {
+        let _=Server(self.state.clone()).notify("Dome Screenshot".into(),0,"camera-photo".into(),
+            title.into(),body.into(),vec![],HashMap::new(),5000);
+    }
+
     pub fn new() -> Self {
         let state = Arc::new(Mutex::new(State::default()));
         let (send, receive) = mpsc::channel();

@@ -1352,3 +1352,5 @@ apply immediately. Tab enters the settings, Up/Down choose an option and
 Left/Right or Enter toggles it. Escape closes the popup. Desktop and XR use the
 same model, painting data and hit geometry. Opening another shell panel dismisses
 the clock calendar.
+
+Screenshot capture is available from the camera tray icon and PrintScreen: desktop region selection, PNG clipboard and XDG Pictures/Screenshots storage, or an XR SBS view. See [Screenshots](docs/SCREENSHOTS.md).

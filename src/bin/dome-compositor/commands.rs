@@ -63,6 +63,7 @@ impl Dome {
                 ("Launch Application…", "⇧⌘Space", Launch),
                 ("Open Files", "⌘E", FileManager),
                 ("Open Terminal", "⌘T", Terminal),
+                ("Take Screenshot", "PrintScreen", Screenshot),
                 ("Virtual Desktops…", "", Desktops),
                 ("Appearance…", "", Appearance),
                 ("", "", Separator),
@@ -211,6 +212,7 @@ impl Dome {
         let id = s.focused;
         use Command::*;
         match c {
+            Screenshot => self.start_screenshot(),
             SwitchInputRealm => {
                 self.input_focus_xr = Some(!self.input_xr_active);
                 self.sync_input_route();

@@ -205,6 +205,15 @@ pub fn send_data(fd: OwnedFd, data: Vec<u8>) {
     });
 }
 impl crate::Dome {
+    pub fn publish_screenshot(&mut self, png: Vec<u8>) {
+        self.clipboard.next += 1;
+        let entry = Arc::new(Entry { id: self.clipboard.next, timestamp: now(),
+            formats: vec![("image/png".into(), png)] });
+        self.clipboard.record((*entry).clone());
+        set_data_device_selection::<Self>(&self.display_handle, &self.seat,
+            vec!["image/png".into()], entry);
+    }
+
     pub fn restore_clipboard(&mut self, id: u64) {
         if let Some(entry) = self.clipboard.entries.iter().find(|e| e.id == id).cloned() {
             set_data_device_selection::<Self>(

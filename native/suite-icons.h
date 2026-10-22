@@ -6,6 +6,7 @@
 namespace dx_icon {
 inline std::string role(std::string name) {
   std::transform(name.begin(), name.end(), name.begin(), ::tolower);
+  if (name.find("camera") != std::string::npos || name.find("screenshot") != std::string::npos) return "camera";
   if (name.find("folder") != std::string::npos ||
       name.find("file-manager") != std::string::npos ||
       name.find("fsv") != std::string::npos)
@@ -46,6 +47,8 @@ inline std::string role(std::string name) {
   return "app";
 }
 inline std::string path(const std::string &role) {
+  if (role == "camera")
+    return "M3 7h5l2-3h4l2 3h5v13H3z M16 13a4 4 0 1 1-8 0 4 4 0 0 1 8 0";
   if (role == "folder")
     return "M3 19V5h7l2 3h9v11H3z M3 9h18";
   if (role == "image")

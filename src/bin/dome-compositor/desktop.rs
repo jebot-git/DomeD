@@ -27,10 +27,12 @@ pub struct DesktopRenderer {
     shell_buffer: Option<(String, MemoryRenderBuffer)>,
     cursor: Option<(bool, MemoryRenderBuffer)>,
     snap_buffer: Option<SolidColorBuffer>,
+    screenshot_buffer: Option<(u64,MemoryRenderBuffer)>,
     focus_buffers: std::collections::HashMap<u64, Vec<SolidColorBuffer>>,
 }
 impl DesktopRenderer {
     pub fn prepare(&mut self, state: &mut Dome, size: Size<i32, Physical>) {
+        state.poll_screenshots();
         state.notification_surface_clicks();
         state.update_keyboard();
         state.sync_spatial_popups();
@@ -348,6 +350,37 @@ impl DesktopRenderer {
                 }
             }
         }
+        if let Some(selection)=state.screenshot.selection.as_ref().filter(|s|s.bounds.loc==origin) {
+            if let Some(pixels)=&selection.pixels {
+                if self.screenshot_buffer.as_ref().is_none_or(|(id,_)|*id!=selection.serial) {
+                    self.screenshot_buffer=Some((selection.serial,MemoryRenderBuffer::from_slice(&pixels.rgba,
+                        smithay::backend::allocator::Fourcc::Abgr8888,(pixels.width as i32,pixels.height as i32),1,Transform::Normal,None)));
+                }
+                let frozen=MemoryRenderBufferRenderElement::from_buffer(renderer,(origin.x as f64,origin.y as f64),
+                    &self.screenshot_buffer.as_ref().unwrap().1,None,None,None,Kind::Unspecified)?;
+                elements.insert(0,frozen.into());
+                let [ax,ay]=selection.start.unwrap_or(selection.end);
+                let [bx,by]=selection.end;
+                let w=selection.bounds.size.w;let h=selection.bounds.size.h;
+                let x=ax.min(bx).clamp(0,w);let y=ay.min(by).clamp(0,h);
+                let right=ax.max(bx).clamp(0,w);let bottom=ay.max(by).clamp(0,h);
+                for (rx,ry,rw,rh) in [(0,0,w,y),(0,bottom,w,h-bottom),(0,y,x,bottom-y),(right,y,w-right,bottom-y)] {
+                    if rw>0&&rh>0 {
+                        let buffer=SolidColorBuffer::new((rw,rh),[0.,0.,0.,0.45]);
+                        elements.insert(0,SolidColorRenderElement::from_buffer(&buffer,
+                            (origin.x+rx,origin.y+ry),1.,1.,Kind::Unspecified).into());
+                    }
+                }
+                if right>x&&bottom>y {
+                    let [r,g,b]=dome::visual_feedback::accent(&state.appearance.accent);
+                    for (rx,ry,rw,rh) in [(x,y,right-x,2),(x,bottom-2,right-x,2),(x,y,2,bottom-y),(right-2,y,2,bottom-y)] {
+                        let buffer=SolidColorBuffer::new((rw,rh),[r as f32/255.,g as f32/255.,b as f32/255.,1.]);
+                        elements.insert(0,SolidColorRenderElement::from_buffer(&buffer,
+                            (origin.x+rx,origin.y+ry),1.,1.,Kind::Unspecified).into());
+                    }
+                }
+            }
+        } else {self.screenshot_buffer=None;}
         let mut cursors = Vec::new();
         if !state.input_xr_active { self.cursor_elements(state, renderer, &mut cursors); }
         cursors.extend(elements);
@@ -365,17 +398,19 @@ impl DesktopRenderer {
                 )
             })
             .collect();
-        damage_tracker
-            .render_output(
-                renderer,
-                framebuffer,
-                age,
-                &elements,
-                background,
-            )
-            .map(|r| r.sync)
-            .map_err(|e| format!("Desktop rendering: {e}").into())
+        let sync=damage_tracker.render_output(renderer,framebuffer,age,&elements,background)
+            .map_err(|e|format!("Desktop rendering: {e}"))?.sync;
+        if let Some(size)=state.screenshot.selection.as_ref()
+            .filter(|s|s.pixels.is_none()&&s.bounds.loc==origin).map(|s|s.bounds.size) {
+            sync.wait()?;
+            state.capture_screenshot(renderer,framebuffer,origin);
+            use smithay::backend::renderer::{Renderer,Frame};
+            // Readback changes the current EGL target; restore it before presentation.
+            return Ok(renderer.render(framebuffer,(size.w,size.h).into(),Transform::Flipped180)?.finish()?);
+        }
+        Ok(sync)
     }
+
     fn cursor_elements(
         &mut self,
         state: &Dome,

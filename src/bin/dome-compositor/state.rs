@@ -25,6 +25,7 @@ use smithay::{
 use crate::CalloopData;
 
 pub struct Dome {
+    pub screenshot: crate::screenshot::Screenshots,
     pub dmabuf_state: smithay::wayland::dmabuf::DmabufState,
     pub dmabuf_importer:
         Option<Box<dyn FnMut(&smithay::backend::allocator::dmabuf::Dmabuf) -> bool>>,
@@ -308,6 +309,7 @@ impl Dome {
             launcher: false,
             launch_index: 0,
             launch_navigation: Default::default(),
+            screenshot: Default::default(),
             binding_capture: None,
             appmenus: crate::appmenu::Menus::new(),
             appmenu_target: (None, None),

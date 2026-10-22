@@ -6,6 +6,7 @@ mod global_menu;
 mod handlers;
 mod rendering;
 mod screencast;
+mod screenshot;
 
 mod audio;
 mod clock;
