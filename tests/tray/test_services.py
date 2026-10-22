@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Run with dbus-run-session -- python3 tests/tray/test_services.py."""
-import json,os,subprocess,tempfile,time,sys
+import json,os,signal,subprocess,tempfile,time,sys
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
+BUILD=Path(os.environ.get('DOME_TRAY_BUILD_DIR',ROOT/'build/tray'))
+signal.pthread_sigmask(signal.SIG_SETMASK, [])
 assert os.environ.get('TRAY_TEST_PRIVATE_BUS')=='1','Set TRAY_TEST_PRIVATE_BUS=1 only with dbus-run-session'
 with tempfile.TemporaryDirectory(prefix='tray-services-') as directory:
  ready=Path(directory)/'ready'
@@ -12,7 +14,7 @@ with tempfile.TemporaryDirectory(prefix='tray-services-') as directory:
    if ready.exists():break
    assert fixture.poll() is None;time.sleep(.05)
   assert ready.exists()
-  driver=subprocess.Popen([str(ROOT/'build/tray/tray-service-driver')],stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True)
+  driver=subprocess.Popen([str(BUILD/'tray-service-driver')],stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True)
   def call(op,**args):
    driver.stdin.write(json.dumps({'op':op,**args})+'\n');driver.stdin.flush();out=json.loads(driver.stdout.readline());assert out['ok'],out;return out['value']
   assert call('devices')[0]['name']=='Fixture Phone'

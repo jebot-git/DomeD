@@ -1,5 +1,6 @@
 [Desktop Entry]
 Type=Application
+NoDisplay=true
 Name=Input Methods (FLTK)
 Comment=Configure Fcitx5 groups and input methods
 Exec=dome-tray --input

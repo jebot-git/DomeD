@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   width="24"
+   height="24"
+   viewBox="0 0 24 24"
+   version="1.1"
+   id="svg1"
+   sodipodi:docname="tray-applications.svg"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs1" />
+  <sodipodi:namedview
+     id="namedview1"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1" />
+  <title
+     id="title1">DomeD tray applications: three applications in one tray</title>
+  <g
+     id="root-layer"
+     inkscape:groupmode="layer">
+    <rect
+       id="app-0"
+       x="4"
+       y="5"
+       width="4"
+       height="5"
+       rx=".8"
+       fill="#80aabd" />
+    <rect
+       id="app-1"
+       x="10"
+       y="5"
+       width="4"
+       height="5"
+       rx=".8"
+       fill="#80aabd" />
+    <rect
+       id="app-2"
+       x="16"
+       y="5"
+       width="4"
+       height="5"
+       rx=".8"
+       fill="#80aabd" />
+    <path
+       id="tray"
+       d="M3 13v6h18v-6 M3 14h5l2 3h4l2-3h5"
+       fill="none"
+       stroke="#80aabd"
+       stroke-width="1.6"
+       stroke-linecap="round"
+       stroke-linejoin="round" />
+  </g>
+</svg>

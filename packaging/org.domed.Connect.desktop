@@ -1,5 +1,6 @@
 [Desktop Entry]
 Type=Application
+NoDisplay=true
 Name=KDE Connect (FLTK)
 Comment=Manage connected devices with DomeD
 Exec=dome-tray --devices

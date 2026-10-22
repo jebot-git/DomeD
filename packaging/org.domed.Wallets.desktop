@@ -1,5 +1,6 @@
 [Desktop Entry]
 Type=Application
+NoDisplay=true
 Name=Wallet Manager (FLTK)
 Comment=Manage KWallet folders and entries
 Exec=dome-tray --wallets

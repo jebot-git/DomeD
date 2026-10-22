@@ -50,7 +50,9 @@ remain separate runtime dependencies where used.
 
 ## Native tray applications and rendering audit
 
-DomeD starts native FLTK/OpenGL managers for KDE Connect, Fcitx5 and KWallet.
+DomeD starts one native FLTK/OpenGL tray applications manager. Its single tray
+entry opens a menu for tray applications, KDE Connect, Fcitx5 and KWallet in a
+shared window. Closing the window keeps the tray entry running.
 Other StatusNotifier applications keep native tray menus; X11 windows translated
 by the session-owned bridge start on the desktop side. See
 [tray controls and build instructions](docs/TRAY_FRONTENDS.md) and the

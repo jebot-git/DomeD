@@ -4,12 +4,22 @@ Build as the regular user with `scripts/build-tray.sh`. The companion uses the
 shared patched FLTK 1.4.5 toolkit, OpenGL widgets, DomeD's live palette/fonts and
 its universal DBusMenu application-menu export. It does not link Qt.
 
-`dome-tray --devices`, `--input`, `--wallets` open the relevant manager;
-`--daemon` registers native tray items without showing a window. Additional
-invocations route to the existing instance. Ctrl+R refreshes, Ctrl+W/Escape closes
+The default tray contains one **DomeD tray applications** entry. Its menu opens
+**Tray applications…**, **KDE Connect…**, **Input methods…**, or **Wallets…** in
+one shared manager window. All FLTK service frontends are pages of this manager;
+their compatibility desktop launchers are hidden from the applications menu.
+The compact three-applications-in-a-tray icon is maintained in
+`native/icons/tray-applications.svg`. Its Inkscape PNG exports at 24 and 48 pixels
+are embedded in the companion and supplied as SNI ARGB pixmaps, so the entry
+does not depend on an installed icon theme.
+
+`dome-tray` (or `--daemon`) registers this single tray entry without showing a
+window. `--tray`, `--devices`, `--input`, `--wallets` open the relevant page.
+Additional invocations route to the existing instance. Ctrl+R refreshes, Ctrl+W/Escape closes
 the window, Ctrl+Q quits the companion, Alt+1..4 selects a page, and normal Tab /
-arrow navigation uses the native widgets. Closing a daemon's window clears the
-password field and keeps its tray items available.
+arrow navigation uses the native widgets. Closing the window always clears the
+password field and keeps the tray entry available, including when started with
+a page option. Only the explicit File > Quit action terminates the companion.
 
 * KDE Connect: discovery, pairing/accept/cancel/unpair, verification/battery state,
   ping, find-phone, file/URL/text sharing and plugin enable/disable.

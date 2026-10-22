@@ -44,7 +44,7 @@ class Manager : public dx::GpuWindow {
       configUri;
   int handle = -1;
   Fl_Choice *walletList;
-  bool daemonMode = false, quitting = false;
+  bool quitting = false;
   std::future<Json> pending;
   std::function<void(Json)> completed;
   std::deque<std::function<void()>> callbacks;
@@ -492,9 +492,9 @@ class Manager : public dx::GpuWindow {
   }
 
 public:
-  Manager(bool daemon)
+  Manager()
       : dx::GpuWindow(940, 660, "DomeD tray applications"),
-        exported(*this, menu), daemonMode(daemon) {
+        exported(*this, menu) {
     begin();
     add(menu);
     add(tabs);
@@ -838,35 +838,34 @@ public:
     else
       refreshTray();
   }
-  bool running() { return !quitting && (daemonMode || shown()); }
+  bool running() { return !quitting; }
 };
 int main(int argc, char **argv) try {
-  bool daemon = false;
+  bool showWindow = false;
   std::string page = "tray";
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
     if (a == "--daemon")
-      daemon = true;
-    else if (a == "--devices")
-      page = "devices";
-    else if (a == "--input")
-      page = "input";
-    else if (a == "--wallets")
-      page = "wallets";
-    else if (a == "--help") {
-      puts("dome-tray [--daemon|--devices|--input|--wallets]");
+      showWindow = false;
+    else if (a == "--tray" || a == "--devices" || a == "--input" ||
+             a == "--wallets") {
+      page = a.substr(2);
+      showWindow = true;
+    } else if (a == "--help") {
+      puts("dome-tray [--daemon|--tray|--devices|--input|--wallets]\n"
+           "Close hides the manager; File > Quit exits the tray companion.");
       return 0;
     } else
       throw std::runtime_error("Unknown option: " + a);
   }
-  if (Notifier::showExisting(daemon ? "" : page))
+  if (Notifier::showExisting(showWindow ? page : ""))
     return 0;
   struct rlimit limit = {0, 0};
   setrlimit(RLIMIT_CORE, &limit);
   dx::init();
-  Manager window(daemon);
+  Manager window;
   Notifier notifier([&window](const std::string &p) { window.showPage(p); });
-  if (!daemon)
+  if (showWindow)
     window.showPage(page);
   while (window.running())
     Fl::wait(.1);

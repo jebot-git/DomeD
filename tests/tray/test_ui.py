@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
 """Native GPU-widget and SNI regression on an isolated bus/display."""
-import os,sys,time,subprocess,tempfile,json
+import asyncio,os,signal,sys,time,subprocess,tempfile,json
+from dbus_next.aio import MessageBus
 from pathlib import Path
 from Xlib import display,X,XK
 from Xlib.ext import xtest
 from PIL import Image
 ROOT=Path(__file__).resolve().parents[2]
+BUILD=Path(os.environ.get('DOME_TRAY_BUILD_DIR',ROOT/'build/tray'))
+signal.pthread_sigmask(signal.SIG_SETMASK, [])
 assert os.environ.get('TRAY_TEST_PRIVATE_BUS')=='1'
 processes=[]
 with tempfile.TemporaryDirectory(prefix='dome-tray-ui-') as directory:
- runtime=Path(directory);runtime.chmod(0o700);out=ROOT/'artifacts/tray-frontends';out.mkdir(exist_ok=True)
+ runtime=Path(directory);runtime.chmod(0o700);out=ROOT/'artifacts/tray-frontends';out.mkdir(parents=True,exist_ok=True)
  def start(cmd,env,name,**kwargs):
   p=subprocess.Popen(cmd,env=env,stdout=(out/name).open('w'),stderr=subprocess.STDOUT,**kwargs);processes.append(p);return p
  def wait(fn):
@@ -26,7 +29,7 @@ with tempfile.TemporaryDirectory(prefix='dome-tray-ui-') as directory:
   env={**os.environ,'DISPLAY':disp,'XDG_RUNTIME_DIR':directory,'XDG_CONFIG_HOME':str(runtime/'config'),'XDG_STATE_HOME':str(runtime/'state'),'XDG_CURRENT_DESKTOP':'Dome','DE_XR_GL_TRACE':'1','FLTK_BACKEND':'x11','LIBGL_ALWAYS_SOFTWARE':'1','TRAY_FIXTURE_READY':str(runtime/'ready')}
   for key in ['WAYLAND_DISPLAY','WAYLAND_SOCKET']:env.pop(key,None)
   start([sys.executable,str(ROOT/'tests/tray/mock_services.py')],env,'ui-services.log');wait(lambda:(runtime/'ready').exists())
-  manager=start([str(ROOT/'build/tray/dome-tray'),'--daemon'],env,'ui-frontend.log')
+  manager=start([str(BUILD/'dome-tray')],env,'ui-frontend.log')
   def dbus(path,method,*args):
    p=subprocess.run(['gdbus','call','--session','--dest','org.domed.Tray','--object-path',path,'--method',method,*args],env=env,capture_output=True,text=True,timeout=4)
    assert p.returncode==0,p.stderr
@@ -34,6 +37,27 @@ with tempfile.TemporaryDirectory(prefix='dome-tray-ui-') as directory:
   wait(lambda:subprocess.run(['gdbus','call','--session','--dest','org.freedesktop.DBus','--object-path','/org/freedesktop/DBus','--method','org.freedesktop.DBus.NameHasOwner','org.domed.Tray'],capture_output=True,text=True).stdout.strip()=='(true,)')
   d=display.Display(disp)
   def window():return next((w for w in d.screen().root.query_tree().children if w.get_wm_class() and 'org.domed.Tray' in w.get_wm_class() and w.get_attributes().map_state==X.IsViewable),None)
+  assert window() is None,'Default startup must stay in the tray'
+  async def check_notifier():
+   bus=await MessageBus().connect()
+   try:
+    node=await bus.introspect('org.domed.Tray','/TrayApplications')
+    props=bus.get_proxy_object('org.domed.Tray','/TrayApplications',node).get_interface('org.freedesktop.DBus.Properties')
+    values=await props.call_get_all('org.kde.StatusNotifierItem')
+    assert values['ItemIsMenu'].value is True
+    assert values['Id'].value=='dome.tray'
+    assert values['Menu'].value=='/TrayApplications/Menu'
+    images=values['IconPixmap'].value
+    assert [(w,h) for w,h,_ in images]==[(24,24),(48,48)]
+    for w,h,data in images:
+     assert len(data)==w*h*4
+     assert any(data[0::4]) and 0 in data[0::4],'Icon must retain transparency'
+    node=await bus.introspect('org.kde.StatusNotifierWatcher','/StatusNotifierWatcher')
+    props=bus.get_proxy_object('org.kde.StatusNotifierWatcher','/StatusNotifierWatcher',node).get_interface('org.freedesktop.DBus.Properties')
+    items=(await props.call_get('org.kde.StatusNotifierWatcher','RegisteredStatusNotifierItems')).value
+    assert [i for i in items if i.startswith('org.domed.Tray')]==['org.domed.Tray/TrayApplications'],items
+   finally:bus.disconnect()
+  asyncio.run(check_notifier())
   def key(name,ctrl=False):
    if ctrl:xtest.fake_input(d,X.KeyPress,d.keysym_to_keycode(XK.string_to_keysym('Control_L')))
    code=d.keysym_to_keycode(XK.string_to_keysym(name));xtest.fake_input(d,X.KeyPress,code);xtest.fake_input(d,X.KeyRelease,code)
@@ -42,21 +66,39 @@ with tempfile.TemporaryDirectory(prefix='dome-tray-ui-') as directory:
   def click(w,x,y):
    pos=w.translate_coords(d.screen().root,0,0);xtest.fake_input(d,X.MotionNotify,x=pos.x+x,y=pos.y+y)
    xtest.fake_input(d,X.ButtonPress,1);xtest.fake_input(d,X.ButtonRelease,1);d.sync();time.sleep(.3)
-  for page,path in [('devices','KDEConnect'),('input','InputMethods'),('wallets','Wallets')]:
-   dbus('/'+path,'org.kde.StatusNotifierItem.Activate','0','0');w=wait(window);w.set_input_focus(X.RevertToParent,X.CurrentTime);d.sync();time.sleep(.6)
+  menu='/TrayApplications/Menu'
+  layout=dbus(menu,'com.canonical.dbusmenu.GetLayout','0','1','[]')
+  for label in ['Tray applications','KDE Connect','Input methods','Wallets']:assert label in layout,layout
+  dbus(menu,'com.canonical.dbusmenu.Event','99','clicked','<0>','0')
+  assert window() is None,'Unknown menu events must not open a page'
+  for row,page in enumerate(['tray','devices','input','wallets'],1):
+   dbus(menu,'com.canonical.dbusmenu.Event',str(row),'clicked','<0>','0');w=wait(window);w.set_input_focus(X.RevertToParent,X.CurrentTime);d.sync();time.sleep(.6)
    geo=w.get_geometry();raw=w.get_image(0,0,geo.width,geo.height,X.ZPixmap,0xffffffff)
-   img=Image.frombytes('RGB',(geo.width,geo.height),raw.data,'raw','BGRX');assert len(img.getcolors(geo.width*geo.height))>20
+   img=Image.frombytes('RGB',(geo.width,geo.height),raw.data,'raw','BGRX')
    img.save(out/('ui-'+page+'.png'))
-   assert 'Open' in dbus('/'+path+'/Menu','com.canonical.dbusmenu.GetLayout','0','1','[]')
+   # Native bitmap fonts deliberately use a small palette, without antialiasing.
+   assert len(img.getcolors(geo.width*geo.height))>8,page
    if page=='devices':click(w,80,110)
    if page=='input':click(w,390,424)
    if page=='wallets':click(w,470,95);click(w,80,160)
-   key('w',ctrl=True);wait(lambda:window() is None);assert manager.poll() is None
-  dbus('/org/domed/Tray','org.domed.Tray.Show','tray');wait(window)
-  second=subprocess.run([str(ROOT/'build/tray/dome-tray'),'--devices'],env=env,capture_output=True,timeout=4);assert second.returncode==0
+   if page=='devices':
+    from Xlib.protocol import event
+    w.send_event(event.ClientMessage(window=w,client_type=d.intern_atom('WM_PROTOCOLS'),data=(32,[d.intern_atom('WM_DELETE_WINDOW'),X.CurrentTime,0,0,0])),event_mask=0);d.flush()
+   elif page=='input':key('Escape')
+   else:key('w',ctrl=True)
+   wait(lambda:window() is None);assert manager.poll() is None
+   asyncio.run(check_notifier())
+  dbus(menu,'com.canonical.dbusmenu.Event','1','clicked','<0>','0');wait(window)
+  second=subprocess.run([str(BUILD/'dome-tray'),'--devices'],env=env,capture_output=True,timeout=4);assert second.returncode==0
   assert len([w for w in d.screen().root.query_tree().children if w.get_wm_class() and 'org.domed.Tray' in w.get_wm_class()])==1
   log=(out/'ui-frontend.log').read_text();assert 'FLTK GPU widgets:' in log,log
-  print('PASS: three native tray icons, exported menus, GPU widget presentation, single-instance routing and Ctrl+W restore')
+  w=wait(window);w.set_input_focus(X.RevertToParent,X.CurrentTime);d.sync();key('q',ctrl=True);assert manager.wait(timeout=4)==0
+  # Starting directly on a service page must also survive closing the window.
+  manager=start([str(BUILD/'dome-tray'),'--wallets'],env,'ui-direct-frontend.log')
+  w=wait(window);w.set_input_focus(X.RevertToParent,X.CurrentTime);d.sync();key('w',ctrl=True)
+  wait(lambda:window() is None);assert manager.poll() is None
+  dbus(menu,'com.canonical.dbusmenu.Event','1','clicked','<0>','0');wait(window)
+  print('PASS: one tray entry, four manager pages, embedded ARGB icons, GPU presentation, single-instance routing, close/Escape/Ctrl+W persistence and explicit Quit')
  finally:
   for p in reversed(processes):p.terminate()
   for p in reversed(processes):

@@ -1,0 +1,5 @@
+// SPDX-License-Identifier: MIT
+// PNG exports of native/icons/tray-applications.svg, embedded for every SNI host.
+#pragma once
+inline constexpr unsigned char tray_icon_24[] = {@TRAY_ICON_24@};
+inline constexpr unsigned char tray_icon_48[] = {@TRAY_ICON_48@};

@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "notifier.h"
+#include "tray-icon.h"
+#include <FL/Fl_PNG_Image.H>
 #include <cstring>
 #include <gio/gio.h>
 #include <stdexcept>
@@ -26,6 +28,32 @@ struct Notifier::Impl {
   guint watcher = 0;
   std::vector<Icon> icons;
   std::function<void(const std::string &)> show;
+  static GVariant *pixmaps() {
+    static Fl_PNG_Image small("tray-applications-24", tray_icon_24,
+                              sizeof(tray_icon_24));
+    static Fl_PNG_Image large("tray-applications-48", tray_icon_48,
+                              sizeof(tray_icon_48));
+    GVariantBuilder images;
+    g_variant_builder_init(&images, G_VARIANT_TYPE("a(iiay)"));
+    for (const auto *image : {&small, &large}) {
+      if (image->fail() || image->d() != 4)
+        continue;
+      const auto *rgba = reinterpret_cast<const unsigned char *>(image->data()[0]);
+      std::vector<guint8> argb;
+      argb.reserve(image->w() * image->h() * 4);
+      for (int y = 0; y < image->h(); ++y) {
+        const auto *row = rgba + y * (image->ld() ? image->ld() : image->w() * 4);
+        for (int x = 0; x < image->w(); ++x) {
+          const auto *p = row + x * 4;
+          argb.insert(argb.end(), {p[3], p[0], p[1], p[2]});
+        }
+      }
+      g_variant_builder_add(&images, "(ii@ay)", image->w(), image->h(),
+                            g_variant_new_fixed_array(G_VARIANT_TYPE_BYTE,
+                                                      argb.data(), argb.size(), 1));
+    }
+    return g_variant_builder_end(&images);
+  }
   static GVariant *property(GDBusConnection *, const gchar *, const gchar *path,
                             const gchar *interface, const gchar *key, GError **,
                             gpointer data) {
@@ -55,14 +83,11 @@ struct Notifier::Impl {
       if (!strcmp(key, "WindowId"))
         return g_variant_new_uint32(0);
       if (!strcmp(key, "ItemIsMenu"))
-        return g_variant_new_boolean(false);
+        return g_variant_new_boolean(true);
       if (!strcmp(key, "Menu"))
         return g_variant_new_object_path((icon->path + "/Menu").c_str());
-      if (!strcmp(key, "IconPixmap")) {
-        GVariantBuilder b;
-        g_variant_builder_init(&b, G_VARIANT_TYPE("a(iiay)"));
-        return g_variant_builder_end(&b);
-      }
+      if (!strcmp(key, "IconPixmap"))
+        return pixmaps();
     }
     (void)path;
     return nullptr;
@@ -87,8 +112,9 @@ struct Notifier::Impl {
         if (!strcmp(method, "GetLayout")) {
           GVariantBuilder children;
           g_variant_builder_init(&children, G_VARIANT_TYPE("av"));
-          const char *labels[] = {"Open", "All tray applications"};
-          for (int i = 0; i < 2; ++i) {
+          const char *labels[] = {"Tray applications…", "KDE Connect…",
+                                  "Input methods…", "Wallets…"};
+          for (int i = 0; i < 4; ++i) {
             GVariantBuilder p, c;
             g_variant_builder_init(&p, G_VARIANT_TYPE("a{sv}"));
             g_variant_builder_add(&p, "{sv}", "label",
@@ -116,8 +142,9 @@ struct Notifier::Impl {
           guint32 timestamp;
           g_variant_get(args, "(i&svu)", &id, &event, &value, &timestamp);
           g_variant_unref(value);
-          if (!strcmp(event, "clicked"))
-            icon->owner->show(id == 2 ? "tray" : icon->page);
+          const char *pages[] = {"tray", "devices", "input", "wallets"};
+          if (!strcmp(event, "clicked") && id >= 1 && id <= 4)
+            icon->owner->show(pages[id - 1]);
         }
       } else if (strcmp(method, "Scroll"))
         icon->owner->show(icon->page);
@@ -159,10 +186,7 @@ struct Notifier::Impl {
     if (result != 1 && result != 4)
       throw std::runtime_error("Another tray manager owns the session");
     add("/org/domed/Tray", control, this);
-    icons = {
-        {this, "/KDEConnect", "devices", "KDE Connect", "kdeconnect"},
-        {this, "/InputMethods", "input", "Input methods", "input-keyboard"},
-        {this, "/Wallets", "wallets", "Wallet manager", "wallet-open"}};
+    icons = {{this, "/TrayApplications", "tray", "DomeD tray applications", ""}};
     for (auto &icon : icons) {
       add(icon.path, item, &icon);
       add(icon.path + "/Menu", menu, &icon);
