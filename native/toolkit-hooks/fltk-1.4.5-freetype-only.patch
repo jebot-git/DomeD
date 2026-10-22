@@ -1,0 +1,684 @@
+--- a/src/drivers/Cairo/Fl_Cairo_Graphics_Driver.cxx
++++ b/src/drivers/Cairo/Fl_Cairo_Graphics_Driver.cxx
+@@ -19,7 +19,6 @@
+ */
+ 
+ #include <config.h>
+-#if USE_PANGO
+ 
+ #include "Fl_Cairo_Graphics_Driver.H"
+ #include "../../Fl_Screen_Driver.H"
+@@ -27,10 +26,6 @@
+ #include <FL/fl_draw.H>
+ #include <FL/fl_utf8.h>
+ #include <cairo/cairo.h>
+-#include <pango/pangocairo.h>
+-#if ! PANGO_VERSION_CHECK(1,16,0)
+-#  error "Requires Pango 1.16 or higher"
+-#endif
+ #if CAIRO_VERSION < CAIRO_VERSION_ENCODE(1,10,0)
+ #  error "Requires Cairo 1.10 or higher"
+ #endif
+@@ -106,8 +101,6 @@
+ 
+ Fl_Cairo_Graphics_Driver::Fl_Cairo_Graphics_Driver() : Fl_Graphics_Driver() {
+   cairo_ = NULL;
+-  pango_layout_ = NULL;
+-  pango_context_ = NULL;
+   dummy_cairo_ = NULL;
+   linestyle_ = FL_SOLID;
+   clip_ = NULL;
+@@ -120,8 +113,6 @@
+ }
+ 
+ Fl_Cairo_Graphics_Driver::~Fl_Cairo_Graphics_Driver() {
+-  if (pango_layout_) g_object_unref(pango_layout_);
+-  if (pango_context_) g_object_unref(pango_context_);
+ }
+ 
+ const cairo_format_t Fl_Cairo_Graphics_Driver::cairo_format = CAIRO_FORMAT_ARGB32;
+@@ -1046,16 +1037,17 @@
+ 
+ 
+ 
+-// DomeD experiment: Pango's scalable-font path does not render PCF/BDF strikes.
+-// Resolve only exact non-scalable family/size matches; outlines retain Pango.
++// Native bitmap fonts: Fontconfig selects files; FreeType supplies glyphs and metrics.
+ #include <fontconfig/fontconfig.h>
+ #include <ft2build.h>
+ #include FT_FREETYPE_H
+ #include FT_FONT_FORMATS_H
++#include <algorithm>
+ #include <map>
++#include <set>
+ #include <string>
+ #include <vector>
+-static FT_Face dome_bitmap(Fl_Font font, Fl_Fontsize size) {
++static FT_Face dome_bitmap_name(const char *name, Fl_Fontsize size) {
+   static FT_Library library = NULL;
+   static std::map<std::pair<std::string,int>,FT_Face> cache;
+   static FcConfig *configuration = NULL;
+@@ -1064,7 +1056,6 @@
+     for (auto &entry : cache) if (entry.second) FT_Done_Face(entry.second);
+     cache.clear(); configuration = current;
+   }
+-  const char *name = Fl::get_font(font);
+   std::string family = name ? name : "Unifont", style;
+   auto slash = family.find(" / ");
+   if (slash != std::string::npos) { style = family.substr(slash+3); family.resize(slash); }
+@@ -1102,6 +1093,9 @@
+   if (getenv("DOME_FLTK_BITMAP_TRACE")) fprintf(stderr,"FLTK bitmap: %s %d -> %s\n",name?name:"?",size,face?format:"unavailable");
+   cache[key] = face; return face;
+ }
++static FT_Face dome_bitmap(Fl_Font font, Fl_Fontsize size) {
++  return dome_bitmap_name(Fl::get_font(font), size);
++}
+ static double dome_bitmap_width(FT_Face face,const char *str,int n){
+   double width=0;const char* end=str+n;
+   while(str<end){int bytes=0;unsigned c=fl_utf8decode(str,end,&bytes);if(bytes<=0)break;str+=bytes;
+@@ -1124,15 +1118,12 @@
+ int Fl_Cairo_Graphics_Driver::height() {
+   if(auto face=dome_bitmap(font(),size())){int h=face->size->metrics.height/64,b=(face->size->metrics.ascender-face->size->metrics.descender)/64;return h>b?h:b;}
+   return 0;
+-  if (!font_descriptor()) font(0, 12);
+-  return ceil(((Fl_Cairo_Font_Descriptor*)font_descriptor())->line_height / float(PANGO_SCALE));
+ }
+ 
+ 
+ int Fl_Cairo_Graphics_Driver::descent() {
+   if(auto face=dome_bitmap(font(),size()))return -face->size->metrics.descender/64;
+   return 0;
+-  return font_descriptor()->descent / float(PANGO_SCALE) + 0.5;
+ }
+ 
+ 
+@@ -1175,55 +1166,25 @@
+ 
+ Fl_Font Fl_Cairo_Graphics_Driver::set_fonts(const char* /*pattern_name*/)
+ {
+-  // Return immideatly if the fonts were already counted
+-  if (font_count_ != -1)
+-    return FL_FREE_FONT + font_count_;
+-  fl_open_display();
+-  int n_families, count = 0;
+-  PangoFontFamily **families;
+-  char *saved_lang = fl_getenv("LANG");
+-  const char *Clang = "LANG=C";
+-  if (saved_lang && strcmp(saved_lang, Clang)) {
+-    // Force LANG=C to prevent pango_font_face_get_face_name() below from returning
+-    // translated versions of Bold, Italic, etc… (see issue #732).
+-    // Unfortunately, using setlocale() doesn't do the job.
+-    char *p = saved_lang;
+-    saved_lang = (char*)malloc(strlen(p) + 6);
+-    memcpy(saved_lang, "LANG=", 5);
+-    strcpy(saved_lang + 5, p);
+-    fl_putenv(Clang);
+-  } else saved_lang = NULL;
+-  static PangoFontMap *pfmap_ = pango_cairo_font_map_get_default(); // 1.10
+-  Fl_Cairo_Graphics_Driver::init_built_in_fonts();
+-  pango_font_map_list_families(pfmap_, &families, &n_families);
+-  for (int fam = 0; fam < n_families; fam++) {
+-    PangoFontFace **faces;
+-    int n_faces;
+-    const char *fam_name = pango_font_family_get_name (families[fam]);
+-    int lfam = strlen(fam_name);
+-    pango_font_family_list_faces(families[fam], &faces, &n_faces);
+-    for (int j = 0; j < n_faces; j++) {
+-      const char *p = pango_font_face_get_face_name(faces[j]);
+-      // Remove " Regular" suffix from font names
+-      if (!strcasecmp(p, "regular")) p = NULL;
+-      // build the font's FLTK name
+-      int lfont = lfam + (p ? strlen(p) + 2 : 1);
+-      char *q = new char[lfont];
+-      if (p) snprintf(q, lfont, "%s %s", fam_name, p);
+-      else strcpy(q, fam_name);
+-      Fl::set_font((Fl_Font)(count++ + FL_FREE_FONT), q);
+-    }
+-    /*g_*/free(faces); // glib source code shows that g_free is equivalent to free
+-  }
+-  /*g_*/free(families);
+-  if (saved_lang) {
+-    fl_putenv(saved_lang);
+-    free(saved_lang);
+-  }
+-  // Sort the list into alphabetic order
+-  qsort(fl_fonts + FL_FREE_FONT, count, sizeof(Fl_Fontdesc), (sort_f_type)font_sort);
+-  font_count_ = count;
+-  return FL_FREE_FONT + count;
++  if (font_count_ != -1) return FL_FREE_FONT + font_count_;
++  init_built_in_fonts();
++  auto filter=FcPatternCreate();
++  FcPatternAddString(filter,FC_FONTFORMAT,(const FcChar8 *)(getenv("DE_XR_LIGHTXR_PCF") ? "PCF" : "BDF"));
++  auto objects=FcObjectSetBuild(FC_FAMILY,FC_STYLE,nullptr);
++  auto fonts=FcFontList(nullptr,filter,objects);
++  std::set<std::string> names;
++  if(fonts)for(int i=0;i<fonts->nfont;++i){
++    FcChar8 *family=nullptr,*style=nullptr;
++    if(FcPatternGetString(fonts->fonts[i],FC_FAMILY,0,&family)!=FcResultMatch)continue;
++    FcPatternGetString(fonts->fonts[i],FC_STYLE,0,&style);
++    names.insert(std::string((const char *)family)+" / "+(style ? (const char *)style : "Regular"));
++  }
++  if(fonts)FcFontSetDestroy(fonts);
++  FcObjectSetDestroy(objects);FcPatternDestroy(filter);
++  int count=0;
++  for(const auto &name:names)Fl::set_font(FL_FREE_FONT+count++,strdup(name.c_str()));
++  font_count_=count;
++  return FL_FREE_FONT+count;
+ }
+ 
+ 
+@@ -1267,116 +1228,48 @@
+ 
+ 
+ int Fl_Cairo_Graphics_Driver::get_font_sizes(Fl_Font fnum, int*& sizep) {
+-  static int array[128];
+-  if (!fl_fonts) fl_fonts = calc_fl_fonts();
+-  Fl_Fontdesc *s = fl_fonts+fnum;
+-  if (!s->name) s = fl_fonts; // empty slot in table, use entry 0
+-  int cnt = 0;
+-
+-  array[0] = 0;
+-  sizep = array;
+-  cnt = 1;
+-
+-  return cnt;
+-}
+-
+-
+-Fl_Cairo_Font_Descriptor::Fl_Cairo_Font_Descriptor(const char* name, Fl_Fontsize size,
+-                                                   PangoContext *context) :
+-                                                      Fl_Font_Descriptor(name, size) {
+-  char *string = new char[strlen(name) + 10];
+-  strcpy(string, name);
+-  snprintf(string + strlen(string), 10, " %dpx", size);
+-  //A PangoFontDescription describes a font in an implementation-independent manner.
+-  fontref = pango_font_description_from_string(string);
+-  delete[] string;
+-  width = NULL;
+-  //A PangoFontset represents a set of PangoFont to use when rendering text.
+-  PangoFontset *fontset = pango_font_map_load_fontset(
+-                                      pango_cairo_font_map_get_default(), // 1.10
+-                                      context, fontref,
+-                                      pango_language_get_default() // 1.16
+-                                                      );
+-  PangoFontMetrics *metrics = pango_fontset_get_metrics(fontset);
+-  ascent = pango_font_metrics_get_ascent(metrics);
+-  descent = pango_font_metrics_get_descent(metrics);
+-/* Function pango_font_metrics_get_height() giving the line height of a pango font
+- appears with pango version 1.44. However, with pango version 1.48.10 and below,
+- this function gives values that make the underscore invisible on lowdpi display
+- and at 100% scaling (the underscore becomes visible starting at 120% scaling).
+- With pango version 1.50.6 (Ubuntu 22.04) this problem disappears.
+- Consequently, function pango_font_metrics_get_height() is not used until version 1.50.6
+-*/
+-//#if PANGO_VERSION_CHECK(1,44,0)
+-#if PANGO_VERSION_CHECK(1,50,6)
+-  line_height = pango_font_metrics_get_height(metrics); // 1.44
+-#else
+-  line_height = (pango_font_metrics_get_ascent(metrics) + pango_font_metrics_get_descent(metrics)) * 1.025 + 0.5;
+-#endif
+-  pango_font_metrics_unref(metrics);
+-  g_object_unref(fontset);
+-//fprintf(stderr, "[%s](%d) ascent=%d descent=%d line_height=%d\n", name, size, ascent, descent, line_height);
+-}
+-
+-
+-Fl_Cairo_Font_Descriptor::~Fl_Cairo_Font_Descriptor() {
+-  pango_font_description_free(fontref);
+-  if (width) {
+-    for (int i = 0; i < 64; i++) delete[] width[i];
+-  }
+-  delete[] width;
+-}
+-
+-
+-static Fl_Font_Descriptor* find(Fl_Font fnum, Fl_Fontsize size, PangoContext *context) {
+-  Fl_Fontdesc* s = fl_fonts+fnum;
+-  if (!s->name) s = fl_fonts; // use 0 if fnum undefined
+-  Fl_Font_Descriptor* f;
+-  for (f = s->first; f; f = f->next)
+-    if (f->size == size) return f;
+-  f = new Fl_Cairo_Font_Descriptor(s->name, size, context);
+-  f->next = s->first;
+-  s->first = f;
+-  return f;
+-}
+-
+-
+-/* Implementation note :
+- * The pixel width of a drawn string equals the sum of the widths of its
+- * characters, except when kerning occurs.
+- */
++  static std::vector<int> sizes;
++  sizes.clear();
++  std::string name=Fl::get_font(fnum),family=name,style;
++  auto slash=family.find(" / ");if(slash!=std::string::npos){style=family.substr(slash+3);family.resize(slash);}
++  auto filter=FcPatternCreate();
++  FcPatternAddString(filter,FC_FONTFORMAT,(const FcChar8 *)(getenv("DE_XR_LIGHTXR_PCF") ? "PCF" : "BDF"));
++  FcPatternAddString(filter,FC_FAMILY,(const FcChar8 *)family.c_str());
++  if(!style.empty())FcPatternAddString(filter,FC_STYLE,(const FcChar8 *)style.c_str());
++  auto objects=FcObjectSetBuild(FC_PIXEL_SIZE,nullptr);auto fonts=FcFontList(nullptr,filter,objects);
++  if(fonts)for(int i=0;i<fonts->nfont;++i){double size=0;if(FcPatternGetDouble(fonts->fonts[i],FC_PIXEL_SIZE,0,&size)==FcResultMatch)sizes.push_back(int(size+.5));}
++  if(fonts)FcFontSetDestroy(fonts);FcPatternDestroy(filter);FcObjectSetDestroy(objects);
++  std::sort(sizes.begin(),sizes.end());sizes.erase(std::unique(sizes.begin(),sizes.end()),sizes.end());
++  sizep=sizes.empty()?nullptr:sizes.data();return sizes.size();
++}
++
++
++Fl_Cairo_Font_Descriptor::Fl_Cairo_Font_Descriptor(const char* name, Fl_Fontsize size)
++  : Fl_Font_Descriptor(name,size) {
++  ascent=descent=line_height=0;
++  if(auto face=dome_bitmap_name(name,size)){
++    ascent=face->size->metrics.ascender/64;
++    descent=-face->size->metrics.descender/64;
++    line_height=std::max(int(face->size->metrics.height/64),ascent+descent);
++  }
++}
++Fl_Cairo_Font_Descriptor::~Fl_Cairo_Font_Descriptor() {}
++static Fl_Font_Descriptor* find(Fl_Font fnum, Fl_Fontsize size) {
++  Fl_Fontdesc *s=fl_fonts+fnum;
++  if(!s->name)s=fl_fonts;
++  for(auto f=s->first;f;f=f->next)if(f->size==size)return f;
++  auto f=new Fl_Cairo_Font_Descriptor(s->name,size);f->next=s->first;s->first=f;return f;
++}
+ void Fl_Cairo_Graphics_Driver::font(Fl_Font fnum, Fl_Fontsize s) {
+-  if (!font_descriptor()) fl_open_display();
+-  if (!cairo_) {
+-    cairo_surface_t *surf = cairo_image_surface_create(Fl_Cairo_Graphics_Driver::cairo_format, 100, 100);
+-    cairo_ = cairo_create(surf);
+-    cairo_surface_destroy(surf);
+-    dummy_cairo_ = cairo_;
+-  }
+-  if (s == 0) return;
+-  if (fnum == -1) {
+-    Fl_Graphics_Driver::font(0, 0);
+-    return;
+-  }
+-  Fl_Graphics_Driver::font(fnum, s);
+-  if (!pango_context_) {
+-    //A PangoFontMap represents the set of fonts available for a particular rendering system.
+-    PangoFontMap *def_font_map = pango_cairo_font_map_get_default(); // 1.10
+-    //A PangoContext stores global information used to control the itemization process.
+-#if PANGO_VERSION_CHECK(1,22,0)
+-    pango_context_ = pango_font_map_create_context(def_font_map); // 1.22
+-#else
+-    pango_context_ = pango_context_new();
+-    pango_context_set_font_map(pango_context_, def_font_map);
+-#endif
+-    pango_layout_ = pango_layout_new(pango_context_);
+-  }
+-  font_descriptor( find(fnum, s, pango_context_) );
+-  //If no font description is set on the layout, the font description from the layout’s context is used.
+-  pango_context_set_font_description(pango_context_,
+-                                  ((Fl_Cairo_Font_Descriptor*)font_descriptor())->fontref);
+-}
+-
++  if(!font_descriptor())fl_open_display();
++  if(!cairo_){
++    auto surface=cairo_image_surface_create(cairo_format,1,1);
++    cairo_=cairo_create(surface);cairo_surface_destroy(surface);dummy_cairo_=cairo_;
++  }
++  if(fnum==-1){Fl_Graphics_Driver::font(0,0);return;}
++  if(s<=0)return;
++  Fl_Graphics_Driver::font(fnum,s);font_descriptor(find(fnum,s));
++}
+ 
+ // Scans the input string str with fl_utf8decode() that, by default, accepts
+ // also non-UTF-8 and processes it as if encoded in CP1252.
+@@ -1417,17 +1310,8 @@
+ 
+ 
+ void Fl_Cairo_Graphics_Driver::draw(const char* str, int n, float x, float y) {
+-  if(auto face=dome_bitmap(font(),size())){dome_bitmap_draw(cairo_,face,str,n,x,y);surface_needs_commit();return;}
+-  return;
+-  if (!n) return;
+-  cairo_save(cairo_);
+-  Fl_Cairo_Font_Descriptor *fd = (Fl_Cairo_Font_Descriptor*)font_descriptor();
+-  cairo_translate(cairo_, x - 0.5, y - (fd->line_height - fd->descent) / float(PANGO_SCALE) - 0.5);
+-  str = clean_utf8(str, n);
+-  pango_layout_set_text(pango_layout_, str, n);
+-  pango_cairo_show_layout(cairo_, pango_layout_); // 1.1O
+-  cairo_restore(cairo_);
+-  surface_needs_commit();
++  if(!str || n<=0)return;
++  if(auto face=dome_bitmap(font(),size())){dome_bitmap_draw(cairo_,face,str,n,x,y);surface_needs_commit();}
+ }
+ 
+ 
+@@ -1451,55 +1335,18 @@
+ double Fl_Cairo_Graphics_Driver::width(unsigned int utf32) {
+   if(auto face=dome_bitmap(font(),size())){char text[4];int n=fl_utf8encode(utf32,text);return dome_bitmap_width(face,text,n);}
+   return 0;
+-  unsigned r=0;
+-  Fl_Cairo_Font_Descriptor *desc = NULL;
+-  if (utf32 <= 0xFFFF) {
+-    desc = (Fl_Cairo_Font_Descriptor*)font_descriptor();
+-    r = (utf32 & 0xFC00) >> 10;
+-    if (!desc->width) {
+-      desc->width = (int**)new int*[64];
+-      memset(desc->width, 0, 64*sizeof(int*));
+-    }
+-    if (!desc->width[r]) {
+-      desc->width[r] = (int*)new int[0x0400];
+-      for (int i = 0; i < 0x0400; i++) desc->width[r][i] = -1;
+-    } else {
+-      if ( desc->width[r][utf32&0x03FF] >= 0 ) { // already cached
+-        return desc->width[r][utf32 & 0x03FF] / double(PANGO_SCALE);
+-      }
+-    }
+-  }
+-  char buf4[4];
+-  int n = fl_utf8encode(utf32, buf4);
+-  int width = do_width_unscaled_(buf4, n);
+-  if (utf32 <= 0xFFFF) {
+-    desc->width[r][utf32 & 0x03FF] = width;
+-  }
+-  return width / double(PANGO_SCALE);
+ }
+ 
+ 
+ double Fl_Cairo_Graphics_Driver::width(const char* str, int n) {
+-  if(auto face=dome_bitmap(font(),size()))return str?dome_bitmap_width(face,str,n):0;
++  if(!str || n<=0)return 0;
++  if(auto face=dome_bitmap(font(),size()))return dome_bitmap_width(face,str,n);
+   return 0;
+-  if (!font_descriptor()) return -1;
+-  if ((str == NULL) || (n == 0)) return 0.;
+-  if (n == fl_utf8len(*str)) { // str contains a single unicode character
+-    int l;
+-    unsigned c = fl_utf8decode(str, str+n, &l);
+-    return width(c); // that character's width may have been cached
+-  }
+-  return do_width_unscaled_(str, n) / double(PANGO_SCALE); // full width computation for multi-char strings
+ }
+ 
+ 
+ int Fl_Cairo_Graphics_Driver::do_width_unscaled_(const char* str, int n) {
+-  if (!n) return 0;
+-  str = clean_utf8(str, n);
+-  pango_layout_set_text(pango_layout_, str, n);
+-  PangoRectangle p_rect;
+-  pango_layout_get_extents(pango_layout_, NULL, &p_rect);
+-  return p_rect.width;
++  return int(width(str,n));
+ }
+ 
+ 
+@@ -1518,17 +1365,7 @@
+     }
+     dx=left;dy=top;w=right-left;h=bottom-top;return;
+   }
+-  dx=dy=w=h=0; return;
+-  txt = clean_utf8(txt, n);
+-  pango_layout_set_text(pango_layout_, txt, n);
+-  PangoRectangle ink_rect;
+-  pango_layout_get_extents(pango_layout_, &ink_rect, NULL);
+-  double f = PANGO_SCALE;
+-  Fl_Cairo_Font_Descriptor *fd = (Fl_Cairo_Font_Descriptor*)font_descriptor();
+-  dx = ink_rect.x / f;
+-  dy = (ink_rect.y - fd->line_height + fd->descent) / f;
+-  w = ceil(ink_rect.width / f);
+-  h = ceil(ink_rect.height / f);
++  dx=dy=w=h=0;
+ }
+ 
+ //
+@@ -1671,4 +1508,4 @@
+   return mask_pattern;
+ }
+ 
+-#endif // USE_PANGO
++
+--- a/src/drivers/Cairo/Fl_Cairo_Graphics_Driver.H
++++ b/src/drivers/Cairo/Fl_Cairo_Graphics_Driver.H
+@@ -24,17 +24,10 @@
+ #include <FL/Fl_Graphics_Driver.H>
+ #include <cairo/cairo.h>
+ 
+-typedef struct _PangoLayout  PangoLayout;
+-typedef struct _PangoContext PangoContext;
+-typedef struct _PangoFontDescription PangoFontDescription;
+-
+-
+ class Fl_Cairo_Font_Descriptor : public Fl_Font_Descriptor {
+ public:
+-  Fl_Cairo_Font_Descriptor(const char* fontname, Fl_Fontsize size, PangoContext *context);
++  Fl_Cairo_Font_Descriptor(const char* fontname, Fl_Fontsize size);
+   FL_EXPORT ~Fl_Cairo_Font_Descriptor() FL_OVERRIDE;
+-  PangoFontDescription *fontref;
+-  int **width; // array of arrays of character widths
+   int line_height;
+ };
+ 
+@@ -47,8 +40,6 @@
+   int do_width_unscaled_(const char* str, int n);
+ protected:
+   cairo_t *cairo_;
+-  PangoContext *pango_context_;
+-  PangoLayout *pango_layout_;
+   static Fl_Font font_count_;
+ public:
+   Fl_Cairo_Graphics_Driver();
+@@ -63,7 +54,6 @@
+ 
+   int gap_;
+   cairo_t *cr() { return cairo_; }
+-  PangoLayout *pango_layout() {return pango_layout_;}
+   void set_cairo(cairo_t *c, float f = 0);
+   static cairo_pattern_t *calc_cairo_mask(const Fl_RGB_Image *rgb);
+   static const char *clean_utf8(const char* str, int &n);
+@@ -176,9 +166,6 @@
+   double width(const char *str, int n) FL_OVERRIDE;
+   double width(unsigned c) FL_OVERRIDE;
+   void text_extents(const char* txt, int n, int& dx, int& dy, int& w, int& h) FL_OVERRIDE;
+-  PangoFontDescription* pango_font_description() FL_OVERRIDE {
+-    return ((Fl_Cairo_Font_Descriptor*)font_descriptor())->fontref;
+-  }
+   static void init_built_in_fonts();
+   Fl_Font set_fonts(const char* pattern_name) FL_OVERRIDE;
+   const char *font_name(int num) FL_OVERRIDE;
+--- a/src/drivers/Wayland/Fl_Wayland_Window_Driver.cxx
++++ b/src/drivers/Wayland/Fl_Wayland_Window_Driver.cxx
+@@ -23,7 +23,6 @@
+ #include "../../../libdecor/build/fl_libdecor.h"
+ #include "xdg-shell-client-protocol.h"
+ #include "gtk-shell-client-protocol.h"
+-#include <pango/pangocairo.h>
+ #include <FL/Fl_Overlay_Window.H>
+ #include <FL/Fl_Tooltip.H>
+ #include <FL/fl_draw.H>
+--- a/libdecor/build/fl_libdecor-plugins.c
++++ b/libdecor/build/fl_libdecor-plugins.c
+@@ -25,7 +25,10 @@
+ #include <dlfcn.h>
+ #include <string.h>
+ #include "fl_libdecor.h"
+-#include <pango/pangocairo.h>
++#include <cairo.h>
++#include <limits.h>
++#include <stdio.h>
++#include <stdlib.h>
+ #include <dlfcn.h>
+ 
+ #ifndef HAVE_GTK
+--- a/CMake/options.cmake
++++ b/CMake/options.cmake
+@@ -339,7 +339,7 @@
+       endif()
+     endif(X11_FOUND)
+     unset(FLTK_USE_PANGO CACHE)
+-    set(FLTK_USE_PANGO TRUE CACHE BOOL "use lib Pango")
++    set(FLTK_USE_PANGO FALSE CACHE BOOL "use lib Pango" FORCE)
+     if(FLTK_USE_SYSTEM_LIBDECOR)
+       pkg_check_modules(SYSTEM_LIBDECOR IMPORTED_TARGET libdecor-0>=0.2.0 QUIET)
+       if(NOT SYSTEM_LIBDECOR_FOUND)
+@@ -837,136 +837,16 @@
+   endif(NOT FLTK_BACKEND_WAYLAND)
+ endif(X11_Xft_FOUND)
+ 
+-# test option compatibility: Cairo for Xlib requires Pango
+-if(FLTK_GRAPHICS_CAIRO)
+-  unset(FLTK_USE_PANGO CACHE)
+-  set(FLTK_USE_PANGO TRUE CACHE BOOL "use lib Pango")
+-endif(FLTK_GRAPHICS_CAIRO)
+-
+-if(FLTK_USE_X11 AND (FLTK_USE_PANGO OR FLTK_GRAPHICS_CAIRO)) # implies to use PANGOXFT
+-  set(USE_PANGOXFT true)
+-endif()
+-
+-# test option compatibility: Pango requires Xft
+-if(USE_PANGOXFT)
+-  if(NOT X11_Xft_FOUND)
+-    message(STATUS "Pango requires Xft but Xft library or headers could not be found.")
+-    message(STATUS "Please install Xft development files and try again or disable FLTK_USE_PANGO.")
+-    message(FATAL_ERROR "*** Aborting ***")
+-  else()
+-    if(NOT FLTK_USE_XFT)
+-      message(STATUS "Pango requires Xft but usage of Xft was disabled.")
+-      message(STATUS "Please enable FLTK_USE_XFT and try again or disable FLTK_USE_PANGO.")
+-      message(FATAL_ERROR "*** Aborting ***")
+-    endif(NOT FLTK_USE_XFT)
+-  endif(NOT X11_Xft_FOUND)
+-endif(USE_PANGOXFT)
+-
+-#######################################################################
+-if((X11_Xft_FOUND OR NOT USE_PANGOXFT) AND FLTK_USE_PANGO)
+-  pkg_check_modules(CAIRO IMPORTED_TARGET cairo)
+-  if(USE_PANGOXFT)
+-    pkg_check_modules(PANGOXFT IMPORTED_TARGET pangoxft)
+-  endif(USE_PANGOXFT)
+-  pkg_check_modules(PANGOCAIRO IMPORTED_TARGET pangocairo)
+-
+-  if((PANGOXFT_FOUND OR NOT USE_PANGOXFT) AND PANGOCAIRO_FOUND AND CAIRO_FOUND)
+-    if(USE_PANGOXFT)
+-      list(APPEND FLTK_BUILD_INCLUDE_DIRECTORIES ${PANGOXFT_INCLUDE_DIRS})
+-    else()
+-      list(APPEND FLTK_BUILD_INCLUDE_DIRECTORIES ${PANGOCAIRO_INCLUDE_DIRS})
+-    endif(USE_PANGOXFT)
+-    list(APPEND FLTK_BUILD_INCLUDE_DIRECTORIES ${CAIRO_INCLUDE_DIRS})
+-
+-    find_library(HAVE_LIB_PANGO pango-1.0 ${CMAKE_LIBRARY_PATH})
+-    mark_as_advanced(HAVE_LIB_PANGO)
+-
+-    if(USE_PANGOXFT)
+-      find_library(HAVE_LIB_PANGOXFT pangoxft-1.0 ${CMAKE_LIBRARY_PATH})
+-      mark_as_advanced(HAVE_LIB_PANGOXFT)
+-    endif(USE_PANGOXFT)
+-
+-    find_library(HAVE_LIB_PANGOCAIRO pangocairo-1.0 ${CMAKE_LIBRARY_PATH})
+-    mark_as_advanced(HAVE_LIB_PANGOCAIRO)
+-
+-    find_library(HAVE_LIB_CAIRO cairo ${CMAKE_LIBRARY_PATH})
+-    mark_as_advanced(HAVE_LIB_CAIRO)
+-
+-    find_library(HAVE_LIB_GOBJECT gobject-2.0 ${CMAKE_LIBRARY_PATH})
+-    mark_as_advanced(HAVE_LIB_GOBJECT)
+-
+-    set(USE_PANGO TRUE)
+-
+-    # add required libraries to fltk-config ...
+-    if(USE_PANGOXFT)
+-      list(APPEND FLTK_LDLIBS ${PANGOXFT_LDFLAGS})
+-    endif(USE_PANGOXFT)
+-    list(APPEND FLTK_LDLIBS ${PANGOCAIRO_LDFLAGS})
+-
+-    # *FIXME* Libraries should not be added explicitly if possible
+-    if(FLTK_BACKEND_WAYLAND AND FLTK_USE_LIBDECOR_GTK AND NOT USE_SYSTEM_LIBDECOR)
+-      list(APPEND FLTK_LDLIBS -lgtk-3 -lgdk-3 -lgio-2.0)
+-    endif()
+-    if(FLTK_BACKEND_X11)
+-      list(APPEND FLTK_LDLIBS -lX11)
+-    endif()
+-
+-    if(APPLE)
+-      get_filename_component(PANGO_L_PATH ${HAVE_LIB_PANGO} PATH)
+-      set(LDFLAGS "${LDFLAGS} -L${PANGO_L_PATH}")
+-    endif(APPLE)
+-
+-  else()
+-
+-    # this covers Debian, Ubuntu, FreeBSD, NetBSD, Darwin
+-    if(APPLE AND FLTK_BACKEND_X11)
+-      find_file(FINK_PREFIX NAMES /opt/sw /sw)
+-      if(FINK_PREFIX)
+-        list(APPEND CMAKE_INCLUDE_PATH  ${FINK_PREFIX}/include)
+-        list(APPEND FLTK_BUILD_INCLUDE_DIRECTORIES ${FINK_PREFIX}/include/cairo)
+-        list(APPEND CMAKE_LIBRARY_PATH  ${FINK_PREFIX}/lib)
+-      endif(FINK_PREFIX)
+-    endif(APPLE AND FLTK_BACKEND_X11)
+-
+-    find_file(HAVE_PANGO_H pango-1.0/pango/pango.h ${CMAKE_INCLUDE_PATH})
+-    find_file(HAVE_PANGOXFT_H pango-1.0/pango/pangoxft.h ${CMAKE_INCLUDE_PATH})
+-
+-    if(HAVE_PANGO_H AND HAVE_PANGOXFT_H)
+-      find_library(HAVE_LIB_PANGO pango-1.0 ${CMAKE_LIBRARY_PATH})
+-      find_library(HAVE_LIB_PANGOXFT pangoxft-1.0 ${CMAKE_LIBRARY_PATH})
+-      if(APPLE)
+-        set(HAVE_LIB_GOBJECT TRUE)
+-      else()
+-        find_library(HAVE_LIB_GOBJECT gobject-2.0 ${CMAKE_LIBRARY_PATH})
+-      endif(APPLE)
+-    endif(HAVE_PANGO_H AND HAVE_PANGOXFT_H)
+-
+-    if(HAVE_LIB_PANGO AND HAVE_LIB_PANGOXFT AND HAVE_LIB_GOBJECT)
+-      set(USE_PANGO TRUE)
+-      # remove last 3 components of HAVE_PANGO_H and put in PANGO_H_PREFIX
+-      get_filename_component(PANGO_H_PREFIX ${HAVE_PANGO_H} PATH)
+-      get_filename_component(PANGO_H_PREFIX ${PANGO_H_PREFIX} PATH)
+-      get_filename_component(PANGO_H_PREFIX ${PANGO_H_PREFIX} PATH)
+-
+-      get_filename_component(PANGOLIB_DIR ${HAVE_LIB_PANGO} PATH)
+-      # glib.h is usually in ${PANGO_H_PREFIX}/glib-2.0/ ...
+-      find_path(GLIB_H_PATH glib.h
+-                PATHS ${PANGO_H_PREFIX}/glib-2.0
+-                      ${PANGO_H_PREFIX}/glib/glib-2.0)
+-      list(APPEND FLTK_BUILD_INCLUDE_DIRECTORIES ${PANGO_H_PREFIX}/pango-1.0 ${GLIB_H_PATH} ${PANGOLIB_DIR}/glib-2.0/include)
+-
+-      # *FIXME* Libraries should not be added explicitly if possible
+-      list(APPEND FLTK_LDLIBS -lpango-1.0 -lpangoxft-1.0 -lgobject-2.0)
+-
+-    endif(HAVE_LIB_PANGO AND HAVE_LIB_PANGOXFT AND HAVE_LIB_GOBJECT)
+-  endif((PANGOXFT_FOUND OR NOT USE_PANGOXFT) AND PANGOCAIRO_FOUND AND CAIRO_FOUND)
+-
+-  if(USE_PANGO AND (FLTK_GRAPHICS_CAIRO OR FLTK_BACKEND_WAYLAND))
+-    set(FLTK_USE_CAIRO 1)
+-    # fl_debug_var(FLTK_USE_CAIRO)
+-  endif()
+-
+-endif((X11_Xft_FOUND OR NOT USE_PANGOXFT) AND FLTK_USE_PANGO)
++# de-xr's Cairo backend uses only native FreeType bitmap strikes.
++set(FLTK_USE_PANGO FALSE CACHE BOOL "use lib Pango" FORCE)
++set(USE_PANGO FALSE)
++set(USE_PANGOXFT FALSE)
++if(FLTK_BACKEND_WAYLAND OR FLTK_GRAPHICS_CAIRO)
++  pkg_check_modules(BDF_RUNTIME REQUIRED cairo freetype2 fontconfig)
++  list(APPEND FLTK_BUILD_INCLUDE_DIRECTORIES ${BDF_RUNTIME_INCLUDE_DIRS})
++  list(APPEND FLTK_LDLIBS ${BDF_RUNTIME_LDFLAGS})
++  set(FLTK_USE_CAIRO 1)
++endif()
+ 
+ if(FLTK_BACKEND_WAYLAND)
+ 
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -719,6 +719,10 @@
+   list(APPEND OPTIONAL_LIBS ${X11_Xrender_LIB})
+ endif(HAVE_XRENDER)
+ 
++if(FLTK_USE_CAIRO)
++  list(APPEND OPTIONAL_LIBS ${BDF_RUNTIME_LINK_LIBRARIES})
++endif()
++
+ if(USE_PANGO)
+   list(APPEND OPTIONAL_LIBS ${HAVE_LIB_PANGO})
+   append_optional_libs(PkgConfig::PANGOCAIRO)
+--- a/src/drivers/Cairo/Fl_X11_Cairo_Graphics_Driver.cxx
++++ b/src/drivers/Cairo/Fl_X11_Cairo_Graphics_Driver.cxx
+@@ -21,7 +21,6 @@
+ #include "Fl_X11_Cairo_Graphics_Driver.H"
+ #include <FL/platform.H>
+ #include <cairo/cairo.h>
+-#include <pango/pangocairo.h>
+ #include <stdlib.h>
+ 
+ 

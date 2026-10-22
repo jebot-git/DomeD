@@ -1,0 +1,89 @@
+--- a/src/drivers/Cairo/Fl_Cairo_Graphics_Driver.cxx
++++ b/src/drivers/Cairo/Fl_Cairo_Graphics_Driver.cxx
+@@ -1504,7 +1504,20 @@
+ 
+ 
+ void Fl_Cairo_Graphics_Driver::text_extents(const char* txt, int n, int& dx, int& dy, int& w, int& h) {
+-  if(auto face=dome_bitmap(font(),size())){dx=0;dy=-face->size->metrics.ascender/64;w=ceil(dome_bitmap_width(face,txt,n));h=face->size->metrics.height/64;return;}
++  if(auto face=dome_bitmap(font(),size())){
++    int left=0,right=0,top=0,bottom=0,cursor=0;bool ink=false;const char *end=txt+n;
++    while(txt<end){int bytes=0;unsigned cp=fl_utf8decode(txt,end,&bytes);if(bytes<=0)break;txt+=bytes;
++      if(FT_Load_Char(face,cp,FT_LOAD_RENDER|FT_LOAD_TARGET_MONO|FT_LOAD_MONOCHROME))continue;
++      auto glyph=face->glyph;
++      if(glyph->bitmap.width && glyph->bitmap.rows){
++        int x=cursor+glyph->bitmap_left,y=-glyph->bitmap_top;
++        if(!ink){left=x;right=x+glyph->bitmap.width;top=y;bottom=y+glyph->bitmap.rows;ink=true;}
++        else{if(x<left)left=x;if(x+int(glyph->bitmap.width)>right)right=x+glyph->bitmap.width;if(y<top)top=y;if(y+int(glyph->bitmap.rows)>bottom)bottom=y+glyph->bitmap.rows;}
++      }
++      cursor+=glyph->advance.x/64;
++    }
++    dx=left;dy=top;w=right-left;h=bottom-top;return;
++  }
+   dx=dy=w=h=0; return;
+   txt = clean_utf8(txt, n);
+   pango_layout_set_text(pango_layout_, txt, n);
+--- a/src/gl_draw.cxx
++++ b/src/gl_draw.cxx
+@@ -279,6 +279,7 @@
+     char *utf8; //its text
+     Fl_Font_Descriptor *fdesc; // its font
+     float scale; // scaling factor of the GUI
++    int left, baseline, advance; // ink bounds and logical advance
+     int str_len; // the length of the utf8 text
+   } data;
+   data *fifo; // array of pile elements
+@@ -371,8 +372,8 @@
+   glGetTexLevelParameteriv(GL_TEXTURE_RECTANGLE_ARB, 0, GL_TEXTURE_HEIGHT, &height);
+   //write the texture on screen
+   glBegin (GL_QUADS);
+-  float ox = pos[0];
+-  float oy = pos[1] + height - Fl_Gl_Window_Driver::gl_scale * fl_descent();
++  float ox = pos[0] + fifo[rank].left;
++  float oy = pos[1] + fifo[rank].baseline;
+   glTexCoord2f (0.0f, 0.0f); // draw lower left in world coordinates
+   glVertex2f (ox, oy);
+   glTexCoord2f (0.0f, (GLfloat)height); // draw upper left in world coordinates
+@@ -390,7 +391,7 @@
+   glPopAttrib(); // GL_TRANSFORM_BIT | GL_ENABLE_BIT | GL_TEXTURE_BIT | GL_COLOR_BUFFER_BIT
+ #if HAVE_GL_GLU_H
+   //set the raster position to end of string
+-  pos[0] += width;
++  pos[0] += fifo[rank].advance;
+   GLdouble modelmat[16];
+   glGetDoublev (GL_MODELVIEW_MATRIX, modelmat);
+   GLdouble projmat[16];
+@@ -423,10 +424,20 @@
+   float s = fl_graphics_driver->scale();
+   fl_graphics_driver->Fl_Graphics_Driver::scale(1); // temporarily remove scaling factor
+   fl_font(fl_font(), int(fs * Fl_Gl_Window_Driver::gl_scale)); // the font size to use in the GL scene
+-  int w = (int)ceil( fl_width(fifo[current].utf8, n) );
++  int dx,dy,ink_width,ink_height;
++  fl_text_extents(str,n,dx,dy,ink_width,ink_height);
++  fifo[current].left = dx < 0 ? dx : 0;
++  fifo[current].advance = (int)ceil(fl_width(str,n));
++  int w = fifo[current].advance;
++  if(dx+ink_width>w)w=dx+ink_width;
++  w-=fifo[current].left;
+   w = ((w + 3) / 4) * 4; // make w a multiple of 4
+   w = w > 0 ? w : 4;
+-  int h = fl_height() > 0 ? fl_height() : 1;
++  int top=fl_height()-fl_descent(),bottom=fl_descent();
++  if(-dy>top)top=-dy;
++  if(dy+ink_height>bottom)bottom=dy+ink_height;
++  int h=top+bottom; if(h<1)h=1;
++  fifo[current].baseline=top;
+   fl_graphics_driver->Fl_Graphics_Driver::scale(s); // re-install scaling factor
+   fl_font(fl_font(), fs);
+   fs = int(fs * Fl_Gl_Window_Driver::gl_scale);
+@@ -551,7 +562,10 @@
+   fl_font (fnt, fs); // resize "fltk" font to current GL view scaling
+   int desc = fl_descent();
+   // Render the text to the buffer
+-  fl_draw(str, n, 0, h - desc);
++  int dx,dy,ink_width,ink_height;
++  fl_text_extents(str,n,dx,dy,ink_width,ink_height);
++  if(dy+ink_height>desc)desc=dy+ink_height;
++  fl_draw(str, n, dx < 0 ? -dx : 0, h - desc);
+   // get the resulting image
+   Fl_RGB_Image* image = image_surface->image();
+   // direct graphics requests back to previous state

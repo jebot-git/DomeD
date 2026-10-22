@@ -10,6 +10,7 @@ exec 9>/run/lock/domed-install.lock
 files=(
     etc/systemd/user/plasma-xdg-desktop-portal-kde.service.d/50-dome-qt6.conf
     etc/systemd/user/xdg-desktop-portal-kde.service.d/50-dome-qt6.conf
+    usr/local/share/man/man1/dome-askpass.1
     usr/local/share/man/man1/dome-compositor.1
     usr/local/share/man/man1/dome-xr.1
     usr/local/share/man/man1/dome-preview.1
@@ -17,7 +18,17 @@ files=(
     usr/local/bin/dome-xr
     usr/local/bin/dome-preview
     usr/local/bin/dome-portal-picker
+    usr/local/bin/dome-bdf-font
     usr/local/bin/dome-session
+    usr/local/share/doc/domed/TRAY_FRONTENDS.md
+    usr/local/share/doc/domed/FLTK_GPU_AUDIT.md
+    usr/local/bin/dome-tray
+    usr/local/bin/fcitx5-configuration-fltk
+    usr/local/share/applications/org.domed.Connect.desktop
+    usr/local/share/applications/org.domed.InputMethods.desktop
+    usr/local/share/applications/org.domed.Wallets.desktop
+    usr/local/bin/dome-askpass
+    usr/local/libexec/domed/pinentry-fltk
     usr/local/libexec/dome-session-client
     usr/share/xdg-desktop-portal/dome-portals.conf
     usr/share/xdg-desktop-portal/portals/dome-settings.portal
@@ -31,9 +42,15 @@ files=(
     usr/local/share/doc/domed/protocols/gtk-shell.xml
     usr/local/share/doc/domed/protocols/COPYING.gtk
 )
+for name in COPYING source.sha256 pinentry-1.3.3.tar.bz2 dome_pinentry.h pinentry-1.3.3-dome.patch session_environment.h fltk_appearance.h bdf_font.hpp build-askpass.py; do
+    files+=("usr/local/share/doc/domed/pinentry/$name")
+done
 while IFS= read -r name; do
     files+=("usr/local/share/doc/domed/fonts/$name")
 done < "$root/packaging/font-notices.list"
+while IFS= read -r -d "" file; do
+    files+=("${file#"$stage/"}")
+done < <(find "$stage/usr/local/share/fonts/domed" "$stage/usr/local/lib/domed/bitmap" "$stage/usr/local/share/doc/domed/pango-bdf" -type f -print0)
 for file in "${files[@]}"; do
     [[ -f "$stage/$file" && ! -L "$stage/$file" ]] || { echo "Missing staged file: $file" >&2; exit 1; }
 done
@@ -58,7 +75,7 @@ cd /
 sha256sum -- "${files[@]}" > /usr/local/share/domed/install.sha256
 chmod 0644 /usr/local/share/domed/install.sha256
 if command -v restorecon >/dev/null; then
-    restorecon /usr/share/wayland-sessions/dome.desktop /usr/local/bin/dome-* /usr/local/libexec/dome-session-client
+    restorecon /usr/share/wayland-sessions/dome.desktop /usr/local/bin/dome-* /usr/local/bin/fcitx5-configuration-fltk /usr/local/libexec/dome-session-client
 fi
 if command -v update-desktop-database >/dev/null; then update-desktop-database /usr/local/share/applications; fi
 echo 'Installed DomeD in /usr/local and registered the DomeD login session.'

@@ -124,6 +124,7 @@ try:
         return None
     host=wait(host_window);host.set_input_focus(X.RevertToParent,X.CurrentTime);xd.sync();time.sleep(.5)
     check(host.get_geometry().width==1280 and host.get_geometry().height==800,'Nested Rust output is 1280×800')
+    check(color_at(1200,600,(48,48,48)),'Dark appearance starts with a neutral dark grey desktop')
     check(wait(lambda:color_at(350,300,blue)),'GPU framebuffer contains the upper blue Wayland surface')
     capture('01-stacked')
     # Workbench gadgets: depth is independent of keyboard focus and survives repaints.
@@ -200,34 +201,45 @@ try:
     caption=image().crop((active['x']+32,active['y']-28,active['x']+active['w']-100,active['y']-4))
     check(sum(min(c)>180 for c in caption.getdata())>30,'Dark active titlebar keeps readable light caption text')
     click(20,18);click(100,222);capture('01-appearance-dark')
-    appearance_y=lambda row:(host.get_geometry().height-500)/2+80+row*48
+    appearance_y=lambda row:(host.get_geometry().height-560)/2+80+row*48
     click(800,appearance_y(0))
     settings=runtime/'config/dome/appearance.json'
     wait(lambda:settings.exists() and json.loads(settings.read_text())['light'])
     wait(lambda:sum(inactive_title())>sum(dark_inactive)+150)
     check(True,'Existing inactive window decorations repaint immediately when the colour scheme changes')
+    wait(lambda:color_at(1200,600,(208,208,208)))
+    check('background' not in json.loads(settings.read_text()),'Light appearance sets a neutral light grey desktop without a separate saved background')
+    key('Home');key('Left');wait(lambda:color_at(1200,600,(48,48,48)))
+    key('Right');wait(lambda:color_at(1200,600,(208,208,208)))
+    check(True,'Keyboard colour scheme changes update the desktop background in both directions')
     capture('01-appearance-light')
     click(800,appearance_y(1))
     wait(lambda:json.loads(settings.read_text())['accent']=='#61cfa5' and active_border()!=blue_border)
     check(active_border()[1]>active_border()[2],'Active decoration borders follow the configured accent colour')
-    opaque=active_border();click(800,appearance_y(3));click(800,appearance_y(3))
-    wait(lambda:json.loads(settings.read_text())['opacity']==208 and active_border()!=opaque)
+    opaque=active_border();click(800,appearance_y(2));click(800,appearance_y(2))
+    wait(lambda:json.loads(settings.read_text())['opacity']==128 and active_border()!=opaque)
     check(True,'Chrome opacity updates existing decoration buffers')
+    for alpha in [191,255,64,128]:
+        key('Right');wait(lambda:json.loads(settings.read_text())['opacity']==alpha)
+    for alpha in [64,255,191,128]:
+        key('Left');wait(lambda:json.loads(settings.read_text())['opacity']==alpha)
+    check(True,'Chrome opacity cycles through 25%, 50%, 75% and 100% in both directions')
     capture('01-appearance-light-accent')
     check(all(abs(a-b)<2 for a,b in zip(pixel(650,10),pixel(1260,742))),'Light appearance updates both bars to the same palette')
     before_font=json.loads(settings.read_text())['font']
     caption_box=(active['x']+32,active['y']-28,active['x']+active['w']-100,active['y']-4)
     before_caption=image().crop(caption_box).tobytes()
-    click(800,appearance_y(4))
+    click(800,appearance_y(3))
     wait(lambda:json.loads(settings.read_text())['font']!=before_font)
     wait(lambda:image().crop(caption_box).tobytes()!=before_caption)
     check(True,'Global bitmap font selection persists and repaints existing window captions')
     chosen_font=json.loads(settings.read_text())['font']
     click(800,appearance_y(5))
-    check(json.loads(settings.read_text())['font']==chosen_font and 8<=json.loads(settings.read_text())['font_size']<=24,'Font size selection preserves the face and uses a native desktop size')
+    check(json.loads(settings.read_text())['font']==chosen_font and 4<=json.loads(settings.read_text())['font_size']<=64,'Font size selection preserves the face and uses a native desktop size')
     capture('01-appearance-bitmap-font')
-    click(800,appearance_y(6));click(640,(host.get_geometry().height-500)/2+470)
+    click(800,appearance_y(7));click(640,(host.get_geometry().height-560)/2+530)
     check(not json.loads(settings.read_text())['light'],'Appearance reset persists default settings')
+    check(color_at(1200,600,(48,48,48)),'Appearance reset restores the dark grey desktop')
     for row,kind in [(11,'lock'),(12,'switch_user')]:
         click(20,18);click(100,40+row*28+14);wait(lambda:any(e['kind']==kind for e in events('session')))
     check(True,'Session lock and switch-user commands reach private D-Bus fixtures')
@@ -248,7 +260,7 @@ try:
     check('xr_pointer_mode' not in state()['config'] and 'gaze_smoothing' not in state()['config'],'XR configuration exposes no tracked input modes')
     # Record a menu binding in the real settings UI, verify it, then restore it.
     old_bindings=state()['config']['keybindings']
-    xr_shortcut(['Super_L'],'comma');key('Home');[key('Down') for _ in range(15)];key('Return')
+    xr_shortcut(['Super_L'],'comma');key('Home');[key('Down') for _ in range(16)];key('Return')
     xr_shortcut(['Super_L'],'F8')
     wait(lambda:state()['config']['keybindings'][1]['key']==65477)
     key('Escape');xr_shortcut(['Super_L'],'F8');time.sleep(.2)
@@ -287,7 +299,8 @@ try:
     check(True,'XR wheel scrolling reaches settings instead of passing through to application input')
     key('Right');key('Escape')
     texture=wait(xr_frame);texture.save(out/'01-xr-client-texture.png')
-    check(texture.size==(int(win(bid)['desktop']['w']),int(win(bid)['desktop']['h'])),'XR texture contains client content without desktop Qt6 decoration borders')
+    density=state()['config']['xr_render_scale']
+    check(texture.size==(round(win(bid)['desktop']['w']*density),round(win(bid)['desktop']['h']*density)),'XR texture follows render density and contains client content without desktop decoration borders')
     check(all(abs(a-b)<6 for a,b in zip(texture.getpixel((350,300))[:3],blue)),'XR readback contains live blue Wayland client pixels')
     white=lambda area:sum(min(p[:3])>180 for p in texture.crop(area).getdata())
     check(white((0,0,texture.width,80))>white((0,texture.height-80,texture.width,texture.height)),'XR texture preserves upright client text')
@@ -312,6 +325,12 @@ try:
             post_json('/api/xr-session',{'visible':True,'focused':True,'head':{'position_m':[0,1.4,0],'orientation_xyzw':[0,0,0,1]},'horizontal_fov_deg':100})
             heartbeat_stop.wait(.1)
     pulse=threading.Thread(target=heartbeat,daemon=True);pulse.start();time.sleep(.2)
+    wait(lambda:control()['input_realm']=='xr')
+    presentation=state()['presentation'].copy()
+    xr_shortcut(['Super_L'],'x');wait(lambda:control()['input_realm']=='desktop')
+    check(state()['presentation']==presentation,'Super+X switches physical input to desktop without hiding XR')
+    xr_shortcut(['Super_L'],'x');wait(lambda:control()['input_realm']=='xr')
+    check(state()['presentation']==presentation,'Super+X returns physical input to XR without changing window presentation')
     # XR taskbar switches to desktop; the desktop taskbar restores XR.
     layout=shell();xr_packet([{'kind':'motion','id':18446744073709551613,'uv':[(layout['width']-40)/layout['width'],.5]},{'kind':'button','button':0x110,'pressed':True},{'kind':'button','button':0x110,'pressed':False}])
     wait(lambda:control()['input_realm']=='desktop')

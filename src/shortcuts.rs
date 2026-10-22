@@ -6,6 +6,7 @@ pub enum Command {
     ToggleXrBottom,
     ToggleXrDesktop,
     SendToOtherRealm,
+    SwitchInputRealm,
     PresentWindow { desktop: bool, xr: bool },
     Appearance,
     DefaultApplications,
@@ -125,6 +126,7 @@ pub fn defaults() -> Vec<Binding> {
     add(Menu, 0xffc7, logo);
     add(PullOut, 'p' as u32, logo);
     add(SendToOtherRealm, 'x' as u32, Mods { shift: true, ..logo });
+    add(SwitchInputRealm, 'x' as u32, logo);
     for reverse in [false, true] {
         add(
             Cycle(reverse),
@@ -311,6 +313,7 @@ pub fn action_label(command: Command) -> String {
         ToggleXrTop => "Toggle upper XR bar".into(),
         ToggleXrBottom => "Toggle XR taskbar".into(),
         SendToOtherRealm => "Send window to other desktop / XR".into(),
+        SwitchInputRealm => "Switch desktop / XR input focus".into(),
         PresentWindow { desktop, xr } => format!("Window presentation: desktop={desktop}, XR={xr}"),
         ToggleXrDesktop => "Toggle desktop / XR".into(),
         XrSettings => "Settings".into(),
@@ -567,7 +570,7 @@ pub fn deserialize_bindings<'de, D: serde::Deserializer<'de>>(
         } else { unique.push(binding); }
     }
     let mut bindings = unique;
-    for mut binding in defaults().into_iter().filter(|b| b.id.is_some() || matches!(b.command, Command::PullOut | Command::SendToOtherRealm)) {
+    for mut binding in defaults().into_iter().filter(|b| b.id.is_some() || matches!(b.command, Command::PullOut | Command::SendToOtherRealm | Command::SwitchInputRealm)) {
         let present = bindings.iter().any(|b| match &binding.id {
             Some(id) => b.id.as_ref() == Some(id),
             None => b.command == binding.command,
@@ -647,5 +650,27 @@ mod retired_alias_tests {
         let config: crate::Config = serde_json::from_value(serde_json::json!({"keybindings":old})).unwrap();
         validate(&config.keybindings).unwrap();
         assert_eq!(config.keybindings, defaults());
+    }
+}
+
+#[cfg(test)]
+mod input_switch_tests {
+    use super::*;
+    #[test]
+    fn input_focus_and_window_transfer_have_distinct_chords() {
+        let logo=Mods { logo:true,..Default::default() };
+        assert_eq!(resolve('x' as u32,logo),Some(Command::SwitchInputRealm));
+        assert_eq!(resolve('X' as u32,Mods {shift:true,..logo}),Some(Command::SendToOtherRealm));
+        assert_eq!(resolve('x' as u32,Mods {ctrl:true,..logo}),None);
+    }
+    #[test]
+    fn saved_profiles_receive_switch_without_stealing_a_custom_chord() {
+        let mut old=defaults();old.retain(|b|b.command!=Command::SwitchInputRealm);
+        let profile:crate::Config=serde_json::from_value(serde_json::json!({"keybindings":old})).unwrap();
+        assert!(profile.keybindings.iter().any(|b|b.command==Command::SwitchInputRealm&&b.enabled));
+        let terminal=old.iter_mut().find(|b|b.command==Command::Terminal).unwrap();terminal.key='x' as u32;
+        let profile:crate::Config=serde_json::from_value(serde_json::json!({"keybindings":old})).unwrap();
+        validate(&profile.keybindings).unwrap();
+        assert!(profile.keybindings.iter().any(|b|b.command==Command::SwitchInputRealm&&!b.enabled));
     }
 }

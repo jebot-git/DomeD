@@ -13,7 +13,9 @@ impl Dome {
             .windows
             .iter()
             .any(|w| w.xr_visible && !w.minimized && w.workspace == scene.active_workspace);
-        self.native_session_active && healthy && self.xr_animation.has_surfaces(panels)
+        dome::input_routing::physical_input_in_xr(
+            self.native_session_active, healthy, self.xr_animation.has_surfaces(panels), self.input_focus_xr,
+        )
     }
     pub fn sync_input_route(&mut self) {
         let desired = self.xr_owns_input();

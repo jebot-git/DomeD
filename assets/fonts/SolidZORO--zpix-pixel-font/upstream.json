@@ -1,0 +1,21 @@
+{
+  "repository": "https://github.com/SolidZORO/zpix-pixel-font",
+  "revision": "a4dc7a397322813a6c6aa2c179336974fa3bca30",
+  "format": "BDF only; original bitmap pixels; legacy character codes mapped to Unicode for session text",
+  "files": {
+    "DOME-USAGE.txt": "f7ae182a53fc2e6c4b441097b36dcd11e580f4a9918833c272b60409ff404302",
+    "README.md": "2f0095e9036613cc308bad7642934b94eab594eccbbd540845d03696024c2aed",
+    "dist/README.md": "ad42671f0cbfce7a7c58b982e0f3c06a214654f2bbbf88fca4f3f6f458f60dbf",
+    "tools/bin/README.md": "dc15c8b96f0f466c805df1f3fc974199f61504e127f1b4b4e989cf86c0ee4826",
+    "zpix-12.bdf": "d36ddb86aad5d6f0d3613c9b3de6c76c74dca054e3c4ec041ef5c889a468cef1"
+  },
+  "fonts": {
+    "zpix-12.bdf": {
+      "source_sha256": "a5cd7b2e9c76b18db85a943eccaa150a7487d00d2567f0bbd0ffae0d10404d06",
+      "encoding": "UnicodeBmp-1",
+      "unicode_mapping": true
+    }
+  },
+  "skipped": [],
+  "source_sha256": "be86dca34dd4757c3aa3275287041dc6dfe01f582d14ee377081d6ff41394352"
+}

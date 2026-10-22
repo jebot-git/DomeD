@@ -1,0 +1,67 @@
+{
+  "repository": "https://github.com/elementarythings/font_OldSchool_PC",
+  "revision": "16220f9d4835a935a540cc55d4e4166d58bbb6a0",
+  "format": "BDF only; original bitmap pixels; legacy character codes mapped to Unicode for session text",
+  "files": {
+    "LICENSE.md": "23ee78c8bae49cf08ea2f0c84945c66b987ebe4520881fb51b3dad4fb43d07c2",
+    "README.md": "9eaf61f17eba4854d3c1b64a4adf4e663561f112b76d9199d3b865056723cfd6",
+    "oldschoolAsciiOnly/00readme.txt": "72ba524a309e09dbb58f1d87f340b02c2fcbcc70e5ab362798c53d07ea75ea60",
+    "oldschoolAsciiOnly/Bm437IBMEGA8x8_asciionly.bdf": "468a415b142674c113d91223c0f3d9b975e82ea05f41a404517cfa5444b2c381",
+    "oldschoolAsciiOnly/Bm437IBMVGA16x32_asciionly.bdf": "12817e557c3b75303f57249162e1797eca1c75481d2f1d99193e2a7ce3495d67",
+    "oldschoolAsciiOnly/Bm437IBMVGA18x32_asciionly.bdf": "5995e535075a72bf02eb71960710039a73140f66238da2533e8836b6604a5fb8",
+    "oldschoolAsciiOnly/Bm437IBMVGA8x16_asciionly.bdf": "53ae00bef6e836e88e19ec5e4c385dcc68585b2029a8116dee2f06a63b93184f",
+    "oldschoolFullCharSets/00readme.txt": "7a06ea61b59f23871f7dc9ab7e553f4ad933700db863c1c413478b1c7119ee2a",
+    "oldschoolFullCharSets/Bm437IBMEGA8x8.bdf": "2e9a46da621a10ea2937ab69c03a3109e73ac3300989ad0d6d5c4af452bca1c1",
+    "oldschoolFullCharSets/Bm437IBMVGA16x32.bdf": "65e1fe915d44f119d1137477385080b3fd3dbcc421992da8fbf643adc2393abe",
+    "oldschoolFullCharSets/Bm437IBMVGA18x32.bdf": "d3c6a5a4f9db52b4ae87912a63814cbc456ced4350688031a519e4b44c88fe4f",
+    "oldschoolFullCharSets/Bm437IBMVGA8x16.bdf": "655d30144c2271bf61013b8c01664c8ee3753f2e174f1769f97754aafbf9db35"
+  },
+  "fonts": {
+    "oldschoolAsciiOnly/Bm437IBMEGA8x8_asciionly.bdf": {
+      "source_sha256": "2ccf9876a2a649f044fedd13c01da54f89d78c0f166c17ed4669d408430361bd",
+      "encoding": "WinRoman-0",
+      "unicode_mapping": true
+    },
+    "oldschoolAsciiOnly/Bm437IBMVGA16x32_asciionly.bdf": {
+      "source_sha256": "cd71237afd6be2cbc3a6367a40413c58a02fb4538e7f3cd96845a334bacb2a56",
+      "encoding": "WinRoman-0",
+      "unicode_mapping": true
+    },
+    "oldschoolAsciiOnly/Bm437IBMVGA18x32_asciionly.bdf": {
+      "source_sha256": "338640ce506fbf9fe76c8ba53be83b203bfbef4f63b8f5c9525dadd7e9152eae",
+      "encoding": "WinRoman-0",
+      "unicode_mapping": true
+    },
+    "oldschoolAsciiOnly/Bm437IBMVGA8x16_asciionly.bdf": {
+      "source_sha256": "ffe82914a2eb37be7fdee6bb5496502f5eba77a97560f6a697aef0dc754a4344",
+      "encoding": "WinRoman-0",
+      "unicode_mapping": true
+    },
+    "oldschoolFullCharSets/Bm437IBMEGA8x8.bdf": {
+      "source_sha256": "83f9c7a1450aab49978be1479aeb97a6f57693d4cea00977d3c1abb93a4a2f08",
+      "encoding": "WinRoman-0",
+      "unicode_mapping": true,
+      "family_alias": "Bm437 IBM EGA 8x8 [elementarythings Bm437IBMEGA8x8]"
+    },
+    "oldschoolFullCharSets/Bm437IBMVGA16x32.bdf": {
+      "source_sha256": "7febf8baae5682a292997d5543bb6cc8626a1c2f9ae09c90c7d53ad886e4c18c",
+      "encoding": "WinRoman-0",
+      "unicode_mapping": true,
+      "family_alias": "Bm437 IBM VGA 8x16 [elementarythings Bm437IBMVGA16x32]"
+    },
+    "oldschoolFullCharSets/Bm437IBMVGA18x32.bdf": {
+      "source_sha256": "262485e00ebf5b70c2dbe1bc21cada6fe1ef37ea16fed4486fa20b3d0d273e4d",
+      "encoding": "WinRoman-0",
+      "unicode_mapping": true,
+      "family_alias": "Bm437 IBM VGA 9x16 [elementarythings Bm437IBMVGA18x32]"
+    },
+    "oldschoolFullCharSets/Bm437IBMVGA8x16.bdf": {
+      "source_sha256": "d2ca0a608e046bd337545027c64e8ff0e105a6a368ede286c7e5269a04f7e050",
+      "encoding": "WinRoman-0",
+      "unicode_mapping": true,
+      "family_alias": "Bm437 IBM VGA 8x16 [elementarythings Bm437IBMVGA8x16]"
+    }
+  },
+  "skipped": [],
+  "source_sha256": "cca5c3883285bb7c74bdb7e19b1c2add6a1b61156823f5d773010780a1569c98"
+}

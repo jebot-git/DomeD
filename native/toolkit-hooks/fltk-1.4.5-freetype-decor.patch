@@ -1,0 +1,156 @@
+--- a/libdecor/src/plugins/cairo/libdecor-cairo.c
++++ b/libdecor/src/plugins/cairo/libdecor-cairo.c
+@@ -43,12 +43,14 @@
+ #include "os-compatibility.h"
+ 
+ #include <cairo/cairo.h>
+-#include <pango/pangocairo.h>
++extern void fl_bdf_title_metrics(const char *, int *, int *, int *);
++extern void fl_bdf_title_draw(cairo_t *, const char *, double, double);
++extern int fl_bdf_title_height(void);
+ 
+ #include "common/libdecor-cairo-blur.h"
+ 
+ static const size_t SHADOW_MARGIN = 24;	/* graspable part of the border */
+-static const size_t TITLE_HEIGHT = 24;
++#define TITLE_HEIGHT ((size_t)fl_bdf_title_height())
+ static const size_t BUTTON_WIDTH = 32;
+ static const size_t SYM_DIM = 14;
+ 
+@@ -278,7 +280,6 @@
+ 	char *cursor_theme_name;
+ 	int cursor_size;
+ 
+-	PangoFontDescription *font;
+ };
+ 
+ static const char *libdecor_cairo_proxy_tag = "libdecor-cairo";
+@@ -408,7 +409,6 @@
+ 	if (plugin_cairo->wl_shm)
+ 		wl_shm_destroy(plugin_cairo->wl_shm);
+ 
+-	pango_font_description_free(plugin_cairo->font);
+ 
+ 	if (plugin_cairo->wl_compositor)
+ 		wl_compositor_destroy(plugin_cairo->wl_compositor);
+@@ -1120,7 +1120,6 @@
+ 	const uint32_t col_title = active ? COL_TITLE : COL_TITLE_INACT;
+ 	const uint32_t col_title_text = active ? COL_SYM : COL_SYM_INACT;
+ 
+-	PangoLayout *layout;
+ 
+ 	/* title fade out at buttons */
+ 	const int fade_width = 5 * BUTTON_WIDTH;
+@@ -1138,17 +1137,10 @@
+ 	if (!title)
+ 		return;
+ 
+-	layout = pango_cairo_create_layout(cr);
+-
+-	pango_layout_set_text(layout,
+-			      title,
+-			      -1);
+-	pango_layout_set_font_description(layout, frame_cairo->plugin_cairo->font);
+-	pango_layout_get_size(layout, &text_extents_width, &text_extents_height);
+-
+-	/* set text position and dimensions */
+-	text_width = text_extents_width / PANGO_SCALE;
+-	text_height = text_extents_height / PANGO_SCALE;
++	int ascent;
++	fl_bdf_title_metrics(title, &text_extents_width, &text_extents_height, &ascent);
++	text_width = text_extents_width;
++	text_height = text_extents_height;
+ 	text_x = *title_width / 2.0 - text_width / 2.0;
+ 	text_x += MIN(0.0, ((*title_width - fade_width) - (text_x + text_width)));
+ 	text_x = MAX(text_x, BUTTON_WIDTH);
+@@ -1157,7 +1149,7 @@
+ 	/* draw title text */
+ 	cairo_move_to(cr, text_x, text_y);
+ 	cairo_set_rgba32(cr, &col_title_text);
+-	pango_cairo_show_layout(cr, layout);
++	fl_bdf_title_draw(cr, title, text_x, text_y + ascent);
+ 
+ 	/* draw fade-out from title text to buttons */
+ 	fade_start = *title_width - fade_width;
+@@ -1177,7 +1169,6 @@
+ 	cairo_fill(cr);
+ 
+ 	cairo_pattern_destroy(fade);
+-	g_object_unref(layout);
+ }
+ 
+ static void
+@@ -2720,10 +2711,6 @@
+ 	}
+ 
+ 	/* define a sens-serif bold font at symbol size */
+-	plugin_cairo->font = pango_font_description_new();
+-	pango_font_description_set_family(plugin_cairo->font, "sans");
+-	pango_font_description_set_weight(plugin_cairo->font, PANGO_WEIGHT_BOLD);
+-	pango_font_description_set_absolute_size(plugin_cairo->font, SYM_DIM * PANGO_SCALE);
+ 
+ 	wl_display = libdecor_get_wl_display(context);
+ 	plugin_cairo->wl_registry = wl_display_get_registry(wl_display);
+--- a/libdecor/build/fl_libdecor.c
++++ b/libdecor/build/fl_libdecor.c
+@@ -123,7 +123,7 @@
+   wl_callback_add_listener(context->init_callback, &init_wl_display_callback_listener, context);
+   wl_list_init(&context->frames);
+   // attempt to dynamically load a libdecor plugin with dlopen()
+-  if (init_plugins(context) != 0) { // attempt to load plugin by dlopen()
++  { // Always use the reviewed native bitmap plugin, never an external GTK/Pango plugin.
+     // no plug-in was found by dlopen(), use built-in plugin instead
+     // defined in the source code of the built-in plugin:  libdecor-cairo.c or libdecor-gtk.c
+     extern const struct libdecor_plugin_description libdecor_plugin_description;
+--- a/src/drivers/Cairo/Fl_Cairo_Graphics_Driver.cxx
++++ b/src/drivers/Cairo/Fl_Cairo_Graphics_Driver.cxx
+@@ -1115,6 +1115,27 @@
+   }cairo_restore(cr);
+ }
+ 
++// The bundled libdecor plugin uses the same bitmap face as FLTK controls.
++static FT_Face fl_bdf_title_face() {
++  const char *pixels=getenv("DE_XR_BDF_PIXELS");
++  Fl_Font font=(pixels || getenv("DE_XR_LIGHTXR_PCF")) ? FL_FREE_FONT : FL_HELVETICA;
++  return dome_bitmap(font,pixels ? atoi(pixels) : 16);
++}
++extern "C" void fl_bdf_title_metrics(const char *text,int *width,int *height,int *ascent) {
++  *width=*height=*ascent=0;
++  if(auto face=fl_bdf_title_face()){
++    *width=dome_bitmap_width(face,text,strlen(text));
++    *ascent=face->size->metrics.ascender/64;
++    *height=std::max(int(face->size->metrics.height/64),*ascent-int(face->size->metrics.descender/64));
++  }
++}
++extern "C" int fl_bdf_title_height() {
++  int width,height,ascent;fl_bdf_title_metrics("",&width,&height,&ascent);return std::max(24,height+8);
++}
++extern "C" void fl_bdf_title_draw(cairo_t *cr,const char *text,double x,double baseline) {
++  if(auto face=fl_bdf_title_face())dome_bitmap_draw(cr,face,text,strlen(text),x,baseline);
++}
++
+ int Fl_Cairo_Graphics_Driver::height() {
+   if(auto face=dome_bitmap(font(),size())){int h=face->size->metrics.height/64,b=(face->size->metrics.ascender-face->size->metrics.descender)/64;return h>b?h:b;}
+   return 0;
+--- a/CMake/options.cmake
++++ b/CMake/options.cmake
+@@ -305,8 +305,8 @@
+     unset(FLTK_GRAPHICS_CAIRO CACHE)
+     set(FLTK_GRAPHICS_CAIRO TRUE CACHE BOOL "all drawing to X11 windows uses Cairo")
+     option(FLTK_USE_DBUS "use D-Bus - required to detect the cursor theme" ON)
+-    option(FLTK_USE_SYSTEM_LIBDECOR "use libdecor from the system" ON)
+-    set(USE_SYSTEM_LIBDECOR 1)
++    set(FLTK_USE_SYSTEM_LIBDECOR OFF CACHE BOOL "use libdecor from the system" FORCE)
++    set(USE_SYSTEM_LIBDECOR 0)
+     unset(FLTK_USE_XRENDER CACHE)
+     unset(FLTK_USE_XINERAMA CACHE)
+     unset(FLTK_USE_XFT CACHE)
+@@ -362,7 +362,7 @@
+     if(USE_SYSTEM_LIBDECOR)
+       set(FLTK_USE_LIBDECOR_GTK ON)
+     else()
+-      option(FLTK_USE_LIBDECOR_GTK "Allow to use libdecor's GTK plugin" ON)
++      set(FLTK_USE_LIBDECOR_GTK OFF CACHE BOOL "Allow to use libdecor's GTK plugin" FORCE)
+     endif(USE_SYSTEM_LIBDECOR)
+ 
+     if(${CMAKE_HOST_SYSTEM_NAME} STREQUAL "FreeBSD")

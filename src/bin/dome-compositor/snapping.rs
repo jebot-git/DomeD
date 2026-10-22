@@ -24,12 +24,12 @@ impl Dome {
             self.action(dome::Action::DesktopResize {
                 id,
                 w: r.w - 8.,
-                h: r.h - 34.,
+                h: r.h - (self.appearance.caption_height() + 4) as f32,
             });
             self.action(dome::Action::DesktopMove {
                 id,
                 x: r.x + 4.,
-                y: r.y + 30.,
+                y: r.y + self.appearance.caption_height() as f32,
             });
         }
     }

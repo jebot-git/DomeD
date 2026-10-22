@@ -1,0 +1,286 @@
+{
+  "repository": "https://github.com/TakWolf/fusion-pixel-font",
+  "revision": "2026.10.16",
+  "format": "BDF only; original bitmap pixels; legacy character codes mapped to Unicode for session text",
+  "files": {
+    "fusion-pixel-font-10px-monospaced-bdf-v2026.10.16/LICENSES/ark-pixel/OFL.txt": "3ab41567e68e3988ba1ef16dd2644eca95ca5648ea12e7d46e6287fc0bbe5aee",
+    "fusion-pixel-font-10px-monospaced-bdf-v2026.10.16/LICENSES/boutique-bitmap-9x9/OFL.txt": "265f3814079511b3f3fce9003cb60a1402fa792849c5cae79e5998939eb02617",
+    "fusion-pixel-font-10px-monospaced-bdf-v2026.10.16/LICENSES/galmuri/LICENSE.txt": "86a3ee9495f942f0243f18c103da9faca27adb88142613edb8bb852e56c892c1",
+    "fusion-pixel-font-10px-monospaced-bdf-v2026.10.16/OFL.txt": "bc518cf64b8032c07690f33cc270c35c179255a6ac8efa7c165ebae7e8f76a63",
+    "fusion-pixel-font-10px-monospaced-bdf-v2026.10.16/fusion-pixel-10px-monospaced-ja.bdf": "b40084a7b951e7ad40d18908df7993349a2123f858a1c8651852eb7fa8940390",
+    "fusion-pixel-font-10px-monospaced-bdf-v2026.10.16/fusion-pixel-10px-monospaced-ko.bdf": "4bbbfd125fd3c502eea314c8eed4895422641dcea7399a522aea2eba365ac8c4",
+    "fusion-pixel-font-10px-monospaced-bdf-v2026.10.16/fusion-pixel-10px-monospaced-latin.bdf": "17424642cd4ba8dac440f1a33fa6771d1189041f4d72b93934be1056f8aea694",
+    "fusion-pixel-font-10px-monospaced-bdf-v2026.10.16/fusion-pixel-10px-monospaced-zh_hans.bdf": "631df5703e2e358774b3936012f0615ef386a2734c9234f587436aa4fab990eb",
+    "fusion-pixel-font-10px-monospaced-bdf-v2026.10.16/fusion-pixel-10px-monospaced-zh_hant.bdf": "9df617e9c042ece01195f662a11995b245ffa98b52c423af7cdc756455f8f80d",
+    "fusion-pixel-font-10px-monospaced-bdf-v2026.10.16/fusion-pixel-10px-monospaced-zh_hk.bdf": "4804f60122e9caefbb7e54ea5d637887708b550c2b6808300bbce3026e559ec2",
+    "fusion-pixel-font-10px-monospaced-bdf-v2026.10.16/fusion-pixel-10px-monospaced-zh_tw.bdf": "95739f506ff8be73e88aba1dd36edcc8745b02c08f1cbdc77d81da553662725e",
+    "fusion-pixel-font-10px-proportional-bdf-v2026.10.16/LICENSES/ark-pixel/OFL.txt": "3ab41567e68e3988ba1ef16dd2644eca95ca5648ea12e7d46e6287fc0bbe5aee",
+    "fusion-pixel-font-10px-proportional-bdf-v2026.10.16/LICENSES/boutique-bitmap-9x9/OFL.txt": "265f3814079511b3f3fce9003cb60a1402fa792849c5cae79e5998939eb02617",
+    "fusion-pixel-font-10px-proportional-bdf-v2026.10.16/LICENSES/galmuri/LICENSE.txt": "86a3ee9495f942f0243f18c103da9faca27adb88142613edb8bb852e56c892c1",
+    "fusion-pixel-font-10px-proportional-bdf-v2026.10.16/OFL.txt": "bc518cf64b8032c07690f33cc270c35c179255a6ac8efa7c165ebae7e8f76a63",
+    "fusion-pixel-font-10px-proportional-bdf-v2026.10.16/fusion-pixel-10px-proportional-ja.bdf": "5bca1f641af7f71c05bf96e00751da9fb8d5aaa6e18d82449059a8a1b91f7896",
+    "fusion-pixel-font-10px-proportional-bdf-v2026.10.16/fusion-pixel-10px-proportional-ko.bdf": "5aa716763eb39677a1631c008e6b58c91b09432ea80bce0a8986f2b70ee65ae0",
+    "fusion-pixel-font-10px-proportional-bdf-v2026.10.16/fusion-pixel-10px-proportional-latin.bdf": "21a3e5bec4e104ab76099d00ba8d3f0b7919e3131b6d2cd3f006b027c654fd71",
+    "fusion-pixel-font-10px-proportional-bdf-v2026.10.16/fusion-pixel-10px-proportional-zh_hans.bdf": "356b457c4d31cf64041258a2bb77c937c92ec0c79cfb91f05d7d0bba4e811663",
+    "fusion-pixel-font-10px-proportional-bdf-v2026.10.16/fusion-pixel-10px-proportional-zh_hant.bdf": "2127308d14d8ca72f8656418d77d9a70d9b6a9d38e36da562f2ec884ebffec81",
+    "fusion-pixel-font-10px-proportional-bdf-v2026.10.16/fusion-pixel-10px-proportional-zh_hk.bdf": "8468034fca4fcf926cf1ea476e5e1c72af78175d87456d1854dad7c9e60e52c6",
+    "fusion-pixel-font-10px-proportional-bdf-v2026.10.16/fusion-pixel-10px-proportional-zh_tw.bdf": "9c60412207e95450be6d394e64abab93327c6762f6ec872a5c14f50a95f04b60",
+    "fusion-pixel-font-12px-monospaced-bdf-v2026.10.16/LICENSES/ark-pixel/OFL.txt": "3ab41567e68e3988ba1ef16dd2644eca95ca5648ea12e7d46e6287fc0bbe5aee",
+    "fusion-pixel-font-12px-monospaced-bdf-v2026.10.16/LICENSES/cubic-11/OFL.txt": "2b6e5938e5cffa0b9e183bd05f8c363e174e7ebed1a0556e2855fd1707fa2188",
+    "fusion-pixel-font-12px-monospaced-bdf-v2026.10.16/LICENSES/galmuri/LICENSE.txt": "86a3ee9495f942f0243f18c103da9faca27adb88142613edb8bb852e56c892c1",
+    "fusion-pixel-font-12px-monospaced-bdf-v2026.10.16/OFL.txt": "bc518cf64b8032c07690f33cc270c35c179255a6ac8efa7c165ebae7e8f76a63",
+    "fusion-pixel-font-12px-monospaced-bdf-v2026.10.16/fusion-pixel-12px-monospaced-ja.bdf": "3a670def1f801e55c826689a4f60ef9bfa3585930eb3ab9aac3bfaa1c6aab289",
+    "fusion-pixel-font-12px-monospaced-bdf-v2026.10.16/fusion-pixel-12px-monospaced-ko.bdf": "8f28b2304c5de73de3b53e8ee17a45e88ca2c11eb20f3b9c9e058da8037b60dc",
+    "fusion-pixel-font-12px-monospaced-bdf-v2026.10.16/fusion-pixel-12px-monospaced-latin.bdf": "4a486efe881a373d423fc52adaed918e9dd2cec9e1ce9d10d818a92d7a73d564",
+    "fusion-pixel-font-12px-monospaced-bdf-v2026.10.16/fusion-pixel-12px-monospaced-zh_hans.bdf": "eaab58419565743f8433810c028bbb89c29808284c079e3b7024ea74806880cf",
+    "fusion-pixel-font-12px-monospaced-bdf-v2026.10.16/fusion-pixel-12px-monospaced-zh_hant.bdf": "4fcae22b4f947825680f4d0417ad354aa62d78c0cd96cab7f54819d22983faf0",
+    "fusion-pixel-font-12px-monospaced-bdf-v2026.10.16/fusion-pixel-12px-monospaced-zh_hk.bdf": "2dc996a05797763da18d3fcd35761837786923668d671f5427de3cc3d20ae3c0",
+    "fusion-pixel-font-12px-monospaced-bdf-v2026.10.16/fusion-pixel-12px-monospaced-zh_tw.bdf": "1fe02e60439996ca4621486b9dffadac9b4140548f189607f252ba662a96d81b",
+    "fusion-pixel-font-12px-proportional-bdf-v2026.10.16/LICENSES/ark-pixel/OFL.txt": "3ab41567e68e3988ba1ef16dd2644eca95ca5648ea12e7d46e6287fc0bbe5aee",
+    "fusion-pixel-font-12px-proportional-bdf-v2026.10.16/LICENSES/cubic-11/OFL.txt": "2b6e5938e5cffa0b9e183bd05f8c363e174e7ebed1a0556e2855fd1707fa2188",
+    "fusion-pixel-font-12px-proportional-bdf-v2026.10.16/LICENSES/galmuri/LICENSE.txt": "86a3ee9495f942f0243f18c103da9faca27adb88142613edb8bb852e56c892c1",
+    "fusion-pixel-font-12px-proportional-bdf-v2026.10.16/OFL.txt": "bc518cf64b8032c07690f33cc270c35c179255a6ac8efa7c165ebae7e8f76a63",
+    "fusion-pixel-font-12px-proportional-bdf-v2026.10.16/fusion-pixel-12px-proportional-ja.bdf": "6db110eebea5c4516ef1ca6b85a77fd8647a2c014e6cf3b5f8c868ee7e1b0879",
+    "fusion-pixel-font-12px-proportional-bdf-v2026.10.16/fusion-pixel-12px-proportional-ko.bdf": "adb89e2df09d956d8176bbf52e7ef0ec302268c791e1b7cf45f5cd49d53ab309",
+    "fusion-pixel-font-12px-proportional-bdf-v2026.10.16/fusion-pixel-12px-proportional-latin.bdf": "6e6c40dfb9be983160a27acae29f40da80461f1660cb623f7bbac2b8b5035c87",
+    "fusion-pixel-font-12px-proportional-bdf-v2026.10.16/fusion-pixel-12px-proportional-zh_hans.bdf": "08bec983ff1a575a80c391c92143d4eeb66b42c15ca92122dac7032b7154de84",
+    "fusion-pixel-font-12px-proportional-bdf-v2026.10.16/fusion-pixel-12px-proportional-zh_hant.bdf": "32c522dcfcf9351def2649ec883c2bdb027d96bee8007d38ab23e9acefdeb006",
+    "fusion-pixel-font-12px-proportional-bdf-v2026.10.16/fusion-pixel-12px-proportional-zh_hk.bdf": "e4d74c17751fbabf4f9aaa1ec005425eab89827a8e961424ecb36e0eb1381e52",
+    "fusion-pixel-font-12px-proportional-bdf-v2026.10.16/fusion-pixel-12px-proportional-zh_tw.bdf": "9c4251f650d6d168a44f8b90bfd91da17e55b99c64ef51ce6c776286be9d142a",
+    "fusion-pixel-font-8px-monospaced-bdf-v2026.10.16/LICENSES/boutique-bitmap-7x7/OFL.txt": "ad588b5ce58a02179b806381339fd380e5110771f2fa91279af026fd3ab97002",
+    "fusion-pixel-font-8px-monospaced-bdf-v2026.10.16/LICENSES/galmuri/LICENSE.txt": "86a3ee9495f942f0243f18c103da9faca27adb88142613edb8bb852e56c892c1",
+    "fusion-pixel-font-8px-monospaced-bdf-v2026.10.16/LICENSES/miseki-bitmap/LICENSE.txt": "e855b45b384d37c9a778119271bd9c32706e3f1f9f278de0ad47347606eea846",
+    "fusion-pixel-font-8px-monospaced-bdf-v2026.10.16/OFL.txt": "bc518cf64b8032c07690f33cc270c35c179255a6ac8efa7c165ebae7e8f76a63",
+    "fusion-pixel-font-8px-monospaced-bdf-v2026.10.16/fusion-pixel-8px-monospaced-ja.bdf": "2f938753f91bfc2c4850bb58cf3d5ccf560bd13e6a3c742c50f553e1b917a177",
+    "fusion-pixel-font-8px-monospaced-bdf-v2026.10.16/fusion-pixel-8px-monospaced-ko.bdf": "dbef814a32b00f9fa8ce33c70cf35809138ae037f3c8df0bac0067a411da18de",
+    "fusion-pixel-font-8px-monospaced-bdf-v2026.10.16/fusion-pixel-8px-monospaced-latin.bdf": "4abeb31c8e3765db1af92ea5351bd2e2cba2410bbbaaa6c106b9a211847cd273",
+    "fusion-pixel-font-8px-monospaced-bdf-v2026.10.16/fusion-pixel-8px-monospaced-zh_hans.bdf": "44a2d82b3dd782b505fa2297f10d8fd65499f9476d47b0331a22a133419b0ec3",
+    "fusion-pixel-font-8px-monospaced-bdf-v2026.10.16/fusion-pixel-8px-monospaced-zh_hant.bdf": "7e73aa90e888ebc0810e14461a97fbd77f4f34f741a642e7cbc23ea287e60075",
+    "fusion-pixel-font-8px-monospaced-bdf-v2026.10.16/fusion-pixel-8px-monospaced-zh_hk.bdf": "6a8951eb17bc258ad31cf0a6dce1e970c8983ded50f5c1e49dd8dda01b020e0b",
+    "fusion-pixel-font-8px-monospaced-bdf-v2026.10.16/fusion-pixel-8px-monospaced-zh_tw.bdf": "d280980603b3c18c333a92b0b0a9236b40d48fb7ba6d5a4556ebf3ef916a071a",
+    "fusion-pixel-font-8px-proportional-bdf-v2026.10.16/LICENSES/boutique-bitmap-7x7/OFL.txt": "ad588b5ce58a02179b806381339fd380e5110771f2fa91279af026fd3ab97002",
+    "fusion-pixel-font-8px-proportional-bdf-v2026.10.16/LICENSES/galmuri/LICENSE.txt": "86a3ee9495f942f0243f18c103da9faca27adb88142613edb8bb852e56c892c1",
+    "fusion-pixel-font-8px-proportional-bdf-v2026.10.16/LICENSES/miseki-bitmap/LICENSE.txt": "e855b45b384d37c9a778119271bd9c32706e3f1f9f278de0ad47347606eea846",
+    "fusion-pixel-font-8px-proportional-bdf-v2026.10.16/OFL.txt": "bc518cf64b8032c07690f33cc270c35c179255a6ac8efa7c165ebae7e8f76a63",
+    "fusion-pixel-font-8px-proportional-bdf-v2026.10.16/fusion-pixel-8px-proportional-ja.bdf": "20e4aef3fe7d169c5e263068dd6eafb6911e111e93f2c410222e14c70f868183",
+    "fusion-pixel-font-8px-proportional-bdf-v2026.10.16/fusion-pixel-8px-proportional-ko.bdf": "561c22f78825876128a564662b22a11f529bc864a742fa8a8d81ee07caf80e3d",
+    "fusion-pixel-font-8px-proportional-bdf-v2026.10.16/fusion-pixel-8px-proportional-latin.bdf": "a803f9a27f708941444301bd40663e548a33cc747adc2f3b8211702538e02841",
+    "fusion-pixel-font-8px-proportional-bdf-v2026.10.16/fusion-pixel-8px-proportional-zh_hans.bdf": "6d481ad84473cdbc54d4e95afca239f340cd485b67a7620d7b0ed0c9413982e3",
+    "fusion-pixel-font-8px-proportional-bdf-v2026.10.16/fusion-pixel-8px-proportional-zh_hant.bdf": "5c7c188f962078622d489cf6af79af5443a3ba213c20bf33f0e25970f5c37df1",
+    "fusion-pixel-font-8px-proportional-bdf-v2026.10.16/fusion-pixel-8px-proportional-zh_hk.bdf": "fe34b0a52f5db9bfce63f922e68320c6448198daf6d0ec834427528bc717c1de",
+    "fusion-pixel-font-8px-proportional-bdf-v2026.10.16/fusion-pixel-8px-proportional-zh_tw.bdf": "04d9bd19cdd45c4807a54243ad16a76cef236060b06172aa1725eb7ec5394cec"
+  },
+  "fonts": {
+    "fusion-pixel-font-10px-monospaced-bdf-v2026.10.16/fusion-pixel-10px-monospaced-ja.bdf": {
+      "source_sha256": "44ff5365ca3c4c3e597cfbbd683eafdf75c87ba23081212ccbc72db699a5f524",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "fusion-pixel-font-10px-monospaced-bdf-v2026.10.16/fusion-pixel-10px-monospaced-ko.bdf": {
+      "source_sha256": "f6f48445a95e90ccbe86a19fc82dc0e2ffd047db4f6e4c22c88a4422d6e34a40",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "fusion-pixel-font-10px-monospaced-bdf-v2026.10.16/fusion-pixel-10px-monospaced-latin.bdf": {
+      "source_sha256": "35047cf32dd08be6f222d9ef088b749247e3783b16429de102a19f8645f71192",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "fusion-pixel-font-10px-monospaced-bdf-v2026.10.16/fusion-pixel-10px-monospaced-zh_hans.bdf": {
+      "source_sha256": "fabcf4d27ca6b629ed632ba1e07be53e5c451fa1ce4c146a857285dc08f0398a",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "fusion-pixel-font-10px-monospaced-bdf-v2026.10.16/fusion-pixel-10px-monospaced-zh_hant.bdf": {
+      "source_sha256": "aad0047e48dede15f0acb93dedb2bbe76f5d8a5b931bd5da327055733166a8cc",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "fusion-pixel-font-10px-monospaced-bdf-v2026.10.16/fusion-pixel-10px-monospaced-zh_hk.bdf": {
+      "source_sha256": "f1ce6af54f71fbb3caf0a3d1a547a9aee6d2597bc8274769d04a601e14eb372e",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "fusion-pixel-font-10px-monospaced-bdf-v2026.10.16/fusion-pixel-10px-monospaced-zh_tw.bdf": {
+      "source_sha256": "e8fb74a3259baa8bfb2bb247a22c8d5e2b7831d8f3128c4cce99cd66015a94ba",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "fusion-pixel-font-10px-proportional-bdf-v2026.10.16/fusion-pixel-10px-proportional-ja.bdf": {
+      "source_sha256": "29e86234c5c3f571a588a974868e72574400a936396f46e4ba69d0e33bb886cd",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "fusion-pixel-font-10px-proportional-bdf-v2026.10.16/fusion-pixel-10px-proportional-ko.bdf": {
+      "source_sha256": "44a175728ad307c8928f91c4239db9e676cbb8b19916ce5208bdf0d011d19e1c",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "fusion-pixel-font-10px-proportional-bdf-v2026.10.16/fusion-pixel-10px-proportional-latin.bdf": {
+      "source_sha256": "42489fbbfe55fbef3de81dcb5f9053d7e941e2c4b249c9b7addce5167006e574",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "fusion-pixel-font-10px-proportional-bdf-v2026.10.16/fusion-pixel-10px-proportional-zh_hans.bdf": {
+      "source_sha256": "39503d0b7d5632342440186e9595bbef84ebdc49ae712669a0488b0a380bc577",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "fusion-pixel-font-10px-proportional-bdf-v2026.10.16/fusion-pixel-10px-proportional-zh_hant.bdf": {
+      "source_sha256": "94b4350dac442a05a5418961cb276c8bb09be36cd21da1d88df5612f6ba98878",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "fusion-pixel-font-10px-proportional-bdf-v2026.10.16/fusion-pixel-10px-proportional-zh_hk.bdf": {
+      "source_sha256": "b71579155653cdb2ab73d9efb1c5530a510e647221d6aaa3c706e9148e8890ed",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "fusion-pixel-font-10px-proportional-bdf-v2026.10.16/fusion-pixel-10px-proportional-zh_tw.bdf": {
+      "source_sha256": "c4ec43ff7749dfc07d1212749b76a208015e0449c778c3e4effb268edc5e5212",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "fusion-pixel-font-12px-monospaced-bdf-v2026.10.16/fusion-pixel-12px-monospaced-ja.bdf": {
+      "source_sha256": "4a1cb29dab9a2c2959694f6ea78e23ce08fbda19fe560119fd28d199c054ebbf",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "fusion-pixel-font-12px-monospaced-bdf-v2026.10.16/fusion-pixel-12px-monospaced-ko.bdf": {
+      "source_sha256": "deee11a2fab03beff1c506b8708721bbc994bbc6591957e29d3608f0445d6139",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "fusion-pixel-font-12px-monospaced-bdf-v2026.10.16/fusion-pixel-12px-monospaced-latin.bdf": {
+      "source_sha256": "3a7ba388a607ca4410b75095fd3580e84ef4b277cd21b43cf3f2acd122bcb668",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "fusion-pixel-font-12px-monospaced-bdf-v2026.10.16/fusion-pixel-12px-monospaced-zh_hans.bdf": {
+      "source_sha256": "b1e9a54fdd1c1e86fdc32efa16a04d8bd2897391ddb441238cee66947d6e3388",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "fusion-pixel-font-12px-monospaced-bdf-v2026.10.16/fusion-pixel-12px-monospaced-zh_hant.bdf": {
+      "source_sha256": "7fd7a6797fba162d147bdc7f9e1c75215fc0983ceb5e9c97857bcd5d103a37ac",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "fusion-pixel-font-12px-monospaced-bdf-v2026.10.16/fusion-pixel-12px-monospaced-zh_hk.bdf": {
+      "source_sha256": "8a9e7ada9adcbee4e9633d2edc63632e03ad2d303fa23b265d8073d24ae8f698",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "fusion-pixel-font-12px-monospaced-bdf-v2026.10.16/fusion-pixel-12px-monospaced-zh_tw.bdf": {
+      "source_sha256": "2db2ebcd361abd06bb761ba133d86dac5f8a90f961e6585c3907a0f1fe35e1ee",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "fusion-pixel-font-12px-proportional-bdf-v2026.10.16/fusion-pixel-12px-proportional-ja.bdf": {
+      "source_sha256": "41957502b5f7a238eaf77457728be47a9b9583cc702567f36d68295c51c06b08",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "fusion-pixel-font-12px-proportional-bdf-v2026.10.16/fusion-pixel-12px-proportional-ko.bdf": {
+      "source_sha256": "aa4412f07377e39ab403d32f5e3ee3498fabe0bbcc685735cb27d528eb5807b1",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "fusion-pixel-font-12px-proportional-bdf-v2026.10.16/fusion-pixel-12px-proportional-latin.bdf": {
+      "source_sha256": "31885dda9300ea87266468a0547c46b146e400772fcb3b743f255241837a7b4a",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "fusion-pixel-font-12px-proportional-bdf-v2026.10.16/fusion-pixel-12px-proportional-zh_hans.bdf": {
+      "source_sha256": "091056e9fe7b931a793cddd1d6af2dac8e555a6bd169320f00adcbc899708da0",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "fusion-pixel-font-12px-proportional-bdf-v2026.10.16/fusion-pixel-12px-proportional-zh_hant.bdf": {
+      "source_sha256": "86882e7d88688e6c38fba7e47c8ae87ef8059fd77af42be9e987372ce81cbb44",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "fusion-pixel-font-12px-proportional-bdf-v2026.10.16/fusion-pixel-12px-proportional-zh_hk.bdf": {
+      "source_sha256": "7d57a8a5f8f93c600f7c9e9bf28c055a56e739e0d95215637bdc07a8823fa7c7",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "fusion-pixel-font-12px-proportional-bdf-v2026.10.16/fusion-pixel-12px-proportional-zh_tw.bdf": {
+      "source_sha256": "85f3f573bc9b28c6b9278aaba989f0c273b6adf5f54d56164b94a3a9d7122e4f",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "fusion-pixel-font-8px-monospaced-bdf-v2026.10.16/fusion-pixel-8px-monospaced-ja.bdf": {
+      "source_sha256": "2f938753f91bfc2c4850bb58cf3d5ccf560bd13e6a3c742c50f553e1b917a177",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "fusion-pixel-font-8px-monospaced-bdf-v2026.10.16/fusion-pixel-8px-monospaced-ko.bdf": {
+      "source_sha256": "dbef814a32b00f9fa8ce33c70cf35809138ae037f3c8df0bac0067a411da18de",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "fusion-pixel-font-8px-monospaced-bdf-v2026.10.16/fusion-pixel-8px-monospaced-latin.bdf": {
+      "source_sha256": "4abeb31c8e3765db1af92ea5351bd2e2cba2410bbbaaa6c106b9a211847cd273",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "fusion-pixel-font-8px-monospaced-bdf-v2026.10.16/fusion-pixel-8px-monospaced-zh_hans.bdf": {
+      "source_sha256": "44a2d82b3dd782b505fa2297f10d8fd65499f9476d47b0331a22a133419b0ec3",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "fusion-pixel-font-8px-monospaced-bdf-v2026.10.16/fusion-pixel-8px-monospaced-zh_hant.bdf": {
+      "source_sha256": "7e73aa90e888ebc0810e14461a97fbd77f4f34f741a642e7cbc23ea287e60075",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "fusion-pixel-font-8px-monospaced-bdf-v2026.10.16/fusion-pixel-8px-monospaced-zh_hk.bdf": {
+      "source_sha256": "6a8951eb17bc258ad31cf0a6dce1e970c8983ded50f5c1e49dd8dda01b020e0b",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "fusion-pixel-font-8px-monospaced-bdf-v2026.10.16/fusion-pixel-8px-monospaced-zh_tw.bdf": {
+      "source_sha256": "d280980603b3c18c333a92b0b0a9236b40d48fb7ba6d5a4556ebf3ef916a071a",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "fusion-pixel-font-8px-proportional-bdf-v2026.10.16/fusion-pixel-8px-proportional-ja.bdf": {
+      "source_sha256": "20e4aef3fe7d169c5e263068dd6eafb6911e111e93f2c410222e14c70f868183",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "fusion-pixel-font-8px-proportional-bdf-v2026.10.16/fusion-pixel-8px-proportional-ko.bdf": {
+      "source_sha256": "561c22f78825876128a564662b22a11f529bc864a742fa8a8d81ee07caf80e3d",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "fusion-pixel-font-8px-proportional-bdf-v2026.10.16/fusion-pixel-8px-proportional-latin.bdf": {
+      "source_sha256": "a803f9a27f708941444301bd40663e548a33cc747adc2f3b8211702538e02841",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "fusion-pixel-font-8px-proportional-bdf-v2026.10.16/fusion-pixel-8px-proportional-zh_hans.bdf": {
+      "source_sha256": "6d481ad84473cdbc54d4e95afca239f340cd485b67a7620d7b0ed0c9413982e3",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "fusion-pixel-font-8px-proportional-bdf-v2026.10.16/fusion-pixel-8px-proportional-zh_hant.bdf": {
+      "source_sha256": "5c7c188f962078622d489cf6af79af5443a3ba213c20bf33f0e25970f5c37df1",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "fusion-pixel-font-8px-proportional-bdf-v2026.10.16/fusion-pixel-8px-proportional-zh_hk.bdf": {
+      "source_sha256": "fe34b0a52f5db9bfce63f922e68320c6448198daf6d0ec834427528bc717c1de",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "fusion-pixel-font-8px-proportional-bdf-v2026.10.16/fusion-pixel-8px-proportional-zh_tw.bdf": {
+      "source_sha256": "04d9bd19cdd45c4807a54243ad16a76cef236060b06172aa1725eb7ec5394cec",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    }
+  },
+  "skipped": []
+}

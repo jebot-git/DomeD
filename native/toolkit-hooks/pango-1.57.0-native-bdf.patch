@@ -1,0 +1,92 @@
+--- a/pango/pangofc-fontmap.c
++++ b/pango/pangofc-fontmap.c
+@@ -1110,6 +1110,9 @@
+   res = FcPatternGetString (pattern, FC_FILE, 0, (FcChar8 **)(void*)&file);
+   if (res != FcResultMatch)
+     return FALSE;
++
++  if (FcPatternGetString (pattern, FC_FONTFORMAT, 0, (FcChar8 **)(void*)&fontformat) == FcResultMatch &&
++      strcmp (fontformat, "BDF") == 0) return TRUE;
+ 
+   /* Harfbuzz supports only SFNT fonts. */
+   res = FcPatternGetString (pattern, FC_FONT_WRAPPER, 0, (FcChar8 **)(void*)&fontwrapper);
+--- a/pango/pangofc-font.c
++++ b/pango/pangofc-font.c
+@@ -933,10 +933,77 @@
+     }
+ }
+ 
++/* Native BDF metrics for HarfBuzz: 26.6 FreeType pixels -> Pango units.
++ * No SFNT wrapper, outline synthesis, or glyph bitmap resampling. */
++typedef struct { FT_Library library; FT_Face face; } DomeBdfFont;
++static void dome_bdf_destroy (void *data) {
++  DomeBdfFont *bdf = data;
++  FT_Done_Face (bdf->face); FT_Done_FreeType (bdf->library); g_free (bdf);
++}
++static hb_bool_t dome_bdf_nominal (hb_font_t *font, void *data, hb_codepoint_t unicode,
++                                  hb_codepoint_t *glyph, void *unused) {
++  *glyph = FT_Get_Char_Index (((DomeBdfFont *)data)->face, unicode); return *glyph != 0;
++}
++static hb_position_t dome_bdf_advance (hb_font_t *font, void *data,
++                                      hb_codepoint_t glyph, void *unused) {
++  FT_Face face = ((DomeBdfFont *)data)->face;
++  if (FT_Load_Glyph (face, glyph, FT_LOAD_DEFAULT)) return 0;
++  return face->glyph->advance.x * (PANGO_SCALE / 64);
++}
++static hb_bool_t dome_bdf_extents (hb_font_t *font, void *data, hb_codepoint_t glyph,
++                                  hb_glyph_extents_t *extents, void *unused) {
++  FT_Face face = ((DomeBdfFont *)data)->face;
++  if (FT_Load_Glyph (face, glyph, FT_LOAD_DEFAULT)) return FALSE;
++  const int unit = PANGO_SCALE / 64;
++  extents->x_bearing = face->glyph->metrics.horiBearingX * unit;
++  extents->y_bearing = face->glyph->metrics.horiBearingY * unit;
++  extents->width = face->glyph->metrics.width * unit;
++  extents->height = -face->glyph->metrics.height * unit;
++  return TRUE;
++}
++static hb_bool_t dome_bdf_font_extents (hb_font_t *font, void *data,
++                                       hb_font_extents_t *extents, void *unused) {
++  FT_Face face = ((DomeBdfFont *)data)->face;
++  const int unit = PANGO_SCALE / 64;
++  extents->ascender = face->size->metrics.ascender * unit;
++  extents->descender = face->size->metrics.descender * unit;
++  extents->line_gap = face->size->metrics.height * unit - extents->ascender + extents->descender;
++  return TRUE;
++}
++static hb_font_t *dome_bdf_hb_font (FcPattern *pattern) {
++  FcChar8 *format = NULL, *file = NULL;
++  if (FcPatternGetString (pattern, FC_FONTFORMAT, 0, &format) != FcResultMatch ||
++      strcmp ((char *)format, "BDF") ||
++      FcPatternGetString (pattern, FC_FILE, 0, &file) != FcResultMatch) return NULL;
++  DomeBdfFont *bdf = g_new0 (DomeBdfFont, 1);
++  if (FT_Init_FreeType (&bdf->library)) { g_free (bdf); return NULL; }
++  if (FT_New_Face (bdf->library, (char *)file, 0, &bdf->face)) {
++    FT_Done_FreeType (bdf->library); g_free (bdf); return NULL;
++  }
++  if (FT_IS_SCALABLE (bdf->face) || FT_Select_Charmap (bdf->face, FT_ENCODING_UNICODE) ||
++      FT_Select_Size (bdf->face, 0)) { dome_bdf_destroy (bdf); return NULL; }
++  hb_face_t *face = hb_face_create (hb_blob_get_empty (), 0);
++  hb_face_set_glyph_count (face, bdf->face->num_glyphs);
++  hb_face_set_upem (face, bdf->face->size->metrics.y_ppem);
++  hb_font_t *font = hb_font_create (face); hb_face_destroy (face);
++  hb_font_set_scale (font, bdf->face->size->metrics.x_ppem * PANGO_SCALE,
++                          bdf->face->size->metrics.y_ppem * PANGO_SCALE);
++  hb_font_funcs_t *funcs = hb_font_funcs_create ();
++  hb_font_funcs_set_nominal_glyph_func (funcs, dome_bdf_nominal, NULL, NULL);
++  hb_font_funcs_set_glyph_h_advance_func (funcs, dome_bdf_advance, NULL, NULL);
++  hb_font_funcs_set_glyph_extents_func (funcs, dome_bdf_extents, NULL, NULL);
++  hb_font_funcs_set_font_h_extents_func (funcs, dome_bdf_font_extents, NULL, NULL);
++  hb_font_funcs_make_immutable (funcs);
++  hb_font_set_funcs (font, funcs, bdf, dome_bdf_destroy); hb_font_funcs_destroy (funcs);
++  return font;
++}
++
+ static hb_font_t *
+ pango_fc_font_create_hb_font (PangoFont *font)
+ {
+   PangoFcFont *fc_font = PANGO_FC_FONT (font);
++  hb_font_t *bdf = dome_bdf_hb_font (fc_font->font_pattern);
++  if (bdf) return bdf;
+   PangoFcFontKey *key;
+   hb_face_t *hb_face;
+   hb_font_t *hb_font;

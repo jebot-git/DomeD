@@ -1,0 +1,223 @@
+{
+  "repository": "https://github.com/sunaku/tamzen-font",
+  "revision": "3255e8259bc9b880c60ab8b737ec8aa574e00d75",
+  "format": "BDF only; original bitmap pixels; legacy character codes mapped to Unicode for session text",
+  "files": {
+    "LICENSE": "a968208958611502ff494de85aa5cf1b1dd6c8b5bc9561a6f793dc4a36d2619e",
+    "README.md": "bb933453bd1c2af955a5051835467dabb2e5dd4393519d5ab3d36be5b854cfc5",
+    "bdf/Powerline10x20.bdf": "5d29d2d4e874e8a8152d84078c615cb42b4d925543fe446b35dc488ff1c6ae94",
+    "bdf/Powerline5x9.bdf": "ef4feb52f8ee15d56037133746db59961f97e195e1e33289368fac153a05fdc3",
+    "bdf/Powerline6x12.bdf": "08fbc529be63aeeab12b89f195d06441c9a98add43ef8885a59a99631ef21b5f",
+    "bdf/Powerline7x13.bdf": "de0300cfb6087cdde565addc93e78539ce2016d12b5050c861703f02ebe5cb44",
+    "bdf/Powerline7x14.bdf": "88849cd7eda39c457c3650944e42a64783ec29f9610a227fd55361a797821dfd",
+    "bdf/Powerline8x15.bdf": "722431e5fa75ab0e6b3acdb868e9e16a4186f1a4afe78605e77f819721f9b887",
+    "bdf/Powerline8x16.bdf": "26fb229d9018e1500659b92e028e67d2fa9ca14c2dba3febb20a28841cbcb00c",
+    "bdf/Tamzen10x20b.bdf": "42ddbda34da5e56174087cb049ee141d94c73e996a3469315efe0ab5fb4618eb",
+    "bdf/Tamzen10x20r.bdf": "bd66c618b64dab39ba1b2399b93c5bf658c7f13be1349021cb2115f02e7d7576",
+    "bdf/Tamzen5x9b.bdf": "98d59de7c4399e70ec9c1d61ce4e784acf950f00334241aae1325a3ef1f9b53e",
+    "bdf/Tamzen5x9r.bdf": "da50ec4e659725fc1897572549ecbc98707fc473ba9b1196af621c991b6f636c",
+    "bdf/Tamzen6x12b.bdf": "17a4146cbd423562dc2fbefde6d515df41e1ed115cba1c207aed61fabeaa4bf8",
+    "bdf/Tamzen6x12r.bdf": "f8a41291927783ae9d2c10efc242e53d620ba5ea689daecd943e91f84d5f9203",
+    "bdf/Tamzen7x13b.bdf": "ed918235687aeb3d0592a763994075f2b4197be9d542e5a847c61442cf352f56",
+    "bdf/Tamzen7x13r.bdf": "9433986fcf1316cdc1ee227df2cfd977cc06438dd548131acb259edbf17609a6",
+    "bdf/Tamzen7x14b.bdf": "17a2c1bd4b90255a742f325dcf976b9921a3fc4041e93cebb07a82e1c0515833",
+    "bdf/Tamzen7x14r.bdf": "57b1365606b7b5995a3aff644f673b8c1a1aa9ea184afe5771ce6e79ab4083f0",
+    "bdf/Tamzen8x15b.bdf": "8dd043b4fbd850596817aea9103f0762e9cea6b638264bed54b8d384624c2a47",
+    "bdf/Tamzen8x15r.bdf": "6f68cf0a65de147d3a6e7a21da134f3554f04ff453fa2242dfe9d2fe0e95a594",
+    "bdf/Tamzen8x16b.bdf": "4a58eb163a67afd020661a09b0aa3de187c126e69b7c65f3f06e8fc1af2dc8eb",
+    "bdf/Tamzen8x16r.bdf": "d0882e4a7c2ee6da7b431658c8cf327b302729e2452a4c21aafdf8b5122d92a1",
+    "bdf/TamzenForPowerline10x20b.bdf": "2154344bdd6a4b024f41fcfba840df738b17a0ec93b5a5ca46ef873aef1db59c",
+    "bdf/TamzenForPowerline10x20r.bdf": "d66843d76a86767977b89ba77b1582e6f55924ff59d4331d52bb220dbbbe0965",
+    "bdf/TamzenForPowerline5x9b.bdf": "9774959d522026e3915dae41bc51dce6b83237c3b22ffe56ad83634fdb152c31",
+    "bdf/TamzenForPowerline5x9r.bdf": "8053f2322cd11ca154d730ed249f8afc11726198e5ddb86e6ce94781436c25af",
+    "bdf/TamzenForPowerline6x12b.bdf": "dbc246b4fe3cdad22ec5c50087a9038bae6672995483b7e922eaaf4fd711ddda",
+    "bdf/TamzenForPowerline6x12r.bdf": "15e06e4e9ed8c743d485e45ad0468a191a1884f74df2e54afb717191cccb2910",
+    "bdf/TamzenForPowerline7x13b.bdf": "9b905589763d0be2408bb1e5b293abb4fe9993697857370ace95886b0676e74a",
+    "bdf/TamzenForPowerline7x13r.bdf": "99ee3ad3ceb82252c70a454a86aeed8a126f5074ea55f66edd86d7822082db92",
+    "bdf/TamzenForPowerline7x14b.bdf": "2cfdb41c80a1116521d7039cc4e62d95ad8d3507aaa558043aed127c7b2d429b",
+    "bdf/TamzenForPowerline7x14r.bdf": "6affb55d2cf358964641bf5d6314ebf4d9bc714e1c0755ef20c5359eb378aa2b",
+    "bdf/TamzenForPowerline8x15b.bdf": "4bbd9a6cac312748530500e9c683d33a64ff3f0a34760e22728eca82de0c297b",
+    "bdf/TamzenForPowerline8x15r.bdf": "bb87ba1b4f89446af78da5e87ab6d3501b6e387916763eacfd833b232ba03dc3",
+    "bdf/TamzenForPowerline8x16b.bdf": "208d75d8247e34fda2337767591e7a800e5c85cd6cfb21606e54a7878e1d2847",
+    "bdf/TamzenForPowerline8x16r.bdf": "abd0889cdc96d449409ece05888b91befdb4262f54e0d7bfa2a34e23fbb13b72"
+  },
+  "fonts": {
+    "bdf/Powerline10x20.bdf": {
+      "source_sha256": "5d29d2d4e874e8a8152d84078c615cb42b4d925543fe446b35dc488ff1c6ae94",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/Powerline5x9.bdf": {
+      "source_sha256": "ef4feb52f8ee15d56037133746db59961f97e195e1e33289368fac153a05fdc3",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/Powerline6x12.bdf": {
+      "source_sha256": "08fbc529be63aeeab12b89f195d06441c9a98add43ef8885a59a99631ef21b5f",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/Powerline7x13.bdf": {
+      "source_sha256": "de0300cfb6087cdde565addc93e78539ce2016d12b5050c861703f02ebe5cb44",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/Powerline7x14.bdf": {
+      "source_sha256": "88849cd7eda39c457c3650944e42a64783ec29f9610a227fd55361a797821dfd",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/Powerline8x15.bdf": {
+      "source_sha256": "722431e5fa75ab0e6b3acdb868e9e16a4186f1a4afe78605e77f819721f9b887",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/Powerline8x16.bdf": {
+      "source_sha256": "73b9211df825d922260ccf0bf7803ec22d8940ddb0a9984f8897e7d520a9376f",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/Tamzen10x20b.bdf": {
+      "source_sha256": "42ddbda34da5e56174087cb049ee141d94c73e996a3469315efe0ab5fb4618eb",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/Tamzen10x20r.bdf": {
+      "source_sha256": "bd66c618b64dab39ba1b2399b93c5bf658c7f13be1349021cb2115f02e7d7576",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/Tamzen5x9b.bdf": {
+      "source_sha256": "98d59de7c4399e70ec9c1d61ce4e784acf950f00334241aae1325a3ef1f9b53e",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/Tamzen5x9r.bdf": {
+      "source_sha256": "da50ec4e659725fc1897572549ecbc98707fc473ba9b1196af621c991b6f636c",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/Tamzen6x12b.bdf": {
+      "source_sha256": "17a4146cbd423562dc2fbefde6d515df41e1ed115cba1c207aed61fabeaa4bf8",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/Tamzen6x12r.bdf": {
+      "source_sha256": "f8a41291927783ae9d2c10efc242e53d620ba5ea689daecd943e91f84d5f9203",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/Tamzen7x13b.bdf": {
+      "source_sha256": "ed918235687aeb3d0592a763994075f2b4197be9d542e5a847c61442cf352f56",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/Tamzen7x13r.bdf": {
+      "source_sha256": "9433986fcf1316cdc1ee227df2cfd977cc06438dd548131acb259edbf17609a6",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/Tamzen7x14b.bdf": {
+      "source_sha256": "17a2c1bd4b90255a742f325dcf976b9921a3fc4041e93cebb07a82e1c0515833",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/Tamzen7x14r.bdf": {
+      "source_sha256": "57b1365606b7b5995a3aff644f673b8c1a1aa9ea184afe5771ce6e79ab4083f0",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/Tamzen8x15b.bdf": {
+      "source_sha256": "8dd043b4fbd850596817aea9103f0762e9cea6b638264bed54b8d384624c2a47",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/Tamzen8x15r.bdf": {
+      "source_sha256": "6f68cf0a65de147d3a6e7a21da134f3554f04ff453fa2242dfe9d2fe0e95a594",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/Tamzen8x16b.bdf": {
+      "source_sha256": "d7eeee82426cfbdf82aa8f631363c8db495289c24b17c3c03167c3e6dfce3656",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/Tamzen8x16r.bdf": {
+      "source_sha256": "3161aa86340af37a169536d7fac4afaa1b8cdb4de555e17c14c97aa5995e9b1a",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/TamzenForPowerline10x20b.bdf": {
+      "source_sha256": "b7db26478b01042b6e5c16393e3e00baa666fd36821ce635af2655d0240bdeb0",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/TamzenForPowerline10x20r.bdf": {
+      "source_sha256": "08dd29e58761cf97bf063a366e359640391b8ec4cb2abb08361cdb157c1af4fd",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/TamzenForPowerline5x9b.bdf": {
+      "source_sha256": "e73279c4395266a6a2c2b192e38b76cb44ca665fa9445898072fffcb9ef551a7",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/TamzenForPowerline5x9r.bdf": {
+      "source_sha256": "e08129536460359e1a3408dfe93cce78bc98e03dafcccf8831a4f671e78fe7e1",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/TamzenForPowerline6x12b.bdf": {
+      "source_sha256": "26dfda52cd590ed4e3d9846f3381c7bcbd28f2ccd8afab427c2dbb0f5c5f717f",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/TamzenForPowerline6x12r.bdf": {
+      "source_sha256": "c0db6ac28a9e0bd81bf1fd11c8f1da5a03fd37f99122954649a02c461c02e845",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/TamzenForPowerline7x13b.bdf": {
+      "source_sha256": "9851af9fd4fa7337c77e929c51c66acd3eb48ac08a84f1e2c7faa4c532bd3df1",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/TamzenForPowerline7x13r.bdf": {
+      "source_sha256": "8b3ee3bc722f2ee31d86f614a8d9cb80cf20da46a692a2eabd16877eb5d5a3fa",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/TamzenForPowerline7x14b.bdf": {
+      "source_sha256": "2c0a87e4d83d65ef931abba031c2185334c5e2e06fb55fc4123d149f3ec705ae",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/TamzenForPowerline7x14r.bdf": {
+      "source_sha256": "8d8c1c564e6adca3a20328a9bc8b491c191365533b17b62b0d9e3fd0cafb19de",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/TamzenForPowerline8x15b.bdf": {
+      "source_sha256": "e39d47859778d155d871c2fa41e8d6ff648c89e90d6c0ffd741a91b0177e12fb",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/TamzenForPowerline8x15r.bdf": {
+      "source_sha256": "e83ec48b459793c1f509411693dc7cb9b80de1fba109512e529929dc107c694a",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/TamzenForPowerline8x16b.bdf": {
+      "source_sha256": "b1ac1812e7fda5ff5b5fdc596b376589e5971f183a809ec4ff025cbd195266d1",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "bdf/TamzenForPowerline8x16r.bdf": {
+      "source_sha256": "fe131220fd87301e036ece1513680af66ce7bb29bf65038b7a5b92f38d3ae6c3",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    }
+  },
+  "skipped": [],
+  "source_sha256": "1510aec4089c54ef36385089c45a89fff9f709bcdb5b12a2a88a37d7f66804e2"
+}

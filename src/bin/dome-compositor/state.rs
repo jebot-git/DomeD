@@ -31,7 +31,6 @@ pub struct Dome {
     pub native_session_active: bool,
     pub native_ignored_keys: std::collections::HashSet<smithay::backend::input::Keycode>,
     pub cursor_finder: dome::visual_feedback::CursorFinder,
-    pub cursor_status: smithay::input::pointer::CursorImageStatus,
     pub clock: dome::clock::Calendar,
     pub appearance: dome::appearance::Appearance,
     pub toolkit_appearance: Option<crate::toolkit_appearance::ToolkitAppearance>,
@@ -64,6 +63,7 @@ pub struct Dome {
     pub xwayland_child: Option<std::process::Child>,
     pub control_port: u16,
     pub xr_bridge: dome::xr_transport::Shared,
+    pub xr_refresh: crate::xr_refresh::Refresh,
     pub xr_buttons: std::collections::HashSet<u32>,
     pub xr_shell_buttons: std::collections::HashSet<u32>,
     pub xr_target: Option<u64>,
@@ -116,8 +116,10 @@ pub struct Dome {
     pub start_time: std::time::Instant,
     pub socket_name: OsString,
     pub xr_socket_name: OsString,
+    pub x11_socket_name: OsString,
     pub input_realm: dome::Realm,
     pub input_xr_active: bool,
+    pub input_focus_xr: Option<bool>,
     pub focus_history: [Option<Option<u64>>; 2],
     pub desktop_pointer: Option<[f64; 2]>,
     pub desktop_buttons: std::collections::HashSet<u32>,
@@ -251,7 +253,7 @@ impl Dome {
         // Outputs become views of a part of the Space and can be rendered via Space::render_output.
         let space = Space::default();
 
-        let (socket_name, xr_socket_name) = Self::init_wayland_listener(display, event_loop);
+        let (socket_name, xr_socket_name, x11_socket_name) = Self::init_wayland_listener(display, event_loop);
 
         // Get the loop signal, used to stop the event loop
         let loop_signal = event_loop.get_signal();
@@ -262,7 +264,6 @@ impl Dome {
             native_session_active: true,
             native_ignored_keys: Default::default(),
             cursor_finder: Default::default(),
-            cursor_status: smithay::input::pointer::CursorImageStatus::default_named(),
             clock: dome::clock::Calendar::default(),
             appearance: dome::appearance::Appearance::load(),
             toolkit_appearance: None,
@@ -295,6 +296,7 @@ impl Dome {
             xwayland_child: None,
             control_port: 49640,
             xr_bridge: Default::default(),
+            xr_refresh: Default::default(),
             xr_buttons: Default::default(),
             xr_shell_buttons: Default::default(),
             xr_target: None,
@@ -351,8 +353,10 @@ impl Dome {
             loop_signal,
             socket_name,
             xr_socket_name,
+            x11_socket_name,
             input_realm: dome::Realm::Desktop,
             input_xr_active: false,
+            input_focus_xr: None,
             focus_history: [None, None],
             desktop_pointer: None,
             desktop_buttons: Default::default(),
@@ -396,10 +400,16 @@ impl Dome {
     fn init_wayland_listener(
         display: Display<Dome>,
         event_loop: &mut EventLoop<CalloopData>,
-    ) -> (OsString, OsString) {
+    ) -> (OsString, OsString, OsString) {
         let loop_handle = event_loop.handle();
         let mut names = Vec::new();
-        for origin in [dome::Realm::Desktop, dome::Realm::Xr] {
+        // Satellite starts an internal Xwayland before connecting to us. A
+        // dedicated named socket avoids leaking WAYLAND_SOCKET into that child.
+        for (origin, x11_bridge) in [
+            (dome::Realm::Desktop, false),
+            (dome::Realm::Xr, false),
+            (dome::Realm::Desktop, true),
+        ] {
             let listener = ListeningSocketSource::new_auto().unwrap();
             names.push(listener.socket_name().to_os_string());
             loop_handle
@@ -410,6 +420,7 @@ impl Dome {
                             stream,
                             Arc::new(ClientState {
                                 origin,
+                                x11_bridge,
                                 ..ClientState::default()
                             }),
                         )
@@ -434,7 +445,7 @@ impl Dome {
             )
             .unwrap();
 
-        (names.remove(0), names.remove(0))
+        (names.remove(0), names.remove(0), names.remove(0))
     }
 
     pub fn surface_under(
@@ -460,6 +471,7 @@ impl Dome {
 #[derive(Default)]
 pub struct ClientState {
     pub trusted_ime: bool,
+    pub x11_bridge: bool,
     pub origin: dome::Realm,
     pub compositor_state: CompositorClientState,
 }

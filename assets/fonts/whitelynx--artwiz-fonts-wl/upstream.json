@@ -1,0 +1,195 @@
+{
+  "repository": "https://codeberg.org/whitelynx/artwiz-fonts-wl",
+  "revision": "ca048f9f870a1a6b19ea627f5f181355e2020590",
+  "format": "BDF only; original bitmap pixels; legacy character codes mapped to Unicode for session text",
+  "files": {
+    "AUTHORS": "ed1ff341617d04c02b15ce64da21e0fe0772facf03fc9705e056a120ccb85407",
+    "COPYING": "32b1062f7da84967e7019d01ab805935caa7ab7321a7ced0e30ebe75e5df1670",
+    "README.md": "b6d965f54f4440b816f1c97ef22b615cd26e610a2b94b63eb29442cd7dcc112c",
+    "anorexia-bold.bdf": "52327216973af8a016535f21648730c7e76333dd1505e2929feef98142127bce",
+    "anorexia.bdf": "23293edcbf3c4a5abdebf518c1a2b3620d706692a521c81dec8bb567ad45bf2f",
+    "aqui-bold.bdf": "ca9ca3f894f6bef165e13dca6f560ca7fc9b5c7ff189dafa53a1056b85f2cc1a",
+    "aqui.bdf": "1b81369d1d41a7edd8a373d6e624a6f84eacf024842d3ab432e25253f1e68777",
+    "cure-bold.bdf": "6ddcc8b4160ad90f77a506bd0a8d608e589f5b9c3d410230681ed167b75cc938",
+    "cure.bdf": "62be2af9c241651f7f6cf46f11ce421309f021fcb62d3642d19bf799597315bb",
+    "drift-bold.bdf": "b356fc29587938517ede72ffb6158ccef4a036c1e21fe64b72b97cd41ea44ab0",
+    "drift-unicode.bdf": "ec3c10938753555916bee13103fc4a6fb08a23d47c9ba32591002fc5a2e1f5f1",
+    "drift.bdf": "2e715608cd2d5c4a7e4fe8d24e826af608faa878ef982f152654bd6b2dc7623b",
+    "edges-bold.bdf": "0c10a4b6be1ae0f0111e8b7b123e28d82a5d409f370ba7ae551bcbe44b81b42d",
+    "edges.bdf": "33a9539a87265e586d8f6a3e12698afe0dad22d11b56447cc06410d8ea7735ea",
+    "fkp.bdf": "39d21bf85d3bdbec6a0b624a56934b4e913d165badfe5d95770d98c786dac95c",
+    "gelly-bold.bdf": "50bf9d0ae2579a6dd4735b82b7b73e9f26be33256a0d5debaaf866b3d1e2a18c",
+    "gelly.bdf": "d66e42e8ffde94cbbaced3052339ca3c0a9303748c510719cd1ab11fe5807e70",
+    "glisp-bold.bdf": "c690ecea776767da3758ceb77a3f6fb05cc9367387ecef5878b2c30560495625",
+    "glisp.bdf": "69849c87413de1b946eb70556ae4a082a6163af01d960664f3bf2ac5448baa8e",
+    "kates-bold.bdf": "9ee9341d7cbefbecb885a082f28dda34821b76f240ac2d2fa871bbc83ed3e168",
+    "kates.bdf": "d9705397e18bb97f4a64d7502aa72557300404f7dbc8b9417a4b8287df6b1eee",
+    "lime-bold.bdf": "8260ee91f89f60243c55e1595c4dcf537d8a36213fd72708fde3fe80b3378b87",
+    "lime.bdf": "1e9a37dae1a1b0827a34e3d7ec5c6b3b0738f4e4c7107ec2f911bc7c4919c6b0",
+    "mints-mild-bold.bdf": "c8c0c94ec5e5785aa9369bf5fb5b1c14c776be0fb51bc8518b5ef812ad7fa643",
+    "mints-mild.bdf": "c129e172dc3ca19ff8b5a09a00f46a95c8fa0e3bf158d5da3cdeacb7de2da92b",
+    "mints-strong-bold.bdf": "51a079c892fcf108223a84fc82a3067cda66d82bffa9bb257d536f96223eb9aa",
+    "mints-strong.bdf": "693c3227bbcf5e88749e25eb8372e5c233e9e1b0ad950f70e5bf3b6d028cbd59",
+    "nu-bold.bdf": "c869dc4135819d6f24a1975afa3b26ab08d0d31f9b611398d9f9e06e37fd59a2",
+    "nu.bdf": "68a2d2fbd71040808a1aa9cd304faa32a222c65eb5b8faed2a1cc1c1deb1eccf",
+    "smoothansi-bold.bdf": "20357716bed233b162b89558101714955ac706117c2d045c92307cb9077dc18f",
+    "smoothansi.bdf": "3d4698d4a2478ea169bad7b735c9066d3c350642e54e0df4006a69a1d0cdc7ed",
+    "snap-bold.bdf": "0aac42352ea2c259b9bbc6487934edc3107441f4fd1647edbeadb3a246c52315",
+    "snap.bdf": "f73979ebc21417915989748e9d2ea2526ecca2f9ae11daaa3518dd96f0b05c0e"
+  },
+  "fonts": {
+    "anorexia-bold.bdf": {
+      "source_sha256": "de3e161202c12829e1275e545be54b115d4784991a44817af39e6cc5f78be201",
+      "encoding": "ISO8859-1",
+      "unicode_mapping": true
+    },
+    "anorexia.bdf": {
+      "source_sha256": "2c13dffe1fa8b88b16c79b6b271ae8b27ba46a424e144c51133b87704af86a5c",
+      "encoding": "ISO8859-1",
+      "unicode_mapping": true
+    },
+    "aqui-bold.bdf": {
+      "source_sha256": "d955aaa9ddeedfcbe9efae273af8f217fd97793e132b44aa72c7bded5d0bb6fb",
+      "encoding": "ISO8859-1",
+      "unicode_mapping": true
+    },
+    "aqui.bdf": {
+      "source_sha256": "cf559237b3d0a4c583057397dc26ae4d22723a435ec620469b1113697d039c7c",
+      "encoding": "ISO8859-1",
+      "unicode_mapping": true
+    },
+    "cure-bold.bdf": {
+      "source_sha256": "71cba47de0f6718abd3b9374f8816e4a1cea0f71c3894a97cc2296c2c8fc0339",
+      "encoding": "ISO8859-1",
+      "unicode_mapping": true
+    },
+    "cure.bdf": {
+      "source_sha256": "5eaf547b8b4a452c69db768f7af4e825120c4c74740507b8eda4dbc09fa90c1e",
+      "encoding": "ISO8859-1",
+      "unicode_mapping": true
+    },
+    "drift-bold.bdf": {
+      "source_sha256": "e5b2c2f949a499621d6755dc222a9625c0014dfadc29286137e1fe52af887037",
+      "encoding": "ISO8859-1",
+      "unicode_mapping": true
+    },
+    "drift-unicode.bdf": {
+      "source_sha256": "ccb6e091a896e6baddf001d9e04f1f9fd74de2ffdc7d3ecfbb014a8323db509f",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    },
+    "drift.bdf": {
+      "source_sha256": "c7bec7f02a51b5ec9f9956ec80abb60a8d31a59a5d7a9044e89f2877f1d084e2",
+      "encoding": "ISO8859-1",
+      "unicode_mapping": true,
+      "family_alias": "drift [whitelynx drift]"
+    },
+    "edges-bold.bdf": {
+      "source_sha256": "94f4fb25af5f3f805a705054f2c59979887471c282ecda2ffc8db4ae55bd6985",
+      "encoding": "ISO8859-1",
+      "unicode_mapping": true
+    },
+    "edges.bdf": {
+      "source_sha256": "4f4d07bab8743abebe24276522f1e5b23efbc0d40e807688181302e56eb69ab4",
+      "encoding": "ISO8859-1",
+      "unicode_mapping": true
+    },
+    "fkp.bdf": {
+      "source_sha256": "c8af15924a68532f7ad35ec00986f1aef2ca09cb98ea34c81f62e55e92c55b77",
+      "encoding": "ISO8859-1",
+      "unicode_mapping": true
+    },
+    "gelly-bold.bdf": {
+      "source_sha256": "3b4616d5a59fc58b66c2dc9501fe63d92432fbc9ace516bcf583dfc4cb98cd27",
+      "encoding": "ISO8859-1",
+      "unicode_mapping": true
+    },
+    "gelly.bdf": {
+      "source_sha256": "0bc073841b9c62c67959d62365fec93600bd8f58876d79d76e66293cee0626a0",
+      "encoding": "ISO8859-1",
+      "unicode_mapping": true
+    },
+    "glisp-bold.bdf": {
+      "source_sha256": "225397c8b60b15db78f7c845ddcd01e970beaf64fffb239ed98072c9058165b8",
+      "encoding": "ISO8859-1",
+      "unicode_mapping": true
+    },
+    "glisp.bdf": {
+      "source_sha256": "d3d81424e3c9836d3afb51dde2039625bacaabcfb2a202c3436e302e1caa16dd",
+      "encoding": "ISO8859-1",
+      "unicode_mapping": true
+    },
+    "kates-bold.bdf": {
+      "source_sha256": "2959dfdffa4b256626e0f45a833f0937ddf5849e0fde3daab79366b30e79dd8e",
+      "encoding": "ISO8859-1",
+      "unicode_mapping": true
+    },
+    "kates.bdf": {
+      "source_sha256": "91acafd0e6d663a7253be22422b5b48e9fca21bfbc961282a5085485232bf8ea",
+      "encoding": "ISO8859-1",
+      "unicode_mapping": true
+    },
+    "lime-bold.bdf": {
+      "source_sha256": "ac7b91aa0ac1b76c7decf07eb4dc3e36e6684cffd1584b37609ea16918ffc8c4",
+      "encoding": "ISO8859-1",
+      "unicode_mapping": true
+    },
+    "lime.bdf": {
+      "source_sha256": "72599855a98a9793ba2b7dfedba7809b1720b24447fa6794aaf178be5e84f2cb",
+      "encoding": "ISO8859-1",
+      "unicode_mapping": true
+    },
+    "mints-mild-bold.bdf": {
+      "source_sha256": "21fb7ff7b6eecce57e238cb71a172d7b989b871714e53ba68ea0da56af4ca5a9",
+      "encoding": "ISO8859-1",
+      "unicode_mapping": true
+    },
+    "mints-mild.bdf": {
+      "source_sha256": "87997f7ebe215a6bd6812efe159092cae5bbaf15abdc620e14c9f01786f25e8e",
+      "encoding": "ISO8859-1",
+      "unicode_mapping": true
+    },
+    "mints-strong-bold.bdf": {
+      "source_sha256": "5d9781742b21e38bd70bf1e044d41f99eb012e6cd6ab2d8d34aa1e1ba2d97f5e",
+      "encoding": "ISO8859-1",
+      "unicode_mapping": true
+    },
+    "mints-strong.bdf": {
+      "source_sha256": "09241687dcd6931190556b8fefb6e3f284c2db1400c13125f5ff6fafa6140454",
+      "encoding": "ISO8859-1",
+      "unicode_mapping": true
+    },
+    "nu-bold.bdf": {
+      "source_sha256": "2a813ace49cb4b2e02fa0e92b8dd689404250b8235fe2424e742e724d17f946a",
+      "encoding": "ISO8859-1",
+      "unicode_mapping": true
+    },
+    "nu.bdf": {
+      "source_sha256": "60e454e25c196f352db5d3cf4a2d4c65814dd9e422ddd253c28e81d139ea7127",
+      "encoding": "ISO8859-1",
+      "unicode_mapping": true
+    },
+    "smoothansi-bold.bdf": {
+      "source_sha256": "00d99640a4a7c9d26c5c1f381cfbdc1ad1b865d36d35e85cca1d1cb95a8782cf",
+      "encoding": "ISO8859-1",
+      "unicode_mapping": true
+    },
+    "smoothansi.bdf": {
+      "source_sha256": "c1d626565c85853dd6f06b43a2bfb97292249efe95fbd9afc52fe1531ba91648",
+      "encoding": "ISO8859-1",
+      "unicode_mapping": true
+    },
+    "snap-bold.bdf": {
+      "source_sha256": "11fa40db81319e50cbd5744eab63112fe87f375e2e7f3498b927e0d7ecfefb70",
+      "encoding": "ISO8859-1",
+      "unicode_mapping": true
+    },
+    "snap.bdf": {
+      "source_sha256": "1ca803d33f9f7f22800c7cd448e341207527185772a72697d6ebe4a09fc93cd1",
+      "encoding": "ISO8859-1",
+      "unicode_mapping": true
+    }
+  },
+  "skipped": [],
+  "source_sha256": "936f5bc8a5ff3f65972b678fa07b75c0eab56799f9151e665b0833db2f668583"
+}

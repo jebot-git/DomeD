@@ -22,6 +22,67 @@ localization remains future work.
 
 ![Dome layout laboratory](docs/preview.png)
 
+## Build and toolkit selection
+
+FLTK is the default Cargo feature. Native compositor builds require the patched
+FLTK 1.4.5 installation, Cairo, FreeType, Fontconfig, GIO and PipeWire development
+files, in addition to the Rust/Wayland/DRM dependencies below. Set its prefix
+before using the local build script (the prefix must contain `include/` and `lib/`):
+
+```sh
+export DOME_FLTK_PREFIX=/path/to/patched-fltk-1.4.5
+./scripts/build-local.sh --release
+```
+
+Qt6 is an explicit alternative, built separately so Cargo does not enable both
+shell adapters:
+
+```sh
+cargo build --locked --release --no-default-features \
+  --features nested,standalone,xr,qt6
+```
+
+Only this alternative needs Qt6 Widgets development files. The standalone
+`dome-preview` layout service does not build a native shell and needs neither
+FLTK nor Qt. See [the FLTK notes](FLTK_EXPERIMENT.md) for toolkit patches and
+current limitations. Qt-based third-party applications and KDE portal services
+remain separate runtime dependencies where used.
+
+## Native tray applications and rendering audit
+
+DomeD starts one native FLTK/OpenGL tray applications manager. Its single tray
+entry opens a menu for tray applications, KDE Connect, Fcitx5 and KWallet in a
+shared window. Closing the window keeps the tray entry running.
+Other StatusNotifier applications keep native tray menus; X11 windows translated
+by the session-owned bridge start on the desktop side. See
+[tray controls and build instructions](docs/TRAY_FRONTENDS.md) and the
+[workspace FLTK/GPU audit](docs/FLTK_GPU_AUDIT.md) for implemented paths,
+remaining feature gaps and actual hardware evidence.
+
+## Native administrator authentication
+
+DomeD uses `dome-askpass`, a FLTK Pinentry frontend, as the default
+`SUDO_ASKPASS` for its child applications and activated services. It uses the
+shared patched FLTK 1.4.5 toolkit, Dome appearance settings and Ctrl+W/Escape
+cancellation. Enter authenticates; Tab moves between controls. This configures
+sudo's `-A` graphical password request; Polkit services keep their existing agent.
+An explicitly supplied `SUDO_ASKPASS`, including an empty value, is preserved.
+
+Build as your regular user before staging or installing DomeD:
+
+```sh
+python3 scripts/build-askpass.py --fltk-prefix /opt/fltk-vr/toolkit
+scripts/stage-askpass.sh build/askpass-stage
+python3 tests/askpass/test_dialog.py
+```
+
+The build verifies the pinned Pinentry 1.3.3 source checksum. The source archive,
+patch, shared appearance header and GPL license accompany the installed helper
+under `/usr/local/share/doc/domed/pinentry`. The frontend also retains standard
+Pinentry Assuan operation. Passwords go directly to sudo through its output pipe;
+cancellation returns failure without password output. No password file or cache
+is created. Installation does not restart a desktop session.
+
 ## Try the layout laboratory
 
 With a Rust toolchain installed:
@@ -83,10 +144,10 @@ arguments leaves an empty desktop. `--command PROGRAM ARGS...` still launches a
 custom client. The local runner forwards explicit arguments unchanged.
 
 The local build includes `dome-compositor`, `dome-preview` and `dome-xr` and runs
-the Rust tests. On this Nobara/Fedora workstation the missing Qt6 development
-headers are extracted under `.local-deps/root`, and `build-local.sh` uses those
-headers with the installed `/usr/lib64` Qt runtime. No system installation is
-needed. To recreate this optional local dependency setup:
+the Rust tests. It uses the default FLTK shell and requires `DOME_FLTK_PREFIX`
+as described above. For the optional Qt6 build, this workstation can extract
+missing development headers under `.local-deps/root`; these are not required by
+the default shell. To recreate that optional dependency setup:
 
 ```sh
 ./scripts/prepare-local-deps.sh
@@ -107,8 +168,10 @@ texture transport without a headset; headset appearance still needs visual testi
 Install a Rust toolchain, C linker, `pkg-config`, Wayland/EGL/GLES and xkbcommon
 development packages. On Ubuntu/Debian the development packages are typically
 `build-essential pkg-config libwayland-dev libegl1-mesa-dev libgles2-mesa-dev
-libxkbcommon-dev qt6-base-dev libfontconfig1-dev libfreetype-dev libglib2.0-dev`. Qt6 Widgets 6.4 or newer supplies shell fonts,
-menu styling and server-side window decorations. Then run from an existing Wayland or X11 desktop:
+libxkbcommon-dev libfontconfig1-dev libfreetype-dev libglib2.0-dev
+libcairo2-dev libpipewire-0.3-dev libgbm-dev libdrm-dev libinput-dev libseat-dev`.
+The default shell also requires the patched FLTK prefix above. Add `qt6-base-dev`
+(Qt6 Widgets 6.4 or newer) only when building the explicit Qt6 alternative. Then run from an existing Wayland or X11 desktop:
 
 ```sh
 cargo run --locked --features nested --bin dome-compositor -- --terminal
@@ -122,7 +185,7 @@ screen, install the session described below. Additional clients can connect usin
 WAYLAND_DISPLAY=wayland-N your-wayland-app
 ```
 
-The native shell supports click-to-focus, Qt6 title-bar controls/dragging, client-initiated move/resize,
+The native shell supports click-to-focus, native title-bar controls/dragging, client-initiated move/resize,
 minimize/maximize/close, app launch (also Super+Shift+Space) and desktop switching/creation.
 Its local web panel controls the same live window/workspace model; its geometry
 preview still uses sample surface content. App launching requires `gio`, installed
@@ -158,7 +221,9 @@ Use `--backend nested` for a development window in an existing desktop. Without
 an explicit backend, a host DISPLAY/WAYLAND_DISPLAY selects nested mode; otherwise
 DRM is selected. `--check-backend` reports compiled support without opening a seat.
 
-The native backend enumerates the seat's GPUs and drives every connected output,
+The native backend defaults to one GPU and drives every connected output on it.
+Multi-GPU support is available only in builds with the Cargo feature `multi-gpu`
+(`scripts/build-local.sh --release --multi-gpu`). These builds enumerate the seat's GPUs,
 with independent CRTC assignment, scanout buffers, damage and page-flip scheduling.
 Displays form a horizontal extended desktop by default. Each monitor has its own
 bars; windows, cursors and popups use global desktop coordinates, and maximization
@@ -166,6 +231,18 @@ reserves the containing monitor's bars. Unplugging a monitor recovers stranded
 windows; reconnecting it restores scanout without restarting the session. GPUs can
 also be added or removed while other outputs remain active. Each GPU has its own
 GBM/EGL renderer; advertised DMA-BUF formats are supported by every initial GPU.
+Single-GPU builds import client buffers only on the selected GPU and ignore other
+GPUs during hotplug, while retaining monitor hotplug on the selected card.
+To pin a single-GPU binary to the Arc A770 in this system, build with:
+
+```sh
+./scripts/build-local.sh --release --drm-device /dev/dri/by-path/pci-0000:03:00.0-card
+```
+
+The device path is embedded at compile time through `DOME_BUILD_DRM_DEVICE` and
+takes precedence over runtime `DOME_DRM_DEVICE`. It cannot be combined with
+`multi-gpu`. Without a build pin or runtime device selection, a single-GPU build
+uses the seat's primary GPU. `--check-backend` reports both build settings.
 
 Open **Displays & XR Configuration** (**Super+,**) to select each connector's
 resolution/refresh, enable it, choose a primary display, or position it explicitly
@@ -192,8 +269,11 @@ all options. The selected row stays visible and hit testing follows the viewport
 **Ctrl+Alt+F1…F12** switches VTs through libseat. Seat deactivation stops scanout and
 input, balances held buttons/keys, stops XR input and hides the terminal overlay.
 Reactivation restores scanout and client focus. Native Wayland clients can use
-DMA-BUF buffers; client cursor surfaces and a fallback software cursor are drawn
-by Dome. The nested and native backends share shell, popup and XR rendering.
+DMA-BUF buffers. DomeD owns the cursor globally: client cursor images, hotspots
+and hide requests cannot replace or hide it. Native and nested sessions draw the
+same DomeD arrow, with the nested host cursor hidden. Appearance changes repaint
+the cursor immediately: light fill in dark mode, dark fill in light mode, with a
+contrasting outline. The nested and native backends share shell, popup and XR rendering.
 
 The session requests XR and the native Ghostty overlay at startup. If the headset
 or runtime is unavailable, the desktop remains usable; use **Start XR** when it
@@ -226,13 +306,15 @@ pkexec /usr/bin/bash "$PWD/scripts/vkms-test-device.sh" prepare
 uv run --no-project --with PySide6 --with pillow python scripts/test-native-drm.py
 uv run --no-project --with PySide6 --with pillow python scripts/test-native-drm.py --installed
 pkexec /usr/bin/bash "$PWD/scripts/vkms-test-device.sh" prepare-second-gpu
+./scripts/build-local.sh --multi-gpu
 uv run --no-project --with PySide6 --with pillow python scripts/test-native-drm.py --multi-gpu
 pkexec /usr/bin/bash "$PWD/scripts/vkms-test-device.sh" cleanup
 ```
 
 `DOME_DRM_TEST_DEVICE` and the comma-separated `DOME_DRM_TEST_DEVICES` accept only
-the kernel's `vkms` driver. Its optional
-`DOME_DRM_TEST_CONTROL` socket is available only in that test mode. Production
+the kernel's `vkms` driver.
+Multiple test devices require a `multi-gpu` build; test devices bypass the build
+device pin. The `DOME_DRM_TEST_CONTROL` socket is available only in that test mode. Production
 sessions always use libseat and libinput. `DOME_DRM_CAPTURE` and `DOME_DRM_REPORT`
 write diagnostic framebuffer snapshots and scanout counters when explicitly set.
 `DOME_DRM_CAPTURE_ALL=1` names snapshots per output; `DOME_DRM_REPORT_ALL=1`
@@ -322,9 +404,9 @@ the application GTK appearance bridge. Portal service
 units must inherit `XDG_CURRENT_DESKTOP=Dome` rather than forcing `KDE`.
 
 WayVR and other portal clients can share one or several monitors after choosing
-sources in a Qt6 dialog. Each chosen monitor has its own PipeWire node and logical
+sources in the native sharing picker (FLTK by default). Each chosen monitor has its own PipeWire node and logical
 position and size. Capture includes desktop windows, decorations and shell, with
-hidden or embedded cursors. A Qt6 sharing control stays visible until sharing
+hidden or embedded cursors. A native sharing control stays visible until sharing
 ends; **Stop sharing**, closing that control, closing the portal session, output
 removal or resize, and a frontend exit all revoke the capture. Requests from
 arbitrary D-Bus peers cannot bypass the frontend. Permissions are per session;
@@ -340,7 +422,7 @@ frontend, and the installed `dome-portal-picker` next to the compositor. Install
 the new compositor and log back into DomeD before using desktop capture.
 
 The integration test uses a private D-Bus, Xvfb display, PipeWire graph and
-WirePlumber policy profile. It checks the real frontend, Qt6 consent/cancellation,
+WirePlumber policy profile. It checks the real frontend, consent/cancellation,
 actual captured Wayland pixels, stream teardown and frontend access controls:
 
 ```sh
@@ -383,9 +465,12 @@ uv run --no-project --with python-xlib --with pillow python scripts/test-steam-n
 
 US English, **Anthy** Japanese, Czech, Korean **Hangul**, and Serbian Cyrillic
 input use the installed Fcitx5 framework. **Super+Space** cycles the available
-methods; **Super+Shift+Space** opens the application launcher. Clicking the
-top-bar US/あ/CZ/한/СР indicator also switches input
-methods. The native login session starts Fcitx5 on a private, trusted Wayland
+methods; **Super+Shift+Space** opens the application launcher. The top-bar
+flag and US/あ/CZ/한/СР label open the native Fcitx5 menu, with input-method,
+group, and configuration submenus. There is one language indicator; Fcitx's
+separate tray icon is suppressed. `fcitx5-configuration-fltk` opens the shared
+FLTK configuration frontend and accepts `fcitx://config/...` targets.
+The native login session starts Fcitx5 on a private, trusted Wayland
 connection. Input-method-v2 and virtual-keyboard privileges are restricted to that
 connection. Text-input-v3 clients receive Japanese preedit, conversion and commit;
 candidate popups use the same desktop and spatial popup pipeline as application
@@ -472,16 +557,19 @@ profiles gain it automatically unless Super+P is already assigned, in which
 case the new action starts disabled. A third pull leaves that window on the
 dome. Scaling grows panels outward from the central gap.
 
-The same Qt6 menu/tray/taskbar is rendered into two XR shell layers,
+The same native menu/tray/taskbar is rendered into two XR shell layers,
 with adjustable bar heights and automatic lane attachment. Menu and preview expansion
 keeps the original top/bottom edges fixed. Mouse clicks invoke native shell
 commands, including application actions, task previews and status menus. Horizontal
 bar widths automatically fit the runtime field of view; no width or offset settings are needed.
 
-Real Wayland surfaces and shell images travel through a CPU bridge into Vulkan
-swapchains. The compositor thread owns input and Wayland resource lifetimes. This
-is an initial implementation, not a zero-copy renderer; window captures are capped
-at about 20 Hz.
+Compatible Wayland window buffers travel through the private DMA-BUF bridge into
+Vulkan swapchains without CPU pixel readback. `dome-xr --transport auto` falls back
+to RGBA transport per window; `--transport cpu` forces compatibility transport and
+`--transport gpu` requires GPU sharing. Shell images still use CPU rasterization
+and upload. Diagnostic `--capture` uses CPU transport. The compositor thread owns
+input and Wayland resource lifetimes; GPU sharing still renders into OpenXR
+swapchains and does not guarantee dedicated VRAM placement.
 
 Mouse and keyboard are the only input methods. The XR renderer requests no hand
 or eye tracking extensions and emits no tracked input. The mouse cursor follows
@@ -496,8 +584,9 @@ recenter the window; moving a pulled-out panel returns it to the dome.
 **Super+Alt+Left/Right** reorders it horizontally within its lane, stopping at
 both ends. **Super+Equals/Minus** grows/shrinks it by 10% within 0.25–4× scale.
 The focused window renders over its neighbours; enlarged unfocused windows
-render underneath them. The larger cyan/white cursor has a dark outline for
-contrast over light and dark content. These actions can be rebound in Settings.
+render underneath them. The larger XR reticle follows the same Appearance palette
+as the desktop cursor, with a contrasting outline over application content.
+These actions can be rebound in Settings.
 Saved profiles retire stock duplicate shortcuts while preserving custom remaps.
 
 Inactive desktops with XR windows remain visible as progressively deeper, faded
@@ -621,8 +710,9 @@ session it releases DRM/input ownership and returns to SDDM. Dome has its own
 DRM backend; logind/libseat supply session ownership. No secure screen locker is
 implemented yet, so Lock is offered only when an external locker is available.
 
-Desktop titlebars use Workbench-style gadgets: close on the left, zoom and depth
-on the right, with square glyphs and raised/pressed bevels. Zoom toggles between
+Desktop titlebars use Workbench-style gadgets: a solid close square on the left,
+two-size zoom and overlapping depth planes on the right. These drawings are
+independent of the font and icon theme, with raised/pressed bevels. Zoom toggles between
 two size/position presets (initially the monitor work area and original geometry),
 remembering changes made in either state. Depth sends a front window behind the
 others, or brings a rear window forward; Shift-depth always sends it behind.
@@ -632,8 +722,10 @@ through the Window menu, taskbar and Super+M. Border resizing and Shift-drag til
 continue to work. These gadgets apply to desktop frames; XR client panels retain
 their existing presentation.
 
-Appearance offers a light/dark colour scheme, accent, desktop background, chrome
+Appearance offers a light/dark colour scheme, accent, chrome
 opacity, global bitmap font and native pixel size, persisted in `$XDG_CONFIG_HOME/dome/appearance.json`.
+The desktop background follows the colour scheme: dark grey (`#303030`) or light
+grey (`#d0d0d0`). Older saved background colours are ignored.
 Window titlebars and borders follow the selected theme, accent and chrome opacity;
 existing windows repaint immediately, including inactive decorations. The global
 menu bar and taskbar use the same colours and opacity, in desktop and
@@ -674,44 +766,64 @@ XR shell overlays take input priority over application surfaces beneath them.
 Expanded settings and other modal panels block application clicks, scrolling and
 focus changes, including while an application previously held mouse capture.
 
-The global font applies to all Dome-owned menus, panels, dialogs, notifications
-and window captions in desktop and XR. The picker offers only fixed-strike fonts
-with a Unicode character map and Latin text coverage, with each font's available
-native pixel sizes from 12–24 px. Fonts smaller than 12 px are excluded even
-when installed on the host. GNU Unifont remains the 16 px default (its actual
-font family is `Unifont`). The distribution bundles these true bitmap faces:
+The global font applies to Dome-owned menus, panels, dialogs, notifications and
+window captions in desktop and XR, and to the suite’s FLTK controls. Appearance
+provides separate **Font family**, **Font face**, **Native size**, and **Font scale**
+controls. Chrome opacity cycles through **25%, 50%, 75%, and 100%**
+(alpha 64, 128, 191, and 255); older settings snap to the nearest preset.
+Native strikes from 4–64 px are supported; scale is **1x** or **2x**.
+Build the private GTK font runtime with `python3 scripts/prepare-pango-bdf.py`
+(or pass its toolkit prefix through `DOME_FONT_RUNTIME_PREFIX` when staging).
+The native FLTK Cairo/Wayland backend uses Fontconfig and FreeType directly for
+font enumeration, descriptors, measurement and drawing. Its bundled Cairo
+decorations use the same bitmap face; external GTK decoration plugins are not
+loaded. It does not link Pango.
+GTK and WebKit retain their separate patched Pango runtime for text layout.
+The system FFmpeg SVG decoder also brings Pango into qimgvr through libavcodec;
+FLTK controls and libass subtitle text use their independent bitmap paths.
+The 2x option replicates every bitmap pixel into a 2×2 block using the bdf2x
+algorithm. It writes another BDF to the user cache, with doubled advances and
+metrics, and never resizes a glyph with filtering. Unifont 16 px at 1x is the default.
 
-| Family | Native sizes (px) | Coverage and terminal symbols |
-| --- | --- | --- |
-| [GNU Unifont](https://unifoundry.com/unifont/) | 16 | All requested script samples: Cyrillic, Japanese, Korean, simplified/traditional Chinese, Thai, Arabic, Czech and German |
-| [kirsch](https://github.com/molarmanful/kirsch) | 16 | Latin, Cyrillic and hand-drawn Nerd Font/Powerline glyphs; Nerd Font coverage is partial |
-| [Cozette](https://github.com/the-moonwitch/Cozette) | 13 | Czech, German, Cyrillic, Japanese sample glyphs, partial Nerd Font coverage and Powerline |
-| [UW ttyp0](https://people.mpi-inf.mpg.de/~uwe/misc/uw-ttyp0/) | 12, 13, 14, 15, 16, 17, 18, 22 | Czech, German, Cyrillic, Thai and Powerline; regular/bold, plus italic at 15–18 |
-| [Tamzen for Powerline](https://github.com/sunaku/tamzen-font) | 12, 13, 14, 15, 16, 20 | Latin-1 and Powerline; regular/bold; use other faces for broader language coverage |
-| [Spleen](https://github.com/fcambus/spleen) | 12, 16, 24 | Latin-1; Czech and Powerline at 16/24; the 12 px strike has a smaller repertoire |
-| [Fusion Pixel](https://github.com/TakWolf/fusion-pixel-font) | 12 | Chinese, Japanese and Korean, with zh-Hans, zh-Hant, ja and ko regional variants; Czech/German sample coverage |
-| [DungGeunMo + Fixedsys](https://cactus.tistory.com/193) | 16 | All 11,172 modern Hangul syllables; also passes Cyrillic, Czech, Thai and Arabic samples; reproducible monochrome BDF conversion of the public-domain original |
-| [DenkiChip Hangul](https://quiple.dev/font/denkichip-hangul) | 12 | Japanese and Korean |
-| [Galmuri](https://quiple.dev/font/galmuri) | 12, 16, 21 | Japanese/Korean; the names Galmuri9/11/14 refer to these actual native strikes |
+BDF is the only session font format. LightXR is independent of session settings
+and retains its own PCF for login. Fontconfig’s configured directories, system
+font directories, `~/.fonts`, `$XDG_DATA_HOME/fonts` (normally
+`~/.local/share/fonts`), and the bundled directory are searched for raw BDFs
+(including `.bdf.gz`). Installed TTF, OTF, OTB and PCF fonts are not offered or
+used as session fallbacks. A private Fontconfig configuration allows only BDF;
+the host configuration is preserved. Font files are read directly by FreeType,
+FLTK CPU/GL rendering, the private patched Pango for GTK, Ghostty, and the patched libass used by mpvr and qimgvr.
 
-Galmuri7's 10 px face is removed. Existing smaller saved selections migrate to
-Unifont 16 px while preserving colours and opacity. Bitmap files, Unicode
-sample coverage, native strikes and source checksums are audited with
-`uv run --no-project --with freetype-py python scripts/audit-bitmap-fonts.py`;
-the report is written to `artifacts/bitmap-fonts/coverage.json`. Sample coverage
-does not imply complete coverage of every language or Unicode block. Arabic
-joining and Thai mark positioning also depend on the application's shaping engine.
+The full testing bundle currently contains 748 BDF files, including Unifont,
+DenkiChip, DungGeunMo, Galmuri, Fusion Pixel, Cozette, kirsch, all Spleen and
+ttyp0 native sizes, Tamzen, UFO, Artwiz WL, X11 Fixed 10x20, Robotron 1715,
+Classic Mac, IBM/OldSchool PC, Hiro’s X11 fonts, OEM12x20, the historical Hangul
+collection, Terminus, uni16m, Zpix, Dina, the Tecate collection, Monomacs and Siji.
+The test bundle will be narrowed after evaluation; collection manifests and the
+separate font directory also support distributing the remainder as another package.
 
-Font sources, licenses and reproducible build/conversion details are retained
-under `assets/fonts/`; notices are installed with the distribution. Fusion
-Pixel uses upstream PCF files because its current OTB release is missing tables
-required by FreeType. Outline-only Nerd Font patches are excluded; terminal
-symbol compatibility does not mean every Nerd Font icon is available.
-Installed PCF, BDF and OTB fonts are discovered at compositor startup, including
-user fonts in the usual data directories. No system Fontconfig policy is changed. Settings save automatically; existing chrome repaints when
-the font changes. Qt and GTK application controls inherit the session font, size,
-light/dark mode and accent. Existing toolkit windows update when these settings
-change; application-specific editor and document preferences still apply.
+Each collection retains its source revision, SHA-256 checksums, and available
+upstream terms in `assets/fonts/*/upstream.json`. Zpix is bundled for personal
+and education use at the user’s request; commercial product use requires its
+separate upstream license. Historical collections may have individual embedded
+notices rather than a collection-wide license; those notices are preserved.
+Legacy character codes are mapped to Unicode during packaging without changing
+glyph pixels. Ambiguous names receive source aliases, displayed as separate faces
+within their original family. Symbol-only and non-Latin-only fonts remain
+available for fallback and are excluded from the global Latin text picker.
+
+`scripts/index-bdf-fonts.py` rebuilds the verified metadata index after imports;
+the picker reads this index without eagerly loading every glyph. Modified and
+user-installed files are inspected normally. Run
+`uv run --no-project --with freetype-py python scripts/audit-bitmap-fonts.py`
+to verify the bundle, native sizes, checksums and Unicode sample coverage.
+`scripts/test-bdf-fonts.cpp` verifies exact doubled glyph masks and advances;
+`scripts/test-fltk-bdf.cpp` checks actual FLTK CPU and OpenGL pixels at both scales.
+Sample coverage does not imply complete language coverage; Arabic shaping and
+Thai mark positioning also depend on the application’s text engine.
+
+Qt and GTK application controls inherit the session palette and BDF font.
+Application-specific editor, document and web content preferences still apply.
 
 The login session publishes a desktop Settings portal and generates private GTK
 themes and a Fontconfig configuration under its runtime directory. A GTK bridge
@@ -748,12 +860,17 @@ Default Applications; Dome does not select a replacement. Other desktops' PDF
 preferences are preserved.
 
 `scripts/install-miro.sh` builds and installs Miro 0.12.0 into `~/.local` from
-the verified upstream revision with Dome's appearance patch. It requires Rust,
-a C/C++ toolchain, Clang headers, and Fontconfig/GLib development packages.
+the verified upstream revision with Dome's appearance and native menu patches.
+It requires Rust, a C/C++ toolchain, Clang headers, and Fontconfig/GLib development
+packages.
 In a Dome session, Miro follows Appearance's light/dark setting on startup and
 while open, for both its interface and PDF pages. Its saved preferences remain
 unchanged and continue to apply outside Dome. See
-`native/toolkit-hooks/README.md` for patch provenance.
+`native/toolkit-hooks/README.md` for patch provenance. Miro's File, View and
+Layout commands, recent files, shortcuts and live check/radio states are exported
+to the universal menu through DBusMenu and the KDE Wayland appmenu protocol.
+Dome supplies Edit and Window controls alongside them. Miro keeps its in-window
+menu when no compatible Wayland menu host is available.
 
 The native XR frontend uses **GPU frame sharing** automatically when the compositor
 and OpenXR run on the same DRM render device and support compatible DMA-BUF
@@ -986,6 +1103,7 @@ Its own F12 handler hides it while it owns the keyboard. Alt+F4 retains the stan
 | Alt+Tab / Shift+Alt+Tab | XR: next / previous window in the same lane, recentered; desktop: next / previous window |
 | Alt+F4 | Close window |
 | Super+Q | Close windows of active application |
+| Super+X | Switch physical input focus between desktop and the running XR session |
 | Shift+Super+X | Send focused window and its dialogs to the other desktop / XR view |
 | Super+M / Super+Enter | Minimize / toggle maximize |
 | Super+1…8 / Shift+Super+1…8 | Switch desktop / move window to desktop |
@@ -1005,7 +1123,8 @@ Its own F12 handler hides it while it owns the keyboard. Alt+F4 retains the stan
 
 **Window → Send Window to XR / Send Window to Desktop** transfers the focused DomeD-managed
 Wayland or X11 window without restarting its application. Shift+Super+X is
-configurable in keybindings. Transfers are exclusive to the destination; normal
+configurable in keybindings. Super+X switches physical input focus without moving windows or changing XR
+visibility. Both commands are configurable; shortcut dispatch matches modifiers exactly. Transfers are exclusive to the destination; normal
 launches retain their existing shared presentation. **Show Window on Both**
 restores simultaneous presentation of that window and its dialogs. Desktop geometry and XR
 placement survive a round trip. Dialogs follow their parent, while other windows
@@ -1085,6 +1204,8 @@ python3 scripts/test-service.py
 python3 scripts/test-native.py
 # Full desktop input and framebuffer tests on an isolated display (requires Xvfb):
 uv run --no-project --with PySide6 --with python-xlib --with pillow --with dbus-next python scripts/test-desktop.py
+# Cursor override prevention and live dark/light Appearance changes on a private display:
+uv run --no-project --with python-xlib --with pillow python scripts/test-cursor.py
 # With dome-preview running, optional offscreen visual/interaction check:
 uv run --no-project --with PySide6 python scripts/preview-smoke.py
 ```
@@ -1125,7 +1246,7 @@ GET `/api/integrations/qimgvr` returns version 1, compositor PID, XR socket,
 The viewer validates Unix peer credentials and the owned session record before
 using this endpoint. It does not create a headset session.
 
-Validation: `scripts/build-local.sh --release` builds all features and runs Rust
+Validation: `scripts/build-local.sh --release` builds the desktop and XR binaries and runs Rust
 tests. Run the isolated compositor/default-opener test with the installed Arc
 Python: `~/.local/opt/arc-sbs/current/venv/bin/python scripts/test-qimgvr.py`.
 It requires Xvfb, qimgvr, cv2/numpy and the local depth model. Results are written
@@ -1192,6 +1313,21 @@ optimization; leave it off when current readability is acceptable. The synthetic
 shader smoke does not establish full-headset performance. See that runtime's
 `wivrn-layer-filter(7)` and shader smoke report. DomeD does not apply a full-frame
 blur to bitmap fonts.
+
+## Gmsh stereo mesh view
+
+The FLTK Gmsh integration opens a live mesh-only `org.gmsh.Sbs` surface alongside
+the ordinary desktop GUI. DomeD marks this surface XR-only when its identity is
+first set and submits the left and right texture halves to their respective eyes.
+It uses the existing DMA-BUF transport; Gmsh does not create another OpenXR session.
+Later user changes to the window's presentation remain available.
+
+Start XR, then choose **Window → DomeD XR Mesh** in Gmsh, press `Ctrl+Shift+X`, or
+run `gmsh-dome-xr mesh.msh` from inside the DomeD session. Gmsh checks the caller's
+owned per-socket session record and `GET /api/integrations/gmsh`, whose version-1
+response provides `compositor_pid`, `xr_socket`, `xr_active` and `sbs_app_id`.
+An inactive XR session leaves the normal GUI running. See the Gmsh checkout's
+`doc/DomeD-XR.md` for controls, projection details and isolated test instructions.
 
 ## Clock calendar
 

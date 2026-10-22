@@ -12,6 +12,7 @@ qt6 = []
 xr = ["dep:openxr","dep:ash","dep:ureq","dep:ctrlc","dep:image"]
 nested = ["dep:async-channel", "dep:smithay", "dep:tracing-subscriber", "dep:bitflags", "dep:zbus", "dep:wayland-protocols-plasma", "dep:wayland-server", "dep:wayland-scanner"]
 standalone = ["nested", "dep:calloop", "smithay/backend_drm", "smithay/backend_gbm", "smithay/backend_libinput", "smithay/backend_udev", "smithay/backend_session_libseat"]
+multi-gpu = ["standalone"]
 
 [dependencies]
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
@@ -52,6 +53,11 @@ path = "src/bin/dome-preview.rs"
 
 [profile.dev]
 debug = 0
+
+[[bin]]
+name = "dome-bdf-font"
+path = "src/bin/dome-bdf-font.rs"
+required-features = ["nested"]
 
 [[bin]]
 name="dome-xr"

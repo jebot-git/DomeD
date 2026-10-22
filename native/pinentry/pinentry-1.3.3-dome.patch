@@ -1,0 +1,44 @@
+--- a/fltk/main.cxx
++++ b/fltk/main.cxx
+@@ -53,6 +53,7 @@
+ #include "pinwindow.h"
+ #include "passwindow.h"
+ #include "qualitypasswindow.h"
++#include "dome_pinentry.h"
+ 
+ #define CONFIRM_STRING "Confirm"
+ #define REPEAT_ERROR_STRING "Texts do not match"
+@@ -328,6 +329,12 @@
+ {
+ 	application = *argv;
+ 	pinentry_init(PGMNAME);
++	dome_pinentry::session_environment(argc >= 2 && !strcmp(argv[1], "--askpass"));
++	dx::init();
++	if (argc >= 2 && !strcmp(argv[1], "--askpass")) {
++		dome_pinentry::sudo_mode = true;
++		return dome_pinentry::askpass(argc, argv, pinentry_cmd_handler);
++	}
+ 
+ #ifdef FALLBACK_CURSES
+ 	if (!pinentry_have_display(argc, argv))
+--- a/fltk/pinwindow.cxx
++++ b/fltk/pinwindow.cxx
+@@ -38,6 +38,8 @@
+ #include "icon.xpm"
+ 
+ #include "pinwindow.h"
++#include <pinentry.h>
++#include "dome_pinentry.h"
+ 
+ const char *PinWindow::TITLE 		= "Password";
+ const char *PinWindow::BUTTON_OK 	= "OK";
+@@ -141,7 +143,8 @@
+ int PinWindow::init(const int cx, const int cy)
+ {
+ 	assert(NULL == window_);
+-	window_ = new Fl_Window(cx, cy, TITLE);
++	window_ = new dome_pinentry::Window(cx, cy, TITLE);
++	window_->callback(cancel_cb, this);
+ 
+ 	Fl_RGB_Image app(&icon);
+ 	window_->icon(&app);

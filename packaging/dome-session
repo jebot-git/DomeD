@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # SDDM entry point: Dome owns the seat, DRM output and native Wayland desktop.
 set -euo pipefail
-for program in /usr/bin/dbus-run-session /usr/bin/python3 /usr/local/bin/dome-compositor /usr/local/bin/dome-xr /usr/local/libexec/dome-session-client; do
+for program in /usr/bin/dbus-run-session /usr/bin/python3 /usr/local/bin/dome-compositor /usr/local/bin/dome-xr /usr/local/libexec/dome-session-client /usr/local/bin/dome-askpass /usr/local/bin/dome-tray; do
     [[ -x "$program" ]] || { echo "DomeD: required program missing: $program" >&2; exit 1; }
 done
 if [[ "${1:-}" == --check ]]; then
     /usr/local/bin/dome-compositor --backend drm --check-backend
     echo 'DomeD standalone login session and XR frontend are installed.'
+    echo 'Native FLTK sudo askpass is available: /usr/local/bin/dome-askpass'
+    echo 'Native FLTK KDE Connect, Fcitx5 and wallet managers are installed.'
     if command -v kwalletd6 >/dev/null; then
         echo 'KWallet D-Bus activation is available.'
         [[ ! -x /usr/libexec/pam_kwallet_init ]] || echo 'KWallet PAM login handoff is available.'
@@ -45,6 +47,7 @@ if [[ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]]; then
 fi
 unset DISPLAY WAYLAND_DISPLAY WAYLAND_SOCKET
 export XDG_CURRENT_DESKTOP=Dome XDG_SESSION_DESKTOP=dome XDG_SESSION_TYPE=wayland
+export SUDO_ASKPASS="${SUDO_ASKPASS-/usr/local/bin/dome-askpass}"
 export QT_QPA_PLATFORM=wayland
 export QT_IM_MODULE=wayland GTK_IM_MODULE=fcitx XMODIFIERS=@im=fcitx
 # Native FLTK 1.4 otherwise reopens menus dismissed by the compositor. Keep the
@@ -52,6 +55,14 @@ export QT_IM_MODULE=wayland GTK_IM_MODULE=fcitx XMODIFIERS=@im=fcitx
 fltk_runtime="$HOME/.local/lib/domed/fltk"
 if [[ "${DOME_FLTK_HOOKS:-1}" != 0 && -f "$fltk_runtime/libfltk.so.1.4" ]]; then
     export LD_LIBRARY_PATH="$fltk_runtime${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+fi
+# Private Pango restores raw BDF shaping/metrics for GTK controls.
+pango_runtime="${DE_XR_FLTK_PREFIX:-/opt/fltk-vr/toolkit}/lib"
+if [[ -f "$pango_runtime/libpangoft2-1.0.so.0" ]]; then
+    export LD_LIBRARY_PATH="$pango_runtime${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+fi
+if [[ -f /usr/local/lib/domed/bitmap/libpangoft2-1.0.so.0 ]]; then
+    export LD_LIBRARY_PATH="/usr/local/lib/domed/bitmap${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 fi
 export DOME_LOGIN_SESSION=1 DOME_BACKEND=drm
 export LIBSEAT_BACKEND="${LIBSEAT_BACKEND:-logind}"

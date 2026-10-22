@@ -1,0 +1,19 @@
+{
+  "repository": "https://github.com/kolontsov/robotron1715-font",
+  "revision": "f0b542fafed3feaa4c79ced48efc97f449e8ec3a",
+  "format": "BDF only; original bitmap pixels; legacy character codes mapped to Unicode for session text",
+  "files": {
+    "LICENSE": "e7463426eff5fbf49430d653f6c33d1a609706fa8e53a91f486adff7aeb43924",
+    "README.md": "03c1024f05feb1bf20711ae2466687659c5dafc16334e18a244e38c0d12a66c0",
+    "robotron1715.bdf": "e6dba82bcbe2ceb79193e16a473279acbb384799bd71545975d99d9bc44d3fc3"
+  },
+  "fonts": {
+    "robotron1715.bdf": {
+      "source_sha256": "6bce0b833d87b6874b2b5f2e42751ffc244d0388a1355a53102692105c2c5364",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false
+    }
+  },
+  "skipped": [],
+  "source_sha256": "9f6623e3c9e1c24a7cb2e70d86dd325e76d3340b877d826ef4a540defd1c1a1c"
+}

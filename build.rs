@@ -1,7 +1,16 @@
 fn main() {
+    println!("cargo:rerun-if-env-changed=DOME_BUILD_DRM_DEVICE");
+    if let Ok(device) = std::env::var("DOME_BUILD_DRM_DEVICE") {
+        assert!(std::path::Path::new(&device).is_absolute(), "DOME_BUILD_DRM_DEVICE must be an absolute DRM device path");
+        assert!(std::env::var_os("CARGO_FEATURE_MULTI_GPU").is_none(), "DOME_BUILD_DRM_DEVICE and multi-gpu are mutually exclusive");
+    }
     println!("cargo:rerun-if-changed=native/qt_chrome.cpp");
     println!("cargo:rerun-if-changed=native/fltk_appearance.h");
+    println!("cargo:rerun-if-changed=native/bdf_font.hpp");
+    println!("cargo:rerun-if-changed=native/bdf_font_ffi.hpp");
     println!("cargo:rerun-if-changed=native/suite-icons.h");
+    println!("cargo:rerun-if-changed=native/keyboard-flags.h");
+    println!("cargo:rerun-if-changed=native/theme_icons.hpp");
     println!("cargo:rerun-if-changed=native/gpu-window.h");
     println!("cargo:rerun-if-changed=native/bitmap_fonts.hpp");
     println!("cargo:rerun-if-changed=native/default_apps.cpp");
@@ -35,7 +44,7 @@ fn main() {
         println!("cargo:rerun-if-env-changed=DOME_FLTK_PREFIX");
         let mut native = cc::Build::new();
         native.cpp(true).std("c++17").include(format!("{prefix}/include"));
-        for dependency in ["fontconfig", "freetype2", "gio-unix-2.0", "cairo"] {
+        for dependency in ["fontconfig", "freetype2", "gio-unix-2.0", "cairo", "zlib"] {
             let lib = pkg_config::Config::new().probe(dependency).expect("FLTK shell dependency");
             for path in lib.include_paths { native.include(path); }
         }
@@ -53,7 +62,7 @@ fn main() {
         return;
     }
     let mut build = cc::Build::new();
-    for dependency in ["fontconfig", "freetype2", "gio-unix-2.0"] {
+    for dependency in ["fontconfig", "freetype2", "gio-unix-2.0", "zlib"] {
         let library = pkg_config::Config::new().probe(dependency)
             .expect("Fontconfig and FreeType development files are required for bitmap fonts");
         for path in library.include_paths { build.include(path); }

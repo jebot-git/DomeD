@@ -1,5 +1,10 @@
 //! Focus restoration for the shared seat when physical input moves between projections.
 use crate::{Realm, Scene};
+/// A manual desktop choice leaves XR presentation running. Health and session
+/// focus still prevent input from becoming trapped in a stopped/unfocused XR view.
+pub fn physical_input_in_xr(session_active:bool, healthy:bool, surfaces:bool, preferred:Option<bool>) -> bool {
+    session_active && healthy && surfaces && preferred.unwrap_or(true)
+}
 pub fn restore_focus(scene: &Scene, remembered: Option<Option<u64>>, realm: Realm) -> Option<u64> {
     let valid = |id| {
         scene.window(id).is_some_and(|w| {
@@ -162,5 +167,19 @@ mod lane_navigation_tests {
         assert!(!lane_navigation_available(&s, Realm::Desktop));
         s.add("terminal", "org.ghostty.xr.wayland");
         assert!(!lane_navigation_available(&s, Realm::Xr));
+    }
+}
+
+#[cfg(test)]
+mod input_route_tests {
+    use super::*;
+    #[test]
+    fn manual_focus_does_not_require_hiding_xr_and_never_traps_input() {
+        assert!(physical_input_in_xr(true,true,true,None));
+        assert!(!physical_input_in_xr(true,true,true,Some(false)));
+        assert!(physical_input_in_xr(true,true,true,Some(true)));
+        for args in [(false,true,true),(true,false,true),(true,true,false)] {
+            assert!(!physical_input_in_xr(args.0,args.1,args.2,Some(true)));
+        }
     }
 }
