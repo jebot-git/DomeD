@@ -35,6 +35,7 @@ impl crate::Dome {
         self.menu_hover = enabled[next] as i32;
     }
     pub fn shell_panel_key(&mut self, key: u32) -> bool {
+        if self.clock_key(key) { return true; }
         if self.appearance_open && self.keyboard_draft.is_none() {
             if let Some(row) = selection(self.shell_selection, 9, key) {
                 self.shell_selection = row;

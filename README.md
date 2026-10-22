@@ -1297,3 +1297,20 @@ owned per-socket session record and `GET /api/integrations/gmsh`, whose version-
 response provides `compositor_pid`, `xr_socket`, `xr_active` and `sbs_app_id`.
 An inactive XR session leaves the normal GUI running. See the Gmsh checkout's
 `doc/DomeD-XR.md` for controls, projection details and isolated test instructions.
+
+## Clock calendar
+
+Click the top-bar clock to open its calendar. Previous/next month buttons and
+Page Up/Page Down navigate months; the month heading or Home returns to today.
+Arrow keys select a day and Enter opens it in Penguin Mail. Clicking a day opens
+that date directly. When no Penguin Mail executable is found, the calendar stays
+open and explains how to enable the date link. `DOME_PENGUIN_MAIL` can name an
+explicit binary; otherwise PATH and the suite install locations are searched.
+Arguments are passed directly, without a shell.
+
+Time display settings in the popup switch between 12/24-hour time and control
+seconds, weekday and date. They persist in `$XDG_CONFIG_HOME/dome/clock.json` and
+apply immediately. Tab enters the settings, Up/Down choose an option and
+Left/Right or Enter toggles it. Escape closes the popup. Desktop and XR use the
+same model, painting data and hit geometry. Opening another shell panel dismisses
+the clock calendar.

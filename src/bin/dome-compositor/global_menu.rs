@@ -149,6 +149,7 @@ impl Dome {
         index >= 2
     }
     pub fn open_menu(&mut self, index: Option<usize>) {
+        self.clock.open = false;
         // A focus action can precede the next render tick. Consume it before
         // opening, so that tick cannot immediately dismiss the new menu.
         self.update_appmenu();

@@ -654,7 +654,7 @@ impl crate::Dome {
                 ),
             ],
         );
-        state.items.truncate(((width - 704).max(0) / 28) as usize);
+        state.items.truncate(((width - 484 - self.clock_reserve()).max(0) / 28) as usize);
         if !state.keyboard_menu && state.menu.is_some_and(|i| i >= state.items.len()) {
             state.menu = None;
             state.rows.clear();

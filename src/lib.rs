@@ -57,3 +57,5 @@ pub mod xr_gpu;
 pub mod webxr_bridge;
 
 pub mod askpass;
+
+pub mod clock;

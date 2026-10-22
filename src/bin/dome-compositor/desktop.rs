@@ -42,7 +42,7 @@ impl DesktopRenderer {
         let key = format!(
             "{:?}:{}:{}:{}:{:?}:{:?}:{}:{}",
             (
-                state.applied_revision,
+                (state.applied_revision,format!("{:?}",state.clock)),
                 (
                     (state.appearance_open,state.default_apps_open,state.default_apps_row,state.default_apps_choice,state.default_apps.revision()),
                     state.xr_settings_open,
@@ -95,7 +95,7 @@ impl DesktopRenderer {
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
                 .as_secs()
-                / 60
+                / if state.clock.settings.seconds { 1 } else { 60 }
         );
         if self
             .shell_buffer

@@ -369,6 +369,7 @@ impl Dome {
                 }
                 if button_state == ButtonState::Pressed
                     && !pointer.is_grabbed()
+                    && !self.clock.open
                     && !self.audio_open
                     && self.history_panel.is_none()
                 {
@@ -412,6 +413,7 @@ impl Dome {
                 }
                 if button_state == ButtonState::Pressed
                     && !pointer.is_grabbed()
+                    && !self.clock.open
                     && !self.about
                     && !self.default_apps_open
                     && !self.appearance_open
@@ -432,10 +434,10 @@ impl Dome {
                         let global_pos = pos;
                         let pos = pos - self.shell_geometry().loc.to_f64();
                         let tray = self.visible_tray(size.w);
-                        let tray_start = size.w as f64 - 220. - tray.items.len() as f64 * 28.;
+                        let tray_start = size.w as f64 - self.clock_reserve() as f64 - tray.items.len() as f64 * 28.;
                         if pos.y < 36.
                             && pos.x >= tray_start
-                            && pos.x < size.w as f64 - 220.
+                            && pos.x < size.w as f64 - self.clock_reserve() as f64
                             && tray.menu.is_none()
                         {
                             self.activate_tray(

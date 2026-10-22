@@ -268,7 +268,7 @@ impl Dome {
             .collect()
     }
     pub fn shell_modal_open(&self) -> bool {
-        self.audio_open || self.history_panel.is_some() || self.about
+        self.clock.open || self.audio_open || self.history_panel.is_some() || self.about
             || self.default_apps_open || self.appearance_open || self.xr_settings_open
             || self.session_confirm.is_some()
     }
@@ -292,6 +292,7 @@ impl Dome {
             .any(|n| n.contains(x, y))
             || y < 36.
             || y >= (size.h - 60) as f64
+            || self.clock.open
             || self.audio_open
             || self.history_panel.is_some()
             || self.launcher
@@ -317,6 +318,10 @@ impl Dome {
         };
         let (x, y) = (x - origin.x as f64, y - origin.y as f64);
         let size = self.shell_geometry().size;
+        if y >= 0. && y < 36. && x >= (size.w - self.clock_bar_width()) as f64 && x < size.w as f64 {
+            self.toggle_clock(); return;
+        }
+        if self.clock_click(x,y,size.w,size.h) { return; }
         if self.default_apps_click(x,y,size.w,size.h) { return; }
         if self.audio_click(x, y, size.w, size.h) {
             return;
@@ -340,8 +345,8 @@ impl Dome {
             return;
         }
         if !self.shell_modal_open() && y < 36.
-            && x >= (self.shell_geometry().size.w - 220) as f64
-            && x < (self.shell_geometry().size.w - 176) as f64
+            && x >= (self.shell_geometry().size.w - self.clock_reserve()) as f64
+            && x < (self.shell_geometry().size.w - self.clock_bar_width()) as f64
         {
             if self.keyboard_config.ime {
                 self.history_panel = None;
@@ -386,7 +391,7 @@ impl Dome {
         let tray = self.visible_tray(size.w);
         if let Some(index) = tray.menu {
             let x0 = if tray.keyboard_menu { width - 284. }
-                else { width - 220. - (tray.items.len() - index) as f64 * 28. }
+                else { width - self.clock_reserve() as f64 - (tray.items.len() - index) as f64 * 28. }
                 .clamp(4., (width - 284.).max(4.));
             if x >= x0 && x < x0 + 280. && y >= 40. && y < 40. + tray.rows.len() as f64 * 28. {
                 self.tray.select(((y - 40.) / 28.) as usize);
@@ -396,8 +401,8 @@ impl Dome {
             return;
         }
         if y < 36. {
-            let x0 = width - 220. - tray.items.len() as f64 * 28.;
-            if x >= x0 && x < width - 220. {
+            let x0 = width - self.clock_reserve() as f64 - tray.items.len() as f64 * 28.;
+            if x >= x0 && x < width - self.clock_reserve() as f64 {
                 self.activate_tray(((x - x0) / 28.) as usize, x as i32, y as i32, false);
                 return;
             }
@@ -481,8 +486,8 @@ impl Dome {
         let tasks = dome::taskbar::tasks(&scene, &self.apps, &self.pins);
         let items:Vec<_>=self.menu.map(|m|self.menu_items(m)).unwrap_or_default().iter().map(|(text,shortcut,command)|{let bindings=&scene.config.keybindings;let chord=if dome::shortcuts::defaults().iter().any(|b|b.command==*command){bindings.iter().find(|b|b.enabled&&b.command==*command).map(|b|b.label()).unwrap_or_default()}else{shortcut.to_string()};serde_json::json!({"text":text,"shortcut":chord,"enabled":self.command_enabled(*command),"separator":matches!(command,dome::shortcuts::Command::Separator)})}).collect();
         let popup = self.task_popup_json(width, height);
-        crate::qt::paint(
-            serde_json::json!({"kind":"shell","menu_headers":self.menu_headers(),"appmenu_panels":self.appmenu_panels(width,height),"keyboard":if self.keyboard_config.ime {dome::keyboard::input_method_label(&ime.method).map(str::to_owned).unwrap_or_else(||self.keyboard_config.label())}else{self.keyboard_config.label()},"keyboard_flag":dome::keyboard::input_method_flag(if self.keyboard_config.ime { &ime.method } else { self.keyboard_config.layout.split(',').nth(self.keyboard_config.active).unwrap_or("us") }),"keyboard_settings":self.keyboard_draft,"keyboard_field":self.keyboard_field,"keyboard_error":if self.keyboard_error.is_empty(){self.ime.snapshot().error}else{self.keyboard_error.clone()},"keyboard_shortcut":self.keyboard_draft.as_ref().map(|d|d.switch_shortcut.label()),"audio":self.audio_json(width,height),"history":self.history_json(width,height),"notifications": if !self.audio_open && self.history_panel.is_none() && self.input_realm == dome::Realm::Desktop {self.notifications.layout(width,height)} else {vec![]},"xr_settings":self.xr_settings_json(width,height),"default_apps":self.default_apps_json(width,height),"appearance":self.appearance,"appearance_open":self.appearance_open,"shell_selection":self.shell_selection,"session_confirm":self.session_confirm.map(|s|s.label()),"session_error":self.session.state().error,"about":self.about,"about_is_app":self.shell_error=="@app-info","width":width,"height":height,"app":app,"app_info":entry,"menu":self.menu.map(|m|m as i32).unwrap_or(-1),"hover":self.menu_hover,"items":items,"tasks":tasks,"tray":self.visible_tray(width),"task_popup":popup,"launcher":self.launcher,"launch_index":self.launch_index.saturating_sub(self.launch_navigation.offset),"launch_offset":self.launch_navigation.offset,"launch_total":self.matching_apps().len(),"launch_error":self.launch_navigation.error,"xr_active":self.input_xr_active,"manager":self.desktop_manager,"query":self.launch_query,"apps":self.matching_apps().into_iter().skip(self.launch_navigation.offset).take(crate::launcher::ROWS).collect::<Vec<_>>(),"desktops":scene.workspaces.iter().map(|w|w.name.clone()).collect::<Vec<_>>()}),
-        )
+        let mut model = serde_json::json!({"kind":"shell","menu_headers":self.menu_headers(),"appmenu_panels":self.appmenu_panels(width,height),"keyboard":if self.keyboard_config.ime {dome::keyboard::input_method_label(&ime.method).map(str::to_owned).unwrap_or_else(||self.keyboard_config.label())}else{self.keyboard_config.label()},"keyboard_flag":dome::keyboard::input_method_flag(if self.keyboard_config.ime { &ime.method } else { self.keyboard_config.layout.split(',').nth(self.keyboard_config.active).unwrap_or("us") }),"keyboard_settings":self.keyboard_draft,"keyboard_field":self.keyboard_field,"keyboard_error":if self.keyboard_error.is_empty(){self.ime.snapshot().error}else{self.keyboard_error.clone()},"keyboard_shortcut":self.keyboard_draft.as_ref().map(|d|d.switch_shortcut.label()),"audio":self.audio_json(width,height),"history":self.history_json(width,height),"notifications": if !self.audio_open && self.history_panel.is_none() && self.input_realm == dome::Realm::Desktop {self.notifications.layout(width,height)} else {vec![]},"xr_settings":self.xr_settings_json(width,height),"default_apps":self.default_apps_json(width,height),"appearance":self.appearance,"appearance_open":self.appearance_open,"shell_selection":self.shell_selection,"session_confirm":self.session_confirm.map(|s|s.label()),"session_error":self.session.state().error,"about":self.about,"about_is_app":self.shell_error=="@app-info","width":width,"height":height,"app":app,"app_info":entry,"menu":self.menu.map(|m|m as i32).unwrap_or(-1),"hover":self.menu_hover,"items":items,"tasks":tasks,"tray":self.visible_tray(width),"task_popup":popup,"launcher":self.launcher,"launch_index":self.launch_index.saturating_sub(self.launch_navigation.offset),"launch_offset":self.launch_navigation.offset,"launch_total":self.matching_apps().len(),"launch_error":self.launch_navigation.error,"xr_active":self.input_xr_active,"manager":self.desktop_manager,"query":self.launch_query,"apps":self.matching_apps().into_iter().skip(self.launch_navigation.offset).take(crate::launcher::ROWS).collect::<Vec<_>>(),"desktops":scene.workspaces.iter().map(|w|w.name.clone()).collect::<Vec<_>>()});
+        model["clock"] = self.clock_json(width, height);
+        crate::qt::paint(model)
     }
 }
