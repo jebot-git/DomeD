@@ -55,7 +55,9 @@ pub fn export(root: &Path, inherited: &str, _families: &[String]) -> std::io::Re
     std::fs::create_dir_all(&cache)?;
     accepted.push_str("<pattern><patelt name=\"fontformat\"><string>BDF</string></patelt></pattern>");
     let path = root.join("fonts.conf");
-    let configuration = format!("<?xml version=\"1.0\"?><!DOCTYPE fontconfig SYSTEM \"urn:fontconfig:fonts.dtd\"><fontconfig><include ignore_missing=\"yes\">{}</include><dir>{}</dir><dir>{}</dir><cachedir>{}</cachedir><selectfont><rejectfont><glob>*</glob></rejectfont><acceptfont><glob>*.bdf</glob><glob>*.bdf.gz</glob><glob>*.BDF</glob><glob>*.BDF.gz</glob>{accepted}</acceptfont></selectfont></fontconfig>", xml(inherited), xml(&directory.to_string_lossy()), xml(&cache.to_string_lossy()), xml(&root.join("font-cache").to_string_lossy()));
+    // Use pattern rules on both sides: glob rejections take precedence over
+    // accepted patterns and would hide the bundled BDF faces as well.
+    let configuration = format!("<?xml version=\"1.0\"?><!DOCTYPE fontconfig SYSTEM \"urn:fontconfig:fonts.dtd\"><fontconfig><include ignore_missing=\"yes\">{}</include><dir>{}</dir><dir>{}</dir><cachedir>{}</cachedir><selectfont><rejectfont><pattern/></rejectfont><acceptfont><glob>*.bdf</glob><glob>*.bdf.gz</glob><glob>*.BDF</glob><glob>*.BDF.gz</glob>{accepted}</acceptfont></selectfont></fontconfig>", xml(inherited), xml(&directory.to_string_lossy()), xml(&cache.to_string_lossy()), xml(&root.join("font-cache").to_string_lossy()));
     write_if_changed(&path, configuration.as_bytes())?;
     Ok(path)
 }
@@ -114,6 +116,23 @@ mod tests {
                 *bytes
             );
         }
+        let matched = std::process::Command::new("fc-match")
+            .env("FONTCONFIG_FILE", &config)
+            .args(["-f", "%{family}|%{pixelsize}|%{scalable}",
+                   "Fusion Pixel 12px Mono latin:pixelsize=12"])
+            .output().expect("Fontconfig is required for session font exports");
+        assert!(matched.status.success());
+        assert_eq!(String::from_utf8_lossy(&matched.stdout),
+                   "Fusion Pixel 12px Mono latin|12|False");
+        let formats = std::process::Command::new("fc-list")
+            .env("FONTCONFIG_FILE", &config)
+            .args(["-f", "%{fontformat}\n"])
+            .output().unwrap();
+        assert!(formats.status.success());
+        let formats = String::from_utf8_lossy(&formats.stdout);
+        assert!(!formats.is_empty());
+        assert!(formats.lines().all(|format| format == "BDF"),
+                "Session exports must admit BDF faces only: {formats}");
         let retired = root.join("fonts/retired.bdf");
         std::fs::write(&retired, "old distribution font").unwrap();
         let modified = std::fs::metadata(&config).unwrap().modified().unwrap();
