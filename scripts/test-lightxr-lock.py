@@ -35,7 +35,7 @@ class DisplaySession(ServiceInterface):
  @method()
  def Lock(self):self.requests+=1;self.login.locked=True;self.login.Lock()
 async def main():
- bus=await MessageBus().connect();login=LoginSession();dm=DisplaySession(login)
+ bus=await MessageBus().connect();login=LoginSession();login.locked=True;dm=DisplaySession(login)
  bus.export('/org/freedesktop/login1',Manager());bus.export('/org/freedesktop/login1/session/fixture',login)
  bus.export('/org/freedesktop/DisplayManager/Session99',dm);bus.export('/org/freedesktop/DisplayManager/Seat99',Seat())
  await bus.request_name('org.freedesktop.login1');await bus.request_name('org.freedesktop.DisplayManager')
@@ -76,6 +76,10 @@ async def main():
     code=xd.keysym_to_keycode(XK.string_to_keysym('a'))
     for kind in [X.KeyPress,X.KeyRelease]:xtest.fake_input(xd,kind,code)
     xd.sync()
+   await wait(lambda:request('/api/state')['scene']['locked'])
+   assert not request('/api/xr-layout')['quads'],'Restart exposed an already locked session'
+   login.locked=False;login.Unlock()
+   await wait(lambda:not request('/api/state')['scene']['locked'])
    key();await wait(lambda:(art/'input.log').read_text().count('KEY')>0)
    before=(art/'input.log').read_text().count('KEY')
    await call('Lock');await wait(lambda:dm.requests==1 and request('/api/state')['scene']['locked'])
@@ -92,7 +96,7 @@ async def main():
    await wait(lambda:not request('/api/state')['scene']['locked'])
    key();await wait(lambda:(art/'input.log').read_text().count('KEY')>before)
    assert request('/api/xr-layout')['quads'],'Desktop did not restore after authority unlock'
-   xd.close();print('PASS: real Wayland client, ScreenSaver Lock, LightXR handoff, blank monitor/XR, blocked input, rejected unauthenticated unlock, trusted logind unlock and restored input')
+   xd.close();print('PASS: already-locked startup, real Wayland client, ScreenSaver Lock, LightXR handoff, blank monitor/XR, blocked input, rejected unauthenticated unlock, trusted logind unlock and restored input')
   finally:
    for child in reversed(children):
     if child.poll() is None:

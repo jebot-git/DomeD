@@ -26,7 +26,9 @@ impl Session {
         let state = Arc::new(Mutex::new(Capabilities::default()));
         let shared = state.clone();
         let (send, recv) = mpsc::sync_channel(4);
-        let locked = Arc::new(AtomicBool::new(false));
+        // A restarted LightXR desktop stays shielded until logind proves its
+        // current state. Other display managers retain their existing locker.
+        let locked = Arc::new(AtomicBool::new(crate::screen_lock::managed_session()));
         let native_locker = Arc::new(AtomicBool::new(false));
         let native_worker = native_locker.clone();
         let worker_locked = locked.clone();

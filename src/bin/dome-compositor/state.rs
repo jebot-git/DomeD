@@ -306,7 +306,11 @@ impl Dome {
             xr_shell_buttons: Default::default(),
             xr_target: None,
             xr_shell_pos: None,
-            scene: std::sync::Arc::new(std::sync::Mutex::new(dome::Scene::new("wayland"))),
+            scene: std::sync::Arc::new(std::sync::Mutex::new({
+                let mut scene = dome::Scene::new("wayland");
+                scene.locked = crate::screen_lock::managed_session();
+                scene
+            })),
             registry: vec![],
             notification_windows: Default::default(),
             applied_revision: u64::MAX,

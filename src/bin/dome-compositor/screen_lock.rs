@@ -20,8 +20,13 @@ impl ScreenSaver {
     }
 }
 
+pub fn managed_session() -> bool {
+    std::env::var("DOME_LOGIN_SESSION").as_deref() == Ok("1")
+        && std::env::var("XDG_SESSION_PATH").is_ok_and(|p| p.starts_with("/org/freedesktop/DisplayManager/Session"))
+}
+
 pub fn register(locked: Arc<AtomicBool>, send: SyncSender<SessionAction>) -> Option<Connection> {
-    if std::env::var("DOME_LOGIN_SESSION").as_deref() != Ok("1") { return None; }
+    if !managed_session() { return None; }
     let system = Connection::system().ok()?;
     let id = std::env::var("XDG_SESSION_ID").ok()?;
     let manager = Proxy::new(&system,"org.freedesktop.login1","/org/freedesktop/login1","org.freedesktop.login1.Manager").ok()?;
@@ -45,7 +50,8 @@ pub fn register(locked: Arc<AtomicBool>, send: SyncSender<SessionAction>) -> Opt
                 _ => (),
             }
         }
-        // Loss of the authority connection cannot expose a locked desktop.
+        // Loss of the authority connection must fail closed.
+        locked.store(true, Ordering::SeqCst);
     });
     Some(connection)
 }
