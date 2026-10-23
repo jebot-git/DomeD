@@ -889,24 +889,49 @@ an explicit Dome folder choice takes precedence. **Open Files**, Super+E and
 the FileManager1 service use that choice with the requesting Wayland realm.
 `DOME_FILE_MANAGER` remains an explicit launch override.
 
-[Miro PDF](https://github.com/vincent-uden/miro) is the recommended optional PDF
+[Miro PDF for DomeD](https://github.com/jebot-git/miro) is the recommended optional PDF
 viewer. When installed, Dome selects `miro-pdf` for PDF files unless a Dome PDF
 choice already exists. Without Miro, choose and install a viewer yourself in
 Default Applications; Dome does not select a replacement. Other desktops' PDF
 preferences are preserved.
 
-`scripts/install-miro.sh` builds and installs Miro 0.12.0 into `~/.local` from
-the verified upstream revision with Dome's appearance and native menu patches.
-It requires Rust, a C/C++ toolchain, Clang headers, and Fontconfig/GLib development
-packages.
-In a Dome session, Miro follows Appearance's light/dark setting on startup and
-while open, for both its interface and PDF pages. Its saved preferences remain
-unchanged and continue to apply outside Dome. See
-`native/toolkit-hooks/README.md` for patch provenance. Miro's File, View and
-Layout commands, recent files, shortcuts and live check/radio states are exported
-to the universal menu through DBusMenu and the KDE Wayland appmenu protocol.
-Dome supplies Edit and Window controls alongside them. Miro keeps its in-window
-menu when no compatible Wayland menu host is available.
+`scripts/install-miro.sh` builds and installs the native FLTK Miro fork into
+`~/.local`, preserving the previous binary in a dated backup. Its base is upstream
+`master` at `d35322c47d53903638558162a5e3153f32dfdc37`; the installer pins the
+verified native fork revision. The build requires DomeD's BDF-enabled FLTK 1.4.5,
+Rust 1.88+, CMake, a C/C++ toolchain, Clang development headers, Python 3, unzip,
+Fontconfig/GLib/Wayland/X11/OpenGL development files, libpng and nlohmann-json.
+See the fork's README for a complete build and configuration guide.
+
+For a system-wide installation, prepare the already-built application as the
+regular user, then authorize only the installation step:
+
+```sh
+DESTDIR="$PWD/build/miro-system-stage" cmake --install build/miro-fltk-build --prefix /usr/local
+SUDO_ASKPASS=/usr/local/bin/dome-askpass sudo -A bash scripts/install-miro-system.sh "$PWD/build/miro-system-stage"
+```
+
+The prepared installer backs up existing system files under `/var/backups/domed`,
+installs root-owned files under `/usr/local`, and refreshes the font cache (and desktop cache when desktop-file-utils is
+available). Compilation runs without root privileges. A local `~/.local/bin/miro-pdf`
+can shadow the system executable; preserve or remove that local installation when
+switching prefixes.
+
+The interface follows Appearance's family, face, native size, 1×/2× BDF scale,
+colours and theme while open. It uses FreeType/Fontconfig directly, with no Iced,
+Pango or bundled TTF interface fonts. MuPDF preserves the document's own fonts.
+PDF backgrounds follow the session theme until explicitly overridden for that
+document. `miro.conf` stays intact; recent files and bookmarks retain upstream's
+format. Super chords, including Super+X input focus, belong to DomeD.
+
+Miro's actual native File, Edit, View, Layout, Go, Bookmarks and Help commands,
+configured shortcuts, and live enabled/check/radio states are exported through
+DBusMenu and the KDE Wayland appmenu protocol (X11 properties on X11). DomeD
+supplies its Window controls alongside them. Miro retains an in-window menu
+outside DomeD. The fork includes private-display X11 and nested DomeD desktop/XR
+integration tests; `scripts/test-miro-appearance.py` and
+`scripts/test-miro-menus.py` run those current tests. The older Iced patches under
+`native/toolkit-hooks` are historical and are no longer applied by the installer.
 
 The native XR frontend uses **GPU frame sharing** automatically when the compositor
 and OpenXR run on the same DRM render device and support compatible DMA-BUF

@@ -1,69 +1,48 @@
 #!/usr/bin/env bash
-# Build the recommended PDF viewer with Dome appearance and native menus.
+# Build the native FLTK Miro fork with DomeD's bitmap fonts and universal menu.
 set -euo pipefail
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
-revision=d35322c47d53903638558162a5e3153f32dfdc37
-source_dir=${DOME_MIRO_SOURCE:-"$HOME/miro"}
-worktree="$root/build/miro-source"
+revision=c264d88ee969910a397ec8511f191c0aa4477c7b
+repository=https://github.com/jebot-git/miro.git
+source_dir=${DOME_MIRO_SOURCE:-"$root/../miro"}
+worktree="$root/build/miro-fltk-source"
+build_dir=${DOME_MIRO_BUILD:-"$root/build/miro-fltk-build"}
 prefix=${DOME_MIRO_PREFIX:-"$HOME/.local"}
-if [[ ! -d "$source_dir/.git" ]]; then
-    git clone https://github.com/vincent-uden/miro.git "$source_dir"
+if [[ ! -d "$source_dir/.git" && ! -f "$source_dir/.git" ]]; then
+    if [[ -e "$source_dir" ]]; then
+        printf 'Miro source already exists without Git metadata: %s\n' "$source_dir" >&2
+        exit 1
+    fi
+    git clone "$repository" "$source_dir"
 fi
-git -C "$source_dir" fetch origin
-# Keep the verified patch pinned; updating upstream requires rebasing it first.
+# Fetch this fork explicitly, so an existing vanilla-upstream checkout is safe.
+git -C "$source_dir" fetch "$repository" "$revision"
 if [[ ! -d "$worktree" ]]; then
     git -C "$source_dir" worktree add --detach "$worktree" "$revision"
-fi
-[[ $(git -C "$worktree" rev-parse HEAD) == "$revision" ]]
-patches=(
-    "$root/native/toolkit-hooks/miro-0.12.0-dome-theme.patch"
-    "$root/native/toolkit-hooks/miro-0.12.0-global-menu.patch"
-)
-# Unwind the top patch first: its hunks overlap the appearance patch's context.
-# This supports both appearance-only installations and repeat installations.
-if git -C "$worktree" apply --reverse --check "${patches[1]}" 2>/dev/null; then
-    git -C "$worktree" apply --reverse "${patches[1]}"
-fi
-for patch in "${patches[@]}"; do
-    if git -C "$worktree" apply --check "$patch" 2>/dev/null; then
-        git -C "$worktree" apply "$patch"
-    else
-        git -C "$worktree" apply --reverse --check "$patch"
+elif [[ $(git -C "$worktree" rev-parse HEAD) != "$revision" ]]; then
+    if [[ -n $(git -C "$worktree" status --porcelain) ]]; then
+        printf 'Preserving modified Miro worktree: %s\n' "$worktree" >&2
+        exit 1
     fi
-done
+    git -C "$worktree" checkout --detach "$revision"
+fi
+export MIRO_BUILD_DIR="$build_dir"
 export CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-"$source_dir/target"}
-export CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-2}
-export CARGO_PROFILE_RELEASE_LTO=false
-export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16
-cd "$worktree"
-cargo check --locked --release
-cargo build --locked --release
-cargo test --locked --release
-install -Dm755 "$CARGO_TARGET_DIR/release/miro-pdf" "$prefix/bin/miro-pdf"
-install -Dm644 assets/logo.png "$prefix/share/pixmaps/miro-pdf.png"
-install -Dm644 LICENSE "$prefix/share/miro-pdf/LICENSE"
-install -Dm644 "${patches[0]}" "$prefix/share/miro-pdf/dome-theme.patch"
-install -Dm644 "${patches[1]}" "$prefix/share/miro-pdf/global-menu.patch"
-printf '%s\n' "https://github.com/vincent-uden/miro" "$revision" > "$prefix/share/miro-pdf/upstream.txt"
-mkdir -p "$prefix/share/applications"
-# Desktop Exec values require quoted paths (including installations with spaces).
-binary="$prefix/bin/miro-pdf"
-escaped=${binary//\\/\\\\}
-escaped=${escaped//\"/\\\"}
-escaped=${escaped//\$/\\\$}
-escaped=${escaped//\`/\\\`}
-escaped=${escaped//%/%%}
-cat > "$prefix/share/applications/miro-pdf.desktop" <<EOF
-[Desktop Entry]
-Type=Application
-Name=Miro PDF
-Comment=Read PDF documents
-Exec="$escaped" %f
-Icon=$prefix/share/pixmaps/miro-pdf.png
-Terminal=false
-Categories=Office;Viewer;
-MimeType=application/pdf;
-StartupWMClass=miro-pdf
-EOF
-update-desktop-database "$prefix/share/applications"
-printf 'Installed Miro 0.12.0 with Dome appearance and native menu support: %s\n' "$binary"
+"$worktree/scripts/build.sh"
+ctest --test-dir "$build_dir" --output-on-failure
+# Preserve the prior optional viewer before replacing an existing installation.
+if [[ -f "$prefix/bin/miro-pdf" ]]; then
+    backup="$prefix/share/miro-pdf/backups/$(date -u +%Y%m%d-%H%M%S)"
+    mkdir -p "$backup"
+    cp -p "$prefix/bin/miro-pdf" "$backup/miro-pdf"
+    if [[ -f "$prefix/share/applications/miro-pdf.desktop" ]]; then
+        cp -p "$prefix/share/applications/miro-pdf.desktop" "$backup/miro-pdf.desktop"
+    fi
+    printf 'Previous Miro preserved in %s\n' "$backup"
+fi
+cmake --install "$build_dir" --prefix "$prefix"
+fc-cache -f "$prefix/share/fonts"
+if command -v update-desktop-database >/dev/null; then
+    update-desktop-database "$prefix/share/applications"
+fi
+printf 'Installed native FLTK Miro (%s): %s/bin/miro-pdf\n' "$revision" "$prefix"
