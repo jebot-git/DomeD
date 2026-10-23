@@ -73,6 +73,14 @@ pub struct Snapshot {
     pub screenshot_managed: bool,
 }
 impl Snapshot {
+    fn dismiss(&mut self) {
+        self.menu = None;
+        self.rows.clear();
+        self.selected = None;
+        self.keyboard_menu = false;
+        // Also invalidate a queued activation that has not opened a popup yet.
+        self.revision += 1;
+    }
     fn active_item(&self) -> Option<Item> {
         self.menu?;
         if self.keyboard_menu { Some(keyboard_item()) }
@@ -92,12 +100,11 @@ enum Request {
     Keyboard,
     Activate(usize, i32, i32, bool),
     Select(usize),
-    Close,
     Back,
 }
 pub struct Tray {
     snapshot: Arc<Mutex<Snapshot>>,
-    send: mpsc::SyncSender<Request>,
+    send: mpsc::SyncSender<(u64, Request)>,
     screenshot: Arc<AtomicBool>,
 }
 // Queue capture on the compositor thread; D-Bus never touches renderer state.
@@ -193,10 +200,12 @@ impl Tray {
         self.snapshot.lock().unwrap().clone()
     }
     pub fn activate(&self, index: usize, x: i32, y: i32, context: bool) {
-        let _ = self.send.try_send(Request::Activate(index, x, y, context));
+        let revision = self.snapshot.lock().unwrap().revision;
+        let _ = self.send.try_send((revision, Request::Activate(index, x, y, context)));
     }
     pub fn select(&self, index: usize) {
-        let _ = self.send.try_send(Request::Select(index));
+        let revision = self.snapshot.lock().unwrap().revision;
+        let _ = self.send.try_send((revision, Request::Select(index)));
     }
     pub fn keyboard(&self) {
         let mut state = self.snapshot.lock().unwrap();
@@ -210,15 +219,23 @@ impl Tray {
         state.selected = None;
         state.rows = loading_rows();
         state.revision += 1;
-        drop(state);
-        let _ = self.send.try_send(Request::Keyboard);
+        if self.send.try_send((state.revision, Request::Keyboard)).is_err() {
+            state.dismiss();
+        }
     }
     pub fn close(&self) {
-        let _ = self.send.try_send(Request::Close);
+        // Never queue dismissal behind a dead or unresponsive tray client.
+        // The popup captures shell input until this local state is cleared.
+        self.snapshot.lock().unwrap().dismiss();
     }
     pub fn key(&self, key: u32) -> bool {
         let mut state = self.snapshot.lock().unwrap();
         if state.menu.is_none() { return false; }
+        if key == 0xff1b {
+            drop(state);
+            self.close();
+            return true;
+        }
         let enabled: Vec<_> = state.rows.iter().enumerate()
             .filter(|(_, row)| row.enabled && !row.separator).map(|(i, _)| i).collect();
         let current = enabled.iter().position(|i| Some(*i) == state.selected).unwrap_or(0);
@@ -227,21 +244,29 @@ impl Tray {
             state.revision += 1;
         } else {
             let request = match key {
-                0xff1b => Some(Request::Close),
                 0xff51 => Some(Request::Back),
                 0xff0d | 0xff8d | 0x20 | 0xff53 => state.selected.and_then(|i| {
                     (key != 0xff53 || state.rows[i].submenu).then_some(Request::Select(i))
                 }),
                 _ => None,
             };
-            if let Some(request) = request { let _ = self.send.try_send(request); }
+            if let Some(request) = request { let _ = self.send.try_send((state.revision, request)); }
         }
         true
     }
 }
+// zbus property-cache initialization uses a raw GetAll call without the
+// connection timeout. Poll directly so a client that never replies cannot
+// strand the tray worker while initializing its property cache.
+fn uncached_proxy<'a>(connection: &Connection, destination: &'a str, path: &'a str,
+    interface: &'a str) -> zbus::Result<Proxy<'a>> {
+    zbus::blocking::proxy::Builder::new(connection)
+        .destination(destination)?.path(path)?.interface(interface)?
+        .cache_properties(zbus::proxy::CacheProperties::No).build()
+}
 type Node = (i32, HashMap<String, OwnedValue>, Vec<OwnedValue>);
 fn menu_rows(c: &Connection, item: &Item, parent: i32) -> zbus::Result<Vec<Row>> {
-    let p = Proxy::new(
+    let p = uncached_proxy(
         c,
         item.service.as_str(),
         item.menu.as_str(),
@@ -297,7 +322,7 @@ fn native_frontend(item: &Item) -> Option<&'static str> {
     else { None }
 }
 fn open_native(connection: &Connection, page: &str) -> bool {
-    if let Ok(proxy) = Proxy::new(connection, "org.domed.Tray", "/org/domed/Tray", "org.domed.Tray") {
+    if let Ok(proxy) = uncached_proxy(connection, "org.domed.Tray", "/org/domed/Tray", "org.domed.Tray") {
         if proxy.call_method("Show", &(page,)).is_ok() { return true; }
     }
     dome::desktop_entries::find_executable("dome-tray")
@@ -306,15 +331,17 @@ fn open_native(connection: &Connection, page: &str) -> bool {
 }
 fn run(
     state: Arc<Mutex<Snapshot>>,
-    receive: mpsc::Receiver<Request>,
+    receive: mpsc::Receiver<(u64, Request)>,
     screenshot: Arc<AtomicBool>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let connection = Connection::session()?;
+    let connection = zbus::blocking::connection::Builder::session()?
+        .method_timeout(Duration::from_millis(500))
+        .build()?;
     // A second diagnostic compositor on this bus must not take session control.
     if connection.request_name("org.domed.Compositor").is_ok() {
         connection.object_server().at("/org/domed/Compositor", SuiteControl { screenshot })?;
     }
-    let dbus = Proxy::new(
+    let dbus = uncached_proxy(
         &connection,
         "org.freedesktop.DBus",
         "/org/freedesktop/DBus",
@@ -334,7 +361,7 @@ fn run(
         )?;
         connection.request_name("org.kde.StatusNotifierWatcher")?;
     }
-    let watcher = Proxy::new(
+    let watcher = uncached_proxy(
         &connection,
         "org.kde.StatusNotifierWatcher",
         "/StatusNotifierWatcher",
@@ -346,8 +373,9 @@ fn run(
     );
     let mut parents = vec![0];
     loop {
-        while let Ok(request) = receive.try_recv() {
+        while let Ok((revision, request)) = receive.try_recv() {
             let snapshot = state.lock().unwrap().clone();
+            if snapshot.revision != revision { continue; }
             match request {
                 Request::Keyboard => {
                     let mut rows = Err(zbus::Error::Failure("Native Fcitx5 frontend is unavailable".into()));
@@ -359,6 +387,7 @@ fn run(
                         }
                     }
                     let mut s = state.lock().unwrap();
+                    if s.revision != snapshot.revision { continue; }
                     match rows {
                         Ok(rows) => {
                             s.menu = Some(0); s.keyboard_menu = true;
@@ -372,20 +401,13 @@ fn run(
                     }
                     s.revision += 1;
                 }
-                Request::Close => {
-                    let mut s = state.lock().unwrap();
-                    s.menu = None;
-                    s.rows.clear();
-                    s.selected = None;
-                    parents = vec![0];
-                    s.revision += 1;
-                }
                 Request::Back => {
                     if parents.len() > 1 {
                         parents.pop();
                         if let Some(item) = snapshot.active_item() {
                             if let Ok(rows) = menu_rows(&connection, &item, *parents.last().unwrap()) {
                                 let mut s = state.lock().unwrap();
+                                if s.revision != snapshot.revision { continue; }
                                 s.selected = rows.iter().position(|r| r.enabled && !r.separator);
                                 s.rows = rows;
                                 s.revision += 1;
@@ -416,6 +438,7 @@ fn run(
                             match menu_rows(&connection, item, 0) {
                                 Ok(rows) => {
                                     let mut s = state.lock().unwrap();
+                                    if s.revision != snapshot.revision { continue; }
                                     s.menu = Some(index);
                                     s.keyboard_menu = false;
                                     s.selected = rows.iter().position(|r| r.enabled && !r.separator);
@@ -424,7 +447,7 @@ fn run(
                                     s.revision += 1;
                                 }
                                 Err(_) => {
-                                    let proxy = Proxy::new(
+                                    let proxy = uncached_proxy(
                                         &connection,
                                         item.service.as_str(),
                                         item.path.as_str(),
@@ -434,7 +457,7 @@ fn run(
                                 }
                             }
                         } else {
-                            let proxy = Proxy::new(
+                            let proxy = uncached_proxy(
                                 &connection,
                                 item.service.as_str(),
                                 item.path.as_str(),
@@ -462,13 +485,16 @@ fn run(
                                 continue;
                             }
                             if row.submenu {
-                                if snapshot.keyboard_menu {
+                                let requested_revision = if snapshot.keyboard_menu {
                                     let mut s = state.lock().unwrap();
+                                    if s.revision != snapshot.revision { continue; }
                                     s.rows = loading_rows(); s.selected = None;
                                     s.revision += 1;
-                                }
+                                    s.revision
+                                } else { snapshot.revision };
                                 let result = menu_rows(&connection, &item, row.id);
                                 let mut s = state.lock().unwrap();
+                                if s.revision != requested_revision { continue; }
                                 match result {
                                     Ok(rows) => {
                                         parents.push(row.id);
@@ -483,7 +509,7 @@ fn run(
                                 }
                                 s.revision += 1;
                             } else {
-                                let p = Proxy::new(
+                                let p = uncached_proxy(
                                     &connection,
                                     item.service.as_str(),
                                     item.menu.as_str(),
@@ -503,7 +529,7 @@ fn run(
                 }
             }
         }
-        let keys: Vec<String> = Proxy::new(
+        let keys: Vec<String> = uncached_proxy(
             &connection,
             "org.kde.StatusNotifierWatcher",
             "/StatusNotifierWatcher",
@@ -517,7 +543,7 @@ fn run(
                 continue;
             };
             let path = format!("/{path}");
-            let Ok(proxy) = Proxy::new(
+            let Ok(proxy) = uncached_proxy(
                 &connection,
                 service,
                 path.as_str(),
@@ -694,6 +720,35 @@ impl crate::Dome {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn popup_dismisses_while_client_worker_is_blocked() {
+        let snapshot = Arc::new(Mutex::new(Snapshot {
+            menu: Some(0), keyboard_menu: true, rows: loading_rows(),
+            selected: Some(0), ..Snapshot::default()
+        }));
+        let (send, receive) = mpsc::sync_channel(1);
+        assert!(send.try_send((0, Request::Keyboard)).is_ok());
+        let tray = Tray { snapshot, send, screenshot: Arc::new(AtomicBool::new(false)) };
+        assert!(tray.key(0xff1b));
+        let state = tray.state();
+        assert!(state.menu.is_none() && state.rows.is_empty() && state.selected.is_none());
+        assert!(!state.keyboard_menu);
+        assert!(!tray.key(0xff0d));
+        assert_eq!(state.revision, 1);
+        assert_ne!(receive.try_recv().unwrap().0, state.revision);
+        tray.close();
+        assert_eq!(tray.state().revision, 2);
+    }
+    #[test]
+    fn full_worker_queue_does_not_leave_a_loading_popup() {
+        let (send, _receive) = mpsc::sync_channel(1);
+        assert!(send.try_send((0, Request::Keyboard)).is_ok());
+        let tray = Tray { snapshot: Arc::new(Mutex::new(Snapshot::default())),
+            send, screenshot: Arc::new(AtomicBool::new(false)) };
+        tray.keyboard();
+        assert!(tray.state().menu.is_none());
+        assert!(tray.state().rows.is_empty());
+    }
     #[test]
     fn wivrn_defaults_to_manager_and_respects_placement_override() {
         let mut settings = HashMap::new();

@@ -107,6 +107,24 @@ async def exercise():
         await wait(discovered)
         print('PASS: temporary Status failure recovers without re-registration', flush=True)
 
+        stalled = []
+        def stall_properties(message):
+            if (message.message_type == MessageType.METHOD_CALL and message.path == PATH
+                and message.interface == 'org.freedesktop.DBus.Properties'
+                and ((message.member == 'GetAll' and message.body == ['org.kde.StatusNotifierItem'])
+                     or (message.member == 'Get' and message.body == ['org.kde.StatusNotifierItem', 'Title']))):
+                stalled.append(message)
+                return True  # Deliberately never reply to this request.
+        client.add_message_handler(stall_properties)
+        async def blocked():
+            return bool(stalled)
+        await wait(blocked)
+        client.remove_message_handler(stall_properties)
+        item.title_reads = 0
+        await wait(discovered)
+        assert key in await keys(), 'An unresponsive property removed a live registration'
+        print('PASS: an unanswered client call times out and tray polling resumes', flush=True)
+
         client.disconnect()
         await wait(removed)
         print('PASS: disconnected item is removed from the watcher', flush=True)
