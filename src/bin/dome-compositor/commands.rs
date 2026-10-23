@@ -188,8 +188,8 @@ impl Dome {
                 !w.minimized && (0..3).contains(&(w.lane as i32 + delta))
             }),
             MoveHorizontal(_) => s.focused.and_then(|id| s.window(id)).is_some_and(|w| {
-                let lane = &s.workspaces[w.workspace].lanes[w.lane].windows;
-                !w.minimized && w.pullout_slot.is_none() && lane.len() > 1 && lane.contains(&w.id)
+                let order = s.carousel_order(w.id);
+                order.len() > 1 && order.contains(&w.id)
             }),
             Separator => false,
             Close | QuitApp | Minimize | Maximize | Scale(_) | ResetSpatial | Undo | Redo | Cut | Copy | Paste

@@ -632,6 +632,15 @@ impl Scene {
     pub fn window(&self, id: WindowId) -> Option<&Window> {
         self.windows.iter().find(|w| w.id == id)
     }
+    /// Main carousel order excludes clients which have no visible lane panel.
+    pub fn carousel_order(&self, id: WindowId) -> Vec<WindowId> {
+        let Some(window) = self.window(id) else { return vec![]; };
+        self.workspaces[window.workspace].lanes[window.lane].windows.iter().copied()
+            .filter(|id| self.window(*id).is_some_and(|w| {
+                w.xr_visible && !w.minimized && w.pullout_slot.is_none() && self.popup(*id).is_none()
+            }))
+            .collect()
+    }
     fn window_mut(&mut self, id: WindowId) -> Result<&mut Window, String> {
         self.windows
             .iter_mut()
@@ -848,11 +857,16 @@ impl Scene {
             Action::Reorder { id, delta } => {
                 let w = self.window(id).ok_or("Unknown window")?.clone();
                 if w.pullout_slot.is_some() { return Err("Return window to dome before arranging its lane".into()); }
+                let mut order = self.carousel_order(id);
+                let index = order.iter().position(|i| *i == id).ok_or("Window is not visible in the carousel")?;
+                let next = (index as i64 + i64::from(delta)).rem_euclid(order.len() as i64) as usize;
+                order.remove(index);
+                order.insert(next, id);
                 let windows = &mut self.workspaces[w.workspace].lanes[w.lane].windows;
-                let index = windows.iter().position(|i| *i == id).ok_or("Window missing from lane")?;
-                let next = (index as i64 + i64::from(delta)).rem_euclid(windows.len() as i64) as usize;
-                let id = windows.remove(index);
-                windows.insert(next, id);
+                // Retain hidden clients' slots; reorder only the visible projection.
+                let slots: Vec<_> = windows.iter().enumerate()
+                    .filter_map(|(index, id)| order.contains(id).then_some(index)).collect();
+                for (slot, id) in slots.into_iter().zip(order) { windows[slot] = id; }
             }
             Action::Swap { a, b } => {
                 let wa = self.window(a).ok_or("Unknown first window")?.clone();
