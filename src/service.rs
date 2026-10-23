@@ -110,6 +110,21 @@ pub fn serve_native(
                     .with_header(Header::from_bytes("Cache-Control", "no-store").unwrap()));
                 continue;
             }
+            if request.method() == &Method::Get && request.url() == "/api/xr-layout" {
+                let (session, shell) = bridge.as_ref().map(|b| {
+                    let b = b.lock().unwrap(); (b.session.clone(), b.shell.clone())
+                }).unwrap_or_default();
+                let scene = scene.lock().unwrap();
+                let quads = crate::xr_input::render_quads_in_fov(&scene, session.head, session.mouse_viewport);
+                let shell = session.mouse_viewport.map(|v|
+                    crate::xr_input::shell_quads_in_fov(&scene, session.head, &shell, v)).unwrap_or_default();
+                let value = serde_json::json!({"fullscreen":scene.xr_fullscreen().map(|w|w.id),
+                    "viewport":session.mouse_viewport,"quads":quads,"shell":shell});
+                let _ = request.respond(Response::from_string(value.to_string())
+                    .with_header(Header::from_bytes("Content-Type", "application/json").unwrap())
+                    .with_header(Header::from_bytes("Cache-Control", "no-store").unwrap()));
+                continue;
+            }
             if request.method() == &Method::Post && request.url() == "/api/xr-session" {
                 let mut body = String::new();
                 let json = request.headers().iter().any(|h| {

@@ -338,6 +338,9 @@ pub struct Window {
     pub lane: usize,
     pub minimized: bool,
     pub maximized: bool,
+    /// Head pose captured on XR media maximize; shared with renderer for partial 6DOF.
+    #[serde(default)]
+    pub xr_fullscreen_anchor: Option<Pose>,
     pub desktop: Rect,
     pub restore: Option<Rect>,
 }
@@ -578,6 +581,7 @@ impl Scene {
             lane: 1,
             minimized: false,
             maximized: false,
+            xr_fullscreen_anchor: None,
             desktop: Rect {
                 x: 100. + (n * 32.) % 250.,
                 y: 80. + (n * 28.) % 160.,
@@ -854,8 +858,10 @@ impl Scene {
                 }
             }
             Action::Maximize { id } => {
+                let head = self.view_pose;
                 let w = self.window_mut(id)?;
                 w.maximized = !w.maximized;
+                w.xr_fullscreen_anchor = (w.maximized && w.xr_media()).then_some(head);
                 w.minimized = false;
                 self.active_workspace = w.workspace;
                 self.focused = Some(id);

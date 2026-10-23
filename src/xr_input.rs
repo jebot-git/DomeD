@@ -3,6 +3,7 @@ use crate::{Action, Pose, Scene};
 use glam::{Quat, Vec3};
 use serde::{Deserialize, Serialize};
 mod shell_view;
+mod media_view;
 pub use shell_view::{shell_quads_in_fov, shared_viewport};
 /// Open cylinder strip. Vertical coordinates are height/radius, in radians of
 /// unwrapped arc length; horizontal radius never shrinks towards a pole.
@@ -143,13 +144,25 @@ impl Quad {
     }
 }
 pub fn quads(scene: &Scene, head: Pose) -> Vec<Quad> {
-    window_quads(scene, head, false)
+    quads_in_fov(scene, head, None)
 }
 /// Include faded background workspaces for rendering, while input uses `quads`.
 pub fn render_quads(scene: &Scene, head: Pose) -> Vec<Quad> {
-    window_quads(scene, head, true)
+    render_quads_in_fov(scene, head, None)
 }
-fn window_quads(scene: &Scene, head: Pose, backgrounds: bool) -> Vec<Quad> {
+/// Use the renderer's shared binocular viewport for fullscreen media hit testing.
+pub fn quads_in_fov(scene: &Scene, head: Pose, viewport: Option<[f32; 4]>) -> Vec<Quad> {
+    window_quads(scene, head, false, viewport)
+}
+pub fn render_quads_in_fov(scene: &Scene, head: Pose, viewport: Option<[f32; 4]>) -> Vec<Quad> {
+    window_quads(scene, head, true, viewport)
+}
+fn window_quads(scene: &Scene, head: Pose, backgrounds: bool, viewport: Option<[f32; 4]>) -> Vec<Quad> {
+    if let Some(fullscreen) = media_view::fullscreen_quad(scene, head, viewport) {
+        let mut panels = vec![fullscreen];
+        crate::spatial_popup::append_quads(scene, &mut panels, head);
+        return panels;
+    }
     let old = scene.frame_pose();
     let frame = if scene.config.anchor_mode == crate::AnchorMode::Head {
         head
@@ -658,6 +671,12 @@ pub fn shell_quads_in_view(
             size: [w as f32 * scale, h as f32 * scale],
             dome: None,
         });
+    }
+    if scene.xr_fullscreen().is_some() {
+        // Explicitly opened menus/panels remain available; idle chrome and
+        // notifications must not cover fullscreen media or intercept its mouse.
+        quads.retain(|q| (q.id == crate::xr_transport::TOP_BAR && shell.top > 36)
+            || (q.id == crate::xr_transport::TASK_BAR && shell.bottom > 60));
     }
     quads
 }

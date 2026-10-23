@@ -8,7 +8,7 @@ use smithay::{
     reexports::{
         wayland_protocols::xdg::shell::server::xdg_toplevel,
         wayland_server::{
-            protocol::{wl_seat, wl_surface::WlSurface},
+            protocol::{wl_output, wl_seat, wl_surface::WlSurface},
             Resource,
         },
     },
@@ -85,6 +85,16 @@ impl XdgShellHandler for Dome {
                 self.action(dome::Action::Maximize { id });
             }
         }
+    }
+    fn fullscreen_request(&mut self, surface: ToplevelSurface, _output: Option<wl_output::WlOutput>) {
+        let media = self.id_for(surface.wl_surface()).is_some_and(|id|
+            self.scene.lock().unwrap().window(id).is_some_and(|w| w.xr_media() && w.xr_visible));
+        if media { self.maximize_request(surface); } else { surface.send_configure(); }
+    }
+    fn unfullscreen_request(&mut self, surface: ToplevelSurface) {
+        let media = self.id_for(surface.wl_surface()).is_some_and(|id|
+            self.scene.lock().unwrap().window(id).is_some_and(|w| w.xr_media() && w.xr_visible));
+        if media { self.unmaximize_request(surface); }
     }
     fn minimize_request(&mut self, surface: ToplevelSurface) {
         if let Some(id) = self.id_for(surface.wl_surface()) {

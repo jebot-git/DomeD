@@ -61,6 +61,7 @@ impl Layout {
         scene.revision += 1;
     }
     pub fn place(&self, scene: &mut Scene, saved: &Window, id: u64, restored: &HashMap<u64, u64>) {
+        let head = scene.view_pose;
         let Some(window) = scene.windows.iter_mut().find(|w| w.id == id) else {
             return;
         };
@@ -70,6 +71,7 @@ impl Layout {
         window.restore = saved.restore;
         window.minimized = saved.minimized;
         window.maximized = saved.maximized;
+        window.xr_fullscreen_anchor = (window.maximized && window.xr_media()).then_some(head);
         window.desktop_visible = saved.desktop_visible;
         window.xr_visible = saved.xr_visible;
         window.xr_pose = saved.xr_pose;

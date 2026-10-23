@@ -578,7 +578,7 @@ impl Dome {
             )
         };
         let scene = self.scene.lock().unwrap().clone();
-        let mut surfaces = dome::xr_input::quads(&scene, session.head);
+        let mut surfaces = dome::xr_input::quads_in_fov(&scene, session.head, session.mouse_viewport);
         if let Some(viewport) = session.mouse_viewport {
             surfaces.extend(dome::xr_input::shell_quads_in_fov(&scene, session.head, &layout, viewport));
         }

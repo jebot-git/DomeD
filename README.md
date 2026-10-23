@@ -1333,6 +1333,33 @@ and ordinary 2D conversion. Qt supplies premultiplied Wayland pixels, and the
 existing OpenXR layer flags blend them directly; no additional compositor alpha
 conversion is applied. The intermediate PNG uses straight alpha.
 
+## Fullscreen XR stereo media
+
+Maximize an mpvr or qimgvr stereo window (**Super+Return** / Zoom) to switch
+from its dome lane to a borderless fullscreen stereo view. Each eye retains its
+own half of the SBS texture. The canvas fits the headset's common binocular
+field of view without changing its aspect ratio; other windows, idle bars,
+notifications and the music floor are hidden. Explicitly opened shell menus
+remain accessible. The native media fullscreen controls use the same transition.
+Ordinary desktop windows and other stereo applications keep their existing zoom.
+
+Fullscreen preserves partial 6DOF: the screen follows 75% of head translation
+and quaternion rotation from the pose captured when maximizing. The remaining
+25% stays visible relative to the screen, preserving motion parallax and depth
+cues rather than locking the image to the eyes. Rendering and pointer hit tests
+use identical geometry. Restoring the window restores its dome placement;
+minimizing it or focusing another application suspends fullscreen. Restoring a
+saved session captures a fresh head anchor.
+
+The FLTK toolkit patch synchronizes compositor-initiated fullscreen states so
+qimgvr's F11 can leave fullscreen immediately after compositor zoom. Run
+`uv run --with pillow --with python-xlib python scripts/test-xr-media-fullscreen.py`
+after a release build and toolkit installation to check both real players in a
+private nested compositor. This exercises distinct eye pixels, native fullscreen
+requests, partial head movement, minimize/restore and dome restoration using a
+simulated headset heartbeat. `GET /api/xr-layout` exposes the shared XR geometry
+for diagnostics. Through-headset comfort still needs user evaluation.
+
 ## Command manuals and related projects
 
 Basic manuals: [dome-compositor.1](docs/man/dome-compositor.1), [dome-xr.1](docs/man/dome-xr.1), [dome-preview.1](docs/man/dome-preview.1). After installation, use `man dome-compositor`.

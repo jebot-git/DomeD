@@ -298,7 +298,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                                             && state
                                                 .scene
                                                 .as_ref()
-                                                .is_some_and(|s| s.focused == Some(id))
+                                                .is_some_and(|s| s.focused == Some(id) && s.xr_fullscreen().is_none_or(|w|w.id != id))
                                         {
                                             dome::visual_feedback::focus_border_scaled(
                                                 &mut rgba,
@@ -772,10 +772,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     (transition.top > 0. && transition.top < 1.)
                         || (transition.bottom > 0. && transition.bottom < 1.),
                 );
-                geometry = dome::xr_input::render_quads(&scene, head_pose);
                 layer_opacities.extend(scene.panels().into_iter().map(|p| (p.id, p.opacity)));
                 popup_ids.extend(scene.popups.iter().map(|p| p.id));
-                popup_beams = dome::spatial_popup::beams(&scene, &geometry, head_pose);
                 let hud_scene = scene.clone();
                 let views = &webxr_views;
                 let horizontal = views
@@ -789,6 +787,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 let mouse_viewport = dome::xr_input::shared_viewport(
                     head_pose, &eyes, scene.config.bar_distance_m.min(scene.config.radius_m).max(0.1),
                 );
+                geometry = dome::xr_input::render_quads_in_fov(scene, head_pose, mouse_viewport);
+                popup_beams = dome::spatial_popup::beams(scene, &geometry, head_pose);
                 {
                     let mut state = network.lock().unwrap();
                     state.session = dome::xr_transport::Session {
@@ -885,7 +885,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 floor_bounds = bounds;
             }
-            if let Some(floor) = music_floor.frame(floor_bounds) {
+            if let Some(floor) = music_floor.frame(floor_bounds).filter(|_| scene.as_ref().is_none_or(|s| s.xr_fullscreen().is_none())) {
                 const FLOOR_ID: u64 = u64::MAX - 32;
                 images.insert(
                     FLOOR_ID,
@@ -947,7 +947,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         let fade = (transition.surface_opacity(q.id) * layer_opacities.get(&q.id).copied().unwrap_or(1.)).clamp(0., 1.);
                         let opacity = (fade * 255.).round() as u8;
                         let stereo = scene.as_ref().and_then(|s| s.window(q.id)).is_some_and(|w| w.stereo == dome::stereo::Stereo::SideBySide);
-                        let effects = (if dome::xr_transport::is_shell(q.id) { 0 } else { scene.as_ref().map_or(0, |s| s.config.window_border_px) }, scene.as_ref().is_some_and(|s| s.focused == Some(q.id)), stereo, control.accent);
+                        let fullscreen = scene.as_ref().and_then(|s| s.xr_fullscreen()).is_some_and(|w| w.id == q.id);
+                        let border = if dome::xr_transport::is_shell(q.id) || fullscreen { 0 }
+                            else { scene.as_ref().map_or(0, |s| s.config.window_border_px) };
+                        let effects = (border, !fullscreen && scene.as_ref().is_some_and(|s| s.focused == Some(q.id)), stereo, control.accent);
                         if p.serial != image.serial || p.opacity != opacity || (image.gpu.is_some() && p.effects != Some(effects)) {
                             if let (Some(frame), Some(renderer)) = (&image.gpu, gpu_renderer.as_mut()) {
                                 if let Err(e) = renderer.draw(q.id, frame.clone(), p, queue, command, opacity,
@@ -1071,7 +1074,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     let size=[eye_sizes.iter().map(|s|s[0]).max().unwrap_or(1024).min(2048),
                               eye_sizes.iter().map(|s|s[1]).max().unwrap_or(1024).min(2048)];
                     screenshot::capture(screenshot_base.clone(),id,sources,eyes,size,scene.as_ref().map_or(0,|s|s.config.window_border_px),
-                        scene.as_ref().and_then(|s|s.focused),control.accent,browser_visible);
+                        scene.as_ref().filter(|s|s.xr_fullscreen().is_none()).and_then(|s|s.focused),control.accent,browser_visible);
                 }
             }
             peak_stereo = peak_stereo.max(

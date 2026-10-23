@@ -173,12 +173,16 @@ impl Dome {
             if ready {
                 toplevel.with_pending_state(|s| {
                     use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::State;
-                    s.size=Some(if w.maximized {
+                    s.size=Some(if w.maximized && !(w.xr_media() && w.xr_visible) {
                         (size.w,(size.h-96).max(100)).into()
                     } else {
                         (w.desktop.w as i32,w.desktop.h as i32).into()
                     });
                     if transient { s.size = None; }
+                    // XR stereo media treats compositor zoom as fullscreen too,
+                    // allowing FLTK/mpv controls to reflect the actual presentation.
+                    if w.xr_media() && w.maximized && w.xr_visible { s.states.set(State::Fullscreen); }
+                    else { s.states.unset(State::Fullscreen); }
                     if w.maximized { s.states.set(State::Maximized); }
                     else { s.states.unset(State::Maximized); }
                 });

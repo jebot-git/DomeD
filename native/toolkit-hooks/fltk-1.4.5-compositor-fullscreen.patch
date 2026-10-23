@@ -1,0 +1,23 @@
+--- a/src/drivers/Wayland/Fl_Wayland_Window_Driver.cxx
++++ b/src/drivers/Wayland/Fl_Wayland_Window_Driver.cxx
+@@ -1112,7 +1112,19 @@
+   // under Weston: width & height are 0 during both calls, except if fullscreen
+   struct wld_window *window = (struct wld_window*)data;
+ //fprintf(stderr, "xdg_toplevel_configure: surface=%p size: %dx%d\n", window->wl_surface, width, height);
+-  if (window->fl_win->fullscreen_active() && !parse_states_fullscreen(states)) {
++  // Fullscreen can be initiated or restored by the compositor (DomeD XR zoom).
++  // Keep the public FLTK state synchronized, including FL_FULLSCREEN events.
++  const bool configured_fullscreen = parse_states_fullscreen(states);
++  if (configured_fullscreen && !window->fl_win->fullscreen_active()) {
++    window->fl_win->_set_fullscreen();
++    Fl::handle(FL_FULLSCREEN, window->fl_win);
++  } else if (!configured_fullscreen && window->fl_win->fullscreen_active() &&
++             window->configured_width) {
++    window->fl_win->_clear_fullscreen();
++    Fl::handle(FL_FULLSCREEN, window->fl_win);
++  }
++  // Preserve a fullscreen request made before the initial configure.
++  if (window->fl_win->fullscreen_active() && !configured_fullscreen) {
+     struct wl_output *wl_output = NULL;
+     if (Fl_Window_Driver::driver(window->fl_win)->force_position()) {
+       struct Fl_Wayland_Screen_Driver::output *output  =
