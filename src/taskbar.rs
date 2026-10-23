@@ -92,3 +92,20 @@ mod tests {
         assert_eq!(activate(&task), Activation::Focus(a));
     }
 }
+
+/// XR task popups need a grace period while a ray crosses their edge or loses
+/// its target. This policy has no seat/focus actions; callers only hide chrome.
+#[derive(Default)]
+pub struct PopupLeaveDelay {
+    popup: Option<(usize, bool)>,
+    left_at: Option<std::time::Duration>,
+}
+impl PopupLeaveDelay {
+    pub const PAUSE: std::time::Duration = std::time::Duration::from_millis(400);
+    pub fn update(&mut self, popup: Option<(usize, bool)>, inside: bool, now: std::time::Duration) -> bool {
+        if self.popup != popup { self.popup = popup; self.left_at = None; }
+        if popup.is_none() || inside { self.left_at = None; return false; }
+        let left = *self.left_at.get_or_insert(now);
+        now.saturating_sub(left) >= Self::PAUSE
+    }
+}

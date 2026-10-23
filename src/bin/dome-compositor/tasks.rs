@@ -77,6 +77,12 @@ impl Dome {
         x >= px && x < px + pw && y >= py && y < py + ph
     }
     pub fn task_motion(&mut self, x: f64, y: f64, w: i32, h: i32) {
+        self.task_motion_policy(x, y, w, h, true);
+    }
+    pub fn xr_task_motion(&mut self, x: f64, y: f64, w: i32, h: i32) {
+        self.task_motion_policy(x, y, w, h, false);
+    }
+    fn task_motion_policy(&mut self, x: f64, y: f64, w: i32, h: i32, immediate: bool) {
         if self.audio_open
             || self.history_panel.is_some()
             || self.launcher
@@ -102,14 +108,37 @@ impl Dome {
             {
                 if self.task_popup != Some(i) { self.shell_selection = 0; }
                 self.task_popup = Some(i);
-            } else {
+            } else if immediate {
                 self.task_popup = None;
             }
-        } else if !self
+        } else if immediate && !self
             .task_popup
             .is_some_and(|i| self.task_popup_contains(i, x, y, w, h))
         {
             self.task_popup = None;
+        }
+    }
+    pub fn xr_task_popup_tick(&mut self) {
+        let (active, layout, cursor) = {
+            let bridge = self.xr_bridge.lock().unwrap();
+            (self.input_xr_active && bridge.visible(), bridge.shell.clone(), bridge.cursor.clone())
+        };
+        let popup = self.task_popup.filter(|_| active).map(|index| (index, self.task_context));
+        let inside = popup.is_some_and(|(index, _)| {
+            cursor.filter(|c| c.id == dome::xr_transport::TASK_BAR).is_some_and(|c| {
+                let x = c.uv[0] as f64 * layout.width as f64;
+                let y = layout.height as f64 - layout.bottom as f64 + c.uv[1] as f64 * layout.bottom as f64;
+                self.task_popup_contains(index, x, y, layout.width as i32, layout.height as i32)
+                    || (y >= (layout.height as f64 - 60.) && x >= 110. + index as f64 * 130. && x < 110. + (index+1) as f64 * 130.)
+            })
+        });
+        let held = !self.xr_buttons.is_empty() || !self.xr_shell_buttons.is_empty();
+        if self.xr_task_leave.update(popup, inside || held, self.start_time.elapsed()) {
+            self.task_popup = None;
+            self.task_context = false;
+            self.task_context_at = None;
+            // Do not route input, activate a task, or restore keyboard focus.
+            self.xr_task_leave.update(None, false, self.start_time.elapsed());
         }
     }
     pub fn activate_task(&mut self, index: usize, button: u32) {

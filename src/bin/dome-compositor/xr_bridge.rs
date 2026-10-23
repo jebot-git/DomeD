@@ -114,6 +114,7 @@ impl Dome {
     pub fn xr_input(&mut self) {
         self.clipboard.poll(&self.seat);
         if !self.native_session_active {
+            self.xr_task_leave.update(None, false, self.start_time.elapsed());
             self.xr_bridge.lock().unwrap().packets.clear();
             return;
         }
@@ -211,6 +212,7 @@ impl Dome {
         if refresh_mouse {
             self.xr_mouse_motion(0., 0.);
         }
+        self.xr_task_popup_tick();
     }
     pub fn dispatch_xr(&mut self, mut p: Packet) {
         if self.session.locked() { return; }
@@ -288,7 +290,7 @@ impl Dome {
                         self.xr_target = Some(id);
                         self.xr_shell_pos = Some([x, y]);
                         self.audio_motion(x, layout.width as i32, layout.height as i32);
-                        self.task_motion(x, y, layout.width as i32, layout.height as i32);
+                        self.xr_task_motion(x, y, layout.width as i32, layout.height as i32);
                         self.appmenu_motion(x, y, layout.width as i32, layout.height as i32);
 
                         pointer.motion(

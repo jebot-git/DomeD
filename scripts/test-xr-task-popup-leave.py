@@ -1,0 +1,133 @@
+#!/usr/bin/env python3
+"""XR shell menu controls with a native FLTK client on a private compositor."""
+import json, os, re, signal, socket, subprocess, sys, tempfile, threading, time, urllib.request
+from pathlib import Path
+from PIL import Image
+from Xlib import X, XK, display
+from Xlib.ext import xtest
+signal.pthread_sigmask(signal.SIG_SETMASK, [])
+if os.environ.get('DOME_TASK_POPUP_TEST_BUS') != '1':
+    os.execvpe('dbus-run-session', ['dbus-run-session','--',sys.executable,*sys.argv], {**os.environ,'DOME_TASK_POPUP_TEST_BUS':'1'})
+root=Path(__file__).resolve().parents[1]
+out=root/'artifacts/xr-task-popup-leave';out.mkdir(parents=True,exist_ok=True)
+children=[];logs=[];stop=threading.Event();checks=[]
+def wait(fn, seconds=15):
+    end=time.monotonic()+seconds
+    while time.monotonic()<end:
+        try:
+            value=fn()
+            if value:return value
+        except (OSError,ValueError,KeyError,StopIteration):pass
+        time.sleep(.08)
+    raise AssertionError('Timed out; inspect '+str(out))
+def check(value,name):
+    assert value,name
+    checks.append(name);print('PASS '+name,flush=True)
+def start(args,env,name):
+    stream=(out/(name+'.log')).open('w');logs.append(stream)
+    p=subprocess.Popen(args,env=env,stdout=stream,stderr=stream);children.append(p);return p
+try:
+    with tempfile.TemporaryDirectory(prefix='dome-system-menu-') as temporary:
+        runtime=Path(temporary);runtime.chmod(0o700)
+        source=runtime/'client.cpp'
+        source.write_text('''#include <FL/Fl.H>
+#include <FL/Fl_Window.H>
+#include <FL/Fl_Menu_Bar.H>
+#include "desktop-menu.h"
+#include <fstream>
+static const char* marker;
+static void activated(Fl_Widget*,void*){std::ofstream(marker)<<"native action";}
+int main(int argc,char**argv){marker=argv[1];Fl_Window w(480,320,"XR task popup fixture");w.xclass("org.domed.TaskPopupFixture");
+Fl_Menu_Bar m(0,0,480,28);m.add("File/Native File",0,activated);m.add("View/Application View",0,activated);m.add("Window/Application Window",0,activated);
+w.end();DesktopMenu exported(w,m);w.show();return Fl::run();}
+''')
+        protocol=root/'native/tray/appmenu.xml'
+        subprocess.run(['wayland-scanner','client-header',str(protocol),str(runtime/'appmenu-client.h')],check=True)
+        subprocess.run(['wayland-scanner','private-code',str(protocol),str(runtime/'appmenu-protocol.c')],check=True)
+        flags=subprocess.check_output(['pkg-config','--cflags','--libs','gio-2.0','wayland-client','x11','cairo'],text=True).split()
+        subprocess.run(['cc','-c',str(runtime/'appmenu-protocol.c'),'-o',str(runtime/'appmenu.o'),*flags],check=True)
+        subprocess.run(['g++','-std=c++17','-O2','-I/opt/fltk-vr/toolkit/include','-I'+str(runtime),'-I'+str(root/'native/tray'),str(source),str(root/'native/tray/desktop-menu.cpp'),str(runtime/'appmenu.o'),'-L/opt/fltk-vr/toolkit/lib','-Wl,-rpath,/opt/fltk-vr/toolkit/lib','-lfltk',*flags,'-o',str(runtime/'client')],check=True)
+        rd,wr=os.pipe();xvfb=subprocess.Popen(['Xvfb','-displayfd',str(wr),'-screen','0','1600x1000x24','-nolisten','tcp'],pass_fds=(wr,),stderr=subprocess.DEVNULL);children.append(xvfb);os.close(wr)
+        with os.fdopen(rd) as stream:screen=':'+stream.readline().strip()
+        with socket.socket() as sock:sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
+        env={**os.environ,'DISPLAY':screen,'XDG_RUNTIME_DIR':temporary,'XDG_CONFIG_HOME':temporary+'/config','XDG_STATE_HOME':temporary+'/state','XDG_CACHE_HOME':temporary+'/cache','XDG_DATA_HOME':temporary+'/data','XDG_CURRENT_DESKTOP':'Dome','DOME_PREVIEW_PORT':str(port),'DOME_LOGIN_SESSION':'0','DOME_START_XR':'0','DOME_APPEARANCE_SERVICE':'0','DOME_RENDERER':'gles','LIBGL_ALWAYS_SOFTWARE':'1','FLTK_BACKEND':'wayland','LD_LIBRARY_PATH':'/opt/fltk-vr/toolkit/lib'}
+        for key in ('WAYLAND_DISPLAY','WAYLAND_SOCKET'):env.pop(key,None)
+        for service in ('TRAY','KDECONNECT','KWALLET','POLKIT','IME'):env['DOME_START_'+service]='0'
+        compositor=start([os.environ.get('DOME_TASK_POPUP_COMPOSITOR',str(root/'target/release/dome-compositor')),'--backend','nested'],env,'compositor')
+        http=urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        def request(path,body=None):return http.open(urllib.request.Request(f'http://127.0.0.1:{port}'+path,data=None if body is None else json.dumps(body).encode(),headers={'Content-Type':'application/json'}),timeout=3)
+        def read(path):
+            with request(path) as response:return json.load(response)
+        def state():return read('/api/state')['scene']
+        def layout():return read('/api/xr-shell')
+        wait(state)
+        xr=wait(lambda:next((p for p in runtime.glob('*.dome-session.json') if json.loads(p.read_text())['realm']=='xr'),None))
+        def heartbeat():
+            while not stop.wait(.1):
+                try:request('/api/xr-session',{'id':9182,'visible':True,'focused':True,'head':{'position_m':[0,1.6,0],'orientation_xyzw':[0,0,0,1]},'horizontal_fov_deg':90,'mouse_viewport':[-.7,.7,-.65,.65]}).close()
+                except OSError:pass
+        thread=threading.Thread(target=heartbeat,daemon=True);thread.start()
+        wait(lambda:read('/api/xr-control')['input_realm']=='xr')
+        client=start([str(runtime/'client'),str(runtime/'native-marker')],{**env,'WAYLAND_DISPLAY':xr.name.removesuffix('.dome-session.json')},'client')
+        window=wait(lambda:next((w for w in state()['windows'] if w['app_id']=='org.domed.TaskPopupFixture'),None));wid=window['id']
+        def win():return next(w for w in state()['windows'] if w['id']==wid)
+        request('/api/action',{'op':'focus','id':wid}).close();time.sleep(.3)
+        xd=display.Display(screen);host=wait(lambda:next((w for w in xd.screen().root.query_tree().children if str(w.get_wm_name()or'').startswith('Dome')),None));host.set_input_focus(X.RevertToParent,X.CurrentTime);xd.sync()
+        def key(name,pressed=None):
+            code=xd.keysym_to_keycode(XK.string_to_keysym(name))
+            for kind in ((X.KeyPress,X.KeyRelease) if pressed is None else (X.KeyPress if pressed else X.KeyRelease,)):xtest.fake_input(xd,kind,code);xd.sync();time.sleep(.06)
+        def click(x,y):
+            shell=layout()
+            request('/api/xr-input',{'actions':[],'events':[{'kind':'motion','id':0,'uv':[x/shell['width'],y/shell['top']]},{'kind':'button','button':272,'pressed':True},{'kind':'button','button':272,'pressed':False}]}).close();time.sleep(.25)
+        def capture(name):
+            def frame():
+                try:
+                    with request('/api/xr-frame/0') as response:
+                        w=int(response.headers['X-Dome-Width']);h=int(response.headers['X-Dome-Height']);data=response.read()
+                    return Image.frombytes('RGBA',(w,h),data)
+                except OSError:return None
+            wait(frame).save(out/(name+'.png'))
+        task_id=18446744073709551613
+        def send(events):request('/api/xr-input',{'actions':[],'events':events}).close()
+        def motion(x,y):
+            shell=layout()
+            send([{'kind':'motion','id':task_id,'uv':[x/shell['width'],(y-shell['height']+shell['bottom'])/shell['bottom']]}])
+        def anchor():
+            shell=layout();motion(150,shell['height']-30)
+        def hold_anchor(seconds):
+            end=time.monotonic()+seconds
+            while time.monotonic()<end:anchor();time.sleep(.07)
+        anchor();wait(lambda:layout()['bottom']>60)
+        before=state()['focused']
+        send([{'kind':'leave'}]);time.sleep(.12)
+        check(layout()['bottom']>60,'XR preview survives a brief pointer departure')
+        wait(lambda:layout()['bottom']==60,2)
+        check(state()['focused']==before,'Leaving the shell closes the preview without changing focus')
+        anchor();wait(lambda:layout()['bottom']>60)
+        send([{'kind':'leave'}]);time.sleep(.15)
+        hold_anchor(.65)
+        check(layout()['bottom']>60 and state()['focused']==before,'Returning to the task anchor cancels dismissal')
+        # A steady ray inside the expanded preview must also cancel the timer.
+        end=time.monotonic()+.65
+        while time.monotonic()<end:
+            shell=layout();motion(150,shell['height']-100);time.sleep(.07)
+        check(layout()['bottom']>60,'Pointer within the preview keeps it open')
+        send([{'kind':'motion','id':wid,'uv':[.5,.5]}]);time.sleep(.12)
+        check(layout()['bottom']>60,'Motion directly onto a client also has a grace period')
+        wait(lambda:layout()['bottom']==60,2)
+        check(state()['focused']==before,'Moving onto an application dismisses chrome without refocusing')
+        anchor();wait(lambda:layout()['bottom']>60)
+        send([{'kind':'button','button':273,'pressed':True},{'kind':'button','button':273,'pressed':False}])
+        time.sleep(.1);send([{'kind':'leave'}])
+        wait(lambda:layout()['bottom']==60,2)
+        check(state()['focused']==before,'Task context popup also dismisses without restoring or clearing focus')
+        xd.close()
+        (out/'checks.json').write_text(json.dumps(checks,indent=2)+'\n')
+finally:
+    stop.set()
+    for child in reversed(children):
+        if child.poll()is None:
+            child.terminate()
+            try:child.wait(timeout=4)
+            except subprocess.TimeoutExpired:child.kill();child.wait()
+    for stream in logs:stream.close()
