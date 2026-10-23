@@ -24,7 +24,7 @@ extern "C" const char *dome_qt_font_catalog(const unsigned char *data, int lengt
         std::filesystem::create_directories(directory);
         auto path=directory/(std::to_string(hash)+".bdf");
         if(!std::filesystem::is_regular_file(path)){std::ofstream out(path,std::ios::binary);out.write(bytes.data(),bytes.size());}
-        FcConfigAppFontAddFile(nullptr,(const FcChar8*)path.c_str());
+        bdf_fonts::register_font(path.string());
     }
     extraBitmapFonts.clear();
     auto faces=bdf_fonts::discover();
