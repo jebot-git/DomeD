@@ -10,6 +10,7 @@ use smithay::{
             Kind,
         },
         gles::{GlesRenderer, GlesTarget},
+        Texture,
         sync::SyncPoint,
     },
     output::Output,
@@ -160,6 +161,8 @@ impl DesktopRenderer {
         age: usize,
         origin: smithay::utils::Point<i32, smithay::utils::Logical>,
     ) -> Result<SyncPoint, Box<dyn std::error::Error>> {
+        let target_size = framebuffer.size();
+        let output_geometry = smithay::utils::Rectangle::new(origin, (target_size.w, target_size.h).into());
         state.export_notification_windows(renderer);
         state.export_xr_surface(renderer);
         let shell = MemoryRenderBufferRenderElement::from_buffer(
@@ -335,7 +338,7 @@ impl DesktopRenderer {
             elements.push(deco.into());
         }
         let capture_output = state.space.outputs().find(|o|
-            state.space.output_geometry(o).is_some_and(|g| g.loc == origin)).cloned();
+            state.space.output_geometry(o).is_some_and(|g| g == output_geometry)).cloned();
         let [r, g, b] = state.appearance.desktop_background();
         let background = [r, g, b, 1.];
         if let Some(output) = &capture_output {
@@ -351,15 +354,20 @@ impl DesktopRenderer {
                 }
             }
         }
-        if let Some(selection)=state.screenshot.selection.as_ref().filter(|s|s.bounds.loc==origin) {
-            if let Some(pixels)=&selection.pixels {
+        if let Some(selection)=state.screenshot.selection.as_ref().filter(|s|s.has_output(output_geometry)) {
+            if selection.ready() {
                 if self.screenshot_buffer.as_ref().is_none_or(|(id,_)|*id!=selection.serial) {
+                    let output = output_geometry;
+                    let offset = output.loc - selection.bounds.loc;
+                    let pixels = selection.pixels.crop([offset.x, offset.y],
+                        [offset.x + output.size.w, offset.y + output.size.h]).unwrap();
                     self.screenshot_buffer=Some((selection.serial,MemoryRenderBuffer::from_slice(&pixels.rgba,
                         smithay::backend::allocator::Fourcc::Abgr8888,(pixels.width as i32,pixels.height as i32),1,Transform::Normal,None)));
                 }
                 let frozen=MemoryRenderBufferRenderElement::from_buffer(renderer,(origin.x as f64,origin.y as f64),
                     &self.screenshot_buffer.as_ref().unwrap().1,None,None,None,Kind::Unspecified)?;
                 elements.insert(0,frozen.into());
+                let selection_origin = selection.bounds.loc;
                 let [ax,ay]=selection.start.unwrap_or(selection.end);
                 let [bx,by]=selection.end;
                 let w=selection.bounds.size.w;let h=selection.bounds.size.h;
@@ -369,7 +377,7 @@ impl DesktopRenderer {
                     if rw>0&&rh>0 {
                         let buffer=SolidColorBuffer::new((rw,rh),[0.,0.,0.,0.45]);
                         elements.insert(0,SolidColorRenderElement::from_buffer(&buffer,
-                            (origin.x+rx,origin.y+ry),1.,1.,Kind::Unspecified).into());
+                            (selection_origin.x+rx,selection_origin.y+ry),1.,1.,Kind::Unspecified).into());
                     }
                 }
                 if right>x&&bottom>y {
@@ -377,7 +385,7 @@ impl DesktopRenderer {
                     for (rx,ry,rw,rh) in [(x,y,right-x,2),(x,bottom-2,right-x,2),(x,y,2,bottom-y),(right-2,y,2,bottom-y)] {
                         let buffer=SolidColorBuffer::new((rw,rh),[r as f32/255.,g as f32/255.,b as f32/255.,1.]);
                         elements.insert(0,SolidColorRenderElement::from_buffer(&buffer,
-                            (origin.x+rx,origin.y+ry),1.,1.,Kind::Unspecified).into());
+                            (selection_origin.x+rx,selection_origin.y+ry),1.,1.,Kind::Unspecified).into());
                     }
                 }
             }
@@ -401,7 +409,7 @@ impl DesktopRenderer {
             .collect();
         // Capture before the selection overlay exists, into a normalized target.
         // render_output below rebinds the real target and preserves its transform.
-        state.capture_screenshot(renderer, &elements, origin, background);
+        state.capture_screenshot(renderer, &elements, output_geometry, background);
         Ok(damage_tracker.render_output(renderer, framebuffer, age, &elements, background)
             .map_err(|e| format!("Desktop rendering: {e}"))?.sync)
     }

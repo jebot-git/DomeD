@@ -454,12 +454,24 @@ struct Paint {
     }
     text(x + 16, y + h - 30, w - 32, 26, str(panel, "error"), accent);
   }
-  void menu(const J &rows, int x, int y, int w, int selected) {
-    rect(x, y, w, int(rows.size()) * 28 + 8, bg);
-    border(x, y, w, int(rows.size()) * 28 + 8, muted);
+  void menu(const J &rows, int x, int y, int w, int selected, const J &viewport = J::object()) {
+    int content = int(rows.size()) * 28;
+    int height = num(viewport, "height", content);
+    int offset = num(viewport, "offset");
+    int band = content > height ? std::max(0, std::min(24, (height - 1) / 2)) : 0;
+    rect(x, y, w, height + 8, bg);
+    border(x, y, w, height + 8, muted);
+    if (band) {
+      text(x, y + 4, w, band, "▲", offset > 0 ? fg : muted);
+      text(x, y + 4 + height - band, w, band, "▼", offset + height - 2 * band < content ? fg : muted);
+    }
+    cairo_save(c);
+    cairo_rectangle(c, x + 1, y + 4 + band, w - 2, height - 2 * band);
+    cairo_clip(c);
     int i = 0;
     for (auto &row : rows) {
-      int ry = y + 4 + i * 28;
+      int ry = y + 4 + band + i * 28 - offset;
+      if (ry + 28 <= y + 4 + band || ry >= y + 4 + height - band) { ++i; continue; }
       if (yes(row, "separator")) {
         rect(x + 12, ry + 14, w - 24, 1, muted);
         ++i;
@@ -481,6 +493,7 @@ struct Paint {
         text(x + w - 25, ry, 20, 28, "▸", color);
       ++i;
     }
+    cairo_restore(c);
   }
 };
 } // namespace
@@ -702,11 +715,11 @@ extern "C" int dome_qt_paint(const char *json, unsigned char *pixels,
       int menu = num(o, "menu");
       p.menu(arr(o, "items"),
              menu < int(headers.size()) ? num(headers[menu], "x") : 0, 36, 380,
-             num(o, "hover", -1));
+             num(o, "hover", -1), obj(o, "menu_viewport"));
     }
     for (auto &panel : arr(o, "appmenu_panels"))
       p.menu(arr(panel, "rows"), num(panel, "x"), num(panel, "y"),
-             num(panel, "width"), num(panel, "selected", -1));
+             num(panel, "width"), num(panel, "selected", -1), obj(panel, "viewport"));
     if (tray.contains("menu") && tray["menu"].is_number_integer())
       p.menu(arr(tray, "rows"),
              std::clamp(yes(tray, "keyboard_menu") ? w - 284 : w - reserve - int(extras.size() - num(tray, "menu")) * 28,

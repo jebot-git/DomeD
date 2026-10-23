@@ -15,6 +15,12 @@ fn flterm_reuses_only_its_overlay_and_keeps_desktop_launches_independent() {
     let flterm=UnixDatagram::bind(runtime.join("flterm-xr/control.sock")).unwrap();
     let ghostty=UnixDatagram::bind(runtime.join("ghostty-xr/control.sock")).unwrap();
     for socket in [&flterm,&ghostty] { socket.set_read_timeout(Some(Duration::from_millis(100))).unwrap(); }
+    std::env::set_var("DOME_LOGIN_SESSION","1");
+    dome::terminal::startup("dome-xr",dome::Realm::Xr).unwrap();
+    let mut startup_message=[0;64];
+    let size=flterm.recv(&mut startup_message).unwrap();
+    assert_eq!(&startup_message[..size],b"hide");
+    assert!(flterm.recv(&mut startup_message).is_err());
     dome::terminal::launch("dome-xr",dome::Realm::Xr).unwrap();
     let mut message=[0;64];
     for expected in [b"tab-new".as_slice(),b"show".as_slice()] {
@@ -33,5 +39,14 @@ fn flterm_reuses_only_its_overlay_and_keeps_desktop_launches_independent() {
         assert!(std::time::Instant::now()<deadline);std::thread::sleep(Duration::from_millis(10));
     }
     assert!(flterm.recv(&mut message).is_err());assert!(ghostty.recv(&mut message).is_err());
+    // A cold login gets --hidden; the next explicit shortcut remains --show.
+    drop(flterm);
+    fs::remove_file(runtime.join("desktop-args")).unwrap();
+    dome::terminal::startup("dome-xr",dome::Realm::Xr).unwrap();
+    let deadline=std::time::Instant::now()+Duration::from_secs(3);
+    loop {
+        if fs::read_to_string(runtime.join("desktop-args")).ok().as_deref()==Some("--placement\n20\n--hidden\n") { break; }
+        assert!(std::time::Instant::now()<deadline);std::thread::sleep(Duration::from_millis(10));
+    }
     fs::remove_dir_all(runtime).unwrap();
 }

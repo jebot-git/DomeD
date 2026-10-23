@@ -410,6 +410,8 @@ pub struct Scene {
     pub source: String,
     #[serde(skip)]
     next_id: WindowId,
+    #[serde(skip)]
+    focus_order: Vec<WindowId>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
@@ -530,6 +532,7 @@ impl Scene {
             source: source.into(),
             presentation: Default::default(),
             next_id: 1,
+            focus_order: vec![],
             pullout_anchor: None,
         }
     }
@@ -554,6 +557,7 @@ impl Scene {
         s
     }
     pub fn add(&mut self, title: &str, app_id: &str) -> WindowId {
+        self.remember_focus();
         let id = self.next_id;
         self.next_id += 1;
         let n = self.windows.len() as f32;
@@ -676,15 +680,29 @@ impl Scene {
         }
         Ok(())
     }
+    fn remember_focus(&mut self) {
+        self.focus_order.retain(|id| self.windows.iter().any(|w| w.id == *id));
+        if let Some(id) = self.focused.filter(|id| self.window(*id).is_some()) {
+            self.focus_order.retain(|previous| *previous != id);
+            self.focus_order.push(id);
+        }
+    }
+    /// Most recently focused eligible client; creation order is only a fallback
+    /// for restored sessions which have no in-memory focus history yet.
+    pub fn recent_focus(&self, realm: Option<Realm>) -> Option<WindowId> {
+        let eligible = |id| self.window(id).is_some_and(|w| {
+            !w.minimized && w.workspace == self.active_workspace &&
+            realm.is_none_or(|r| w.visible_in(r)) &&
+            self.popup(id).is_none_or(|p| self.popup_visible(p, realm != Some(Realm::Xr)))
+        });
+        self.focus_order.iter().rev().copied().find(|id| eligible(*id))
+            .or_else(|| self.windows.iter().rev().map(|w| w.id).find(|id| eligible(*id)))
+    }
     fn choose_focus(&mut self) {
-        self.focused = self
-            .windows
-            .iter()
-            .rev()
-            .find(|w| !w.minimized && w.workspace == self.active_workspace)
-            .map(|w| w.id);
+        self.focused = self.recent_focus(None);
     }
     pub fn apply(&mut self, action: Action) -> Result<(), String> {
+        self.remember_focus();
         match action {
             Action::SendToRealm { id, realm } => {
                 return self.apply(Action::WindowVisibility {
@@ -1024,6 +1042,7 @@ impl Scene {
         if !self.windows.iter().any(|w| w.pullout_slot.is_some()) {
             self.pullout_anchor = None;
         }
+        self.remember_focus();
         self.revision += 1;
         Ok(())
     }

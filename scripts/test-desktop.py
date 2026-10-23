@@ -2,7 +2,8 @@
 """End-to-end Rust desktop tests on a disposable Xvfb display.
 Uses Qt solely as native Wayland client fixtures, XTEST for test-seat events, and
 framebuffer pixel assertions. Does not connect to or control the user's display.
-Run: uv run --no-project --with PySide6 --with python-xlib --with pillow python scripts/test-desktop.py
+Run: uv run --no-project --with PySide6 --with dbus-next --with python-xlib --with pillow python scripts/test-desktop.py
+Set DOME_FOCUS_TEST_ONLY=1 for the close/focus regression without unrelated settings tests.
 Build dome-compositor with --features nested first. Requires Xvfb, Mesa and gio.
 """
 import json,os,re,shutil,socket,subprocess,sys,tempfile,time,urllib.request,threading,signal
@@ -16,7 +17,7 @@ from Xlib.ext import xtest
 if os.environ.get('DOME_TEST_BUS')!='1':
     os.execvpe('dbus-run-session',['dbus-run-session','--',sys.executable,*sys.argv],{**os.environ,'DOME_TEST_BUS':'1'})
 qt_lib=str(Path(PySide6.__file__).parent/'Qt/lib')
-root=Path(__file__).resolve().parents[1];out=root/'artifacts/desktop';out.mkdir(parents=True,exist_ok=True)
+root=Path(__file__).resolve().parents[1];out=root/('artifacts/focus' if os.environ.get('DOME_FOCUS_TEST_ONLY')=='1' else 'artifacts/desktop');out.mkdir(parents=True,exist_ok=True)
 (out/'report.json').unlink(missing_ok=True)
 (out/'failure.png').unlink(missing_ok=True)
 checks=[];processes=[];logs=[];xd=None
@@ -127,6 +128,30 @@ try:
     check(color_at(1200,600,(48,48,48)),'Dark appearance starts with a neutral dark grey desktop')
     check(wait(lambda:color_at(350,300,blue)),'GPU framebuffer contains the upper blue Wayland surface')
     capture('01-stacked')
+    # Creation order differs from focus order; test actual Wayland teardown and keyboard delivery.
+    temporary=[]
+    for name in ['focus-c','focus-d','focus-e']:
+        (out/(name+'.jsonl')).unlink(missing_ok=True)
+        before={w['id'] for w in state()['windows']}
+        client=start([sys.executable,'scripts/desktop-client.py','--name',name,'--journal',str(out/(name+'.jsonl'))],name,client_env)
+        ident=wait(lambda:next((w['id'] for w in state()['windows'] if w['id'] not in before),None))
+        temporary.append((ident,client))
+    cid,did,eid=[ident for ident,client in temporary]
+    action({'op':'focus','id':cid});wait(lambda:state()['focused']==cid);time.sleep(.1)
+    action({'op':'focus','id':did});wait(lambda:state()['focused']==did);time.sleep(.1)
+    before_restore=len(events('focus-c'))
+    temporary[1][1].terminate();temporary[1][1].wait(timeout=5)
+    check(wait(lambda:state()['focused']==cid and all(w['id']!=did for w in state()['windows'])),
+          'Closing the focused Wayland client returns focus to the previous application rather than the newest window')
+    wait(lambda:any(e['kind']=='focus_in' for e in events('focus-c')[before_restore:]))
+    key('F8')
+    check(wait(lambda:any(e['kind']=='key_press' and e.get('key')==0x01000037 for e in events('focus-c'))),
+          'The restored application receives real keyboard events after the focused client exits')
+    action({'op':'close','id':cid});wait(lambda:state()['focused']==eid)
+    action({'op':'close','id':eid});wait(lambda:state()['focused']==bid and len(state()['windows'])==2)
+    check(True,'Consecutive closes walk recent focus history and restore the original application')
+    if os.environ.get('DOME_FOCUS_TEST_ONLY')=='1':
+        raise SystemExit(0)
     # Workbench gadgets: depth is independent of keyboard focus and survives repaints.
     wb=win(bid)['desktop'].copy()
     depth=lambda r:click(r['x']+r['w']-11,r['y']-15)

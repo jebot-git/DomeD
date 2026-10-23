@@ -38,6 +38,11 @@ diagnostic sessions can still disable service startup.
   Reads are explicit; passwords are not written to logs, state files or the
   clipboard. Daemon-owned unlock/password-change authorization can still show
   the backend's dialog; the credential storage backend has not been replaced.
+  The native session-services package also routes legacy `kwalletmanager5`
+  and `kwalletmanager5-kwalletd` launcher requests to this FLTK wallet page.
+  The separate Qt KWalletManager package is not required for management.
+  This launcher replacement does not remove credential dialogs embedded in
+  `ksecretd` or `kwalletd6`.
 * Other applications: exported DBusMenu rows, check states and submenus appear in
   native controls. The companion does not rewrite arbitrary third-party programs
   opened by those menu actions. Their X11 windows are desktop-only through the

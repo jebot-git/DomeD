@@ -127,40 +127,36 @@ impl Frame {
             }
     }
 
-    /// Bars slide completely beyond their corresponding view edge, including expanded menus.
+    /// Shell controls fade in place so no visible part crosses the headset FOV.
     pub fn apply(
         self,
         quads: &mut Vec<crate::xr_input::Quad>,
-        head: crate::Pose,
-        config: &crate::Config,
+        _head: crate::Pose,
+        _config: &crate::Config,
     ) {
         quads.retain_mut(|q| {
             if self.opacity <= 0. {
                 return false;
             }
-            let (amount, sign) = if q.id == crate::xr_transport::TOP_BAR
+            let amount = if q.id == crate::xr_transport::TOP_BAR
                 || q.id == crate::xr_transport::NOTIFICATIONS
             {
-                (self.top, 1.)
+                self.top
             } else if q.id == crate::xr_transport::TASK_BAR {
-                (self.bottom, -1.)
+                self.bottom
             } else {
                 return true;
             };
             if amount <= 0. {
                 return false;
             }
-            let local = head.inverse_rotate(std::array::from_fn(|i| {
-                q.pose.position_m[i] - head.position_m[i]
-            }));
-            let edge = local[2].abs() * (config.vertical_fov_deg / 2.).to_radians().tan();
-            let travel = (edge + q.size[1] / 2. - sign * local[1] + 0.03).max(q.size[1] + 0.03);
-            let delta = head.rotate([0., sign * (1. - amount) * travel, 0.]);
-            for i in 0..3 {
-                q.pose.position_m[i] += delta[i];
-            }
             true
         });
+    }
+    pub fn surface_opacity(self, id: u64) -> f32 {
+        self.opacity * if id == crate::xr_transport::TOP_BAR || id == crate::xr_transport::NOTIFICATIONS {
+            self.top
+        } else if id == crate::xr_transport::TASK_BAR { self.bottom } else { 1. }
     }
     /// OpenXR expects premultiplied alpha; attenuate RGB and alpha together.
     pub fn fade_rgba(self, rgba: &mut [u8]) {
@@ -260,7 +256,7 @@ mod tests {
         assert!(p.interactive(1));
     }
     #[test]
-    fn bars_slide_in_opposite_head_relative_directions_and_disappear() {
+    fn bars_fade_in_place_and_disappear_without_changing_geometry() {
         let s = crate::Scene::demo();
         let head = crate::Pose::default();
         let layout = crate::xr_transport::ShellLayout {
@@ -278,8 +274,9 @@ mod tests {
             opacity: 1.,
         }
         .apply(&mut q, head, &s.config);
-        assert!(q[0].pose.position_m[1] > original[0].pose.position_m[1]);
-        assert!(q[1].pose.position_m[1] < original[1].pose.position_m[1]);
+        assert_eq!(q[0].pose, original[0].pose);
+        assert_eq!(q[1].pose, original[1].pose);
+        assert_eq!(Frame { top: 0.5, bottom: 0.5, opacity: 1. }.surface_opacity(q[0].id), 0.5);
         Frame {
             top: 0.,
             bottom: 0.,

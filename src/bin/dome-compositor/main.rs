@@ -163,6 +163,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         smithay::reexports::calloop::timer::Timer::from_duration(std::time::Duration::from_millis(20)),
         |_, _, data| {
             data.state.repeat_launcher_key();
+            data.state.repeat_menu_scroll();
             data.state.update_session_restore();
             smithay::reexports::calloop::timer::TimeoutAction::ToDuration(std::time::Duration::from_millis(20))
         },
@@ -239,7 +240,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     screencast::update(&data.state, &screencast);
     data.state.start_session_restore();
     if args.first().is_some_and(|s| s == "--terminal") {
-        dome::terminal::launch(
+        dome::terminal::startup(
             &data.state.socket_name.to_string_lossy(),
             if std::env::var("DOME_START_XR").as_deref() == Ok("1") {
                 dome::Realm::Xr

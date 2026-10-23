@@ -120,6 +120,22 @@ fn reuse_overlay(path: &std::path::Path) -> io::Result<()> {
     Ok(())
 }
 
+/// Login prewarms FLTerm without creating a tab or capturing XR input.
+/// Explicit launches and shortcuts still show the overlay immediately.
+pub fn startup(socket: &str, realm: crate::Realm) -> io::Result<()> {
+    if std::env::var("DOME_LOGIN_SESSION").as_deref() != Ok("1")
+        || realm != crate::Realm::Xr
+        || Mode::configured() != Mode::Overlay
+        || Backend::configured() != Backend::FlTerm
+    {
+        return launch(socket, realm);
+    }
+    if hide().is_ok() { return Ok(()); }
+    let mut child = command_for_mode(socket, Mode::Overlay).arg("--hidden").spawn()?;
+    std::thread::spawn(move || { let _ = child.wait(); });
+    Ok(())
+}
+
 pub fn launch(socket: &str, realm: crate::Realm) -> io::Result<()> {
     let mut command = command(socket, realm);
     if Mode::configured().for_realm(realm) == Mode::Overlay {

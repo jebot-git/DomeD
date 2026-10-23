@@ -23,10 +23,12 @@ impl Dome {
         let mut top = 36;
         let mut bottom = 60;
         if let Some(menu) = self.menu {
-            top = (40 + self.menu_items(menu).len() as i32 * 28 + 4).min(height);
+            if !self.panel_menu(menu) {
+                top = (44 + self.menu_viewport(self.menu_items(menu).len(), 0, self.menu_hover, height).height.ceil() as i32).min(height);
+            }
         }
         for panel in self.appmenu_panels(width, height) {
-            top = top.max((panel.y + panel.rows.len() as i32 * 28 + 8).min(height));
+            top = top.max((panel.y + panel.viewport.height.ceil() as i32 + 8).min(height));
         }
         let tray = self.tray.state();
         if tray.menu.is_some() {
@@ -255,6 +257,7 @@ impl Dome {
                         continue;
                     }
                     self.context_scroll_hover = None;
+                    self.menu_edge_hover = false;
                     if !self
                         .xr_animation
                         .interactive(self.scene.lock().unwrap().presentation, id)
@@ -456,6 +459,7 @@ impl Dome {
                 } => {
                     if let Some([x, y]) = self.xr_shell_pos {
                         let size = self.xr_bridge.lock().unwrap().shell.clone();
+                        if self.menu_scroll(x, y, vertical * 3., size.width as i32, size.height as i32) { continue; }
                         if self.audio_scroll(x, y, vertical, size.width as i32, size.height as i32)
                         {
                             continue;
@@ -496,6 +500,7 @@ impl Dome {
                 SeatEvent::Leave => {
                     self.audio_drag = None;
                     self.context_scroll_hover = None;
+                    self.menu_edge_hover = false;
                     self.xr_target = None;
                     self.xr_shell_pos = None;
                     self.xr_bridge.lock().unwrap().cursor = None;
@@ -512,6 +517,7 @@ impl Dome {
                 SeatEvent::Reset => {
                     self.audio_drag = None;
                     self.context_scroll_hover = None;
+                    self.menu_edge_hover = false;
                     self.xr_shell_pos = None;
                     for button in self.xr_buttons.drain().collect::<Vec<_>>() {
                         if self.xr_shell_buttons.remove(&button) { continue; }
@@ -573,7 +579,9 @@ impl Dome {
         };
         let scene = self.scene.lock().unwrap().clone();
         let mut surfaces = dome::xr_input::quads(&scene, session.head);
-        surfaces.extend(dome::xr_input::shell_quads_in_view(&scene, session.head, &layout, session.horizontal_fov_deg));
+        if let Some(viewport) = session.mouse_viewport {
+            surfaces.extend(dome::xr_input::shell_quads_in_fov(&scene, session.head, &layout, viewport));
+        }
         surfaces.retain(|q| self.xr_animation.interactive(scene.presentation, q.id));
         let background = dome::xr_input::mouse_dome(&scene, session.head);
         let head = glam::Vec3::from_array(session.head.position_m);

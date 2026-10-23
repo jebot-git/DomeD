@@ -96,7 +96,18 @@ impl Dome {
     }
     pub fn sync_scene(&mut self) {
         self.persist_geometry();
-        let scene = self.scene.lock().unwrap().clone();
+        let scene = {
+            let mut scene = self.scene.lock().unwrap();
+            if self.last_applied_focus.is_some_and(|id| scene.window(id).is_none()) &&
+                scene.focused.is_some_and(|id| scene.window(id).is_some_and(|w| !w.visible_in(self.input_realm))) {
+                let restored = scene.recent_focus(Some(self.input_realm));
+                if scene.focused != restored {
+                    scene.focused = restored;
+                    scene.revision += 1;
+                }
+            }
+            scene.clone()
+        };
         if scene.revision == self.applied_revision {
             return;
         }
@@ -424,15 +435,22 @@ impl Dome {
         if self.appmenu_click(x, y, size.w, size.h) {
             return;
         }
-        if let Some(menu) = self.menu.take() {
+        if let Some(menu) = self.menu {
             let x0 = self.menu_x(menu);
-            if x >= x0 && x < x0 + 380. && y >= 40. {
-                let i = ((y - 40.) / 28.) as usize;
+            let viewport = self.menu_viewport(self.menu_items(menu).len(), 0, self.menu_hover, size.h);
+            if x >= x0 && x < x0 + 380. && y >= 40. && y < 40. + viewport.height as f64 {
+                if let Some(direction) = viewport.control((y - 40.) as f32) {
+                    self.menu_scroll(x, y, direction as f64 * 28., size.w, size.h);
+                    return;
+                }
+                let i = (viewport.content_y((y - 40.) as f32) / 28.) as usize;
+                self.open_menu(None);
                 if let Some((_, _, command)) = self.menu_items(menu).get(i) {
                     let command = *command;
                     self.command(command);
                 }
             }
+            self.open_menu(None);
             return;
         }
         if self.launcher {
@@ -496,6 +514,7 @@ impl Dome {
         if self.appearance_open && self.keyboard_draft.is_none() {
             model["appearance_font"] = serde_json::to_value(self.appearance_font_description()).unwrap();
         }
+        model["menu_viewport"] = serde_json::to_value(self.menu_viewport(items.len(), 0, self.menu_hover, height)).unwrap();
         model["clock"] = self.clock_json(width, height);
         crate::qt::paint(model)
     }

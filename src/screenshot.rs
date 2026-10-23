@@ -11,6 +11,30 @@ pub struct Pixels {
     pub rgba: Vec<u8>,
 }
 impl Pixels {
+    pub fn opaque_black(width: u32, height: u32) -> Result<Self, String> {
+        if width == 0 || height == 0 || width as u64 * height as u64 > MAX_PIXELS as u64 {
+            return Err("Desktop capture is too large".into());
+        }
+        let mut rgba = vec![0; width as usize * height as usize * 4];
+        for pixel in rgba.chunks_exact_mut(4) { pixel[3] = 255; }
+        Ok(Self { width, height, rgba })
+    }
+    /// Copy one normalized output into the desktop canvas. Uncovered gaps stay black.
+    pub fn blit(&mut self, source: &Self, x: u32, y: u32) -> Result<(), String> {
+        if !self.valid() || !source.valid() ||
+            x as u64 + source.width as u64 > self.width as u64 ||
+            y as u64 + source.height as u64 > self.height as u64 {
+            return Err("Output does not fit desktop capture".into());
+        }
+        for row in 0..source.height as usize {
+            let start = ((y as usize + row) * self.width as usize + x as usize) * 4;
+            let src = row * source.width as usize * 4;
+            self.rgba[start..start + source.width as usize * 4]
+                .copy_from_slice(&source.rgba[src..src + source.width as usize * 4]);
+        }
+        Ok(())
+    }
+
     pub fn valid(&self) -> bool {
         self.width > 0
             && self.height > 0

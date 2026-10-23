@@ -380,3 +380,40 @@ fn horizontal_arrangement_reorders_only_its_lane_and_wraps_both_edges() {
     assert_eq!(serde_json::to_value(&s.windows).unwrap(), serde_json::to_value(&before).unwrap());
     assert_eq!(s.focused, Some(c));
 }
+
+#[test]
+fn closing_focus_returns_to_recent_application_instead_of_newest_window() {
+    let mut scene = Scene::new("wayland");
+    let a = scene.add("A", "a");
+    let b = scene.add("B", "b");
+    let c = scene.add("C", "c");
+    scene.apply(Action::Focus { id: a }).unwrap();
+    scene.apply(Action::Focus { id: b }).unwrap();
+    scene.apply(Action::Close { id: b }).unwrap();
+    assert_eq!(scene.focused, Some(a)); // C is newer but was not last focused.
+    scene.apply(Action::Close { id: a }).unwrap();
+    assert_eq!(scene.focused, Some(c));
+    scene.apply(Action::Close { id: c }).unwrap();
+    assert_eq!(scene.focused, None);
+}
+
+#[test]
+fn closing_focus_skips_ineligible_history_and_preserves_background_focus() {
+    let mut scene = Scene::new("wayland");
+    let a = scene.add("A", "a");
+    let b = scene.add("B", "b");
+    let c = scene.add("C", "c");
+    scene.apply(Action::Focus { id: a }).unwrap();
+    scene.apply(Action::Minimize { id: a }).unwrap();
+    scene.apply(Action::Focus { id: b }).unwrap();
+    scene.apply(Action::Close { id: b }).unwrap();
+    assert_eq!(scene.focused, Some(c));
+    scene.apply(Action::Close { id: a }).unwrap();
+    assert_eq!(scene.focused, Some(c));
+    let hidden = scene.add("XR", "xr");
+    scene.apply(Action::WindowVisibility { id: hidden, desktop: false, xr: true }).unwrap();
+    let closing = scene.add("Closing", "closing");
+    scene.apply(Action::Close { id: closing }).unwrap();
+    assert_eq!(scene.recent_focus(Some(Realm::Desktop)), Some(c));
+    assert_eq!(scene.recent_focus(Some(Realm::Xr)), Some(hidden));
+}

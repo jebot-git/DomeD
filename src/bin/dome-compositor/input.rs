@@ -565,6 +565,7 @@ impl Dome {
                 let audio_size = self.shell_geometry().size;
                 let audio_pos = self.seat.get_pointer().unwrap().current_location()
                     - self.shell_geometry().loc.to_f64();
+                if self.menu_scroll(audio_pos.x, audio_pos.y, vertical_amount * 3., audio_size.w, audio_size.h) { return; }
                 if self.audio_scroll(
                     audio_pos.x,
                     audio_pos.y,

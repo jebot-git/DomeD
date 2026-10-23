@@ -127,9 +127,9 @@ write(services,'/etc/systemd/user/dome-session.target.wants/dome-polkit-agent.se
 write(services,'/etc/xdg/xdg-desktop-portal/dome-portals.conf',
       '[preferred]\ndefault=fltk\norg.freedesktop.impl.portal.ScreenCast=dome-screencast\norg.freedesktop.impl.portal.Settings=dome-settings\norg.freedesktop.impl.portal.Secret=kwallet\norg.freedesktop.impl.portal.RemoteDesktop=none\norg.freedesktop.impl.portal.InputCapture=none\norg.freedesktop.impl.portal.Screenshot=none\norg.freedesktop.impl.portal.GlobalShortcuts=none\n')
 write(services,'/etc/environment.d/60-domed-terminal.conf',
-      'DOME_TERMINAL_BACKEND=flterm\nTERMINAL=/usr/local/bin/flterm\nTERMINAL_EMULATOR=/usr/local/bin/flterm\nSSH_ASKPASS=/usr/local/bin/dome-askpass\n')
+      'DOME_TERMINAL_BACKEND=flterm\nTERMINAL=/usr/local/bin/flterm\nTERMINAL_EMULATOR=/usr/local/bin/flterm\nSSH_ASKPASS=/usr/local/bin/dome-askpass\nPINENTRY_BINARY=/usr/local/libexec/domed/pinentry-fltk\n')
 write(services,'/etc/profile.d/domed-terminal.sh',
-      'export DOME_TERMINAL_BACKEND=flterm\nexport TERMINAL=/usr/local/bin/flterm\nexport TERMINAL_EMULATOR=/usr/local/bin/flterm\nexport SSH_ASKPASS=/usr/local/bin/dome-askpass\n')
+      'export DOME_TERMINAL_BACKEND=flterm\nexport TERMINAL=/usr/local/bin/flterm\nexport TERMINAL_EMULATOR=/usr/local/bin/flterm\nexport SSH_ASKPASS=/usr/local/bin/dome-askpass\nexport PINENTRY_BINARY=/usr/local/libexec/domed/pinentry-fltk\n')
 write(services,'/etc/xdg/xdg-terminals.list','org.domed.FLTerm.desktop\n')
 write(services,'/usr/local/bin/flterm','''#!/usr/bin/python3
 """Desktop terminal entry point with the standard -e command convention."""
@@ -149,6 +149,11 @@ while i<len(args):
 os.execv('/usr/local/bin/flterm-xr',['flterm-xr','--wayland',*args])
 ''',0o755)
 write(services,'/usr/local/bin/fcitx5-configtool','#!/bin/sh\nexec /usr/local/bin/fcitx5-configuration-fltk "$@"\n',0o755)
+# Compatibility launchers open the existing FLTK wallet page. The storage
+# daemons and their credential/authorization dialogs are separate components.
+write(services,'/usr/local/bin/kwalletmanager5','#!/bin/sh\nexec /usr/local/bin/dome-tray --wallets\n',0o755)
+write(services,'/usr/local/share/applications/kwalletmanager5-kwalletd.desktop',
+      '[Desktop Entry]\nType=Application\nName=Wallet Manager (FLTK)\nExec=/usr/local/bin/dome-tray --wallets\nTryExec=/usr/local/bin/dome-tray\nNoDisplay=true\nTerminal=false\n')
 write(services,'/usr/local/bin/kdeconnect-app','#!/bin/sh\nexec /usr/local/bin/dome-tray --devices\n',0o755)
 write(services,'/usr/local/bin/kdeconnect-indicator','#!/bin/sh\nexec /usr/local/bin/dome-tray --devices\n',0o755)
 write(services,'/usr/local/bin/sensible-terminal-dome','#!/bin/sh\nexec /usr/local/bin/flterm "$@"\n',0o755)

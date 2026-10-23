@@ -29,8 +29,7 @@ for source, name in [('polkit-agent.cpp', 'dome-polkit-agent'), ('portal.cpp', '
         continue
     command = common + ['-I' + str(args.polkit_headers), str(ROOT/source), '-o', str(args.build/name)]
     if source == 'polkit-agent.cpp':
-        command += ['/usr/lib/x86_64-linux-gnu/libpolkit-agent-1.so.0',
-                    '/usr/lib/x86_64-linux-gnu/libpolkit-gobject-1.so.0']
+        command += flags('pkg-config', '--libs', 'polkit-agent-1', 'polkit-gobject-1')
     else:
         command += ['-DDOME_PORTAL_INTERFACES="' + str(ROOT/'interfaces') + '"']
     subprocess.run(command + libraries, check=True)

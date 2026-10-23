@@ -21,6 +21,7 @@ pub fn cycle<T: PartialEq + Clone>(values: &[T], current: &T, direction: i32) ->
 
 impl crate::Dome {
     pub fn move_menu_selection(&mut self, key: u32) {
+        self.menu_edge_hover = false;
         let Some(menu) = self.menu else { return; };
         let enabled: Vec<_> = self.menu_items(menu).iter().enumerate()
             .filter(|(_, (_, _, command))| self.command_enabled(*command))
@@ -33,6 +34,7 @@ impl crate::Dome {
             _ => selection(index.unwrap_or(0), enabled.len(), key).unwrap_or(0),
         };
         self.menu_hover = enabled[next] as i32;
+        self.remember_menu_viewports();
     }
     pub fn shell_panel_key(&mut self, key: u32) -> bool {
         if self.clock_key(key) { return true; }

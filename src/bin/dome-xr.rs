@@ -783,24 +783,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     .map(|v| (v.fov.angle_right - v.fov.angle_left).to_degrees())
                     .fold(160f32, f32::min)
                     - 8.;
-                let mouse_viewport = views
-                    .iter()
-                    .map(|v| {
-                        [
-                            v.fov.angle_left,
-                            v.fov.angle_right,
-                            v.fov.angle_down,
-                            v.fov.angle_up,
-                        ]
-                    })
-                    .reduce(|a, b| {
-                        [
-                            a[0].max(b[0]),
-                            a[1].min(b[1]),
-                            a[2].max(b[2]),
-                            a[3].min(b[3]),
-                        ]
-                    });
+                let eyes: Vec<_> = views.iter().map(|v| (pose(v.pose), [
+                    v.fov.angle_left, v.fov.angle_right, v.fov.angle_down, v.fov.angle_up,
+                ])).collect();
+                let mouse_viewport = dome::xr_input::shared_viewport(
+                    head_pose, &eyes, scene.config.bar_distance_m.min(scene.config.radius_m).max(0.1),
+                );
                 {
                     let mut state = network.lock().unwrap();
                     state.session = dome::xr_transport::Session {
@@ -814,12 +802,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     };
                     state.sampled = Some(Instant::now());
                 }
-                let hud = dome::xr_input::shell_quads_in_view(
-                    &hud_scene,
-                    head_pose,
-                    &shell,
-                    horizontal.max(30.),
-                );
+                let hud = mouse_viewport.map(|viewport| dome::xr_input::shell_quads_in_fov(
+                    &hud_scene, head_pose, &shell, viewport,
+                )).unwrap_or_default();
                 geometry.extend(hud);
                 transition.apply(&mut geometry, head_pose, &hud_scene.config);
             }
@@ -959,7 +944,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             );
                         }
                         let p = chains.get_mut(&q.id).unwrap();
-                        let fade = (transition.opacity * layer_opacities.get(&q.id).copied().unwrap_or(1.)).clamp(0., 1.);
+                        let fade = (transition.surface_opacity(q.id) * layer_opacities.get(&q.id).copied().unwrap_or(1.)).clamp(0., 1.);
                         let opacity = (fade * 255.).round() as u8;
                         let stereo = scene.as_ref().and_then(|s| s.window(q.id)).is_some_and(|w| w.stereo == dome::stereo::Stereo::SideBySide);
                         let effects = (if dome::xr_transport::is_shell(q.id) { 0 } else { scene.as_ref().map_or(0, |s| s.config.window_border_px) }, scene.as_ref().is_some_and(|s| s.focused == Some(q.id)), stereo, control.accent);
@@ -1082,7 +1067,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             webxr_views[i].fov.angle_down,webxr_views[i].fov.angle_up]});
                     let sources=visible.iter().filter_map(|(q,_)|images.get(&q.id).map(|image|(
                         (*q).clone(),image.clone(),stereo_windows.contains(&q.id),
-                        (transition.opacity*layer_opacities.get(&q.id).copied().unwrap_or(1.)).clamp(0.,1.)))).collect();
+                        (transition.surface_opacity(q.id)*layer_opacities.get(&q.id).copied().unwrap_or(1.)).clamp(0.,1.)))).collect();
                     let size=[eye_sizes.iter().map(|s|s[0]).max().unwrap_or(1024).min(2048),
                               eye_sizes.iter().map(|s|s[1]).max().unwrap_or(1024).min(2048)];
                     screenshot::capture(screenshot_base.clone(),id,sources,eyes,size,scene.as_ref().map_or(0,|s|s.config.window_border_px),

@@ -38,10 +38,40 @@ fn capture_pixels<E: RenderElement<GlesRenderer>>(
 }
 pub struct Selection {
     pub bounds: Rectangle<i32, Logical>,
-    pub pixels: Option<Pixels>,
+    pub pixels: Pixels,
+    outputs: Vec<(Rectangle<i32, Logical>, bool)>,
     pub start: Option<[i32; 2]>,
     pub end: [i32; 2],
     pub serial: u64,
+}
+impl Selection {
+    fn new(mut outputs: Vec<Rectangle<i32, Logical>>, serial: u64) -> Result<Self, String> {
+        let mut unique = Vec::new();
+        outputs.retain(|g| { if unique.contains(g) { false } else { unique.push(*g); true } });
+        let bounds = outputs.iter().copied().reduce(|a, b| a.merge(b))
+            .ok_or("No active desktop outputs")?;
+        if outputs.iter().any(|g| g.size.w <= 0 || g.size.h <= 0) {
+            return Err("Invalid output dimensions".into());
+        }
+        let pixels = Pixels::opaque_black(bounds.size.w as u32, bounds.size.h as u32)?;
+        Ok(Self { bounds, pixels, outputs: outputs.into_iter().map(|g| (g, false)).collect(),
+                  start: None, end: [0, 0], serial })
+    }
+    pub fn ready(&self) -> bool { self.outputs.iter().all(|(_, captured)| *captured) }
+    pub fn has_output(&self, geometry: Rectangle<i32, Logical>) -> bool {
+        self.outputs.iter().any(|(g, _)| *g == geometry)
+    }
+    fn record(&mut self, output: Rectangle<i32, Logical>, pixels: Pixels) -> Result<(), String> {
+        let (geometry, captured) = self.outputs.iter_mut().find(|(g, _)| *g == output)
+            .ok_or("Output layout changed during capture")?;
+        if pixels.width != geometry.size.w as u32 || pixels.height != geometry.size.h as u32 {
+            return Err("Output size changed during capture".into());
+        }
+        self.pixels.blit(&pixels, (output.loc.x - self.bounds.loc.x) as u32,
+                         (output.loc.y - self.bounds.loc.y) as u32)?;
+        *captured = true;
+        Ok(())
+    }
 }
 pub struct Screenshots {
     pub selection: Option<Selection>,
@@ -92,20 +122,12 @@ impl crate::Dome {
             self.screenshot.xr_started = Some(Instant::now());
             self.screenshot.busy = true;
         } else {
-            let bounds =
-                self.output_geometry_at(self.seat.get_pointer().unwrap().current_location());
-            if bounds.size.w as usize * bounds.size.h as usize > dome::screenshot::MAX_PIXELS {
-                self.screenshot_notice("Screenshot failed", "Output is too large");
-                return;
-            }
             self.screenshot.serial += 1;
-            self.screenshot.selection = Some(Selection {
-                bounds,
-                pixels: None,
-                start: None,
-                end: [0, 0],
-                serial: self.screenshot.serial,
-            });
+            let outputs = self.space.outputs().filter_map(|o| self.space.output_geometry(o)).collect();
+            match Selection::new(outputs, self.screenshot.serial) {
+                Ok(selection) => self.screenshot.selection = Some(selection),
+                Err(message) => self.screenshot_notice("Screenshot failed", &message),
+            }
         }
     }
     fn screenshot_notice(&self, title: &str, body: &str) {
@@ -152,14 +174,14 @@ impl crate::Dome {
         let position = self.seat.get_pointer().unwrap().current_location();
         self.screenshot_motion(position);
         let selection = self.screenshot.selection.as_mut().unwrap();
-        if selection.pixels.is_none() {
+        if !selection.ready() {
             return true;
         }
         if pressed {
             selection.start = Some(selection.end);
         } else if let Some(start) = selection.start {
             let selection = self.screenshot.selection.take().unwrap();
-            if let Some(pixels) = selection.pixels.unwrap().crop(start, selection.end) {
+            if let Some(pixels) = selection.pixels.crop(start, selection.end) {
                 self.screenshot.busy = true;
                 let send = self.screenshot.send.clone();
                 std::thread::spawn(move || {
@@ -177,21 +199,22 @@ impl crate::Dome {
         &mut self,
         renderer: &mut GlesRenderer,
         elements: &[E],
-        origin: Point<i32, Logical>,
+        output: Rectangle<i32, Logical>,
         background: [f32; 4],
     ) {
         let Some(selection) = self
             .screenshot
             .selection
             .as_mut()
-            .filter(|s| s.pixels.is_none() && s.bounds.loc == origin)
+            .filter(|s| s.outputs.iter().any(|(g, captured)| *g == output && !captured))
         else {
             return;
         };
-        let size = selection.bounds.size;
-        let result = capture_pixels(renderer, elements, (size.w, size.h).into(), background);
+        let size = output.size;
+        let result = capture_pixels(renderer, elements, (size.w, size.h).into(), background)
+            .map_err(|e| e.to_string()).and_then(|pixels| selection.record(output, pixels));
         match result {
-            Ok(pixels) => selection.pixels = Some(pixels),
+            Ok(()) => {},
             Err(e) => {
                 let message = e.to_string();
                 self.screenshot.selection = None;
@@ -200,6 +223,14 @@ impl crate::Dome {
         }
     }
     pub fn poll_screenshots(&mut self) {
+        if self.screenshot.selection.as_ref().is_some_and(|s| {
+            let outputs: Vec<_> = self.space.outputs().filter_map(|o| self.space.output_geometry(o)).collect();
+            outputs.iter().any(|g| !s.has_output(*g)) || s.outputs.iter().any(|(g, _)| !outputs.contains(g))
+        }) {
+            self.screenshot.selection = None;
+            self.ignored_buttons.extend(self.physical_buttons.iter().copied());
+            self.screenshot_notice("Screenshot cancelled", "Monitor layout changed during capture");
+        }
         if self.tray.take_screenshot_request() { self.start_screenshot(); }
         let result = self.xr_bridge.lock().unwrap().screenshot_result.take();
         if let Some(result) = result {
@@ -279,4 +310,60 @@ mod tests {
             assert_eq!((crop.width, crop.height), (4, 3));
         }
     }
+    #[test]
+    fn multihead_capture_stitches_negative_offsets_gaps_and_cross_monitor_crops() {
+        use smithay::backend::allocator::Fourcc;
+        let mut renderer = crate::rendering::offscreen().unwrap();
+        let geometries = [Rectangle::new((-4, -2).into(), (4, 3).into()),
+                          Rectangle::new((0, 0).into(), (5, 4).into())];
+        let mut selection = Selection::new(geometries.to_vec(), 42).unwrap();
+        assert_eq!(selection.bounds, Rectangle::new((-4, -2).into(), (9, 6).into()));
+        for (head, geometry) in geometries.into_iter().enumerate() {
+            let (w, h) = (geometry.size.w, geometry.size.h);
+            let rgba: Vec<u8> = (0..h).flat_map(|y| (0..w).flat_map(move |x|
+                [head as u8 * 100 + x as u8 * 11, y as u8 * 23, 91, 255])).collect();
+            let buffer = MemoryRenderBuffer::from_slice(&rgba, Fourcc::Abgr8888,
+                (w, h), 1, Transform::Normal, None);
+            let element = MemoryRenderBufferRenderElement::from_buffer(
+                &mut renderer, (0., 0.), &buffer, None, None, None, Kind::Unspecified).unwrap();
+            let pixels = capture_pixels(&mut renderer, &[element], (w, h).into(), [0., 0., 0., 1.]).unwrap();
+            selection.record(geometry, pixels).unwrap();
+            assert_eq!(selection.ready(), head == 1);
+        }
+        // Both axes vary per output: a reflected, shifted or swapped tile fails.
+        for y in -2..4 {
+            for x in -4..5 {
+                let expected = if x < 0 && y < 1 {
+                    [((x + 4) * 11) as u8, ((y + 2) * 23) as u8, 91, 255]
+                } else if x >= 0 && y >= 0 {
+                    [(100 + x * 11) as u8, (y * 23) as u8, 91, 255]
+                } else { [0, 0, 0, 255] };
+                let index = (((y + 2) * 9 + x + 4) * 4) as usize;
+                assert_eq!(selection.pixels.rgba[index..index + 4], expected);
+            }
+        }
+        let crop = selection.pixels.crop([7, 4], [2, 1]).unwrap();
+        assert_eq!((crop.width, crop.height), (5, 3));
+        let decoded = image::load_from_memory(&crop.png().unwrap()).unwrap().into_rgba8();
+        assert_eq!(decoded.as_raw(), &crop.rgba);
+        // The crop includes both heads and the empty corner between them.
+        assert_eq!(&crop.rgba[..4], &[22, 23, 91, 255]);
+        assert_eq!(&crop.rgba[3 * 4..4 * 4], &[0, 0, 0, 255]);
+        assert_eq!(&crop.rgba[8 * 4..9 * 4], &[111, 0, 91, 255]);
+    }
+
+    #[test]
+    fn multihead_capture_checks_layout_dimensions_and_mirrored_outputs() {
+        let output = Rectangle::new((100, -20).into(), (4, 3).into());
+        let mut selection = Selection::new(vec![output, output], 1).unwrap();
+        assert!(!selection.ready());
+        assert!(selection.record(output, Pixels::opaque_black(3, 3).unwrap()).is_err());
+        assert!(selection.record(Rectangle::from_size((4, 3).into()),
+            Pixels::opaque_black(4, 3).unwrap()).is_err());
+        selection.record(output, Pixels::opaque_black(4, 3).unwrap()).unwrap();
+        assert!(selection.ready());
+        assert!(Selection::new(vec![], 1).is_err());
+        assert!(Selection::new(vec![Rectangle::from_size((10000, 10000).into())], 1).is_err());
+    }
+
 }

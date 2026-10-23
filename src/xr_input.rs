@@ -2,6 +2,8 @@
 use crate::{Action, Pose, Scene};
 use glam::{Quat, Vec3};
 use serde::{Deserialize, Serialize};
+mod shell_view;
+pub use shell_view::{shell_quads_in_fov, shared_viewport};
 /// Open cylinder strip. Vertical coordinates are height/radius, in radians of
 /// unwrapped arc length; horizontal radius never shrinks towards a pole.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -619,7 +621,8 @@ pub fn shell_quads(
     shell_quads_in_view(scene, head, shell, 100.)
 }
 
-/// Renderer and input share the same automatically fitted headset width.
+/// Preferred lane geometry before optical FOV fitting. Active XR rendering and
+/// input use `shell_quads_in_fov` with the headset's shared viewport.
 pub fn shell_quads_in_view(
     scene: &Scene, head: Pose, shell: &crate::xr_transport::ShellLayout, horizontal_fov_deg: f32,
 ) -> Vec<Quad> {

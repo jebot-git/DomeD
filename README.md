@@ -182,6 +182,8 @@ WAYLAND_DISPLAY=wayland-N your-wayland-app
 
 The native shell supports click-to-focus, native title-bar controls/dragging, client-initiated move/resize,
 minimize/maximize/close, app launch (also Super+Shift+Space) and desktop switching/creation.
+Closing the focused window returns keyboard focus to the most recently focused
+available application on the current desktop and input realm.
 Its local web panel controls the same live window/workspace model; its geometry
 preview still uses sample surface content. App launching requires `gio`, installed
 `.desktop` files. Login sessions start an optional `xwayland-satellite` bridge
@@ -270,7 +272,9 @@ same DomeD arrow, with the nested host cursor hidden. Appearance changes repaint
 the cursor immediately: light fill in dark mode, dark fill in light mode, with a
 contrasting outline. The nested and native backends share shell, popup and XR rendering.
 
-The session requests XR and the selected terminal at startup. If the headset
+The session requests XR and the selected terminal at startup. The FLTerm XR
+overlay starts hidden at login so it does not capture keyboard or pointer focus;
+use **Super+F12** (or **F12** in XR) to show it. If the headset
 or runtime is unavailable, the desktop remains usable; use **Start XR** when it
 becomes available. `DOME_START_XR=0` disables automatic XR startup and
 `DOME_SESSION_TERMINAL=0` starts without a terminal. The saved XR layout at
@@ -681,15 +685,17 @@ The cursor stops inside the headset viewport edges, including after head movemen
 Held buttons capture the
 original target through a drag. Outside XR, the mouse uses desktop stacking.
 
-In dome mode the upper menu/tray bar sits at most **8 Wayland logical pixels**
-above the rendered top lane, and the taskbar sits at most 8 logical pixels below
-the rendered bottom lane. Both share the lane cylinder and the upper lane’s lean,
-including fitted panel heights and focused outsets. Both orbit the dome anchor with horizontal
-headset yaw; pitching the headset lets you look up/down to reach the bars without
-moving them over the room-anchored lanes. Expanded menus keep the bar edge fixed and extend toward the lanes.
-For a dome taller than the headset's field of view, look up/down to see its bars.
-Adjust **Projection height / vertical span**, **Upper tray height** and **Taskbar
-height** to size this layout; **Dome height / anchor Y** controls its room elevation.
+The XR menu/tray and taskbar follow the headset view and stay inside its upper
+and lower edges, with a safety inset. Placement uses the common visible field
+of both eyes, including eye separation and canted optics. The whole curved
+surface and expanded menus are fitted, so turning, pitching, rolling or moving
+the head cannot strand controls outside the view. Application windows keep their
+own room/head anchoring. **Upper tray height** and **Taskbar height** control the
+preferred size; oversized controls shrink to remain fully visible.
+XR notifications are centred near the bottom of the view, raised above the
+taskbar with a gap. Notification stacks grow upward and fit the available view;
+their desktop crop position does not determine XR placement. Rendering and
+pointer hit testing use the same fitted surfaces.
 Legacy bar offsets, insets and width caps are accepted when loading profiles but
 ignored and omitted when saving them.
 Older profiles with `in_view` automatically load as `room_dome`.
@@ -1164,9 +1170,9 @@ Its own F12 handler hides it while it owns the keyboard. Alt+F4 retains the stan
 | Shift+Super+N | Create desktop |
 | Super+Equals/Minus | Increase / decrease XR window scale |
 | Shift+Super+R | Reset XR placement and scale |
-| Shift+Super+B | Slide both XR bars out / back in |
-| Alt+Super+T | Slide upper XR menu/tray bar out / back in |
-| Alt+Super+B | Slide XR taskbar out / back in |
+| Shift+Super+B | Fade both XR bars out / back in |
+| Alt+Super+T | Fade upper XR menu/tray bar out / back in |
+| Alt+Super+B | Fade XR taskbar out / back in |
 | Shift+Super+D | Fade the entire XR desktop out / back in |
 | Super+C/V/A | Copy / paste / select all using client Ctrl bindings |
 | Super+F10, arrows, Enter, Escape | Navigate classic global menus |
@@ -1184,9 +1190,9 @@ Sending to XR requires an active XR session. If XR stops, its windows return to
 the desktop. Presentation is saved with the session layout. Native OpenXR
 overlays and other compositors are outside this feature’s scope.
 
-XR visibility controls are also in **View**. Bar slides and desktop fades take
-250 ms and reverse continuously if toggled mid-animation. The upper bar slides
-past the top view edge; the taskbar slides past the bottom. Hiding the XR desktop
+XR visibility controls are also in **View**. Bars fade in place over 250 ms and
+reverse continuously if toggled mid-animation; visible controls never slide
+past the view edges. Hiding the XR desktop
 fades all window and shell layers, preserving each bar's visibility preference.
 These controls remain available from
 launchers and shell settings. Hidden/transitioning surfaces reject XR pointer
@@ -1196,7 +1202,7 @@ Showing any panel or either tray returns physical input to XR. Each view restore
 its own previous keyboard focus; held buttons/grabs are released during handoff,
 and stale XR packets cannot recapture the desktop seat. Open XR shell popups and
 modal input capture are dismissed when handing control to desktop. During fade or
-slide-out, XR retains ownership until its last visible surface disappears.
+fade-out, XR retains ownership until its last visible surface disappears.
 Desktop window placement and monitor bars are unaffected. This is a presentation
 toggle: the XR session stays alive and does not trigger contingency recovery.
 
@@ -1397,3 +1403,5 @@ same model, painting data and hit geometry. Opening another shell panel dismisse
 the clock calendar.
 
 Screenshot capture is available from the camera tray icon and PrintScreen: desktop region selection, PNG clipboard and XDG Pictures/Screenshots storage, or an XR SBS view. See [Screenshots](docs/SCREENSHOTS.md).
+
+Expanded universal menus use bounded viewports on desktop and XR. In XR the menu height is limited by the shared binocular field of view; long menus show scroll arrows. Hold the pointer over an arrow or use the wheel to scroll, and keyboard selection automatically reveals the selected action. Nested panels preserve application action IDs and share their viewport between rendering and hit testing.

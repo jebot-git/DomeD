@@ -7,12 +7,14 @@ are migrated.
 
 On the desktop, drag over the region to capture. Dragging in either direction
 works. Escape or the right mouse button cancels; an empty region creates no
-file. The selection uses a frozen compositor image from the output containing
-the pointer. Its dimming and outline are excluded from the result. Selection
-is limited to that output; move the pointer to another monitor before invoking
-capture to select there. Desktop capture renders into a separate, consistently
-oriented buffer, so native DRM and nested desktops produce the same top-down
-pixels without changing the displayed output.
+file. The selection uses frozen compositor images from all active outputs, so
+one region can span multiple monitors. Each monitor keeps its desktop position,
+including negative offsets; gaps between monitors are opaque black. Dimming and
+the selection outline are excluded from the result. Changing the monitor layout
+during selection cancels the capture. The desktop canvas is limited to 32
+megapixels, including gaps. Desktop capture renders into separate, consistently
+oriented buffers, so native DRM and nested desktops produce the same top-down
+pixels without changing the displayed outputs.
 
 The resulting PNG is copied to the session clipboard as `image/png` and saved
 under **Screenshots** in the XDG Pictures folder. DomeD reads `user-dirs.dirs`
@@ -61,3 +63,8 @@ checks an asymmetric image pixel by pixel, including crop coordinates, while
 Normal (native DRM) and Flipped180 (nested) presentation targets are bound.
 Run it with both `DOME_RENDERER=gles` and `DOME_RENDERER=vulkan` to cover both
 rendering paths without taking control of a physical display.
+
+The multihead GPU tests stitch two independently rendered outputs with unequal
+sizes, negative offsets and gaps, then verify every pixel and a PNG crop spanning
+both monitors. They also check mirrored outputs, incomplete capture readiness,
+layout/size mismatches and the desktop allocation limit.
