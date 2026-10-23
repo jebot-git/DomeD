@@ -22,6 +22,8 @@ samples = {
     'Chinese traditional': '繁體中文 漢語 龍門',
     'Thai': 'ภาษาไทย สวัสดี กำ กิ กี่ กุ กู',
     'Arabic': 'العربية مرحبا بالعالم لا لأ لإ لآ',
+    'Emoji': '😀😂🙂🚀🐧🔒📁',
+    'Nerd Font Material sample': '\U000f0001\U000f0006',
     'Powerline': '\ue0a0\ue0a1\ue0a2\ue0b0\ue0b1\ue0b2\ue0b3',
     'Nerd Font common': '\ue5ff\ue62b\ue702\uf17c',
     'Nerd Font extended sample': '\ue5ff\ue62b\ue702\uf013\uf07c\uf121\uf17c\uf120\uf15b',
@@ -52,7 +54,7 @@ for manifest in assets.glob('*/upstream.json'):
 info = json.loads((assets / 'upstream.json').read_text())
 assert hashlib.sha256((assets / 'unifont-17.0.04.bdf').read_bytes()).hexdigest() == info['sha256_uncompressed']
 for sample in samples:
-    if sample.startswith('Nerd Font'): continue
+    if sample == 'Nerd Font extended sample': continue
     assert any(r['samples'][sample] for r in records), f'No bundled face covers {sample}'
 distributed = {str(p.relative_to(assets)) for p in assets.rglob('*')
                if p.suffix == '.bdf' and p.name != 'upstream.bdf'}
@@ -73,6 +75,16 @@ def family(name):
     return {'qub':'QUB','x10y12pxDenkiChipHangul':'DenkiChipHangul'}.get(name,name)
 assert {family(r['family']) for r in records} == allowed, 'Only the requested default families may be bundled'
 assert all(r['file'].endswith('.bdf') for r in records)
+# The upper-plane BDF must preserve every native source bitmap exactly.
+upper = assets / 'unifont-upper-17.0.04'
+source = {int(line.split(':')[0],16):line.split(':')[1].upper()
+          for line in (upper/'unifont_upper-17.0.04.hex').read_text().splitlines()}
+packaged = {}
+for block in (upper/'unifont_upper-17.0.04.bdf').read_text().split('STARTCHAR ')[1:]:
+    cp = int(re.search(r'^ENCODING (\d+)$', block, re.M)[1])
+    packaged[cp] = re.split(r'BITMAP[ \t]*\n', block)[1].split('ENDCHAR')[0].replace('\n','').upper()
+assert source == packaged, 'Unifont Upper must retain every native HEX glyph pixel'
+assert not any(family(r['family']) in {'QUB','Neep','Cozette','uni16m','Zpix'} for r in records)
 out = root / 'artifacts/bitmap-fonts'
 out.mkdir(parents=True, exist_ok=True)
 (out / 'coverage.json').write_text(json.dumps({'samples': samples, 'fonts': records}, ensure_ascii=False, indent=2) + '\n')

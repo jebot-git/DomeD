@@ -21,8 +21,8 @@ namespace bdf_fonts {
 inline bool default_family(std::string family) {
   family = family.substr(0, family.find(" ["));
   std::transform(family.begin(), family.end(), family.begin(), [](unsigned char c) { return std::tolower(c); });
-  static const std::set<std::string> names = {"qub", "unifont", "uni16m", "x10y12pxdenkichiphangul", "cozette", "ufo16", "zpix", "kissinger 2", "kissinger 2f"};
-  return names.count(family) || family.rfind("galmuri", 0) == 0 || family.rfind("fusion pixel ", 0) == 0 || family.rfind("neep", 0) == 0;
+  static const std::set<std::string> names = {"unifont", "unifont upper", "kirsch", "x10y12pxdenkichiphangul", "ufo16", "kissinger 2", "kissinger 2f"};
+  return names.count(family) || family.rfind("galmuri", 0) == 0 || family.rfind("fusion pixel ", 0) == 0;
 }
 inline std::string identity(const std::string &family, const std::string &style) {
   auto variant = family.find(" [");
@@ -306,6 +306,9 @@ inline Face resolve(const std::string &family, const std::string &style, int pix
   auto faces = discover();
   auto found = std::find_if(faces.begin(), faces.end(), [&](const Face &f) { return (style.empty() ? f.family == family : f.id() == family + " / " + style) && f.pixels == pixels; });
   if (found == faces.end()) throw std::runtime_error("BDF face/size is unavailable: " + family);
+  // Register matching native fallback strikes before a toolkit resolves glyphs.
+  for (const auto &face : faces)
+    if (face.family == "kirsch" || face.family == "Unifont Upper") scaled(face, scale);
   return scaled(*found, scale);
 }
 inline std::string export_config() {

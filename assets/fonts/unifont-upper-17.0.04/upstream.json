@@ -1,0 +1,16 @@
+{
+  "name": "GNU Unifont Upper",
+  "version": "17.0.04",
+  "source": "https://unifoundry.com/pub/unifont/unifont-17.0.04/unifont-17.0.04.tar.gz",
+  "source_archive_sha256": "5c52c5d56ef98089ddbca62e68560ceccc57ea88940b9d38cc3c888fe3b59a34",
+  "format": "Native upstream HEX bitmap glyphs repackaged losslessly with upstream hex2bdf as BDF.",
+  "license": "OFL-1.1 OR GPL-2.0-or-later WITH Font-exception-2.0 (fonts); GPL-2.0-or-later (hex2bdf)",
+  "files": {
+    "COPYING": "cd2785c2b8e0a01d203560265b2d2d47cdb1401d2707d25918ac5531bcdba947",
+    "README.md": "205fdec3b1ca700babe6cfabaf9d43806c0095dccf1d89271cf1514722d9092a",
+    "README.plane01": "758247c4b0f2eb992a7bc905bab8d4db5399afffb183372de051bb9be21f34ae",
+    "hex2bdf": "9193415ce315e1a928c570bdedb329aa746d4277e4d6c4d5bc5e4e6402c254e4",
+    "unifont_upper-17.0.04.bdf": "f1a044cab74b1363d46d18e7c12d8f7161b49de159ef417de007b6ae1c2afc0a",
+    "unifont_upper-17.0.04.hex": "7a9cd197da63cc9eb5dddb01f170f6e44a5a56e378d4d5b199b81882a145aef5"
+  }
+}

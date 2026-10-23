@@ -7,37 +7,29 @@
       "directory": "akahuku--ufo"
     },
     {
-      "name": "uni16m",
-      "url": "https://github.com/bluebat/uni16m",
-      "directory": "bluebat--uni16m"
-    },
-    {
-      "name": "Zpix",
-      "url": "https://github.com/SolidZORO/zpix-pixel-font",
-      "directory": "SolidZORO--zpix-pixel-font"
-    },
-    {
-      "name": "Tecate",
-      "url": "https://github.com/Tecate/bitmap-fonts/tree/master",
-      "directory": "Tecate--bitmap-fonts"
-    },
-    {
       "name": "Kissinger2",
       "url": "https://typedesign.replit.app/kissinger2.html",
       "directory": "kissinger2-dev5"
+    },
+    {
+      "name": "kirsch",
+      "url": "https://github.com/molarmanful/kirsch",
+      "directory": "kirsch-v0.7.3"
+    },
+    {
+      "name": "Unifont Upper",
+      "url": "https://unifoundry.com/unifont/",
+      "directory": "unifont-upper-17.0.04"
     }
   ],
   "families": [
-    "QUB",
     "Unifont",
-    "uni16m",
     "DenkiChipHangul",
-    "Cozette",
     "Galmuri",
     "Fusion Pixel",
-    "Neep",
     "UFO16",
-    "Zpix",
-    "Kissinger2"
+    "Kissinger2",
+    "kirsch",
+    "Unifont Upper"
   ]
 }

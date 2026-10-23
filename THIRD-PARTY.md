@@ -7,17 +7,19 @@ under SIL OFL 1.1; its full notices, original README and provenance remain in
 Collection-specific licenses, embedded copyright notices, source revisions,
 original and packaged SHA-256 checksums, and packaging details are retained in
 `assets/fonts/*/upstream.json` and the adjacent source documentation. See the
-font section in README.md for the curated bundle and format policy. Zpix is
-included for personal/education use; commercial products require a separate
-license under its upstream pricing terms. Tecate is an aggregation with individual font notices, not a single relicensed
-collection; only QUB and Neep are retained from it. Kissinger2 dev5 is distributed
-as the two unmodified upstream BDFs, with the author's public-domain dedication
-and license text in `assets/fonts/kissinger2-dev5/readme.txt`. Its archive checksum
-and source URL are pinned in the adjacent manifest.
+font section in README.md for the curated bundle and format policy. QUB, Neep,
+Cozette, uni16m and Zpix have been retired from the default distribution.
+Kissinger2 dev5 is distributed as the two unmodified upstream BDFs, with the author's
+public-domain dedication in `assets/fonts/kissinger2-dev5/readme.txt`.
+kirsch v0.7.3 is the unmodified upstream BDF, licensed under OFL-1.1; its Nerd Fonts
+coverage is partial. Unifont Upper 17.0.04 is built from the original upstream HEX
+bitmaps using the accompanying GPL-2.0-or-later `hex2bdf` tool, preserving every
+bitmap pixel. Its font terms are OFL-1.1 OR GPL-2.0-or-later WITH Font-exception-2.0.
+No outline rasterization is used. Source files, notices and checksums accompany
+both additions.
 
 BDF packaging maps legacy character codes to Unicode and normalizes metadata;
-glyph bitmap pixels remain unchanged. Cozette and Zpix BDFs are exported from
-upstream SFD bitmap strikes using FontForge, without outline rasterization.
+glyph bitmap pixels remain unchanged.
 `packaging/font-notices.list` installs the accompanying terms and provenance.
 The generated `fonts.index` accelerates discovery; runtime-modified fonts are
 inspected independently.

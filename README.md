@@ -805,25 +805,31 @@ used as session fallbacks. A private Fontconfig configuration allows only BDF;
 the host configuration is preserved. Font files are read directly by FreeType,
 FLTK CPU/GL rendering, the private patched Pango for GTK, Ghostty, and the patched libass used by mpvr and qimgvr.
 
-The default distribution contains 268 BDF files from eleven families: QUB,
-Unifont, uni16m, DenkiChipHangul, Cozette, Galmuri, Fusion Pixel, Neep, UFO16,
-Zpix, and Kissinger2. Bitocra, 4thD, 5th Element and the remaining evaluation
-fonts are excluded. Personal BDF installations remain supported.
+The default distribution contains 58 BDF files: Unifont, Unifont Upper,
+DenkiChipHangul, Galmuri, Fusion Pixel, UFO16, Kissinger2, and kirsch. QUB, Neep,
+Cozette, uni16m and Zpix are no longer bundled. Personal BDF installations remain supported.
+
+kirsch supplies 2,815 private-use glyphs, including Powerline and a subset of Nerd
+Fonts icons. It does not cover the entire Nerd Fonts glyph set. Unifont Upper adds
+58,236 supplementary-plane glyphs, including monochrome emoji, pictographs,
+musical symbols and historic scripts. It is built losslessly from the upstream
+HEX bitmaps with the upstream `hex2bdf` tool. Color emoji and composed emoji
+sequences are not provided by BDF. Missing FLTK glyphs use another available BDF
+strike; text already present in the selected face keeps its original pixels and
+metrics. Fallback fonts also have exact 2x strikes when session scale is 2x.
 
 The family picker groups physical strikes: Galmuri7/9/11/14 share **Galmuri**;
 **Font size** cycles through the available native strikes for the selected face.
 The size label retains the upstream strike name and its actual pixel size
 (for example Galmuri9 at 12 native pixels). **Font script** appears for families
-with language variants, including Fusion Pixel and Neep; changing size preserves
+with language variants, including Fusion Pixel; changing size preserves
 the script and changing script preserves the nearest available size. Monospaced,
 proportional, bold and other designs remain face choices. Saved settings retain
 the physical BDF identity so shell and client toolkits resolve the same pixels.
 
 Each collection retains its source revision, SHA-256 checksums, and available
-upstream terms in `assets/fonts/*/upstream.json`. Zpix is bundled for personal
-and education use at the user’s request; commercial product use requires its
-separate upstream license. Historical collections may have individual embedded
-notices rather than a collection-wide license; those notices are preserved.
+upstream terms in `assets/fonts/*/upstream.json`. kirsch is distributed under
+OFL-1.1, and GNU Unifont retains its dual font license and font embedding exception.
 Legacy character codes are mapped to Unicode during packaging without changing
 glyph pixels. Ambiguous names retain source aliases internally and are grouped by family,
 face, size and script in the appearance picker. Symbol-only and non-Latin-only fonts remain

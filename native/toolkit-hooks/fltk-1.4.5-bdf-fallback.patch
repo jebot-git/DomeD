@@ -1,0 +1,98 @@
+--- a/src/drivers/Cairo/Fl_Cairo_Graphics_Driver.cxx
++++ b/src/drivers/Cairo/Fl_Cairo_Graphics_Driver.cxx
+@@ -1096,22 +1096,78 @@
+ static FT_Face dome_bitmap(Fl_Font font, Fl_Fontsize size) {
+   return dome_bitmap_name(Fl::get_font(font), size);
+ }
++// Missing glyphs use another native BDF strike, never an outline font.
++static FT_Face dome_bitmap_glyph(FT_Face primary, unsigned cp) {
++  if (FT_Get_Char_Index(primary, cp) || getenv("DE_XR_LIGHTXR_PCF")) return primary;
++  static FT_Library library = nullptr;
++  static FcConfig *configuration = nullptr;
++  static std::map<std::pair<FT_Face,unsigned>,FT_Face> glyphs;
++  static std::map<std::string,FT_Face> faces;
++  if (configuration != FcConfigGetCurrent()) {
++    for (auto &entry : faces) if (entry.second) FT_Done_Face(entry.second);
++    faces.clear(); glyphs.clear(); configuration = FcConfigGetCurrent();
++  }
++  auto key = std::make_pair(primary, cp);
++  auto cached = glyphs.find(key);
++  if (cached != glyphs.end()) return cached->second ? cached->second : primary;
++  auto charset = FcCharSetCreate(); FcCharSetAddChar(charset, cp);
++  auto filter = FcPatternCreate();
++  FcPatternAddString(filter, FC_FONTFORMAT, (const FcChar8 *)"BDF");
++  FcPatternAddCharSet(filter, FC_CHARSET, charset); FcCharSetDestroy(charset);
++  auto objects = FcObjectSetBuild(FC_FILE, FC_FAMILY, FC_PIXEL_SIZE, FC_FONTFORMAT, nullptr);
++  auto available = FcFontList(nullptr, filter, objects);
++  FcPatternDestroy(filter); FcObjectSetDestroy(objects);
++  auto query = FcPatternCreate();
++  int pixels = primary->size->metrics.y_ppem;
++  FcPatternAddDouble(query, FC_PIXEL_SIZE, pixels);
++  FcDefaultSubstitute(query);
++  FcResult result;
++  auto match = available ? FcFontSetMatch(nullptr, &available, 1, query, &result) : nullptr;
++  FcPatternDestroy(query);
++  FT_Face face = nullptr; FcChar8 *file = nullptr;
++  if (match && FcPatternGetString(match, FC_FILE, 0, &file) == FcResultMatch) {
++    auto name = std::string((const char *)file) + ":" + std::to_string(pixels);
++    auto loaded = faces.find(name);
++    if (loaded != faces.end()) face = loaded->second;
++    else {
++      if (!library) FT_Init_FreeType(&library);
++      if (library && !FT_New_Face(library, (const char *)file, 0, &face)) {
++        bool valid = !FT_IS_SCALABLE(face) && face->num_fixed_sizes &&
++          FT_Get_Font_Format(face) && !strcmp(FT_Get_Font_Format(face), "BDF") &&
++          !FT_Select_Charmap(face, FT_ENCODING_UNICODE);
++        int best = 0;
++        for (int i = 1; i < face->num_fixed_sizes; ++i)
++          if (abs(int(face->available_sizes[i].y_ppem/64)-pixels) <
++              abs(int(face->available_sizes[best].y_ppem/64)-pixels)) best = i;
++        if (!valid || FT_Select_Size(face, best)) { FT_Done_Face(face); face = nullptr; }
++      }
++      faces[name] = face;
++    }
++    if (face && !FT_Get_Char_Index(face, cp)) face = nullptr;
++  }
++  if (match) FcPatternDestroy(match);
++  if (available) FcFontSetDestroy(available);
++  glyphs[key] = face;
++  return face ? face : primary;
++}
+ static double dome_bitmap_width(FT_Face face,const char *str,int n){
+   double width=0;const char* end=str+n;
+   while(str<end){int bytes=0;unsigned c=fl_utf8decode(str,end,&bytes);if(bytes<=0)break;str+=bytes;
+-    if(!FT_Load_Char(face,c,FT_LOAD_RENDER|FT_LOAD_TARGET_MONO|FT_LOAD_MONOCHROME))width+=face->glyph->advance.x/64.;
++    auto glyph_face=dome_bitmap_glyph(face,c);
++    if(!FT_Load_Char(glyph_face,c,FT_LOAD_RENDER|FT_LOAD_TARGET_MONO|FT_LOAD_MONOCHROME))width+=glyph_face->glyph->advance.x/64.;
+   }return width;
+ }
+ static void dome_bitmap_draw(cairo_t *cr,FT_Face face,const char* str,int n,double x,double y){
+   const char* end=str+n;cairo_save(cr);cairo_set_antialias(cr,CAIRO_ANTIALIAS_NONE);
+   while(str<end){int bytes=0;unsigned c=fl_utf8decode(str,end,&bytes);if(bytes<=0)break;str+=bytes;
+-    if(FT_Load_Char(face,c,FT_LOAD_RENDER|FT_LOAD_TARGET_MONO|FT_LOAD_MONOCHROME))continue;
+-    const FT_Bitmap& b=face->glyph->bitmap;
++    auto glyph_face=dome_bitmap_glyph(face,c);
++    if(FT_Load_Char(glyph_face,c,FT_LOAD_RENDER|FT_LOAD_TARGET_MONO|FT_LOAD_MONOCHROME))continue;
++    const FT_Bitmap& b=glyph_face->glyph->bitmap;
+     if(b.width&&b.rows){int stride=cairo_format_stride_for_width(CAIRO_FORMAT_A8,b.width);std::vector<unsigned char> alpha(stride*b.rows,0);
+       for(unsigned row=0;row<b.rows;++row)for(unsigned col=0;col<b.width;++col){const unsigned char* src=b.buffer+(b.pitch<0?b.rows-1-row:row)*abs(b.pitch);alpha[row*stride+col]=b.pixel_mode==FT_PIXEL_MODE_MONO?((src[col/8]&(0x80>>(col%8)))?255:0):src[col];}
+       cairo_surface_t* mask=cairo_image_surface_create_for_data(alpha.data(),CAIRO_FORMAT_A8,b.width,b.rows,stride);
+-      cairo_mask_surface(cr,mask,floor(x)+face->glyph->bitmap_left-.5,floor(y)-face->glyph->bitmap_top-.5);cairo_surface_destroy(mask);
+-    }x+=face->glyph->advance.x/64.;
++      cairo_mask_surface(cr,mask,floor(x)+glyph_face->glyph->bitmap_left-.5,floor(y)-glyph_face->glyph->bitmap_top-.5);cairo_surface_destroy(mask);
++    }x+=glyph_face->glyph->advance.x/64.;
+   }cairo_restore(cr);
+ }
+ 
+@@ -1375,8 +1431,9 @@
+   if(auto face=dome_bitmap(font(),size())){
+     int left=0,right=0,top=0,bottom=0,cursor=0;bool ink=false;const char *end=txt+n;
+     while(txt<end){int bytes=0;unsigned cp=fl_utf8decode(txt,end,&bytes);if(bytes<=0)break;txt+=bytes;
+-      if(FT_Load_Char(face,cp,FT_LOAD_RENDER|FT_LOAD_TARGET_MONO|FT_LOAD_MONOCHROME))continue;
+-      auto glyph=face->glyph;
++      auto glyph_face=dome_bitmap_glyph(face,cp);
++      if(FT_Load_Char(glyph_face,cp,FT_LOAD_RENDER|FT_LOAD_TARGET_MONO|FT_LOAD_MONOCHROME))continue;
++      auto glyph=glyph_face->glyph;
+       if(glyph->bitmap.width && glyph->bitmap.rows){
+         int x=cursor+glyph->bitmap_left,y=-glyph->bitmap_top;
+         if(!ink){left=x;right=x+glyph->bitmap.width;top=y;bottom=y+glyph->bitmap.rows;ink=true;}

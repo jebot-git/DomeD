@@ -24,7 +24,7 @@ int main(int argc, char **argv) try {
     require(!strcmp(FT_Get_Font_Format(two), "BDF"), "Scaling must retain BDF format");
     FT_Select_Charmap(one, FT_ENCODING_UNICODE); FT_Select_Charmap(two, FT_ENCODING_UNICODE);
     FT_Select_Size(one, 0); FT_Select_Size(two, 0);
-    for (unsigned cp : {77u, 0xe9u, 0x65e5u, 0xd55cu, 0x0627u, 0x0e01u}) {
+    for (unsigned cp : {77u, 0xe9u, 0x65e5u, 0xd55cu, 0x0627u, 0x0e01u, 0xe5ffu, 0xf0001u, 0x1f600u, 0x1f680u}) {
       if (!FT_Get_Char_Index(one, cp)) continue;
       require(!FT_Load_Char(one, cp, FT_LOAD_DEFAULT) && !FT_Load_Char(two, cp, FT_LOAD_DEFAULT), "Glyph load");
       auto &a = one->glyph->bitmap; auto &b = two->glyph->bitmap;
@@ -41,7 +41,7 @@ int main(int argc, char **argv) try {
   setenv("XDG_DATA_HOME", temporary.c_str(), 1);
   auto before = bdf_fonts::discover(true);
   require(std::none_of(before.begin(),before.end(),[](auto &f){return f.family=="DomeUserBdf";}),"User font starts absent");
-  auto source = bdf_fonts::read((std::filesystem::path(argv[1])/"spleen-v2.2.0/spleen-6x12.bdf").string());
+  auto source = bdf_fonts::read((std::filesystem::path(argv[1])/"unifont-17.0.04.bdf").string());
   auto name = source.find("FAMILY_NAME "); auto end = source.find('\n',name);
   source.replace(name,end-name,R"(FAMILY_NAME "DomeUserBdf")");
   { std::ofstream out(user/"user.bdf"); out<<source; }

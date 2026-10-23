@@ -1,0 +1,14 @@
+{
+  "name": "kirsch",
+  "version": "v0.7.3",
+  "repository": "https://github.com/molarmanful/kirsch",
+  "revision": "6468c4a304f0b2ac4b5c3073d26bb87dc46c3d86",
+  "source": "https://github.com/molarmanful/kirsch/releases/download/v0.7.3/kirsch.bdf",
+  "format": "Unmodified upstream BDF, native 16px bitmap strike; includes partial Nerd Fonts coverage.",
+  "license": "OFL-1.1",
+  "files": {
+    "LICENSE": "d889040dd7429249b02de25c873d4554c119a13ea4ebc91962efa48b9e90f6c7",
+    "README.md": "b06e708483d66733715d768583f34c2dc6f1868b1c0686f5e31005d1ba9fcd27",
+    "kirsch.bdf": "6ded338bf6cc87e66dbc3dec7382d2054d8c2a11a409f1270649f7a28fe0e36a"
+  }
+}
