@@ -43,6 +43,53 @@ pub struct Snapshot {
     pub input: Option<Level>,
     pub error: String,
 }
+/// Visual device rows share their index mapping with pointer hit testing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DeviceRow {
+    Heading(Target),
+    Device(usize),
+}
+#[derive(Debug)]
+pub struct DeviceList {
+    pub rows: Vec<DeviceRow>,
+    pub first: usize,
+    pub visible: usize,
+}
+impl DeviceList {
+    pub fn new(snapshot: &Snapshot, selected: Option<usize>, panel_height: f64) -> Self {
+        let mut rows = Vec::new();
+        for (target, offset, count) in [
+            (Target::Output, 0, snapshot.outputs.len()),
+            (Target::Input, snapshot.outputs.len(), snapshot.inputs.len()),
+        ] {
+            if count > 0 {
+                rows.push(DeviceRow::Heading(target));
+                rows.extend((offset..offset + count).map(DeviceRow::Device));
+            }
+        }
+        let visible = ((panel_height - 250.) / 32.).floor().max(1.) as usize;
+        let selected_row = selected
+            .and_then(|index| rows.iter().position(|row| *row == DeviceRow::Device(index)))
+            .unwrap_or(0);
+        let first = selected_row
+            .saturating_sub(visible - 1)
+            .min(rows.len().saturating_sub(visible));
+        Self {
+            rows,
+            first,
+            visible,
+        }
+    }
+    pub fn device_at(&self, relative_y: f64) -> Option<usize> {
+        if !relative_y.is_finite() || relative_y < 0. || relative_y >= self.visible as f64 * 32. {
+            return None;
+        }
+        match self.rows.get(self.first + (relative_y / 32.) as usize) {
+            Some(DeviceRow::Device(index)) => Some(*index),
+            _ => None,
+        }
+    }
+}
 #[derive(Clone, Copy, Debug)]
 pub enum Request {
     Open(bool),
@@ -425,6 +472,56 @@ fn worker(
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn device(target: Target, id: u32) -> Device {
+        Device {
+            id,
+            serial: id as u64,
+            name: format!("device-{id}"),
+            label: format!("Device {id}"),
+            selected: false,
+            target,
+        }
+    }
+    #[test]
+    fn device_groups_share_selection_and_pointer_indices() {
+        let snapshot = Snapshot {
+            outputs: vec![device(Target::Output, 1), device(Target::Output, 2)],
+            inputs: vec![device(Target::Input, 3)],
+            ..Default::default()
+        };
+        let list = DeviceList::new(&snapshot, None, 410.);
+        assert_eq!(
+            list.rows,
+            vec![
+                DeviceRow::Heading(Target::Output),
+                DeviceRow::Device(0),
+                DeviceRow::Device(1),
+                DeviceRow::Heading(Target::Input),
+                DeviceRow::Device(2)
+            ]
+        );
+        assert_eq!(list.device_at(16.), None);
+        assert_eq!(list.device_at(48.), Some(0));
+        assert_eq!(list.device_at(112.), None);
+        assert_eq!(list.device_at(144.), Some(2));
+        assert_eq!(list.device_at(160.), None);
+    }
+    #[test]
+    fn scrolling_groups_keeps_the_selected_device_reachable() {
+        let snapshot = Snapshot {
+            inputs: (0..20).map(|id| device(Target::Input, id)).collect(),
+            ..Default::default()
+        };
+        let list = DeviceList::new(&snapshot, Some(19), 346.);
+        assert_eq!(list.visible, 3);
+        assert_eq!(list.first, 18);
+        assert_eq!(list.device_at(80.), Some(19));
+        assert_eq!(list.device_at(-1.), None);
+        assert_eq!(list.device_at(f64::NAN), None);
+        let empty = DeviceList::new(&Snapshot::default(), None, 0.);
+        assert!(empty.rows.is_empty());
+        assert_eq!(empty.device_at(0.), None);
+    }
     #[test]
     fn library_warnings_do_not_disable_successful_audio_queries() {
         assert!(!command_error(

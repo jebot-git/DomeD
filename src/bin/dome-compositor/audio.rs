@@ -1,6 +1,6 @@
 //! One audio pane and input policy for desktop and XR.
 use crate::Dome;
-use dome::audio::{Device, Request, Snapshot, Target};
+use dome::audio::{Device, DeviceList, DeviceRow, Request, Snapshot, Target};
 impl Dome {
     pub fn close_audio(&mut self) {
         self.audio_drag = None;
@@ -32,7 +32,7 @@ impl Dome {
         snapshot.outputs.iter().chain(&snapshot.inputs).collect()
     }
     pub fn audio_rect(&self, width: i32, height: i32) -> [f64; 4] {
-        let count = Self::audio_devices(&self.audio.state()).len();
+        let count = DeviceList::new(&self.audio.state(), None, 0.).rows.len();
         let w = 440.min((width - 24).max(1)) as f64;
         let h = (250 + count.min(10) as i32 * 32).min((height - 108).max(1)) as f64;
         [(width as f64 - w - 12.).max(0.), 42., w, h]
@@ -44,13 +44,14 @@ impl Dome {
         let snapshot = self.audio.state();
         let devices = Self::audio_devices(&snapshot);
         let [x, y, w, h] = self.audio_rect(width, height);
-        let visible = ((h - 250.) / 32.).floor().max(1.) as usize;
         let selected = self.audio_selected.min(devices.len() + 1);
-        let first = selected
-            .saturating_sub(2)
-            .saturating_sub(visible - 1)
-            .min(devices.len().saturating_sub(visible));
-        let rows:Vec<_>=devices.into_iter().map(|d|serde_json::json!({"id":d.id,"serial":d.serial,"target":d.target,"label":d.label,"active":d.selected})).collect();
+        let list = DeviceList::new(&snapshot, selected.checked_sub(2), h);
+        let visible = list.visible;
+        let first = list.first;
+        let rows: Vec<_> = list.rows.iter().map(|row| match row {
+            DeviceRow::Heading(target) => serde_json::json!({"kind":"heading","target":target,"label":if *target==Target::Output {"Output devices"}else{"Microphones"}}),
+            DeviceRow::Device(index) => {let d=devices[*index];serde_json::json!({"kind":"device","index":index+2,"id":d.id,"serial":d.serial,"target":d.target,"label":d.label,"active":d.selected})},
+        }).collect();
         serde_json::json!({"x":x,"y":y,"w":w,"h":h,"output":snapshot.output,"input":snapshot.input,"output_name":snapshot.outputs.iter().find(|d|d.selected).map(|d|d.label.as_str()).unwrap_or("No output device"),"input_name":snapshot.inputs.iter().find(|d|d.selected).map(|d|d.label.as_str()).unwrap_or("No microphone"),"error":snapshot.error,"rows":rows,"visible":visible,"first":first,"selected":selected})
     }
     fn audio_activate(&self) {
@@ -142,19 +143,10 @@ impl Dome {
                 return true;
             }
         }
-        let visible = ((h - 250.) / 32.).floor().max(1.) as usize;
-        let devices = Self::audio_devices(&snapshot);
-        let first = self
-            .audio_selected
-            .saturating_sub(2)
-            .saturating_sub(visible - 1)
-            .min(devices.len().saturating_sub(visible));
-        if y >= top + 214. && y < top + 214. + visible as f64 * 32. {
-            let index = first + ((y - top - 214.) / 32.) as usize;
-            if index < devices.len() {
-                self.audio_selected = index + 2;
-                self.audio_activate();
-            }
+        let list = DeviceList::new(&snapshot, self.audio_selected.checked_sub(2), h);
+        if let Some(index) = list.device_at(y - top - 214.) {
+            self.audio_selected = index + 2;
+            self.audio_activate();
         }
         true
     }

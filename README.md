@@ -1099,8 +1099,11 @@ dismissal, and keyboard responsiveness while the previews are open.
 
 Click the speaker in the right-side tray to control PipeWire audio in desktop or
 XR. Speaker and microphone volume each have a slider, 5% step buttons and a mute
-button. Select an output or microphone from **Default devices** to change the
-WirePlumber default. Changes made by other applications and device hotplug are
+button. **Default devices** separates **Output devices** and **Microphones**.
+Click a device row to change its WirePlumber default. A filled accent marker
+shows the active device in each group; the row outline shows keyboard/click
+selection. The current device names appear above the volume controls, and audio
+service errors appear at the bottom of the panel. Changes made by other applications and device hotplug are
 reflected automatically; controls reconnect when the audio service returns.
 
 Wheel over the speaker icon to adjust output volume without opening the pane.

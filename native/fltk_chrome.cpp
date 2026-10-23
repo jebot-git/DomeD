@@ -771,32 +771,57 @@ extern "C" int dome_qt_paint(const char *json, unsigned char *pixels,
     auto audio = obj(o, "audio");
     if (!audio.empty()) {
       int x = num(audio, "x"), y = num(audio, "y"), pw = num(audio, "w"),
-          ph = num(audio, "h");
+          ph = num(audio, "h"), selected = num(audio, "selected");
+      cairo_save(c);
+      cairo_rectangle(c, x, y, pw, ph);
+      cairo_clip(c);
       p.rect(x, y, pw, ph, p.bg);
+      p.border(x, y, pw, ph, p.muted);
       p.text(x + 16, y + 4, pw - 60, 32, "Audio", p.fg);
       p.text(x + pw - 36, y, 36, 36, "×", p.fg);
       for (int n = 0; n < 2; ++n) {
         int offset = n ? 136 : 64;
         auto level = obj(audio, n ? "input" : "output");
+        bool available = !level.empty();
         double volume = level.value("volume", 0.);
+        if (selected == n) p.rect(x + 10, y + offset - 30, pw - 20, 64, p.sel);
+        auto name = str(audio, n ? "input_name" : "output_name");
         p.text(x + 16, y + offset - 28, pw - 32, 24,
                std::string(n ? "Microphone" : "Output") + " " +
-                   std::to_string(int(volume * 100)) + "%",
-               p.fg);
+                   (available ? std::to_string(int(std::lround(volume * 100))) + "%" : "Unavailable") + " · " + name,
+               available ? p.fg : p.muted);
         p.button(x + 16, y + offset, 32, 30, "−");
         p.button(x + pw - 140, y + offset, 32, 30, "+");
         p.button(x + pw - 96, y + offset, 80, 30,
                  yes(level, "muted") ? "Unmute" : "Mute");
         p.rect(x + 60, y + offset + 11, pw - 216, 8, p.muted);
-        p.rect(x + 60, y + offset + 11,
+        if (available) p.rect(x + 60, y + offset + 11,
                std::clamp(int(volume * (pw - 216)), 0, std::max(0, pw - 216)),
-               8, p.accent);
+               8, yes(level, "muted") ? p.muted : p.accent);
       }
+      p.text(x + 16, y + 182, pw - 32, 28, "Default devices · click to select", p.muted);
       int first = num(audio, "first"), visible = num(audio, "visible");
       auto rows = arr(audio, "rows");
-      for (int n = first; n < std::min(int(rows.size()), first + visible); ++n)
-        p.text(x + 16, y + 214 + (n - first) * 32, pw - 32, 30,
-               str(rows[n], "label"), p.fg);
+      for (int n = first; n < std::min(int(rows.size()), first + visible); ++n) {
+        auto row = rows[n];
+        int ry = y + 214 + (n - first) * 32;
+        if (str(row, "kind") == "heading") {
+          p.text(x + 16, ry, pw - 32, 28, str(row, "label"), p.muted);
+          p.rect(x + 16, ry + 28, pw - 32, 1, p.muted);
+          continue;
+        }
+        bool active = yes(row, "active");
+        p.button(x + 10, ry, pw - 20, 30, "", selected == num(row, "index", -1));
+        // A vector selection marker stays visible with every BDF font face.
+        p.border(x + 18, ry + 9, 12, 12, active ? p.accent : p.muted);
+        if (active) p.rect(x + 21, ry + 12, 6, 6, p.accent);
+        p.text(x + 40, ry, pw - 56, 30, str(row, "label"), active ? p.accent : p.fg);
+      }
+      auto error = str(audio, "error");
+      p.text(x + 16, y + ph - 30, pw - 32, 24,
+             error.empty() ? "Click selects · Arrows navigate · Esc closes" : error,
+             error.empty() ? p.muted : p.accent);
+      cairo_restore(c);
     }
     if (yes(o, "appearance_open")) {
       bool keyboard =
