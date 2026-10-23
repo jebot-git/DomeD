@@ -307,7 +307,9 @@ impl Dome {
                 }
             }
             InputEvent::PointerMotionAbsolute { event, .. } => {
-                let output_geo = self.primary_output_geometry();
+                // Virtual desktop pointers (including WayVR's uinput mouse)
+                // normalize over all monitors, including negative origins.
+                let output_geo = self.desktop_geometry();
 
                 let pos = event.position_transformed(output_geo.size) + output_geo.loc.to_f64();
                 let previous = self.mouse_last_absolute.replace([pos.x, pos.y]);
@@ -323,7 +325,7 @@ impl Dome {
                 }
                 self.input_realm = dome::Realm::Desktop;
 
-                self.desktop_mouse_motion(pos, event.time_msec());
+                self.desktop_mouse_motion(self.clamp_desktop_pointer(pos), event.time_msec());
             }
             InputEvent::PointerButton { event, .. } => {
                 if event.state() == ButtonState::Pressed { self.session_interacted(); }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Real portal + PipeWire + Qt6 consent tests on a private bus, display and graph.
+"""Real portal + PipeWire + native consent tests on a private bus, display and graph.
 Run: uv run --no-project --with dbus-next --with python-xlib --with pillow --with PySide6 python scripts/test-screencast.py
 """
 import asyncio,json,os,re,signal,shutil,socket,subprocess,sys,tempfile,time,urllib.request
@@ -35,6 +35,7 @@ async def wait(fn,timeout=12):
 
 async def main(directory):
     runtime=Path(directory);runtime.chmod(0o700)
+    output_x=int(os.environ.get('DOME_TEST_OUTPUT_X','0'))
     for d in ['data/xdg-desktop-portal/portals','config/xdg-desktop-portal','empty','home']:(runtime/d).mkdir(parents=True,exist_ok=True)
     (runtime/'config/xdg-desktop-portal/dome-portals.conf').write_text('[preferred]\ndefault=none\norg.freedesktop.impl.portal.ScreenCast=dome-screencast\n')
     shutil.copy(root/'packaging/dome-screencast.portal',runtime/'data/xdg-desktop-portal/portals/dome-screencast.portal')
@@ -63,6 +64,10 @@ context.modules = [
          'GSETTINGS_SCHEMA_DIR':'/usr/share/glib-2.0/schemas','DOME_APPEARANCE_SERVICE':'1'if defaults else'0','DOME_RENDERER':os.environ.get('DOME_TEST_RENDERER','gles'),
          'DOME_PREVIEW_PORT':str(port),'LIBGL_ALWAYS_SOFTWARE':'1','RUST_LOG':'warn',
          'DBUS_SYSTEM_BUS_ADDRESS':os.environ['DBUS_SESSION_BUS_ADDRESS']}
+    if output_x:
+        geometry=runtime/'geometry.json'
+        geometry.write_text(json.dumps({'displays':[{'name':'winit','x':output_x}]}))
+        env['DOME_CONFIG']=str(geometry)
     for name in ['WAYLAND_DISPLAY','WAYLAND_SOCKET','QT_QPA_PLATFORM','QT_PLUGIN_PATH','QT_QPA_PLATFORM_PLUGIN_PATH','GTK_MODULES']:env.pop(name,None)
     if env['DOME_RENDERER']=='vulkan':
         env.pop('LIBGL_ALWAYS_SOFTWARE',None)
@@ -85,18 +90,22 @@ context.modules = [
         for event in [X.KeyPress,X.KeyRelease]:xtest.fake_input(xd,event,code)
         xd.sync()
     def click(x,y):
-        geometry=host.get_geometry();xtest.fake_input(xd,X.MotionNotify,x=int(x+geometry.x),y=int(y+geometry.y))
-        for event in [X.ButtonPress,X.ButtonRelease]:xtest.fake_input(xd,event,1)
-        xd.sync()
+        geometry=host.get_geometry();xtest.fake_input(xd,X.MotionNotify,x=int(x-output_x+geometry.x),y=int(y+geometry.y))
+        xd.sync();time.sleep(.08)
+        for event in [X.ButtonPress,X.ButtonRelease]:
+            xtest.fake_input(xd,event,1);xd.sync();time.sleep(.08)
     picker=lambda:next((w for w in state()['windows']if w['title'].startswith('Share your screen')),None)
     async def consent(accept=True):
         w=await wait(picker);action({'op':'focus','id':w['id']});await asyncio.sleep(.3)
         if accept:
-            r=w['desktop'];click(r['x']+90,r['y']+(74 if defaults else 60));await asyncio.sleep(.1)
+            fltk=os.environ.get('DOME_TEST_PICKER_FRONTEND','fltk')=='fltk'
+            r=w['desktop'];click(r['x']+90,r['y']+(100 if fltk else 74 if defaults else 60));await asyncio.sleep(.1)
             from PIL import Image
             g=host.get_geometry();raw=host.get_image(0,0,g.width,g.height,X.ZPixmap,0xffffffff)
             Image.frombytes('RGB',(g.width,g.height),raw.data,'raw','BGRX').save(out/'consent.png')
-            click(r['x']+r['w']-(55 if defaults else 140),r['y']+r['h']-25)
+            if fltk:
+                click(r['x']+515,r['y']+326)
+            else:click(r['x']+r['w']-(55 if defaults else 140),r['y']+r['h']-25)
         else:key('Escape')
     # Start the real frontend directly: this private D-Bus has no systemd manager.
     subprocess.run(['dbus-update-activation-environment','HOME','DISPLAY','WAYLAND_DISPLAY','XDG_RUNTIME_DIR','XDG_CONFIG_HOME','XDG_DATA_HOME','XDG_DATA_DIRS','XDG_STATE_HOME','XDG_CURRENT_DESKTOP','GSETTINGS_SCHEMA_DIR'],env=env,check=True)
@@ -151,12 +160,12 @@ context.modules = [
         return path
     path=await session()
     task=asyncio.create_task(request('Start','osa{sv}',[path,'',{}]));await consent(False)
-    check((await task)[0]==1,'Qt6 cancel grants no capture')
+    check((await task)[0]==1,'Native picker cancel grants no capture')
     path=await session()
     task=asyncio.create_task(request('Start','osa{sv}',[path,'',{}]));await consent()
-    code,data=await task;check(code==0,'Qt6 monitor selection starts a real PipeWire stream')
+    code,data=await task;check(code==0,'Native monitor selection starts a real PipeWire stream')
     streams=data['streams'].value;check(len(streams)==1,'Start returns the selected monitor only')
-    node,props=streams[0];check(props['position'].value==[0,0] and props['size'].value==[1280,800],'Stream reports logical monitor position and dimensions')
+    node,props=streams[0];check(props['position'].value==[output_x,0] and props['size'].value==[1280,800],'Stream reports logical monitor position and dimensions')
     # Consumer connects to the actual PipeWire node through isolated policy.
     frame=out/'frames.rgba';frame.unlink(missing_ok=True)
     remote=await bus.call(Message(destination='org.freedesktop.portal.Desktop',path='/org/freedesktop/portal/desktop',
@@ -182,20 +191,37 @@ context.modules = [
     reply=await call('CreateSession','oosa{sv}',['/test/request','/test/session','test',{}],
         'org.freedesktop.impl.portal.ScreenCast',destination='org.freedesktop.impl.portal.desktop.dome.screencast')
     check(reply[0]==2,'Direct backend access is rejected')
-    # Close an in-progress request while its Qt6 consent dialog is open.
+    # Close an in-progress request while its native consent dialog is open.
     path=await session(2)
     pending=(await call('Start','osa{sv}',[path,'',{}]))[0];await wait(picker)
     await call('Close','',[],'org.freedesktop.portal.Request',pending)
     await wait(lambda:not picker())
-    check(True,'Request.Close cancels the Qt6 dialog without granting capture')
-    # Embedded mode and the always-visible Qt6 Stop sharing control.
+    check(True,'Request.Close cancels the native dialog without granting capture')
+    # Embedded mode uses a tray indicator instead of an always-open window.
     path=await session(2)
     task=asyncio.create_task(request('Start','osa{sv}',[path,'',{}]));await consent()
     code,data=await task;check(code==0,'Embedded cursor capture starts successfully')
     node=data['streams'].value[0][0]
-    active=await wait(lambda:next((w for w in state()['windows']if w['title'].startswith('Screen sharing active')),None))
-    action({'op':'focus','id':active['id']});await asyncio.sleep(.2);key('Return')
-    check(await wait(node_gone),'Qt6 Stop sharing destroys the stream')
+    check(not any(w['title'].startswith('Screen sharing active') for w in state()['windows']),
+          'Screen sharing creates no permanent status window')
+    entries=(await call('Get','ss',['org.kde.StatusNotifierWatcher','RegisteredStatusNotifierItems'],
+        'org.freedesktop.DBus.Properties','/StatusNotifierWatcher','org.kde.StatusNotifierWatcher'))[0].value
+    indicator=None
+    for entry in entries:
+        service,_,path=entry.partition('/')
+        reply=await bus.call(Message(destination=service,path='/'+path,interface='org.freedesktop.DBus.Properties',
+            member='Get',signature='ss',body=['org.kde.StatusNotifierItem','Id']))
+        if reply.message_type!=MessageType.ERROR and reply.body[0].value=='dome.screen-sharing':
+            indicator=(service,'/'+path);break
+    check(indicator is not None,'Active capture publishes a StatusNotifier tray indicator')
+    service,path_item=indicator
+    layout=await call('GetLayout','iias',[0,-1,[]],
+        'com.canonical.dbusmenu',path_item+'/Menu',service)
+    check(layout[1][2][0].value[1]['label'].value=='Stop sharing',
+          'Tray menu exposes Stop sharing')
+    await call('Event','isvu',[1,'clicked',Variant('i',0),0],
+        'com.canonical.dbusmenu',path_item+'/Menu',service)
+    check(await wait(node_gone),'Tray Stop sharing destroys the stream')
     path=await session()
     task=asyncio.create_task(request('Start','osa{sv}',[path,'',{}]));await consent()
     code,data=await task;assert code==0

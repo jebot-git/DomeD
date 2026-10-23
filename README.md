@@ -404,7 +404,9 @@ DomeD implements the ScreenCast v3 portal on its own session bus name,
 `org.freedesktop.impl.portal.desktop.dome.screencast`. The installed
 `dome-portals.conf` selects it explicitly; general dialogs default to Qt6/KDE.
 The login publishes its ready display to D-Bus and systemd before starting
-`graphical-session.target`, and stops the target on logout. A Qt6 portal service
+`dome-session.target`, which holds `graphical-session.target` as a dependency.
+This also supports distributions which forbid starting the shared target directly.
+Logout releases the Dome session target. A Qt6 portal service
 override selects its native KDE platform theme to avoid startup recursion through
 the application GTK appearance bridge. Portal service
 units must inherit `XDG_CURRENT_DESKTOP=Dome` rather than forcing `KDE`.
@@ -412,9 +414,11 @@ units must inherit `XDG_CURRENT_DESKTOP=Dome` rather than forcing `KDE`.
 WayVR and other portal clients can share one or several monitors after choosing
 sources in the native sharing picker (FLTK by default). Each chosen monitor has its own PipeWire node and logical
 position and size. Capture includes desktop windows, decorations and shell, with
-hidden or embedded cursors. A native sharing control stays visible until sharing
-ends; **Stop sharing**, closing that control, closing the portal session, output
-removal or resize, and a frontend exit all revoke the capture. Requests from
+hidden or embedded cursors. An active sharing tray indicator provides **Stop sharing**;
+no permanent status window is opened. Its menu action, closing the portal session,
+output removal or resize, and a frontend exit all revoke the capture.
+Absolute desktop input uses the full monitor bounds, including negative origins,
+so WayVR's desktop-wide coordinates line up with the selected monitor. Requests from
 arbitrary D-Bus peers cannot bypass the frontend. Permissions are per session;
 this first backend does not persist restore tokens or capture individual windows.
 Remote Desktop, InputCapture, GlobalShortcuts and Screenshot are not advertised

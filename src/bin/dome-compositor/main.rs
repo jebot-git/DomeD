@@ -342,10 +342,11 @@ fn activate_client_socket(state: &mut Dome) {
     }
     if std::env::var("DOME_LOGIN_SESSION").as_deref() == Ok("1") {
         // Fedora's portal has Requisite=graphical-session.target. Publish the
-        // ready display before starting that target and its session services.
+        // ready display before starting our dependency owner: distributions
+        // can forbid direct starts of graphical-session.target.
         let status = std::process::Command::new("systemctl")
-            .args(["--user", "start", "graphical-session.target"]).status();
-        if !status.is_ok_and(|s| s.success()) { eprintln!("Could not start graphical-session.target"); }
+            .args(["--user", "start", "dome-session.target"]).status();
+        if !status.is_ok_and(|s| s.success()) { eprintln!("Could not start dome-session.target"); }
         session_services::start();
     }
 }

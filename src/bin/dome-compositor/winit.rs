@@ -62,15 +62,19 @@ pub fn init_winit(
         },
     );
     let _global = output.create_global::<Dome>(display_handle);
+    // Keep nested output coordinates consistent with saved connector placement.
+    let origin = state.scene.lock().unwrap().config.displays.iter()
+        .find(|d| d.name == output.name())
+        .map(|d| (d.x.unwrap_or(0), d.y)).unwrap_or((0, 0));
     output.change_current_state(
         Some(mode),
         Some(Transform::Flipped180),
         None,
-        Some((0, 0).into()),
+        Some(origin.into()),
     );
     output.set_preferred(mode);
 
-    state.space.map_output(&output, (0, 0));
+    state.space.map_output(&output, origin);
 
     let mut damage_tracker = OutputDamageTracker::from_output(&output);
     let mut present_damage = OutputDamageTracker::from_output(&output);

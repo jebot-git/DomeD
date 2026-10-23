@@ -1,7 +1,14 @@
 //! Desktop coordinates stay global; shell controls use the containing output's coordinates.
 use crate::Dome;
 use smithay::utils::{Logical, Point, Rectangle};
+fn desktop_bounds(outputs: impl Iterator<Item = Rectangle<i32, Logical>>) -> Rectangle<i32, Logical> {
+    outputs.reduce(|a, b| a.merge(b))
+        .unwrap_or_else(|| Rectangle::from_size((1280, 800).into()))
+}
 impl Dome {
+    pub fn desktop_geometry(&self) -> Rectangle<i32, Logical> {
+        desktop_bounds(self.space.outputs().filter_map(|o| self.space.output_geometry(o)))
+    }
     pub fn output_geometry_at(&self, p: Point<f64, Logical>) -> Rectangle<i32, Logical> {
         self.space
             .outputs()
@@ -93,4 +100,30 @@ fn distance(g: Rectangle<i32, Logical>, p: Point<f64, Logical>) -> f64 {
     let dx = p.x - p.x.clamp(g.loc.x as f64, (g.loc.x + g.size.w - 1) as f64);
     let dy = p.y - p.y.clamp(g.loc.y as f64, (g.loc.y + g.size.h - 1) as f64);
     dx * dx + dy * dy
+}
+
+#[cfg(test)]
+mod desktop_bounds_tests {
+    use super::*;
+    #[test]
+    fn absolute_pointer_space_includes_negative_monitor_origins() {
+        let bounds = desktop_bounds([
+            Rectangle::new((-2560, 0).into(), (2560, 1080).into()),
+            Rectangle::new((0, 0).into(), (2560, 1080).into()),
+        ].into_iter());
+        assert_eq!(bounds.loc, (-2560, 0).into());
+        assert_eq!(bounds.size, (5120, 1080).into());
+        for (normalized, expected) in [(0., -2560.), (0.25, -1280.), (0.5, 0.), (0.75, 1280.)] {
+            assert_eq!(normalized * bounds.size.w as f64 + bounds.loc.x as f64, expected);
+        }
+    }
+    #[test]
+    fn offset_and_stacked_outputs_preserve_both_axes() {
+        let bounds = desktop_bounds([
+            Rectangle::new((1920, -1080).into(), (2560, 1080).into()),
+            Rectangle::new((-1280, 0).into(), (1280, 1024).into()),
+        ].into_iter());
+        assert_eq!(bounds.loc, (-1280, -1080).into());
+        assert_eq!(bounds.size, (5760, 2104).into());
+    }
 }

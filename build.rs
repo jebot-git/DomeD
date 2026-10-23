@@ -22,6 +22,7 @@ fn main() {
     }
     println!("cargo:rerun-if-changed=native/screencast.c");
     println!("cargo:rerun-if-changed=native/portal_picker.cpp");
+    println!("cargo:rerun-if-changed=native/screen_share_status.h");
     let pipewire = pkg_config::Config::new().probe("libpipewire-0.3")
         .expect("PipeWire development files are required for screen sharing");
     let mut capture = cc::Build::new();

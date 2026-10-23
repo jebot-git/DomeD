@@ -8,6 +8,7 @@ stage="${1:-$root/build/system-stage}"
 exec 9>/run/lock/domed-install.lock
 /usr/bin/flock -x 9
 files=(
+    etc/systemd/user/dome-session.target
     etc/systemd/user/plasma-xdg-desktop-portal-kde.service.d/50-dome-qt6.conf
     etc/systemd/user/xdg-desktop-portal-kde.service.d/50-dome-qt6.conf
     usr/local/share/man/man1/dome-askpass.1

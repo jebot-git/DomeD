@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: MIT
 #include "fltk_appearance.h"
 #include "gpu-window.h"
+#include "screen_share_status.h"
 #include <FL/Fl.H>
 #include <FL/Fl_Box.H>
 #include <FL/Fl_Button.H>
+#include <FL/Fl_Return_Button.H>
 #include <FL/Fl_Double_Window.H>
 #include <FL/Fl_Multi_Browser.H>
 #include <cstdio>
@@ -31,8 +33,8 @@ extern "C" int dome_portal_picker(int argc, char **argv) try {
                 std::to_string(output.value("height", 0));
     list.add(text.c_str());
   }
-  Fl_Button cancel(300, 310, 130, 32, "Cancel"),
-      share(450, 310, 130, 32, "Share");
+  Fl_Button cancel(300, 310, 130, 32, "Cancel");
+  Fl_Return_Button share(450, 310, 130, 32, "Share");
   bool accepted = false;
   struct State {
     bool *accepted;
@@ -69,18 +71,9 @@ extern "C" int dome_portal_picker(int argc, char **argv) try {
   auto data = selected.dump();
   printf("%s\n", data.c_str());
   fflush(stdout);
-  dx::GpuWindow active(440, 140, "Screen sharing active — DomeD");
-  Fl_Box text(20, 10, 400, 50, "Your selected monitors are being shared.");
-  Fl_Button stop(120, 80, 200, 36, "Stop sharing");
-  stop.callback([](Fl_Widget *, void *p) { ((Fl_Window *)p)->hide(); },
-                &active);
-  active.end();
-  active.xclass("org.domed.ScreenShare");
-  dx::style(&active);
-  active.show();
-  while (active.shown())
-    Fl::wait();
-  return 0;
+  Fl::flush();
+  Fl::check();
+  return screen_share::run();
 } catch (...) {
   return 2;
 }

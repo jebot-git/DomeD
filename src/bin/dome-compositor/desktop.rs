@@ -141,13 +141,14 @@ impl DesktopRenderer {
         damage_tracker: &mut OutputDamageTracker,
         age: usize,
     ) -> Result<SyncPoint, Box<dyn std::error::Error>> {
+        let origin = state.primary_output_geometry().loc;
         self.render_at(
             state,
             renderer,
             framebuffer,
             damage_tracker,
             age,
-            (0, 0).into(),
+            origin,
         )
     }
     pub fn render_at(

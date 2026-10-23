@@ -10,6 +10,7 @@
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
 #include <cstdio>
+#include "screen_share_status.h"
 extern "C" int dome_portal_picker(int argc, char **argv) {
     QApplication app(argc, argv);
     app.setApplicationName("DomeD Screen Sharing");
@@ -42,14 +43,5 @@ extern "C" int dome_portal_picker(int argc, char **argv) {
     std::fwrite(bytes.constData(), 1, bytes.size(), stdout);
     std::fputc('\n', stdout); std::fflush(stdout);
     dialog.hide();
-    QDialog active;
-    active.setWindowTitle("Screen sharing active — DomeD");
-    auto *sharingLayout = new QVBoxLayout(&active);
-    auto *sharingLabel = new QLabel("Your selected monitors are being shared.");
-    sharingLayout->addWidget(sharingLabel);
-    auto *stop = new QPushButton("Stop sharing");
-    sharingLayout->addWidget(stop);
-    QObject::connect(stop, &QPushButton::clicked, &active, &QDialog::accept);
-    active.exec();
-    return 0;
+    return screen_share::run();
 }
