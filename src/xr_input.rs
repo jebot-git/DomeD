@@ -158,6 +158,7 @@ pub fn render_quads_in_fov(scene: &Scene, head: Pose, viewport: Option<[f32; 4]>
     window_quads(scene, head, true, viewport)
 }
 fn window_quads(scene: &Scene, head: Pose, backgrounds: bool, viewport: Option<[f32; 4]>) -> Vec<Quad> {
+    if scene.locked { return vec![]; }
     if let Some(fullscreen) = media_view::fullscreen_quad(scene, head, viewport) {
         let mut panels = vec![fullscreen];
         crate::spatial_popup::append_quads(scene, &mut panels, head);
@@ -639,6 +640,7 @@ pub fn shell_quads(
 pub fn shell_quads_in_view(
     scene: &Scene, head: Pose, shell: &crate::xr_transport::ShellLayout, horizontal_fov_deg: f32,
 ) -> Vec<Quad> {
+    if scene.locked { return vec![]; }
     let mut quads = bar_quads(scene, head, shell, horizontal_fov_deg);
     if let Some([x, y, w, h]) = shell
         .notifications

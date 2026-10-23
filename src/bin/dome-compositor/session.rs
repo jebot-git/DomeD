@@ -1,6 +1,6 @@
 //! Session integration stays off the rendering thread. The nested shell never logs out its host.
 use dome::appearance::SessionAction;
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex, atomic::{AtomicBool, Ordering}};
 use zbus::blocking::{Connection, Proxy};
 #[derive(Clone, Debug, Default)]
 pub struct Capabilities {
@@ -12,6 +12,8 @@ pub struct Capabilities {
     pub error: String,
 }
 pub struct Session {
+    locked: Arc<AtomicBool>,
+    native_locker: Arc<AtomicBool>,
     state: Arc<Mutex<Capabilities>>,
     send: mpsc::SyncSender<SessionAction>,
 }
@@ -24,7 +26,14 @@ impl Session {
         let state = Arc::new(Mutex::new(Capabilities::default()));
         let shared = state.clone();
         let (send, recv) = mpsc::sync_channel(4);
+        let locked = Arc::new(AtomicBool::new(false));
+        let native_locker = Arc::new(AtomicBool::new(false));
+        let native_worker = native_locker.clone();
+        let worker_locked = locked.clone();
+        let lock_send = send.clone();
         std::thread::spawn(move || {
+            let screensaver = crate::screen_lock::register(worker_locked, lock_send);
+            native_worker.store(screensaver.is_some(), Ordering::SeqCst);
             let bus = Connection::session().ok();
             let system = Connection::system().ok();
             let locker = bus.as_ref().and_then(|b| {
@@ -80,6 +89,9 @@ impl Session {
             };
             while let Ok(action) = recv.recv() {
                 let result: Result<(), String> = match action {
+                    SessionAction::Lock if screensaver.is_some() => system.as_ref()
+                        .ok_or("System bus is unavailable".to_string())
+                        .and_then(crate::screen_lock::show_greeter),
                     SessionAction::Lock => locker
                         .as_ref()
                         .ok_or("No screen locker".to_string())
@@ -109,12 +121,14 @@ impl Session {
                 shared.lock().unwrap().error = result.err().unwrap_or_default();
             }
         });
-        Self { state, send }
+        Self { state, send, locked, native_locker }
     }
+    pub fn locked(&self) -> bool { self.locked.load(Ordering::SeqCst) }
     pub fn state(&self) -> Capabilities {
         self.state.lock().unwrap().clone()
     }
     pub fn request(&self, action: SessionAction) {
+        if action == SessionAction::Lock && self.native_locker.load(Ordering::SeqCst) { self.locked.store(true, Ordering::SeqCst); }
         let _ = self.send.try_send(action);
     }
 }
@@ -122,7 +136,6 @@ impl crate::Dome {
     pub fn session_command(&mut self, action: SessionAction) {
         match action {
             SessionAction::Lock | SessionAction::SwitchUser => {
-                self.xr_bridge.lock().unwrap().exit_requested = true;
                 self.session.request(action);
             }
             _ => {

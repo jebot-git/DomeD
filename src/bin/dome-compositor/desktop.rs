@@ -33,6 +33,11 @@ pub struct DesktopRenderer {
 }
 impl DesktopRenderer {
     pub fn prepare(&mut self, state: &mut Dome, size: Size<i32, Physical>) {
+        {
+            let mut scene = state.scene.lock().unwrap();
+            let locked = state.session.locked();
+            if scene.locked != locked { scene.locked = locked; scene.revision += 1; }
+        }
         state.poll_screenshots();
         state.notification_surface_clicks();
         state.update_keyboard();
@@ -161,6 +166,11 @@ impl DesktopRenderer {
         age: usize,
         origin: smithay::utils::Point<i32, smithay::utils::Logical>,
     ) -> Result<SyncPoint, Box<dyn std::error::Error>> {
+        if state.session.locked() {
+            // Do not draw client surfaces, stale captures, notifications or cursors.
+            return Ok(damage_tracker.render_output(renderer, framebuffer, 0, &[] as &[DesktopElement], [0.,0.,0.,1.])
+                .map_err(|e|format!("Lock shield rendering: {e}"))?.sync);
+        }
         let target_size = framebuffer.size();
         let output_geometry = smithay::utils::Rectangle::new(origin, (target_size.w, target_size.h).into());
         state.export_notification_windows(renderer);

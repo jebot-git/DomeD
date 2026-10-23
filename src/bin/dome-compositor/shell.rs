@@ -212,8 +212,7 @@ impl Dome {
             .retain(|id, _| scene.window(*id).is_some());
         self.registry.retain(|(id, _)| !closed.contains(id));
         self.notification_windows.previous_focus.retain(|id, _| !closed.contains(id));
-        let focused = scene
-            .focused
+        let focused = (!scene.locked).then_some(scene.focused).flatten()
             .and_then(|id| self.registry.iter().find(|(i, _)| *i == id))
             .and_then(|(_, w)| {
                 scene
@@ -235,7 +234,10 @@ impl Dome {
             let follows_focus = keyboard
                 .with_grab(|_, grab| grab.is::<InputMethodKeyboardGrab>())
                 .unwrap_or(true);
-            if follows_focus {
+            if scene.locked {
+                keyboard.unset_grab(self);
+                keyboard.set_focus(self, None, SERIAL_COUNTER.next_serial());
+            } else if follows_focus {
                 let focused = self.context_focus_surface().or(focused);
                 keyboard.set_focus(self, focused, SERIAL_COUNTER.next_serial());
             }

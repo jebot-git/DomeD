@@ -33,6 +33,7 @@ mod notification_windows;
 mod outputs;
 mod qt;
 mod session;
+mod screen_lock;
 mod session_restore;
 mod session_services;
 mod gtk_menu;

@@ -213,6 +213,7 @@ impl Dome {
         }
     }
     pub fn dispatch_xr(&mut self, mut p: Packet) {
+        if self.session.locked() { return; }
         // Late renderer packets must not move or refocus the desktop-owned seat.
         let desktop_owned =
             !self.input_xr_active && self.xr_bridge.lock().unwrap().last_session.is_some();
@@ -662,6 +663,11 @@ impl Dome {
         }
     }
     pub fn export_xr_surface(&mut self, renderer: &mut GlesRenderer) {
+        if self.session.locked() {
+            let mut bridge = self.xr_bridge.lock().unwrap();
+            bridge.frames.clear(); bridge.gpu_frames.clear();
+            return;
+        }
         self.update_xr_density();
         self.update_task_previews(renderer);
         let mut live: Vec<_> = self.registry.iter().map(|(id,_)| *id)

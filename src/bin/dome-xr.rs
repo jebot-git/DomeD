@@ -809,7 +809,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 transition.apply(&mut geometry, head_pose, &hud_scene.config);
             }
             // Only the physical mouse supplies a cursor; the compositor owns its hit UV.
-            if control.mouse && focused && head_valid && transition.opacity >= 1. {
+            if control.mouse && focused && head_valid && transition.opacity >= 1. && scene.as_ref().is_none_or(|s|!s.locked) {
                 if let (Some(angles), Some(scene)) = (control.mouse_angles, scene.as_ref()) {
                     let cursor = control.cursor.as_ref()
                         .filter(|c| transition.interactive(presentation, c.id));
@@ -885,7 +885,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 floor_bounds = bounds;
             }
-            if let Some(floor) = music_floor.frame(floor_bounds).filter(|_| scene.as_ref().is_none_or(|s| s.xr_fullscreen().is_none())) {
+            if let Some(floor) = music_floor.frame(floor_bounds).filter(|_| scene.as_ref().is_none_or(|s| !s.locked && s.xr_fullscreen().is_none())) {
                 const FLOOR_ID: u64 = u64::MAX - 32;
                 images.insert(
                     FLOOR_ID,

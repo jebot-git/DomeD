@@ -397,6 +397,9 @@ pub struct RayHit {
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Scene {
+    /// Controlled by the compositor session authority, never by scene actions.
+    #[serde(default)]
+    pub locked: bool,
     #[serde(default)]
     pub presentation: crate::xr_presentation::Presentation,
     #[serde(default)]
@@ -520,6 +523,7 @@ impl Default for Scene {
 impl Scene {
     pub fn new(source: &str) -> Self {
         Self {
+            locked: false,
             config: Config::default(),
             view_pose: Pose::default(),
             workspaces: vec![
@@ -1134,6 +1138,7 @@ impl Scene {
         ]
     }
     pub fn panels(&self) -> Vec<Panel> {
+        if self.locked { return vec![]; }
         let mut panels = vec![];
         for (ws, space) in self.workspaces.iter().enumerate() {
             let rank = if ws == self.active_workspace {

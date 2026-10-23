@@ -15,6 +15,7 @@ use crate::state::Dome;
 
 impl Dome {
     pub fn process_input_event<I: InputBackend>(&mut self, event: InputEvent<I>) {
+        if self.session.locked() { return; }
         self.cleanup_popup_grab();
         self.sync_input_route();
         match event {
