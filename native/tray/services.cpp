@@ -610,7 +610,7 @@ Json trayItems() {
   auto annotate = [&](Json &item) {
     auto id = item.value("Id", std::string());
     item["movable"] = movable(item);
-    item["managed"] = settings.value(id, id == "dome.translator");
+    item["managed"] = settings.value(id, id == "dome.translator" || id == "wivrn.pro");
   };
   for (auto &item : out) annotate(item);
   if (!owned("org.kde.StatusNotifierWatcher")) return out;

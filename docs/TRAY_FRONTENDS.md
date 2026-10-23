@@ -125,7 +125,10 @@ individual icon; its live menu and process continue working. Moving out restores
 the individual icon. Native service items offer **Open native controls** so
 selecting them still leaves the placement buttons accessible. Placement is saved atomically in
 `$XDG_CONFIG_HOME/dome/tray-applications.json` (normally `~/.config/dome`).
-Translator defaults to the manager; other applications retain their existing
+Translator and the optional WiVRn Pro FLTK dashboard (`wivrn.pro`) default to the
+manager. WiVRn starts hidden in DomeD and exports its live settings/service menu
+through StatusNotifier; selecting Show opens its single dashboard window. Both
+the compositor and tray manager need rebuilding for the WiVRn default. Other applications retain their existing
 individual placement until moved. Screenshot can also move between its built-in
 icon and manager entry. The manager and keyboard selector have fixed placements.
 If the manager is temporarily unavailable, individual application icons and the

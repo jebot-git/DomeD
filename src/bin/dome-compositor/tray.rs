@@ -52,7 +52,7 @@ fn placements() -> HashMap<String, bool> {
         .and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
 }
 fn managed_item(settings: &HashMap<String, bool>, id: &str) -> bool {
-    settings.get(id).copied().unwrap_or(id == "dome.translator")
+    settings.get(id).copied().unwrap_or(id == "dome.translator" || id == "wivrn.pro")
 }
 fn loading_rows() -> Vec<Row> {
     vec![Row {
@@ -689,5 +689,20 @@ impl crate::Dome {
             self.tray.close();
         }
         state
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn wivrn_defaults_to_manager_and_respects_placement_override() {
+        let mut settings = HashMap::new();
+        assert!(managed_item(&settings, "wivrn.pro"));
+        assert!(!managed_item(&settings, "unrelated.application"));
+        settings.insert("wivrn.pro".into(), false);
+        assert!(!managed_item(&settings, "wivrn.pro"));
+        settings.insert("wivrn.pro".into(), true);
+        assert!(managed_item(&settings, "wivrn.pro"));
     }
 }
