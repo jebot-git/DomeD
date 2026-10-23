@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Default-handler backend and optional compositor UI checks in isolated XDG directories."""
-import argparse,json,os,shutil,signal,socket,subprocess,sys,tempfile,time,urllib.request
+import argparse,json,os,shutil,signal,socket,subprocess,sys,tempfile,time,urllib.request,shlex
 from pathlib import Path
 signal.pthread_sigmask(signal.SIG_SETMASK,[])
 root=Path(__file__).resolve().parents[1]
@@ -8,9 +8,10 @@ parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--compo
 if args.compositor and os.environ.get('DOME_DEFAULT_APPS_TEST_BUS')!='1':
     os.execvpe('dbus-run-session',['dbus-run-session','--',sys.executable,*sys.argv],{**os.environ,'DOME_DEFAULT_APPS_TEST_BUS':'1'})
 out=root/'artifacts/default-apps';out.mkdir(parents=True,exist_ok=True)
-flags=subprocess.check_output(['pkg-config','--cflags','--libs','Qt6Widgets','gio-unix-2.0'],text=True).split()
+fltk=Path(os.environ.get('DOME_FLTK_PREFIX','/opt/fltk-vr/toolkit'))
+flags=shlex.split(subprocess.check_output([str(fltk/'bin/fltk-config'),'--cxxflags','--use-gl','--use-images','--ldflags'],text=True))+shlex.split(subprocess.check_output(['pkg-config','--cflags','--libs','gio-unix-2.0','fontconfig','zlib'],text=True))+['-Wl,-rpath,'+str(fltk/'lib')]
 client=out/'default-apps-client'
-subprocess.run(['c++','-std=c++17','-fPIC',str(root/'scripts/default-apps-client.cpp'),str(root/'native/default_apps.cpp'),'-o',str(client),*flags],check=True)
+subprocess.run(['c++','-std=c++17','-fPIC',str(root/'scripts/default-apps-client.cpp'),str(root/'native/fltk_default_apps.cpp'),'-o',str(client),*flags],check=True)
 checks=[]
 def check(value,label):
     checks.append({'passed':bool(value),'check':label});print(('PASS 'if value else'FAIL ')+label,flush=True);assert value,label

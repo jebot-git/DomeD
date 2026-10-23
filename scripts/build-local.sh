@@ -19,11 +19,6 @@ if [[ "$features" == *,multi-gpu && -n "${DOME_BUILD_DRM_DEVICE:-}" ]]; then
     echo '--multi-gpu and DOME_BUILD_DRM_DEVICE/--drm-device are mutually exclusive' >&2
     exit 2
 fi
-# Optional locally extracted Fedora Qt development RPM; host runtime is used.
-if [[ -d "$root/.local-deps/root/usr/include/qt6" ]]; then
-    export DOME_QT6_PREFIX="$root/.local-deps/root/usr"
-    export DOME_QT6_LIBDIR=/usr/lib64
-fi
 export LIBRARY_PATH="$root/.local-deps/root/usr/lib64${LIBRARY_PATH:+:$LIBRARY_PATH}"
 export PKG_CONFIG_PATH="$root/.local-deps/root/usr/lib64/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
 cargo build --locked --features "$features" "${build_args[@]}"

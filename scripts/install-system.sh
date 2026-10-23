@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Install only a prepared build. Never compile as root.
 set -euo pipefail
+umask 022
 [[ $(id -u) -eq 0 ]] || { echo "Run with pkexec /usr/bin/bash $0" >&2; exit 1; }
 root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 stage="${1:-$root/build/system-stage}"
@@ -9,8 +10,6 @@ exec 9>/run/lock/domed-install.lock
 /usr/bin/flock -x 9
 files=(
     etc/systemd/user/dome-session.target
-    etc/systemd/user/plasma-xdg-desktop-portal-kde.service.d/50-dome-qt6.conf
-    etc/systemd/user/xdg-desktop-portal-kde.service.d/50-dome-qt6.conf
     usr/local/share/man/man1/dome-askpass.1
     usr/local/share/man/man1/dome-compositor.1
     usr/local/share/man/man1/dome-xr.1
@@ -59,6 +58,16 @@ done < <(find "$stage/usr/local/share/fonts/domed" "$stage/usr/local/lib/domed/b
 for file in "${files[@]}"; do
     [[ -f "$stage/$file" && ! -L "$stage/$file" ]] || { echo "Missing staged file: $file" >&2; exit 1; }
 done
+# Session services are distributed separately; fail before changing an install
+# rather than selecting a portal with no native backend available.
+for service in dome-polkit-agent xdg-desktop-portal-fltk; do
+    [[ -x "/usr/local/libexec/domed/$service" ]] || {
+        echo "Install the native FLTK session services first (missing $service)." >&2; exit 1;
+    }
+done
+[[ -f /usr/share/xdg-desktop-portal/portals/fltk.portal ]] || {
+    echo 'Install the native FLTK portal registration first.' >&2; exit 1;
+}
 [[ -x /usr/local/bin/flterm-xr-launch || -x /usr/local/bin/ghostty-xr-launch ]] || { echo 'Install FLTerm XR or Ghostty XR first.' >&2; exit 1; }
 /usr/bin/desktop-file-validate "$stage/usr/share/wayland-sessions/dome.desktop" "$stage/usr/local/share/applications/org.domed.Compositor.desktop"
 backup="/var/backups/domed/$(date +%Y%m%d-%H%M%S)"
@@ -74,6 +83,15 @@ for file in "${files[@]}"; do
     # restrictive umask. Installed public files must remain readable by users.
     /usr/bin/install -d -o root -g root -m 0755 "$(dirname -- "$target")"
     /usr/bin/install -D -o root -g root -m "$mode" -- "$stage/$file" "$target"
+done
+# These two overrides belonged to DomeD's retired Qt frontend; preserve a
+# backup and leave unrelated service configuration alone.
+for unit in xdg-desktop-portal-kde plasma-xdg-desktop-portal-kde; do
+    old="etc/systemd/user/$unit.service.d/50-dome-qt6.conf"
+    if [[ -f "/$old" ]] && cmp -s "/$old" <(printf '%s\n' '[Service]' '# The Qt6 portal must initialize without asking the frontend that is starting it.' '# Application processes keep their session palette/font bridge.' 'Environment=QT_QPA_PLATFORMTHEME=kde'); then
+        install -D -m 0644 "/$old" "$backup/$old"
+        rm -- "/$old"
+    fi
 done
 /usr/bin/python3 "$root/scripts/prune-retired-fonts.py" "$root/packaging/retired-font-files.json" "$backup"
 /usr/bin/install -d -m 0755 /usr/local/share/domed

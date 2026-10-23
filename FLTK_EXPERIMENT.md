@@ -1,3 +1,7 @@
+> Current policy: FLTK is the only supported DomeD frontend. Qt comparisons
+> and alternative build instructions below are historical; Qt build targets
+> have been removed. See README.md for the maintained build.
+
 # FLTK 1.4.5 experiment
 
 GPU compositor and DMA-BUF OpenXR transport with damage-aware texture reuse for native windows and shell layers. The headless shell caches Cairo/FreeType rasterization; the sharing picker uses OpenGL FLTK widgets.

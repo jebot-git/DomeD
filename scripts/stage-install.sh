@@ -17,9 +17,9 @@ install -D -m 0644 "$root/packaging/org.domed.Compositor.desktop" "$stage/usr/lo
 install -D -m 0644 "$root/packaging/dome-portals.conf" "$stage/usr/share/xdg-desktop-portal/dome-portals.conf"
 install -D -m 0644 "$root/packaging/dome-settings.portal" "$stage/usr/share/xdg-desktop-portal/portals/dome-settings.portal"
 install -D -m 0644 "$root/packaging/dome-screencast.portal" "$stage/usr/share/xdg-desktop-portal/portals/dome-screencast.portal"
-for unit in plasma-xdg-desktop-portal-kde xdg-desktop-portal-kde; do
-    install -D -m 0644 "$root/packaging/dome-portal-qt6.conf" "$stage/etc/systemd/user/$unit.service.d/50-dome-qt6.conf"
-done
+# Retire DomeD's old Qt-only portal overrides from reused staging trees.
+rm -f -- "$stage/etc/systemd/user/xdg-desktop-portal-kde.service.d/50-dome-qt6.conf" \
+          "$stage/etc/systemd/user/plasma-xdg-desktop-portal-kde.service.d/50-dome-qt6.conf"
 font_runtime="${DOME_FONT_RUNTIME_PREFIX:-${DOME_FLTK_PREFIX:-$root/../fltk-experiment/_toolkit}}"
 for library in libpango-1.0.so.0 libpangoft2-1.0.so.0 libpangocairo-1.0.so.0; do
     install -D -m 0644 "$font_runtime/lib/$library" "$stage/usr/local/lib/domed/bitmap/$library"

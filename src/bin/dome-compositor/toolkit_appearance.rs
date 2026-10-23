@@ -211,19 +211,22 @@ impl ToolkitAppearance {
         std::env::set_var("XDG_DATA_DIRS", std::env::join_paths(data_dirs)?);
         std::env::set_var("FONTCONFIG_FILE", fonts);
         std::env::set_var("GTK_USE_PORTAL", "1");
-        let module = root.join("libdome-appearance.so");
-        atomic_write(
-            &module,
-            include_bytes!(concat!(env!("OUT_DIR"), "/libdome-appearance.so")),
-        )?;
-        let mut modules: Vec<_> = std::env::var("GTK_MODULES")
-            .unwrap_or_default()
-            .split(':')
-            .filter(|name| !name.is_empty() && !name.ends_with("libdome-appearance.so"))
-            .map(str::to_owned)
-            .collect();
-        modules.push(module.to_string_lossy().into_owned());
-        std::env::set_var("GTK_MODULES", modules.join(":"));
+        #[cfg(feature="foreign-gtk")]
+        {
+            let module = root.join("libdome-appearance.so");
+            atomic_write(
+                &module,
+                include_bytes!(concat!(env!("OUT_DIR"), "/libdome-appearance.so")),
+            )?;
+            let mut modules: Vec<_> = std::env::var("GTK_MODULES")
+                .unwrap_or_default()
+                .split(':')
+                .filter(|name| !name.is_empty() && !name.ends_with("libdome-appearance.so"))
+                .map(str::to_owned)
+                .collect();
+            modules.push(module.to_string_lossy().into_owned());
+            std::env::set_var("GTK_MODULES", modules.join(":"));
+        }
         std::env::remove_var("GTK_THEME");
         std::env::set_var("QT_QPA_PLATFORMTHEME", "gtk3");
         std::env::set_var("QT_STYLE_OVERRIDE", "Fusion");

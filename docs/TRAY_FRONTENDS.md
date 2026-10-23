@@ -67,10 +67,22 @@ palette. Editable Inkscape sources are in `native/icons/flags/`; run
 `python3 scripts/embed-keyboard-flags.py` after editing to update the shared
 shell/frontend header. Unknown engines use a neutral keyboard badge.
 
-Session startup runs `kdeconnectd` and the companion. The explicit
-`DOME_TRAY_FRONTEND=qt6` compatibility override retains the external Qt indicator;
+Session startup activates the KDE Connect backend and the FLTK companion.
+Legacy `DOME_TRAY_FRONTEND` values cannot select a different UI toolkit.
 `DOME_START_TRAY=0` disables companion autostart. Existing Polkit, Fcitx engine and
 KWallet PAM/Secret Service startup are retained. No running desktop is restarted.
+
+Audio, clipboard history, notification history, the clock and the keyboard
+selector use the compositor's shared FLTK shell renderer. Clipboard and
+notification history have visible remove, Clear history and Close controls;
+keyboard navigation and deletion use the same model in desktop and XR.
+DomeD has no alternate Qt renderer. Authentication and common portal dialogs
+also use the installed native FLTK service frontends.
+
+Run `python3 scripts/audit-fltk-frontends.py` after installation to check every
+DomeD frontend for FLTK and reject Qt, GTK, Pango or missing shared libraries.
+`--source-only` checks build and startup policy without an installation.
+Third-party application windows and service engines remain separate programs.
 
 Tests (private bus and Xvfb; install Python extras through uv):
 
@@ -78,6 +90,7 @@ Tests (private bus and Xvfb; install Python extras through uv):
 TRAY_TEST_PRIVATE_BUS=1 dbus-run-session -- uv run --no-project --with dbus-next python tests/tray/test_services.py
 TRAY_TEST_PRIVATE_BUS=1 dbus-run-session -- uv run --no-project --with dbus-next --with python-xlib --with pillow python tests/tray/test_ui.py
 TRAY_TEST_PRIVATE_BUS=1 dbus-run-session -- uv run --no-project --with dbus-next --with python-xlib --with pillow python tests/tray/test_keyboard_selector.py
+DOME_COMPOSITOR="$PWD/target/release/dome-compositor" uv run --no-project --with dbus-next --with python-xlib --with pillow python scripts/test-shell-history.py
 DOME_COMPOSITOR="$PWD/target/release/dome-compositor" python3 scripts/test-xwayland.py
 ```
 

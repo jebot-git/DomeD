@@ -306,7 +306,6 @@ impl Backend {
                         serde_json::json!({"app_id":app_id,"multiple":multiple,"outputs":monitors})
                             .to_string(),
                     )
-                    .env("QT_QPA_PLATFORM", "wayland")
                     .stdout(std::process::Stdio::piped())
                     .spawn()
                     .map_err(|e| e.to_string())?;

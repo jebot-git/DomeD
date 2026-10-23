@@ -512,7 +512,7 @@ impl Dome {
             SelectAll => self.client_chord(38),
             About => {
                 self.about = true;
-                self.shell_error = "Dome — experimental Rust / Smithay / Qt6 desktop".into();
+                self.shell_error = "Dome — experimental Rust / Smithay / FLTK desktop".into();
                 eprintln!("{}", self.shell_error);
             }
             _ => (),

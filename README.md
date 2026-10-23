@@ -9,7 +9,7 @@ independent repository; it does not modify or depend on WiVRn-Pro.
 **The native application is Rust.** Godot is restricted to experiments under
 `prototypes/` and is not a production compositor dependency. Both the desktop WM
 and the OpenXR frontend are Rust. This experimental branch defaults to a cached
-Cairo/FreeType shell adapter and OpenGL FLTK picker; Qt6 remains selectable.
+Cairo/FreeType FLTK shell adapter and OpenGL FLTK picker. DomeD frontends support FLTK only.
 See [the experiment report](FLTK_EXPERIMENT.md) for current validation and gaps.
 
 **Current milestone:** a standalone DRM/KMS Wayland compositor with toolkit-rendered decorations, a classic
@@ -38,19 +38,13 @@ export DOME_FLTK_PREFIX=/path/to/patched-fltk-1.4.5
 ./scripts/build-local.sh --release
 ```
 
-Qt6 is an explicit alternative, built separately so Cargo does not enable both
-shell adapters:
+Native builds require the `fltk` feature. Disabling default features without
+enabling `fltk` is rejected; there is no Qt frontend fallback. The standalone
+`dome-preview` layout service can still be built without a native shell.
 
-```sh
-cargo build --locked --release --no-default-features \
-  --features nested,standalone,xr,qt6
-```
-
-Only this alternative needs Qt6 Widgets development files. The standalone
-`dome-preview` layout service does not build a native shell and needs neither
-FLTK nor Qt. See [the FLTK notes](FLTK_EXPERIMENT.md) for toolkit patches and
-current limitations. Qt-based third-party applications and KDE portal services
-remain separate runtime dependencies where used.
+`foreign-gtk` is an optional, non-default compatibility module loaded by
+third-party GTK applications for appearance and application-menu integration.
+It is never a DomeD widget frontend and is not required by the FLTK build.
 
 ## Native tray applications and rendering audit
 
@@ -151,13 +145,8 @@ custom client. The local runner forwards explicit arguments unchanged.
 
 The local build includes `dome-compositor`, `dome-preview` and `dome-xr` and runs
 the Rust tests. It uses the default FLTK shell and requires `DOME_FLTK_PREFIX`
-as described above. For the optional Qt6 build, this workstation can extract
-missing development headers under `.local-deps/root`; these are not required by
-the default shell. To recreate that optional dependency setup:
-
-```sh
-./scripts/prepare-local-deps.sh
-```
+as described above. `scripts/prepare-local-deps.sh` can extract platform
+development dependencies into `.local-deps/root` on Fedora/Nobara.
 
 For an isolated integration check, with python-xlib and Pillow available:
 
@@ -176,8 +165,8 @@ development packages. On Ubuntu/Debian the development packages are typically
 `build-essential pkg-config libwayland-dev libegl1-mesa-dev libgles2-mesa-dev
 libxkbcommon-dev libfontconfig1-dev libfreetype-dev libglib2.0-dev
 libcairo2-dev libpipewire-0.3-dev libgbm-dev libdrm-dev libinput-dev libseat-dev`.
-The default shell also requires the patched FLTK prefix above. Add `qt6-base-dev`
-(Qt6 Widgets 6.4 or newer) only when building the explicit Qt6 alternative. Then run from an existing Wayland or X11 desktop:
+The shell also requires the patched FLTK prefix above. Run from an existing
+Wayland or X11 desktop:
 
 ```sh
 cargo run --locked --features nested --bin dome-compositor -- --terminal
@@ -355,18 +344,17 @@ keyboard LEDs follow NumLock/CapsLock/ScrollLock, including newly added devices.
 DomeD supports regular Wayland copy/paste, primary selection (middle-click paste),
 and both `zwlr_data_control_manager_v1` and `ext_data_control_manager_v1` for
 unfocused clipboard tools. Unicode text and arbitrary MIME bytes work. Clipboard
-history/persistence requires a separate clipboard manager. KDE Connect's current
+history and persistence are provided by the built-in FLTK clipboard widget. KDE Connect's current
 KSystemClipboard backend uses ext-data-control and is tested in both directions.
 
 The native login session exports its ready Wayland display and Qt platform to D-Bus
-before starting wallet integration and the installed KDE Polkit authentication
+before starting wallet integration and the native FLTK Polkit authentication
 agent. This keeps administrative prompts available without Plasma autostart;
 `DOME_START_POLKIT=0` disables agent startup. When a PAM wallet socket is supplied, DomeD
 runs the installed `pam_kwallet_init` helper. Current KWallet's `ksecretd` starts
 when no Secret Service provider already owns the session bus; KDE applications can
 activate `kwalletd6` normally. The Dome-specific portal configuration selects
-KWallet for the Secret portal and KDE’s Qt6 backend for common desktop dialogs,
-with GTK as a fallback when a Qt6 implementation is unavailable. Existing wallet
+KWallet for the Secret portal and the FLTK backend for common desktop dialogs. Existing wallet
 settings and login-manager PAM configuration are preserved. Automatic unlocking
 requires PAM login credentials; passwordless login can still require a wallet
 password. The tests use a separate bus, HOME and encrypted disposable wallet and
@@ -379,19 +367,18 @@ This compatibility environment is scoped to Vivaldi; the session and other apps
 keep the Dome desktop identity. Dome remains first for portal selection. An
 already running Vivaldi must be fully closed before relaunching to pick it up.
 
-KDE Connect's indicator starts automatically at login when `kdeconnect-indicator`
-is installed, after the session's Wayland display is ready. Set
-`DOME_START_KDECONNECT=0` to disable this startup. Its daemon/CLI and graphical
-interface can also run inside DomeD. DomeD does not yet run general XDG autostart
+The native FLTK tray manager exposes KDE Connect controls after the session's
+Wayland display is ready; its daemon activates over D-Bus. Set
+`DOME_START_KDECONNECT=0` to disable this startup. Its daemon/CLI supplies the backend for the FLTK interface. DomeD does not yet run general XDG autostart
 entries. Remote phone mouse/keyboard control is currently unavailable because DomeD
 has no Remote Desktop portal backend. DomeD now supplies the notification server
 and action buttons used by KDE Connect, including pairing requests. Device pairing,
 network file transfers and phone-side operation require a real-device test. The
 local audit starts KDE Connect in a private network namespace, so it never sends
 pairing, discovery or payload packets to existing devices. File chooser support is
-provided by the Qt6 KDE portal; SSHFS and PipeWire remain external dependencies.
+provided by the FLTK portal; SSHFS and PipeWire remain external dependencies.
 
-To repeat the service checks (after preparing local Qt development dependencies):
+To repeat the legacy third-party backend checks (these fixtures are not DomeD frontends):
 
 ```sh
 scripts/build-service-fixtures.sh
@@ -402,14 +389,11 @@ uv run --no-project --with dbus-next --with python-xlib --with pillow python scr
 
 DomeD implements the ScreenCast v3 portal on its own session bus name,
 `org.freedesktop.impl.portal.desktop.dome.screencast`. The installed
-`dome-portals.conf` selects it explicitly; general dialogs default to Qt6/KDE.
+`dome-portals.conf` selects it explicitly; general dialogs use the FLTK portal.
 The login publishes its ready display to D-Bus and systemd before starting
 `dome-session.target`, which holds `graphical-session.target` as a dependency.
 This also supports distributions which forbid starting the shared target directly.
-Logout releases the Dome session target. A Qt6 portal service
-override selects its native KDE platform theme to avoid startup recursion through
-the application GTK appearance bridge. Portal service
-units must inherit `XDG_CURRENT_DESKTOP=Dome` rather than forcing `KDE`.
+Logout releases the Dome session target. Portal service units must inherit `XDG_CURRENT_DESKTOP=Dome` rather than forcing `KDE`.
 
 WayVR and other portal clients can share one or several monitors after choosing
 sources in the native sharing picker (FLTK by default). Each chosen monitor has its own PipeWire node and logical
@@ -862,8 +846,10 @@ Qt and GTK application controls inherit the session palette and BDF font.
 Application-specific editor, document and web content preferences still apply.
 
 The login session publishes a desktop Settings portal and generates private GTK
-themes and a Fontconfig configuration under its runtime directory. A GTK bridge
-also updates portal dialogs. Other desktop sessions' settings are preserved.
+themes and a Fontconfig configuration under its runtime directory. DomeD's own
+portal dialogs use the native FLTK appearance integration. The optional
+`foreign-gtk` feature adds live updates and application-menu export for
+third-party GTK applications. Other desktop sessions' settings are preserved.
 Qt applications need their GTK platform-theme plugin (`qt6-gtk-platformtheme` on
 Ubuntu) and the GTK3 runtime to receive the shared palette and font.
 

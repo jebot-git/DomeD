@@ -717,8 +717,34 @@ extern "C" int dome_qt_paint(const char *json, unsigned char *pixels,
     p.panelRows(obj(o, "default_apps"),
                 str(obj(o, "default_apps"), "title", "Default applications"),
                 44, 64);
-    p.panelRows(obj(o, "history"), str(obj(o, "history"), "title", "History"),
-                64, 44);
+    auto history = obj(o, "history");
+    if (!history.empty()) {
+      int x = num(history, "x"), y = num(history, "y"),
+          pw = num(history, "w"), ph = num(history, "h");
+      p.rect(x, y, pw, ph, p.bg);
+      p.border(x, y, pw, ph, p.muted);
+      p.text(x + 16, y + 4, pw - 32, 32, str(history, "title"), p.fg);
+      auto rows = arr(history, "rows");
+      int first = num(history, "first"), visible = num(history, "visible");
+      for (int i = first; i < std::min(int(rows.size()), first + visible); ++i) {
+        int ry = y + 44 + (i - first) * 64;
+        if (i == num(history, "selected", -1))
+          p.rect(x + 10, ry, pw - 20, 64, p.sel);
+        auto text = str(rows[i], "text");
+        auto newline = text.find('\n');
+        p.text(x + 18, ry + 2, pw - 70, newline == std::string::npos ? 40 : 20,
+               text.substr(0, newline), p.fg);
+        if (newline != std::string::npos)
+          p.text(x + 18, ry + 22, pw - 70, 20, text.substr(newline + 1), p.fg);
+        p.text(x + 18, ry + 42, pw - 70, 20, str(rows[i], "detail"), p.muted);
+        // Match history_click's remove area without depending on a font glyph.
+        p.button(x + pw - 38, ry + 14, 28, 32, "X");
+      }
+      if (rows.empty())
+        p.text(x + 18, y + 44, pw - 36, 64, "No history entries", p.muted);
+      p.button(x + 16, y + ph - 50, pw / 2 - 26, 36, "Clear history");
+      p.button(x + pw / 2 + 10, y + ph - 50, pw / 2 - 26, 36, "Close");
+    }
     auto defaults = obj(o, "default_apps");
     if (!defaults.empty()) {
       int x = num(defaults, "x"), y = num(defaults, "y"),

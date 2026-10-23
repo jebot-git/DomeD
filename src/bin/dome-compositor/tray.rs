@@ -290,7 +290,6 @@ fn menu_rows(c: &Connection, item: &Item, parent: i32) -> zbus::Result<Vec<Row>>
         .collect())
 }
 fn native_frontend(item: &Item) -> Option<&'static str> {
-    if std::env::var("DOME_TRAY_FRONTEND").as_deref() == Ok("qt6") { return None; }
     let identity = format!("{} {} {}", item.id, item.title, item.service).to_lowercase();
     if identity.contains("kdeconnect") || identity.contains("kde connect") { Some("devices") }
     else if identity.contains("fcitx") { Some("input") }

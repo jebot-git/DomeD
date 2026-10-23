@@ -52,30 +52,23 @@ pub fn start() {
         // A standalone DomeD login has no Plasma autostart phase. Start the
         // retained authentication agent on this session's bus and Wayland socket.
         if std::env::var("DOME_START_POLKIT").as_deref() != Ok("0") {
-            let candidates = [
-                "/usr/libexec/polkit-kde-authentication-agent-1",
-                "/usr/lib/x86_64-linux-gnu/libexec/polkit-kde-authentication-agent-1",
-                "/usr/lib/aarch64-linux-gnu/libexec/polkit-kde-authentication-agent-1",
-                "/usr/lib/polkit-kde-authentication-agent-1",
-            ];
-            if let Some(program) = candidates.iter().find(|path| std::path::Path::new(path).is_file()) {
-                if let Err(error) = std::process::Command::new(program).spawn() {
-                    eprintln!("Polkit authentication agent startup: {error}");
-                }
+            if std::path::Path::new("/usr/local/libexec/domed/dome-polkit-agent").is_file() {
+                let _ = std::process::Command::new("systemctl")
+                    .args(["--user", "start", "dome-polkit-agent.service"]).status();
+            } else {
+                eprintln!("Native FLTK Polkit agent is not installed: /usr/local/libexec/domed/dome-polkit-agent");
             }
         }
+
         if std::env::var("DOME_START_KDECONNECT").as_deref() != Ok("0") {
-            if std::env::var("DOME_TRAY_FRONTEND").as_deref() == Ok("qt6") {
-                let _ = std::process::Command::new("kdeconnect-indicator").spawn();
-            } else if let Ok(connection) = zbus::blocking::Connection::session() {
+            if let Ok(connection) = zbus::blocking::Connection::session() {
                 if let Ok(bus) = zbus::blocking::Proxy::new(&connection, "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus") {
                     let _ = bus.call::<_, _, u32>("StartServiceByName", &("org.kde.kdeconnect", 0u32));
                 }
             }
         }
 
-        if std::env::var("DOME_START_TRAY").as_deref() != Ok("0")
-            && std::env::var("DOME_TRAY_FRONTEND").as_deref() != Ok("qt6") {
+        if std::env::var("DOME_START_TRAY").as_deref() != Ok("0") {
             supervise_tray();
         }
         if std::env::var_os("PAM_KWALLET5_LOGIN").is_some() {

@@ -8,7 +8,7 @@ description = "Experimental shared desktop and spatial Wayland compositor"
 [features]
 default = ["fltk"]
 fltk = []
-qt6 = []
+foreign-gtk = [] # optional appearance/menu bridge loaded by third-party GTK applications
 xr = ["dep:openxr","dep:ash","dep:ureq","dep:ctrlc"]
 nested = ["dep:async-channel", "dep:smithay", "dep:tracing-subscriber", "dep:bitflags", "dep:zbus", "dep:wayland-protocols-plasma", "dep:wayland-server", "dep:wayland-scanner"]
 standalone = ["nested", "dep:calloop", "smithay/backend_drm", "smithay/backend_gbm", "smithay/backend_libinput", "smithay/backend_udev", "smithay/backend_session_libseat"]
