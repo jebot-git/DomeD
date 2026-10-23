@@ -112,14 +112,23 @@ try:
                 for expected in ['Galmuri11 / Regular','Galmuri14 / Regular','Galmuri7 / Regular','Galmuri9 / Regular']:
                     row(5);wait(lambda:settings()['font'].split(' [')[0]==expected)
                 key('Left');wait(lambda:settings()['font']=='Galmuri7 / Regular')
-                row(3)  # Galmuri -> Kissinger2
-                for _ in range(12):
+                families = json.loads((root / 'assets/fonts/collections.json').read_text())['families']
+                visited = set()
+                for _ in range(len(families) + 1):
+                    visited.add(settings()['font'].split(' / ')[0])
                     if settings()['font'].startswith('Fusion Pixel '):break
+                    before_font = settings()['font']
                     row(3)
-                assert settings()['font'].startswith('Fusion Pixel '), settings()
+                    wait(lambda: settings()['font'] != before_font)
+                assert settings()['font'].startswith('Fusion Pixel '), (settings(), visited)
+                for family in ['Tekuplus', 'x12y12pxMaruMinyaHangul', 'x5y8pxNegaTape',
+                               'x5y8pxNegaClip', 'DomeD Shijimi', 'x14y24pxHeadUpDaisy']:
+                    assert family in visited, f'New font family absent from picker: {family}'
                 for _ in range(7):
                     if ' ja / ' in settings()['font']: break
+                    before_font = settings()['font']
                     row(7)
+                    wait(lambda: settings()['font'] != before_font)
                 assert ' ja / ' in settings()['font'], settings()
                 old=settings();native=old['font_size']
                 row(5);wait(lambda:settings()['font_size']!=native)

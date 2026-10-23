@@ -1,0 +1,32 @@
+{
+  "repository": "https://github.com/hicchicc/x5y8pxNegaClip",
+  "revision": "5dba9f18420ad12dd400cb1eec13a3b0dfadf3ea",
+  "format": "BDF only; native monochrome TTF strikes or unhinted design-grid rasterization",
+  "converter": "scripts/ttf-to-bdf.py",
+  "converter_sha256": "f8a644f8f29f836ef1ce718fadde4f6fb63d20b3176ab6c9056a6e814e42c81c",
+  "files": {
+    "NegaClip.bdf": "275cb74d9fb06cf9aa6528878c05941cea311bb8d6ec3e20413e01eec10a4a66",
+    "AUTHORS.txt": "5ea04037406175e893251d760e953dbf6958f52431c211ddb9b62bf065414678",
+    "OFL.txt": "20953ee344b99e8c807838fd13454e298e64e8da6a61974db0ed605bb078a23f",
+    "README.md": "4229f7a4d2d9e62308402d81a8dcd873ca57a8e868676fe7902ea81998146d99"
+  },
+  "fonts": {
+    "NegaClip.bdf": {
+      "source_sha256": "6a5c09b466cf1f7646d7afc5f859801a94925ba51cce697c6723059ec2473e59",
+      "pixels": 8,
+      "method": "embedded monochrome strike",
+      "family": "x5y8pxNegaClip",
+      "style": "Regular",
+      "copyright": "Copyright 2026 The x5y8pxNegaClip Project Authors (https://github.com/hicchicc/x5y8pxNegaClip)",
+      "outline_supplement_codepoints": [],
+      "glyphs": 450,
+      "all_glyphs_verified": true,
+      "sha256": "275cb74d9fb06cf9aa6528878c05941cea311bb8d6ec3e20413e01eec10a4a66",
+      "source": "fonts/ttf/x5y8pxNegaClip.ttf"
+    }
+  },
+  "tool_versions": {
+    "fonttools": "4.67.0",
+    "freetype": "2.13.2"
+  }
+}

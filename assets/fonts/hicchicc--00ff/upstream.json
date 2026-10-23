@@ -1,0 +1,167 @@
+{
+  "repository": "https://github.com/hicchicc/hicchicc.github.io",
+  "revision": "91451a311511ef023288f6efcdb95b72f2b43ef1",
+  "format": "BDF only; native monochrome TTF strikes or unhinted design-grid rasterization",
+  "converter": "scripts/ttf-to-bdf.py",
+  "converter_sha256": "f8a644f8f29f836ef1ce718fadde4f6fb63d20b3176ab6c9056a6e814e42c81c",
+  "files": {
+    "x10y12pxDonguriDuel.bdf": "dfcfd15cfde31bbb52d0e660f8a75b707e0f6cccd44628a9070fb3bf624897d5",
+    "x12y16pxLineLinker.bdf": "23dae008a80c0f04a6db872824d2d77b8f177fe4bfdea7873a6a568d3b8a1243",
+    "x12y16pxMaruMonica.bdf": "63d1f4ae7227e6ed8d677ac464fd79c91445a3c9bcb721a7b998d47f9d8392f1",
+    "x12y16pxSolidLinker.bdf": "882cf986bb45963e8810041145013937f3ddacaa0ce8330c1cc91c1a0337b04f",
+    "x12y20pxScanLine.bdf": "b3a16f34c3aa3960a3eafd3c154f4330e5fbb36cecf4b11221a5b8cfb8f04a32",
+    "x14y20pxScoreDozer.bdf": "06157b3ac7654fc345693c50c2a42a6b478fc100545ee15d0c40330472a1c722",
+    "x14y24pxHeadUpDaisy.bdf": "1e2f8dd05b45fa28e12760a217a4663ee0b3f7789e69fafac747f232b074b98c",
+    "x16y32pxGridGazer.bdf": "b8e737b0b7ce931635a8571eab1df43990fe78651c17fbec08db3e6d5fd5ea42",
+    "x8y12pxTheStrongGamer.bdf": "742bfd44462bf892198e1887437fa42cb0a130b79d9edd30f8fb798419c9dc97",
+    "LICENSE-upstream.html": "6cf150cd2c2be665556eb28cc0bf63ec9ecb75278a7437a2510cf36ad8954b43",
+    "README.md": "10ab8293d0222e1909db0565602e1f324414a995f54b4c0f19914bf5af36e5cc"
+  },
+  "fonts": {
+    "x10y12pxDonguriDuel.bdf": {
+      "source_sha256": "92114200d1ebc1c21a157168158bc69a3bac8a6580af7c2e551f362fc4b81f65",
+      "pixels": 12,
+      "method": "embedded monochrome strike with explicit outline-only Unicode supplements",
+      "family": "x10y12pxDonguriDuel",
+      "style": "Regular",
+      "copyright": "Copyright (c) 2025, hicc",
+      "outline_supplement_codepoints": [
+        160
+      ],
+      "glyphs": 448,
+      "all_glyphs_verified": true,
+      "sha256": "dfcfd15cfde31bbb52d0e660f8a75b707e0f6cccd44628a9070fb3bf624897d5",
+      "source": "00ff/x10y12pxDonguriDuel.ttf"
+    },
+    "x12y16pxLineLinker.bdf": {
+      "source_sha256": "a67196e2f0243c71169ff5334f0c03c39dc2de0631ef8adfc52a8ed1a8842a4b",
+      "pixels": 16,
+      "method": "unhinted monochrome outline rasterization",
+      "family": "x12y16pxLineLinker",
+      "style": "Regular",
+      "copyright": "Copyright (c) 2020, hicc",
+      "outline_supplement_codepoints": [],
+      "glyphs": 326,
+      "all_glyphs_verified": true,
+      "sha256": "23dae008a80c0f04a6db872824d2d77b8f177fe4bfdea7873a6a568d3b8a1243",
+      "source": "00ff/x12y16pxLineLinker.ttf"
+    },
+    "x12y16pxMaruMonica.bdf": {
+      "source_sha256": "b9c7be0421167cba3791b5966c3bf8666d3e6972e7283fb82b6dc0667607ddd4",
+      "pixels": 16,
+      "method": "embedded monochrome strike with explicit outline-only Unicode supplements",
+      "family": "x12y16pxMaruMonica",
+      "style": "Regular",
+      "copyright": "Copyright (c) 2021, hicc",
+      "outline_supplement_codepoints": [
+        9800,
+        9801,
+        9802,
+        9803,
+        9804,
+        9805,
+        9806,
+        9807,
+        9808,
+        9809,
+        9810,
+        10548,
+        10549,
+        29578,
+        37443,
+        128149,
+        128166,
+        128167
+      ],
+      "glyphs": 8218,
+      "all_glyphs_verified": true,
+      "sha256": "63d1f4ae7227e6ed8d677ac464fd79c91445a3c9bcb721a7b998d47f9d8392f1",
+      "source": "00ff/x12y16pxMaruMonica.ttf"
+    },
+    "x12y16pxSolidLinker.bdf": {
+      "source_sha256": "d84e7e5b244e10f80382af19626092f77d18ab5b4aa92431d243b0142486ba4d",
+      "pixels": 16,
+      "method": "embedded monochrome strike with explicit outline-only Unicode supplements",
+      "family": "x12y16pxSolidLinker",
+      "style": "Regular",
+      "copyright": "Copyright (c) 2023, hicc",
+      "outline_supplement_codepoints": [
+        160,
+        12288
+      ],
+      "glyphs": 106,
+      "all_glyphs_verified": true,
+      "sha256": "882cf986bb45963e8810041145013937f3ddacaa0ce8330c1cc91c1a0337b04f",
+      "source": "00ff/x12y16pxSolidLinker.ttf"
+    },
+    "x12y20pxScanLine.bdf": {
+      "source_sha256": "ec5034984ab951497a26efb69addf473171e9a00003926313a95f0da52ea7d03",
+      "pixels": 20,
+      "method": "unhinted monochrome outline rasterization",
+      "family": "x12y20pxScanLine",
+      "style": "Regular",
+      "copyright": "Copyright (c) 2018 hicc",
+      "outline_supplement_codepoints": [],
+      "glyphs": 1113,
+      "all_glyphs_verified": true,
+      "sha256": "b3a16f34c3aa3960a3eafd3c154f4330e5fbb36cecf4b11221a5b8cfb8f04a32",
+      "source": "00ff/x12y20pxScanLine.ttf"
+    },
+    "x14y20pxScoreDozer.bdf": {
+      "source_sha256": "190af4e826fe85c47b75d5d9838ff39f69ebfefabd64a931ffad4feca1e92021",
+      "pixels": 20,
+      "method": "unhinted monochrome outline rasterization",
+      "family": "x14y20pxScoreDozer",
+      "style": "Regular",
+      "copyright": "Copyright (c) 2018, hicc",
+      "outline_supplement_codepoints": [],
+      "glyphs": 414,
+      "all_glyphs_verified": true,
+      "sha256": "06157b3ac7654fc345693c50c2a42a6b478fc100545ee15d0c40330472a1c722",
+      "source": "00ff/x14y20pxScoreDozer.ttf"
+    },
+    "x14y24pxHeadUpDaisy.bdf": {
+      "source_sha256": "c0b8c7ee9367a43d8184a65629a8bd867f68671af72678a5350f2eaed6e103b3",
+      "pixels": 24,
+      "method": "embedded monochrome strike",
+      "family": "x14y24pxHeadUpDaisy",
+      "style": "Regular",
+      "copyright": "Copyright (c) 2018, hicc",
+      "outline_supplement_codepoints": [],
+      "glyphs": 1100,
+      "all_glyphs_verified": true,
+      "sha256": "1e2f8dd05b45fa28e12760a217a4663ee0b3f7789e69fafac747f232b074b98c",
+      "source": "00ff/x14y24pxHeadUpDaisy.ttf"
+    },
+    "x16y32pxGridGazer.bdf": {
+      "source_sha256": "dc905aaec416696aed207d1a7769e93301d3dd4496c936e8f743300f8085b632",
+      "pixels": 32,
+      "method": "unhinted monochrome outline rasterization",
+      "family": "x16y32pxGridGazer",
+      "style": "Regular",
+      "copyright": "Copyright (c) 2019, hicc",
+      "outline_supplement_codepoints": [],
+      "glyphs": 517,
+      "all_glyphs_verified": true,
+      "sha256": "b8e737b0b7ce931635a8571eab1df43990fe78651c17fbec08db3e6d5fd5ea42",
+      "source": "00ff/x16y32pxGridGazer.ttf"
+    },
+    "x8y12pxTheStrongGamer.bdf": {
+      "source_sha256": "a2960f48398aaba9fb10f33aec60ddbb4e4244c813a5fd1cf13916abe7349850",
+      "pixels": 12,
+      "method": "unhinted monochrome outline rasterization",
+      "family": "x8y12pxTheStrongGamer",
+      "style": "Regular",
+      "copyright": "Copyright (c) 2018, hicc",
+      "outline_supplement_codepoints": [],
+      "glyphs": 794,
+      "all_glyphs_verified": true,
+      "sha256": "742bfd44462bf892198e1887437fa42cb0a130b79d9edd30f8fb798419c9dc97",
+      "source": "00ff/x8y12pxTheStrongGamer.ttf"
+    }
+  },
+  "tool_versions": {
+    "fonttools": "4.67.0",
+    "freetype": "2.13.2"
+  }
+}

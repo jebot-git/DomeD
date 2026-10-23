@@ -42,6 +42,20 @@ TakWolf--fusion-pixel-font/fusion-pixel-font-8px-proportional-bdf-v2026.10.16/fu
 TakWolf--fusion-pixel-font/fusion-pixel-font-8px-proportional-bdf-v2026.10.16/fusion-pixel-8px-proportional-zh_tw.bdf	Fusion Pixel 8px Prop zh_TW	Sans-Serif	8	1	04d9bd19cdd45c4807a54243ad16a76cef236060b06172aa1725eb7ec5394cec
 akahuku--ufo/build/ufo.bdf	UFO16	Sans-Serif	16	1	acb7781a8f33712e7fdb5ca51ba651e07d12c319aa82fddbd9bad87ee30fce0d
 denkichip-v1.213/DenkiChipHangul.bdf	x10y12pxDenkiChipHangul	Regular	12	1	229724f1d7d6d6618d084560c74508fc1a49b9c4b17c40fce6eb51209d2047da
+hicchicc--00ff/x10y12pxDonguriDuel.bdf	x10y12pxDonguriDuel	Regular	12	1	dfcfd15cfde31bbb52d0e660f8a75b707e0f6cccd44628a9070fb3bf624897d5
+hicchicc--00ff/x12y16pxLineLinker.bdf	x12y16pxLineLinker	Regular	16	1	23dae008a80c0f04a6db872824d2d77b8f177fe4bfdea7873a6a568d3b8a1243
+hicchicc--00ff/x12y16pxMaruMonica.bdf	x12y16pxMaruMonica	Regular	16	1	63d1f4ae7227e6ed8d677ac464fd79c91445a3c9bcb721a7b998d47f9d8392f1
+hicchicc--00ff/x12y16pxSolidLinker.bdf	x12y16pxSolidLinker	Regular	16	1	882cf986bb45963e8810041145013937f3ddacaa0ce8330c1cc91c1a0337b04f
+hicchicc--00ff/x12y20pxScanLine.bdf	x12y20pxScanLine	Regular	20	1	b3a16f34c3aa3960a3eafd3c154f4330e5fbb36cecf4b11221a5b8cfb8f04a32
+hicchicc--00ff/x14y20pxScoreDozer.bdf	x14y20pxScoreDozer	Regular	20	1	06157b3ac7654fc345693c50c2a42a6b478fc100545ee15d0c40330472a1c722
+hicchicc--00ff/x14y24pxHeadUpDaisy.bdf	x14y24pxHeadUpDaisy	Regular	24	1	1e2f8dd05b45fa28e12760a217a4663ee0b3f7789e69fafac747f232b074b98c
+hicchicc--00ff/x16y32pxGridGazer.bdf	x16y32pxGridGazer	Regular	32	1	b8e737b0b7ce931635a8571eab1df43990fe78651c17fbec08db3e6d5fd5ea42
+hicchicc--00ff/x8y12pxTheStrongGamer.bdf	x8y12pxTheStrongGamer	Regular	12	1	742bfd44462bf892198e1887437fa42cb0a130b79d9edd30f8fb798419c9dc97
+hicchicc--denkichip/DenkiChip.bdf	x8y12pxDenkiChip	Regular	12	1	dfc291248e5f96134329422a2d24fb2ef7c4b3241c620340fbf341d5a317937c
+hicchicc--negaclip/NegaClip.bdf	x5y8pxNegaClip	Regular	8	1	275cb74d9fb06cf9aa6528878c05941cea311bb8d6ec3e20413e01eec10a4a66
+hicchicc--negatape/NegaTape.bdf	x5y8pxNegaTape	Regular	8	1	123dd2bf1d08ae5a86d41a46437cfa48192f95988ba2d962959bbceaf22f3b9e
+itouhiro--tekuplus/Tekuplus-Bold.bdf	Tekuplus	Bold	12	1	d1136502702755306c77441f073678e1df686dc06c8ebda486116fc296c6ea37
+itouhiro--tekuplus/Tekuplus-Regular.bdf	Tekuplus	Regular	12	1	6ad16712ab956c121b3c56867df4ceb09324cbc12b5be2e1ebc62f54b475dca5
 kirsch-v0.7.3/kirsch.bdf	kirsch	Regular	16	1	6ded338bf6cc87e66dbc3dec7382d2054d8c2a11a409f1270649f7a28fe0e36a
 kissinger2-dev5/kissinger2.bdf	Kissinger 2	Regular	16	1	70a4969c67e44697972a44d34254c650cae96fdd45c402e2a3eaca08c2307064
 kissinger2-dev5/kissinger2f.bdf	Kissinger 2f	Regular	16	1	a7ad8173e95956f5d9324e73e687c04178c279d35c703665a9c3443b6f414f62
@@ -54,5 +68,7 @@ quiple--galmuri/Galmuri-v2.40.4/Galmuri9.bdf	Galmuri9	Regular	12	1	1cf2059bf3e9a
 quiple--galmuri/Galmuri-v2.40.4/GalmuriMono11.bdf	GalmuriMono11	Regular	17	1	80e7bb09063d3dc782211ab6729bdda3d8b00e69814d4c24b88e9248c1d8f584
 quiple--galmuri/Galmuri-v2.40.4/GalmuriMono7.bdf	GalmuriMono7	Regular	9	1	5570c08d6ca74edab8c320e4883ff0841dd7012332f2d076c3683b445ca124be
 quiple--galmuri/Galmuri-v2.40.4/GalmuriMono9.bdf	GalmuriMono9	Regular	12	1	1c327d6fcb71823a8c17b5739c5505c5a280d18073886c2b3253eecf0e61cbc2
+quiple--maruminya-hangul/fonts/x12y12pxMaruMinyaHangul.bdf	x12y12pxMaruMinyaHangul	Regular	12	1	4e73dfc95f702ba2604e6f6819ec9098b61586202a9e163d3bcb0719d96b955e
+uimss--shijimi-serif/ShijimiSerif-Regular.bdf	DomeD Shijimi	Regular	10	1	57cff49e8dccd882676962b7c7eb32b68a598023f9082e40774282575cc39369
 unifont-17.0.04.bdf	Unifont	Sans-Serif	16	1	f2b2952312fa189f8963c85eb50fda14606a6df5d8dbe9e01651138eb2cecea9
 unifont-upper-17.0.04/unifont_upper-17.0.04.bdf	Unifont Upper	Sans-Serif	16	0	f1a044cab74b1363d46d18e7c12d8f7161b49de159ef417de007b6ae1c2afc0a

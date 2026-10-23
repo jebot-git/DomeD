@@ -20,6 +20,41 @@
       "name": "Unifont Upper",
       "url": "https://unifoundry.com/unifont/",
       "directory": "unifont-upper-17.0.04"
+    },
+    {
+      "name": "Tekuplus",
+      "url": "https://github.com/itouhiro/Tekuplus",
+      "directory": "itouhiro--tekuplus"
+    },
+    {
+      "name": "MaruMinyaHangul",
+      "url": "https://github.com/quiple/x12y12pxMaruMinyaHangul",
+      "directory": "quiple--maruminya-hangul"
+    },
+    {
+      "name": "ShijimiSerif",
+      "url": "https://github.com/uimss/shijimi_serif",
+      "directory": "uimss--shijimi-serif"
+    },
+    {
+      "name": "NegaTape",
+      "url": "https://github.com/hicchicc/x5y8pxNegaTape",
+      "directory": "hicchicc--negatape"
+    },
+    {
+      "name": "NegaClip",
+      "url": "https://github.com/hicchicc/x5y8pxNegaClip",
+      "directory": "hicchicc--negaclip"
+    },
+    {
+      "name": "DenkiChip",
+      "url": "https://github.com/hicchicc/x8y12pxDenkiChip",
+      "directory": "hicchicc--denkichip"
+    },
+    {
+      "name": "00ff original-license collection",
+      "url": "https://github.com/hicchicc/hicchicc.github.io",
+      "directory": "hicchicc--00ff"
     }
   ],
   "families": [
@@ -30,6 +65,21 @@
     "UFO16",
     "Kissinger2",
     "kirsch",
-    "Unifont Upper"
+    "Unifont Upper",
+    "Tekuplus",
+    "MaruMinyaHangul",
+    "DomeD Shijimi",
+    "NegaTape",
+    "NegaClip",
+    "DenkiChip",
+    "DonguriDuel",
+    "LineLinker",
+    "MaruMonica",
+    "SolidLinker",
+    "ScanLine",
+    "ScoreDozer",
+    "HeadUpDaisy",
+    "GridGazer",
+    "TheStrongGamer"
   ]
 }

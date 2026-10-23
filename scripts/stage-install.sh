@@ -39,6 +39,7 @@ rm -rf -- "$stage/usr/local/share/fonts/domed" "$stage/usr/local/share/doc/domed
 while IFS= read -r name; do
     install -D -m 0644 "$root/assets/fonts/$name" "$stage/usr/local/share/doc/domed/fonts/$name"
 done < "$root/packaging/font-notices.list"
+install -D -m 0644 "$root/scripts/ttf-to-bdf.py" "$stage/usr/local/share/doc/domed/fonts/ttf-to-bdf.py"
 while IFS= read -r -d "" font; do
     name="${font#"$root/assets/fonts/"}"
     [[ "$name" == */upstream.bdf ]] && continue

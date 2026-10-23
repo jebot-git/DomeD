@@ -1,0 +1,32 @@
+{
+  "repository": "https://github.com/hicchicc/x8y12pxDenkiChip",
+  "revision": "29eb3f477bdc695fbb5e8cb8f383b4db760edab6",
+  "format": "BDF only; native monochrome TTF strikes or unhinted design-grid rasterization",
+  "converter": "scripts/ttf-to-bdf.py",
+  "converter_sha256": "f8a644f8f29f836ef1ce718fadde4f6fb63d20b3176ab6c9056a6e814e42c81c",
+  "files": {
+    "DenkiChip.bdf": "dfc291248e5f96134329422a2d24fb2ef7c4b3241c620340fbf341d5a317937c",
+    "AUTHORS.txt": "81bc850609f4174d238aeace9f4cf0e79932e8c09d5455f2470ee2351911a7dd",
+    "OFL.txt": "62e6799f1657437f58a842d14c8fa126c19ad2d9f57762fcda871d1256528033",
+    "README.md": "6cdec56f5ba1847a3b94ab3cfc331bee715af800007d6ee5419ce36bb56f848f"
+  },
+  "fonts": {
+    "DenkiChip.bdf": {
+      "source_sha256": "0177fd798c99da72651e076dae8c7fb585c90da792399f7ca5227f14a39b73f6",
+      "pixels": 12,
+      "method": "embedded monochrome strike",
+      "family": "x8y12pxDenkiChip",
+      "style": "Regular",
+      "copyright": "Copyright 2026 The x8y12pxDenkiChip Project Authors (https://github.com/hicchicc/x8y12pxDenkiChip)",
+      "outline_supplement_codepoints": [],
+      "glyphs": 1144,
+      "all_glyphs_verified": true,
+      "sha256": "dfc291248e5f96134329422a2d24fb2ef7c4b3241c620340fbf341d5a317937c",
+      "source": "fonts/ttf/x8y12pxDenkiChip.ttf"
+    }
+  },
+  "tool_versions": {
+    "fonttools": "4.67.0",
+    "freetype": "2.13.2"
+  }
+}

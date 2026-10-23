@@ -1,0 +1,18 @@
+{
+  "repository": "https://github.com/quiple/x12y12pxMaruMinyaHangul",
+  "revision": "1d293b925ad8c2af0a5cbd06ca5a2547946712d6",
+  "format": "BDF only; original bitmap pixels; legacy character codes mapped to Unicode for session text",
+  "files": {
+    "fonts/x12y12pxMaruMinyaHangul.bdf": "4e73dfc95f702ba2604e6f6819ec9098b61586202a9e163d3bcb0719d96b955e",
+    "OFL.txt": "35e3aa4dec3bbc28bf025357414c9738c97df65e85e2a82f5d84da2a71fce447",
+    "README.md": "19e1a1d9614c4da4cda87cbd2d897f1b3070fbfbc0fa305f96322ab32c3eef9e"
+  },
+  "fonts": {
+    "fonts/x12y12pxMaruMinyaHangul.bdf": {
+      "source_sha256": "6829a1e4da9a8886d0d1c35602d7e58df5971f02cb25285dc277f709e365212f",
+      "encoding": "iso10646-1",
+      "unicode_mapping": false
+    }
+  },
+  "skipped": []
+}

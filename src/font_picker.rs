@@ -21,6 +21,14 @@ pub struct Description {
 }
 #[derive(Clone, Copy)]
 pub enum Control { Family, Face, Size, Script }
+fn pixel_family(name: &str) -> Option<&str> {
+    let (width, rest) = name.strip_prefix('x')?.split_once('y')?;
+    let (height, family) = rest.split_once("px")?;
+    if !width.is_empty() && !height.is_empty() && !family.is_empty()
+        && width.bytes().chain(height.bytes()).all(|c| c.is_ascii_digit()) {
+        Some(family)
+    } else { None }
+}
 fn choices(fonts: &[BitmapFont]) -> Vec<Choice> {
     let mut choices = Vec::new();
     for font in fonts {
@@ -53,7 +61,7 @@ fn choices(fonts: &[BitmapFont]) -> Vec<Choice> {
                 else if source.contains("pre-ampersand") { "Pre-ampersand · " }
                 else if source.contains("post-ampersand") { "Post-ampersand · " } else { "" };
             face = format!("{variant}{style}{}", if source.contains("-part-") { " (partial)" } else { "" });
-        } else if raw == "x10y12pxDenkiChipHangul" { family = "DenkiChipHangul".into(); }
+        } else if let Some(name) = pixel_family(raw) { family = name.into(); }
         else if raw == "5thElement" { family = "5th Element".into(); }
         else if raw.eq_ignore_ascii_case("qub") { family = "QUB".into(); }
         else if raw.starts_with("Kissinger 2") {
@@ -133,5 +141,21 @@ mod tests {
         let saved:Appearance=serde_json::from_str(&serde_json::to_string(&a).unwrap()).unwrap();
         let description=describe(&fonts,&saved);assert_eq!(description.family,"Fusion Pixel");assert_eq!(description.script,"Korean");assert!(description.has_scripts);
         assert!(!describe(&[font("Cozette","Regular",13)],&Appearance{font:"Cozette / Regular".into(),font_size:13,..Default::default()}).has_scripts);
+    }
+    #[test]
+    fn pixel_design_names_keep_saved_ids_and_tekuplus_faces_cycle() {
+        for raw in ["x12y12pxMaruMinyaHangul", "x5y8pxNegaTape", "x5y8pxNegaClip",
+                    "x14y24pxHeadUpDaisy", "x10y12pxDenkiChipHangul"] {
+            let f = font(raw, "Regular", 12);
+            let a = Appearance { font: f.id.clone(), font_size: 12, ..Default::default() };
+            assert_eq!(describe(&[f], &a).family, raw.split_once("px").unwrap().1);
+            assert_eq!(a.font, format!("{raw} / Regular"));
+        }
+        assert_eq!(pixel_family("xylophone"), None);
+        let fonts = [font("Tekuplus", "Regular", 12), font("Tekuplus", "Bold", 12)];
+        let mut a = Appearance { font: fonts[0].id.clone(), font_size: 12, ..Default::default() };
+        adjust(&fonts, &mut a, Control::Face, 1);
+        assert_eq!(a.font, "Tekuplus / Bold");
+        assert_eq!(describe(&fonts, &a).family, "Tekuplus");
     }
 }

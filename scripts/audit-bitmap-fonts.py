@@ -72,9 +72,11 @@ def family(name):
     if name.startswith('Fusion Pixel'):return 'Fusion Pixel'
     if name.startswith('Neep'):return 'Neep'
     if name.startswith('Kissinger 2'):return 'Kissinger2'
-    return {'qub':'QUB','x10y12pxDenkiChipHangul':'DenkiChipHangul'}.get(name,name)
+    return re.sub(r'^x\d+y\d+px', '', {'qub':'QUB'}.get(name,name))
 assert {family(r['family']) for r in records} == allowed, 'Only the requested default families may be bundled'
 assert all(r['file'].endswith('.bdf') for r in records)
+assert not any(r['family'] in {'x12y12pxMaruMinya', 'x12y12pxMaruMinyaM'} for r in records)
+assert {r['style'] for r in records if r['family'] == 'Tekuplus'} == {'Regular', 'Bold'}
 # The upper-plane BDF must preserve every native source bitmap exactly.
 upper = assets / 'unifont-upper-17.0.04'
 source = {int(line.split(':')[0],16):line.split(':')[1].upper()

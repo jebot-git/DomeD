@@ -1,0 +1,32 @@
+{
+  "repository": "https://github.com/hicchicc/x5y8pxNegaTape",
+  "revision": "0443bb7c87de9659eceba3c394d3dbcf235084aa",
+  "format": "BDF only; native monochrome TTF strikes or unhinted design-grid rasterization",
+  "converter": "scripts/ttf-to-bdf.py",
+  "converter_sha256": "f8a644f8f29f836ef1ce718fadde4f6fb63d20b3176ab6c9056a6e814e42c81c",
+  "files": {
+    "NegaTape.bdf": "123dd2bf1d08ae5a86d41a46437cfa48192f95988ba2d962959bbceaf22f3b9e",
+    "AUTHORS.txt": "5ea04037406175e893251d760e953dbf6958f52431c211ddb9b62bf065414678",
+    "OFL.txt": "ab2ae2dac20a98b134d3bd6fafc1c672ad1f12f5c42e8f237eeb38356d96bdf8",
+    "README.md": "0ada27b1214460af7f8ace13e2db53dc09a8833dd611b42db49976c1248b3c01"
+  },
+  "fonts": {
+    "NegaTape.bdf": {
+      "source_sha256": "399604cb4f0ea543d092d8d06a75c41880d651a859bf019ab1ce670f8018d3eb",
+      "pixels": 8,
+      "method": "embedded monochrome strike",
+      "family": "x5y8pxNegaTape",
+      "style": "Regular",
+      "copyright": "Copyright 2026 The x5y8pxNegaTape Project Authors (https://github.com/hicchicc/x5y8pxNegaTape)",
+      "outline_supplement_codepoints": [],
+      "glyphs": 450,
+      "all_glyphs_verified": true,
+      "sha256": "123dd2bf1d08ae5a86d41a46437cfa48192f95988ba2d962959bbceaf22f3b9e",
+      "source": "fonts/ttf/x5y8pxNegaTape.ttf"
+    }
+  },
+  "tool_versions": {
+    "fonttools": "4.67.0",
+    "freetype": "2.13.2"
+  }
+}

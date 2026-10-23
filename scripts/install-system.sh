@@ -42,6 +42,7 @@ files=(
     usr/local/share/doc/domed/README.md
     usr/local/share/doc/domed/LICENSE
     usr/local/share/doc/domed/THIRD-PARTY.md
+    usr/local/share/doc/domed/fonts/ttf-to-bdf.py
     usr/local/share/doc/domed/dome.example.json
     usr/local/share/doc/domed/protocols/gtk-shell.xml
     usr/local/share/doc/domed/protocols/COPYING.gtk

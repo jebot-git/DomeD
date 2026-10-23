@@ -21,7 +21,8 @@ namespace bdf_fonts {
 inline bool default_family(std::string family) {
   family = family.substr(0, family.find(" ["));
   std::transform(family.begin(), family.end(), family.begin(), [](unsigned char c) { return std::tolower(c); });
-  static const std::set<std::string> names = {"unifont", "unifont upper", "kirsch", "x10y12pxdenkichiphangul", "ufo16", "kissinger 2", "kissinger 2f"};
+  static const std::set<std::string> names = {"unifont", "unifont upper", "kirsch", "x10y12pxdenkichiphangul", "ufo16", "kissinger 2", "kissinger 2f",
+      "x10y12pxdonguriduel", "x12y16pxlinelinker", "x12y16pxmarumonica", "x12y16pxsolidlinker", "x12y20pxscanline", "x14y20pxscoredozer", "x14y24pxheadupdaisy", "x16y32pxgridgazer", "x8y12pxthestronggamer", "x8y12pxdenkichip", "x5y8pxnegaclip", "x5y8pxnegatape", "tekuplus", "x12y12pxmaruminyahangul", "domed shijimi"};
   return names.count(family) || family.rfind("galmuri", 0) == 0 || family.rfind("fusion pixel ", 0) == 0;
 }
 inline std::string identity(const std::string &family, const std::string &style) {

@@ -805,8 +805,21 @@ used as session fallbacks. A private Fontconfig configuration allows only BDF;
 the host configuration is preserved. Font files are read directly by FreeType,
 FLTK CPU/GL rendering, the private patched Pango for GTK, Ghostty, and the patched libass used by mpvr and qimgvr.
 
-The default distribution contains 58 BDF files: Unifont, Unifont Upper,
-DenkiChipHangul, Galmuri, Fusion Pixel, UFO16, Kissinger2, and kirsch. QUB, Neep,
+The default distribution contains 74 BDF files: Unifont, Unifont Upper,
+DenkiChipHangul, Galmuri, Fusion Pixel, UFO16, Kissinger2, kirsch, Tekuplus
+(Regular/Bold), MaruMinyaHangul, DomeD Shijimi (from ShijimiSerif), NegaTape, NegaClip, DenkiChip,
+DonguriDuel, LineLinker, MaruMonica, SolidLinker, ScanLine, ScoreDozer,
+HeadUpDaisy, GridGazer and TheStrongGamer.
+
+The 00ff import excludes MaruMinya and MaruMinyaM because MaruMinyaHangul
+already covers that family. Native BDFs and embedded TTF bitmaps retain their
+pixels; outline-only glyphs are converted in monochrome at the design size by
+`scripts/ttf-to-bdf.py`. Every converted Unicode glyph is verified after loading
+the BDF. Pinned revisions, source checksums, conversion methods and any outline
+supplement codepoints are recorded in each collection’s `upstream.json`.
+See `assets/fonts/pixel-font-imports.md` for reproducible conversion details.
+The older 00ff downloads retain their author’s original license; the newer
+NegaTape, NegaClip and DenkiChip projects use OFL-1.1. QUB, Neep,
 Cozette, uni16m and Zpix are no longer bundled. Personal BDF installations remain supported.
 
 kirsch supplies 2,815 private-use glyphs, including Powerline and a subset of Nerd

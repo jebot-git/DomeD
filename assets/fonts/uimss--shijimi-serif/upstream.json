@@ -1,0 +1,19 @@
+{
+  "repository": "https://github.com/uimss/shijimi_serif",
+  "revision": "447f1561bb0362c3cc37db69b5447c397506dd61",
+  "format": "BDF only; original bitmap pixels; legacy character codes mapped to Unicode for session text",
+  "files": {
+    "ShijimiSerif-Regular.bdf": "57cff49e8dccd882676962b7c7eb32b68a598023f9082e40774282575cc39369",
+    "LICENSE.txt": "0635f4e4224faa626aaa4b2293df0c02735f118956b3852effdf260f402aad00",
+    "README.md": "af2c87bad9ea9d607befbec3cd7210503f5604e25555c309b01789deceafa668"
+  },
+  "fonts": {
+    "ShijimiSerif-Regular.bdf": {
+      "source_sha256": "85da903ac907da62b81b6bb1cfea1209f2ea86fe0c5af2d77b2bb516fb967a51",
+      "encoding": "ISO10646-1",
+      "unicode_mapping": false,
+      "packaging": "Native glyph pixels unchanged; size metadata corrected; renamed DomeD Shijimi under OFL reserved-name requirement"
+    }
+  },
+  "skipped": []
+}

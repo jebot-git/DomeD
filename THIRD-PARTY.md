@@ -15,8 +15,18 @@ kirsch v0.7.3 is the unmodified upstream BDF, licensed under OFL-1.1; its Nerd F
 coverage is partial. Unifont Upper 17.0.04 is built from the original upstream HEX
 bitmaps using the accompanying GPL-2.0-or-later `hex2bdf` tool, preserving every
 bitmap pixel. Its font terms are OFL-1.1 OR GPL-2.0-or-later WITH Font-exception-2.0.
-No outline rasterization is used. Source files, notices and checksums accompany
-both additions.
+No outline rasterization is used for either addition. Source files, notices and
+checksums accompany both additions.
+
+Tekuplus Regular/Bold, MaruMinyaHangul, ShijimiSerif and the 00ff collection are
+also included as BDF families. Tekuplus retains its M+ permission notice;
+MaruMinyaHangul, ShijimiSerif, NegaTape, NegaClip and DenkiChip retain their
+upstream OFL-1.1 notices. The nine older 00ff TTF conversions retain hicc’s
+original license, including its restrictions on selling fonts and claiming
+authorship; they are not distributed under OFL. See
+`assets/fonts/pixel-font-imports.md` and per-collection manifests for design
+sizes, embedded bitmap extraction, explicit outline supplements and complete
+source-to-BDF glyph verification.
 
 BDF packaging maps legacy character codes to Unicode and normalizes metadata;
 glyph bitmap pixels remain unchanged.
