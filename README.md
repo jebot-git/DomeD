@@ -1466,3 +1466,11 @@ the clock calendar.
 Screenshot capture is available from the camera tray icon and PrintScreen: desktop region selection, PNG clipboard and XDG Pictures/Screenshots storage, or an XR SBS view. See [Screenshots](docs/SCREENSHOTS.md).
 
 Expanded universal menus use bounded viewports on desktop and XR. In XR the menu height is limited by the shared binocular field of view; long menus show scroll arrows. Hold the pointer over an arrow or use the wheel to scroll, and keyboard selection automatically reveals the selected action. Nested panels preserve application action IDs and share their viewport between rendering and hit testing.
+
+
+Ordinary graphical link handlers select the active desktop/XR working mode via
+`dome-link`, independently of whether the headset is connected. Browser and
+Penguin Mail activation also present reused windows in that mode. Automatic mpvr
+and image presentation respect this selection; explicit XR actions remain
+available. See [the working-mode audit](docs/WORKING_MODE_AUDIT.md) for coverage,
+packaging and verification.

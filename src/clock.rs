@@ -185,7 +185,13 @@ pub fn mail_program() -> Option<PathBuf> {
     None
 }
 pub fn launch_date(path: &std::path::Path, date: NaiveDate, socket: &str) -> Result<(), String> {
-    let mut child = std::process::Command::new(path)
+    let helper = std::path::Path::new("/usr/local/bin/dome-link");
+    let mut command = if helper.is_file() {
+        let mut command = std::process::Command::new(helper);
+        command.args(["--app-id", "io.github.c9dev.PenguinMail", "--"]).arg(path);
+        command
+    } else { std::process::Command::new(path) };
+    let mut child = command
         .arg("--calendar")
         .arg(date.to_string())
         .env("WAYLAND_DISPLAY", socket)

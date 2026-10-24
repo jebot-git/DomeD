@@ -1,0 +1,64 @@
+{
+  "applications": {
+    "org.domed.Browser.desktop": {
+      "app_id": "org.domed.Browser",
+      "reuse": true
+    },
+    "mpvr.desktop": {},
+    "mpv.desktop": {},
+    "mpvr-domed.desktop": {
+      "automatic": true
+    },
+    "qimgvr.desktop": {},
+    "qimgv.desktop": {},
+    "qimgv-sbs.desktop": {},
+    "qimgvr-domed.desktop": {},
+    "org.fsvxr.fsvr.desktop": {},
+    "info.gmsh.gmsh.desktop": {},
+    "miro-pdf.desktop": {},
+    "org.domed.XNEdit.desktop": {},
+    "org.domed.FLTube.desktop": {},
+    "org.domed.Htop.desktop": {},
+    "org.domed.cmuxr.desktop": {},
+    "arc-sbs.desktop": {},
+    "org.openmovieeditor.Editor.desktop": {},
+    "io.github.c9dev.PenguinMail.desktop": {
+      "app_id": "io.github.c9dev.PenguinMail",
+      "reuse": true
+    },
+    "org.domed.FLTerm.desktop": {},
+    "org.domed.Connect.desktop": {},
+    "org.domed.InputMethods.desktop": {},
+    "org.domed.Wallets.desktop": {},
+    "kwalletmanager5-kwalletd.desktop": {},
+    "VRCX-0.desktop": {
+      "app_id": "com.vrcx-0.app",
+      "reuse": true
+    },
+    "vrcx-0-handler.desktop": {
+      "app_id": "com.vrcx-0.app",
+      "reuse": true
+    },
+    "vrchat-launcher.desktop": {}
+  },
+  "wrappers": {
+    "dome-browser": {
+      "app_id": "org.domed.Browser"
+    },
+    "mpvr": {},
+    "qimgvr": {},
+    "cmuxr": {},
+    "openmovieeditor": {},
+    "arc-sbs-gui": {}
+  },
+  "explicit_xr": [
+    "org.domed.FLTerm.XR.desktop",
+    "org.domed.cmuxr-floor.desktop",
+    "org.domed.OpenBrushNative.desktop"
+  ],
+  "session_services": [
+    "org.domed.Tray.desktop",
+    "org.domed.Translator.desktop",
+    "org.domed.Compositor.desktop"
+  ]
+}

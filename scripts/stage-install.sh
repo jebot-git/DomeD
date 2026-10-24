@@ -9,6 +9,7 @@ release="${DOME_RELEASE_DIR:-$root/target/release}"
 for name in dome-compositor dome-xr dome-preview dome-portal-picker dome-bdf-font; do
     install -D -m 0755 "$release/$name" "$stage/usr/local/bin/$name"
 done
+install -D -m 0755 "$root/packaging/dome-link" "$stage/usr/local/bin/dome-link"
 install -D -m 0755 "$root/packaging/dome-session" "$stage/usr/local/bin/dome-session"
 install -D -m 0755 "$root/packaging/dome-session-client" "$stage/usr/local/libexec/dome-session-client"
 install -D -m 0644 "$root/packaging/dome-session.target" "$stage/etc/systemd/user/dome-session.target"
@@ -51,4 +52,5 @@ desktop-file-validate "$stage/usr/share/wayland-sessions/dome.desktop" "$stage/u
 for page in "$root"/docs/man/*.1; do
     install -D -m 0644 "$page" "$stage/usr/local/share/man/man1/$(basename -- "$page")"
 done
+/usr/bin/python3 "$root/scripts/stage-link-handlers.py" "$stage"
 echo "Staged DomeD installation: $stage"

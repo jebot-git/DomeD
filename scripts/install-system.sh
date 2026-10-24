@@ -20,6 +20,7 @@ files=(
     usr/local/bin/dome-portal-picker
     usr/local/bin/dome-bdf-font
     usr/local/bin/dome-session
+    usr/local/bin/dome-link
     usr/local/share/doc/domed/TRAY_FRONTENDS.md
     usr/local/share/doc/domed/SCREENSHOTS.md
     usr/local/share/doc/domed/FLTK_GPU_AUDIT.md
@@ -55,6 +56,12 @@ done < "$root/packaging/font-notices.list"
 while IFS= read -r -d "" file; do
     files+=("${file#"$stage/"}")
 done < <(find "$stage/usr/local/share/fonts/domed" "$stage/usr/local/lib/domed/bitmap" "$stage/usr/local/share/doc/domed/pango-bdf" -type f -print0)
+if [[ -f "$stage/link-handler-files.json" ]]; then
+    while IFS= read -r file; do
+        [[ "$file" == usr/local/* && "$file" != *..* ]] || { echo "Invalid link-handler path: $file" >&2; exit 1; }
+        [[ " ${files[*]} " == *" $file "* ]] || files+=("$file")
+    done < <(/usr/bin/python3 -c 'import json,sys; print("\n".join(json.load(open(sys.argv[1]))))' "$stage/link-handler-files.json")
+fi
 for file in "${files[@]}"; do
     [[ -f "$stage/$file" && ! -L "$stage/$file" ]] || { echo "Missing staged file: $file" >&2; exit 1; }
 done
