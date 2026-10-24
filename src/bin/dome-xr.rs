@@ -465,9 +465,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let floor_stage_available = session
             .create_reference_space(xr::ReferenceSpaceType::STAGE, xr::Posef::IDENTITY).is_ok();
         let mut music_floor = dome::music_floor::MusicFloor::default();
+        let mut performance_floor = dome::performance_floor::PerformanceFloor::default();
         let mut floor_bounds = None;
         let mut floor_announced = false;
         let mut floor_uploaded = false;
+        let mut performance_floor_uploaded = false;
+        let mut performance_floor_frames = 0u64;
         let mut floor_bounds_read = Instant::now() - Duration::from_secs(2);
         let stage = session
             .create_reference_space(xr::ReferenceSpaceType::STAGE, xr::Posef::IDENTITY)
@@ -908,6 +911,18 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     dome: None,
                 });
             }
+            if let Some(floor) = performance_floor.frame(floor_bounds).filter(|_| scene.as_ref().is_none_or(|s| !s.locked && s.xr_fullscreen().is_none())) {
+                images.insert(dome::performance_floor::ID, Image {
+                    width: dome::performance_floor::WIDTH, height: dome::performance_floor::HEIGHT,
+                    rgba: floor.rgba, gpu: None, serial: floor.serial,
+                });
+                geometry.push(dome::xr_input::Quad {
+                    id: dome::performance_floor::ID,
+                    pose: Pose { position_m: floor.position,
+                        orientation_xyzw: glam::Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2).to_array() },
+                    size: floor.size, dome: None,
+                });
+            }
             if let Some(renderer) = gpu_renderer.as_mut() {
                 let ids: Vec<_> = images.iter().filter(|(_,i)| i.gpu.is_some()).map(|(id,_)| *id).collect();
                 renderer.retain(&ids);
@@ -993,6 +1008,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                                 eprintln!("Music floor active: audio-reactive texture submitted to STAGE overlay");
                                 floor_uploaded = true;
                             }
+                            if q.id == dome::performance_floor::ID && !performance_floor_uploaded {
+                                eprintln!("htop performance floor active: GPU canvas submitted to STAGE overlay");
+                                performance_floor_uploaded = true;
+                            }
                             if let Some(dir) = &capture {
                                 if captured.insert(q.id) {
                                     std::fs::create_dir_all(dir)?;
@@ -1038,14 +1057,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             visible.sort_by_key(|(q, _)| {
                 let group = if q.id == u64::MAX - 32 {
                     0
-                } else if dome::xr_transport::is_shell(q.id) || q.id >= u64::MAX - 1 {
-                    4
-                } else if popup_ids.contains(&q.id) {
-                    3
-                } else if q.id & dome::spatial_popup::BEAM_ID_BASE != 0 {
-                    2
-                } else {
+                } else if q.id == dome::performance_floor::ID {
                     1
+                } else if dome::xr_transport::is_shell(q.id) || q.id >= u64::MAX - 1 {
+                    5
+                } else if popup_ids.contains(&q.id) {
+                    4
+                } else if q.id & dome::spatial_popup::BEAM_ID_BASE != 0 {
+                    3
+                } else {
+                    2
                 };
                 let order = scene
                     .as_ref()
@@ -1083,6 +1104,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     .filter(|(q, _)| stereo_windows.contains(&q.id))
                     .count(),
             );
+            if frame.should_render && visible.iter().any(|(q, _)| q.id == dome::performance_floor::ID) {
+                performance_floor_frames += 1;
+            }
             let stage_ref = &stage;
             let layers: Vec<_> = visible
                 .iter()
@@ -1224,7 +1248,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         running.store(false, Ordering::Relaxed);
         let _ = worker.join();
         let _ = input_worker.join();
-        let summary = serde_json::json!({"runtime":runtime,"system":properties.system_name,"overlay":environment.overlay,"environment_blend":format!("{blend:?}"),"overlay_placement":placement,"frames":count,"peak_window_layers":peak,"peak_curved_layers":peak_curved,"peak_flat_layers":peak_flat,"peak_stereo_windows":peak_stereo,"peak_shell_layers":peak_shell,"uploads":uploaded,"gpu_submissions":gpu_submissions,"input_methods":["mouse","keyboard"],"presentation_hidden_frames":hidden_frames,"presentation_fade_frames":fade_frames,"presentation_slide_frames":slide_frames,"clean_exit":true,"webxr":browser.as_ref().map(|browser| browser.stats()).unwrap_or_default()});
+        let summary = serde_json::json!({"runtime":runtime,"system":properties.system_name,"overlay":environment.overlay,"environment_blend":format!("{blend:?}"),"overlay_placement":placement,"frames":count,"peak_window_layers":peak,"peak_curved_layers":peak_curved,"peak_flat_layers":peak_flat,"peak_stereo_windows":peak_stereo,"peak_shell_layers":peak_shell,"uploads":uploaded,"performance_floor_frames":performance_floor_frames,"gpu_submissions":gpu_submissions,"input_methods":["mouse","keyboard"],"presentation_hidden_frames":hidden_frames,"presentation_fade_frames":fade_frames,"presentation_slide_frames":slide_frames,"clean_exit":true,"webxr":browser.as_ref().map(|browser| browser.stats()).unwrap_or_default()});
         println!("{summary}");
         if let Some(path) = report {
             std::fs::write(path, serde_json::to_vec_pretty(&summary)?)?;
