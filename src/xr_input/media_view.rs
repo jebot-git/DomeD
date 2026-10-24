@@ -92,8 +92,8 @@ mod tests {
                 let hit = input[0].hit(origin, (point-origin).normalize(), false).unwrap();
                 assert!((hit[0]-uv[0]).abs() < 1e-5 && (hit[1]-uv[1]).abs() < 1e-5);
             }
-            assert!(xr_input::shell_quads(&scene, head, &ShellLayout{width:1280,height:720,top:36,bottom:60,notifications:None}).is_empty());
-            assert!(!xr_input::shell_quads(&scene, head, &ShellLayout{width:1280,height:720,top:456,bottom:60,notifications:None}).is_empty());
+            assert!(xr_input::shell_quads(&scene, head, &ShellLayout{width:1280,height:720,top:36,bottom:60,notifications:None,pullout:None}).is_empty());
+            assert!(!xr_input::shell_quads(&scene, head, &ShellLayout{width:1280,height:720,top:456,bottom:60,notifications:None,pullout:None}).is_empty());
             // Head movement and anchoring choices cannot strand the fullscreen view.
             let moved = Pose {position_m:[1.,2.,3.], ..head};
             let q = fullscreen_quad(&scene,moved,Some(viewport)).unwrap();

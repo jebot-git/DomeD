@@ -19,7 +19,7 @@ use smithay::{
 };
 impl Dome {
     pub fn export_xr_shell(&self, pixels: &[u8], width: i32, height: i32) {
-        use dome::xr_transport::{ShellLayout, Surface, NOTIFICATIONS, TASK_BAR, TOP_BAR};
+        use dome::xr_transport::{ShellLayout, Surface, NOTIFICATIONS, TASK_BAR, TOP_BAR, TOP_PANEL, BOTTOM_PANEL};
         let mut top = 36;
         let mut bottom = 60;
         if let Some(menu) = self.menu {
@@ -85,14 +85,26 @@ impl Dome {
                 },
             );
         }
+        let pullout = if top > 36 || bottom > 60 {
+            b.shell.pullout.clone().or_else(|| Some(dome::xr_transport::ShellPullout {
+                anchor: b.session.head.upright(),
+                viewport: b.session.mouse_viewport.unwrap_or([-0.65, 0.65, -0.6, 0.6]),
+            }))
+        } else { None };
         b.shell = ShellLayout {
             width: width as u32,
             height: height as u32,
             top: top as u32,
             bottom: bottom as u32,
             notifications: notification_rect,
+            pullout,
         };
-        for (id, start, rows) in [(TOP_BAR, 0, top), (TASK_BAR, height - bottom, bottom)] {
+        for id in [TOP_BAR, TASK_BAR, TOP_PANEL, BOTTOM_PANEL] {
+            let Some([_, start, _, rows]) = b.shell.surface_rect(id) else {
+                b.frames.remove(&id);
+                continue;
+            };
+            let (start, rows) = (start as i32, rows as i32);
             let mut rgba = Vec::with_capacity((width * rows * 4) as usize);
             for pixel in pixels[(start * width * 4) as usize..((start + rows) * width * 4) as usize]
                 .chunks_exact(4)
@@ -139,6 +151,7 @@ impl Dome {
                 actions: vec![],
             });
             self.menu = None;
+            self.cancel_quick_drag();
             self.launcher = false;
             self.task_popup = None;
             self.desktop_manager = false;
@@ -273,23 +286,12 @@ impl Dome {
                     if dome::xr_transport::is_shell(id) {
                         shell_interaction = true;
                         let layout = self.xr_bridge.lock().unwrap().shell.clone();
-                        let x = if id == dome::xr_transport::NOTIFICATIONS {
-                            let r = layout.notifications.unwrap_or([0; 4]);
-                            r[0] as f64 + uv[0] as f64 * r[2] as f64
-                        } else {
-                            uv[0] as f64 * layout.width as f64
-                        };
-                        let y = if id == dome::xr_transport::NOTIFICATIONS {
-                            let r = layout.notifications.unwrap_or([0; 4]);
-                            r[1] as f64 + uv[1] as f64 * r[3] as f64
-                        } else if id == dome::xr_transport::TOP_BAR {
-                            uv[1] as f64 * layout.top as f64
-                        } else {
-                            layout.height as f64 - layout.bottom as f64
-                                + uv[1] as f64 * layout.bottom as f64
-                        };
+                        let Some([rx, ry, rw, rh]) = layout.surface_rect(id) else { continue; };
+                        let x = rx as f64 + uv[0] as f64 * rw as f64;
+                        let y = ry as f64 + uv[1] as f64 * rh as f64;
                         self.xr_target = Some(id);
                         self.xr_shell_pos = Some([x, y]);
+                        self.launcher_motion(x,y);
                         self.audio_motion(x, layout.width as i32, layout.height as i32);
                         self.xr_task_motion(x, y, layout.width as i32, layout.height as i32);
                         self.appmenu_motion(x, y, layout.width as i32, layout.height as i32);
@@ -360,6 +362,11 @@ impl Dome {
                     }
                 }
                 SeatEvent::Button { button, pressed } => {
+                    if !pressed && button==0x110 && self.launch_navigation.quick_drag.is_some(){
+                        let [x,y]=self.xr_shell_pos.unwrap_or([f64::NAN,f64::NAN]);
+                        self.launcher_button(x,y,button,false);
+                    }
+
                     if pressed && !self.xr_target.is_some_and(|id|self.selection_tooltips.contains_key(&id)) {
                         self.dismiss_selection_tooltips();
                     }
@@ -407,7 +414,9 @@ impl Dome {
                             let layout = self.xr_bridge.lock().unwrap().shell.clone();
                             let tray = self.visible_tray(layout.width as i32);
                             let tx = layout.width as f64 - self.clock_reserve() as f64 - tray.items.len() as f64 * 28.;
-                            if self.shell_modal_open() {
+                            if self.launcher {
+                                self.launcher_button(x,y,button,true);
+                            } else if self.shell_modal_open() {
                                 self.shell_click(x, y);
                             } else if y < 36.
                                 && x >= tx
@@ -469,6 +478,7 @@ impl Dome {
                             continue;
                         }
                     }
+                    if let Some([x,y])=self.xr_shell_pos {if self.launcher_scroll(x,y,vertical){continue;}}
                     if self.xr_shell_pos.is_some() && self.history_scroll(vertical) {
                         continue;
                     }
@@ -502,6 +512,7 @@ impl Dome {
                     }
                 }
                 SeatEvent::Leave => {
+                    self.cancel_quick_drag();
                     self.audio_drag = None;
                     self.context_scroll_hover = None;
                     self.menu_edge_hover = false;
@@ -519,6 +530,7 @@ impl Dome {
                     );
                 }
                 SeatEvent::Reset => {
+                    self.cancel_quick_drag();
                     self.audio_drag = None;
                     self.context_scroll_hover = None;
                     self.menu_edge_hover = false;

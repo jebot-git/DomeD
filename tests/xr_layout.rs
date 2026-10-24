@@ -144,7 +144,7 @@ fn dome_popup_growth_keeps_bar_edges_fixed() {
         height: 800,
         top: 36,
         bottom: 60,
-        notifications: None,
+        notifications: None, pullout: None
     };
     let head = Pose::default();
     let bars = xr_input::shell_quads(&s, head, &layout);
@@ -509,7 +509,7 @@ fn dome_bars_border_lanes_and_orbit_with_horizontal_head_yaw() {
         height: 800,
         top: 36,
         bottom: 60,
-        notifications: None,
+        notifications: None, pullout: None
     };
     let head = Pose {
         position_m: s.config.center_m,
@@ -588,7 +588,7 @@ fn dome_bars_border_lanes_and_orbit_with_horizontal_head_yaw() {
 #[test]
 fn tilted_bars_stay_level_and_rigid_when_turning_the_head() {
     let layout = dome::xr_transport::ShellLayout {
-        width: 1024, height: 768, top: 36, bottom: 60, notifications: None,
+        width: 1024, height: 768, top: 36, bottom: 60, notifications: None, pullout: None
     };
     for populated in [false, true] {
         for anchor_mode in [AnchorMode::Room, AnchorMode::Head] {
@@ -636,7 +636,7 @@ fn tilted_bars_stay_level_and_rigid_when_turning_the_head() {
 #[test]
 fn bars_follow_rendered_lane_edges_with_at_most_eight_logical_pixels_of_clearance() {
     let layout = dome::xr_transport::ShellLayout {
-        width: 1024, height: 768, top: 36, bottom: 60, notifications: None,
+        width: 1024, height: 768, top: 36, bottom: 60, notifications: None, pullout: None
     };
     for radius in [0.6, 2.2, 4.4, 8.] {
         for count in [1, 3, 20] {
@@ -659,7 +659,9 @@ fn bars_follow_rendered_lane_edges_with_at_most_eight_logical_pixels_of_clearanc
                 for focused in [None, Some(s.workspaces[0].lanes[0].windows[0])] {
                     s.focused = focused;
                     let windows = xr_input::quads(&s, head);
-                    let bars = xr_input::shell_quads_in_view(&s, head, &layout, 92.);
+                    // Exercise the actual renderer/input entry point, not just its
+                    // preferred-layout helper: fitting must preserve lane attachment.
+                    let bars = xr_input::shell_quads_in_fov(&s, head, &layout, [-0.9, 0.9, -0.9, 0.9]);
                     for (bar, lane, edge_v, nominal) in [(&bars[0], 0, 1., 36.), (&bars[1], 2, 0., 60.)] {
                         let adjacent = windows.iter()
                             .filter(|q| s.window(q.id).unwrap().lane == lane)
@@ -730,7 +732,7 @@ fn mouse_crosses_bars_empty_space_and_lanes_without_depth_or_size_jumps() {
             height: 800,
             top: 36,
             bottom: 60,
-            notifications: None,
+            notifications: None, pullout: None
         };
         let mut surfaces = xr_input::quads(&s, head);
         surfaces.extend(xr_input::shell_quads(&s, head, &layout));
@@ -783,7 +785,7 @@ fn dome_bar_extreme_geometry_stays_finite_and_mouse_angles_stop_at_boundary() {
         height: 800,
         top: 800,
         bottom: 800,
-        notifications: None,
+        notifications: None, pullout: None
     };
     for span in [30., 110., 170.] {
         s.config.dome_vertical_span_deg = span;
@@ -992,7 +994,7 @@ fn expanded_settings_fit_view_pane_and_follow_projection_preferences() {
         height: 768,
         top: 768,
         bottom: 60,
-        notifications: None,
+        notifications: None, pullout: None
     };
     for projection in [Projection::RoomDome] {
         scene.config.projection = projection;
@@ -1027,7 +1029,7 @@ fn notification_pane_follows_head_and_maps_its_crop_without_bar_stretching() {
             height: 768,
             top: 36,
             bottom: 60,
-            notifications: Some([652, 48, 360, 274]),
+            notifications: Some([652, 48, 360, 274]), pullout: None
         };
         let quads = xr_input::shell_quads(&s, head, &layout);
         let n = quads

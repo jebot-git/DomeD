@@ -787,6 +787,7 @@ impl Dome {
         self.dismiss_wayland_popups();
         self.context_menus.clear();
         self.menu = None;
+        self.cancel_quick_drag();
         self.launcher = false;
         self.task_popup = None;
         self.xr_target = None;

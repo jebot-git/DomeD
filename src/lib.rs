@@ -67,3 +67,5 @@ pub mod font_export;
 pub mod screenshot;
 
 pub mod super_mmb;
+
+pub mod quick_launch;

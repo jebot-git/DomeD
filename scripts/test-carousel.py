@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Private Xvfb keyboard regression; requires python-xlib and PySide6 fixtures."""
-import os,sys,json,tempfile,subprocess,socket,time,urllib.request,re,threading
+"""Private Xvfb keyboard regression; requires python-xlib and the native FLTK toolkit."""
+import os,sys,json,tempfile,subprocess,socket,time,urllib.request,re,threading,signal
+signal.pthread_sigmask(signal.SIG_SETMASK, [])
 from pathlib import Path
 from Xlib import X,XK,display
 from Xlib.ext import xtest
@@ -31,9 +32,12 @@ try:
   def state():return req('/api/state')['scene']
   log=(r/'compositor.log').open('w');children.append(subprocess.Popen([os.environ.get('DOME_COMPOSITOR',str(root/'target/release/dome-compositor')),'--backend','nested'],env=env,stdout=log,stderr=subprocess.STDOUT));wait(state)
   wayland=re.search(r'Dome Wayland socket: (\S+)',(r/'compositor.log').read_text())[1]
-  ce={**env,'WAYLAND_DISPLAY':wayland,'QT_QPA_PLATFORM':'wayland'}
+  source=r/'client.cpp';source.write_text('#include <FL/Fl.H>\n#include <FL/Fl_Window.H>\nint main(int argc,char**argv){Fl_Window w(480,320,argv[1]);w.xclass(argv[1]);w.show();return Fl::run();}\n')
+  flags=subprocess.check_output(['pkg-config','--cflags','--libs','cairo'],text=True).split()
+  subprocess.run(['g++','-std=c++17','-O2','-I/opt/fltk-vr/toolkit/include',str(source),'-L/opt/fltk-vr/toolkit/lib','-Wl,-rpath,/opt/fltk-vr/toolkit/lib','-lfltk',*flags,'-o',str(r/'client')],check=True)
+  ce={**env,'WAYLAND_DISPLAY':wayland,'FLTK_BACKEND':'wayland'}
   for name in ['a','b','c']:
-   children.append(subprocess.Popen([sys.executable,str(root/'scripts/desktop-client.py'),'--name',name,'--journal',str(r/(name+'.jsonl'))],env=ce,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL))
+   children.append(subprocess.Popen([str(r/'client'),name],env=ce,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL))
   wait(lambda:len(state()['windows'])==3)
   ids=state()['workspaces'][0]['lanes'][1]['windows'];req('/api/action',{'op':'focus','id':ids[1]})
   xd=display.Display(env['DISPLAY']);host=wait(lambda:next((w for w in xd.screen().root.query_tree().children if str(w.get_wm_name() or '').startswith('Dome')),None));host.set_input_focus(X.RevertToParent,X.CurrentTime);xd.sync();time.sleep(.3)

@@ -74,6 +74,18 @@ fn universal_menus(mut exported: Vec<Node>, shell: Vec<Node>) -> Vec<Node> {
                 || (matches!(row.command, Some(dome::shortcuts::Command::Undo | dome::shortcuts::Command::Redo))
                     && n.text.to_lowercase().starts_with(&(row.text.to_lowercase() + " ")))));
         }
+        // Keep the compositor's realm transfer visible before potentially long
+        // application Window menus. The command tag stays local to DomeD.
+        if category == 3 {
+            if let Some(index) = additions.iter().position(|row| row.command == Some(
+                dome::shortcuts::Command::PresentWindow { desktop: true, xr: false })) {
+                let desktop = additions.remove(index);
+                if !native.children.is_empty() {
+                    native.children.insert(0, Node { separator: true, ..Default::default() });
+                }
+                native.children.insert(0, desktop);
+            }
+        }
         if additions.is_empty() { return native; }
         if !native.children.is_empty() {
             native.children.push(Node { separator: true, ..Default::default() });
@@ -514,6 +526,29 @@ mod tests {
         assert!(rows[0].command.is_none());
         assert!(rows[1].separator);
         assert_eq!(rows[2].command, Some(dome::shortcuts::Command::Close));
+    }
+    #[test]
+    fn desktop_transfer_precedes_native_window_items_and_keeps_local_dispatch() {
+        use dome::shortcuts::Command;
+        for enabled in [false, true] {
+            let transfer = Command::PresentWindow { desktop: true, xr: false };
+            let mut fallback = shell();
+            fallback[3].children.insert(0, Node { id: 7, text: "Send to Desktop".into(),
+                enabled, checked: true, checkable: true, radio: true,
+                command: Some(transfer), ..Default::default() });
+            let menus = universal_menus(vec![Node { text: "Window".into(), enabled: true,
+                children: vec![Node { id: 7, text: "Application window".into(), enabled: true,
+                    ..Default::default() }], ..Default::default() }], fallback);
+            let rows = &menus.iter().find(|m| m.text == "Window").unwrap().children;
+            assert_eq!(rows[0].command, Some(transfer));
+            assert_eq!(rows[0].enabled, enabled);
+            assert!(rows[0].checked && rows[0].radio);
+            assert!(rows[1].separator);
+            assert_eq!(rows[2].text, "Application window");
+            assert_eq!(rows[2].id, rows[0].id);
+            assert!(rows[2].command.is_none());
+            assert_eq!(rows.iter().filter(|n| n.command == Some(transfer)).count(), 1);
+        }
     }
     #[test]
     fn edit_keeps_native_operations_and_fills_only_missing_basics() {

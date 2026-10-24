@@ -536,7 +536,16 @@ extern "C" const char *dome_qt_font_catalog(const unsigned char *data,
   result = catalog.dump();
   return result.c_str();
 }
+// The corner targets follow L-shaped rim segments, never client content.
+static constexpr int bottom_grip_length = 20;
 extern "C" int dome_qt_hit(int w, int h, int x, int y, int caption = 30) {
+  // A small outward margin makes the corners forgiving without stealing client pixels.
+  if (y >= caption && y < h + 4 && x >= -4 && x < w + 4) {
+    if ((x < 4 && y >= h - bottom_grip_length) || (x < bottom_grip_length && y >= h - 4))
+      return 7; // diagonal bottom-left
+    if ((x >= w - 4 && y >= h - bottom_grip_length) || (x >= w - bottom_grip_length && y >= h - 4))
+      return 8; // diagonal bottom-right
+  }
   if (x < 0 || y < 0 || x >= w || y >= h)
     return 0;
   if (y < caption) {
@@ -584,6 +593,17 @@ extern "C" int dome_qt_paint(const char *json, unsigned char *pixels,
     p.rect(0, bar_height, 4, h - bar_height, border);
     p.rect(w - 4, bar_height, 4, h - bar_height, border);
     p.rect(0, h - 4, w, 4, border);
+    // More legible corner grips stay within the existing four-pixel rim.
+    auto grip = p.accent;
+    grip.a = (active ? .85 : .65) * p.opacity;
+    int reach = std::min(bottom_grip_length, std::max(0, h - bar_height));
+    cairo_save(c);
+    cairo_set_operator(c, CAIRO_OPERATOR_SOURCE);
+    p.rect(0, h - reach, 4, reach, grip);
+    p.rect(0, h - 4, bottom_grip_length, 4, grip);
+    p.rect(w - 4, h - reach, 4, reach, grip);
+    p.rect(w - bottom_grip_length, h - 4, bottom_grip_length, 4, grip);
+    cairo_restore(c);
   } else if (str(o, "kind") != "notifications") {
     auto bar = p.bg;
     bar.a = p.opacity;
@@ -688,7 +708,7 @@ extern "C" int dome_qt_paint(const char *json, unsigned char *pixels,
       i = 0;
       for (auto &app : arr(o, "apps")) {
         int y = 106 + i * 36;
-        if (i++ == num(o, "launch_index"))
+        if (i++ == num(o, "launch_index") && obj(o,"quick_launch").value("selected", J()).is_null())
           p.rect(28, y - 2, 584, 34, p.sel);
         p.icon(36, y, 24,
                str(app, "icon").empty() ? str(app, "name") : str(app, "icon"),
@@ -698,7 +718,24 @@ extern "C" int dome_qt_paint(const char *json, unsigned char *pixels,
         if (!categories.empty() && categories[0].is_string())
           p.text(370, y, 230, 28, categories[0].get<std::string>(), p.muted);
       }
-      p.text(36, 406, 560, 30, str(o, "launch_error"), p.accent);
+      auto quick = obj(o, "quick_launch");
+      int qx = num(quick, "x", 36), qy = num(quick, "y", 400), cell = num(quick, "cell", 48);
+      int selected = num(quick, "selected", -1), n = 0;
+      auto pins = arr(quick, "items");
+      for (auto &pin : pins) {
+        int x = qx + n++ * cell;
+        bool active = selected == num(pin, "index", -1);
+        if (active) p.rect(x - 4, qy - 2, cell - 4, 40, p.sel);
+        if (active && yes(quick,"dragging")) p.border(x - 4, qy - 2, cell - 4, 40, p.accent);
+        p.icon(x + 2, qy + 2, 32, str(pin,"icon").empty() ? str(pin,"name") : str(pin,"icon"),
+               yes(pin,"enabled") ? p.fg : p.muted);
+      }
+      if (pins.empty()) p.text(qx, qy, 560, 36, "Quick launch · Shift-click an application to pin", p.muted);
+      auto error = str(o, "launch_error");
+      std::string hint = selected >= 0 ? str(quick,"name") + " · Enter: launch · Shift-drag: move · Shift-RMB: remove"
+                                     : "Tab: quick launch · Shift-click: pin";
+      if (num(quick,"total") > num(quick,"columns",11)) hint += " · Wheel: scroll";
+      p.text(36, 438, 560, 18, error.empty() ? hint : error, error.empty() ? p.muted : p.accent);
     }
     if (yes(o, "manager")) {
       p.rect(w - 330, h - 390, 320, 320, p.bg);
@@ -726,7 +763,7 @@ extern "C" int dome_qt_paint(const char *json, unsigned char *pixels,
                         4, std::max(4, w - 284)),
              36, 280, num(tray, "selected", -1));
     p.taskPopup(obj(o, "task_popup"));
-    p.panelRows(obj(o, "xr_settings"), "Displays, XR & Keybindings", 28);
+    p.panelRows(obj(o, "xr_settings"), "Settings · Displays, XR & Keybindings", 28);
     p.panelRows(obj(o, "default_apps"),
                 str(obj(o, "default_apps"), "title", "Default applications"),
                 44, 64);

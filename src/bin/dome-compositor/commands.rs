@@ -58,12 +58,11 @@ impl Dome {
             0 => vec![
                 ("About Dome", "", About),
                 ("", "", Separator),
-                ("Launch Application…", "⇧⌘Space", Launch),
                 ("Open Files", "⌘E", FileManager),
                 ("Open Terminal", "⌘T", Terminal),
                 ("Take Screenshot", "PrintScreen", Screenshot),
-                ("Virtual Desktops…", "", Desktops),
-                ("Appearance…", "", Appearance),
+                ("Settings…", "⌘,", XrSettings),
+                ("Keybinding Help…", "", KeybindingsHelp),
                 ("", "", Separator),
                 ("Start XR", "", StartXr),
                 ("Stop XR", "", StopXr),
@@ -98,8 +97,6 @@ impl Dome {
                     "",
                     Session(dome::appearance::SessionAction::Shutdown),
                 ),
-                ("Keyboard Layouts…", "", KeyboardSettings),
-                ("Default Applications…", "", DefaultApplications),
             ],
             1 => vec![("Close Application Windows", "⌘Q", QuitApp)],
             2 => vec![("Close Window", "⌘W", Close)],
@@ -133,7 +130,7 @@ impl Dome {
                 ("Move Window Right in Lane", "⌥⌘→", MoveHorizontal(1)),
             ],
             5 => vec![
-                ("Send Window to Desktop", "", PresentWindow { desktop: true, xr: false }),
+                ("Send to Desktop", "", PresentWindow { desktop: true, xr: false }),
                 ("Send Window to XR", "", PresentWindow { desktop: false, xr: true }),
                 ("Show Window on Both", "", PresentWindow { desktop: true, xr: true }),
                 ("", "", Separator),
@@ -248,9 +245,15 @@ impl Dome {
                 self.appearance_open = true;
             }
             KeyboardSettings => self.keyboard_settings_open(),
-            XrSettings => {
+            XrSettings | KeybindingsHelp => {
                 self.xr_settings_open = true;
-                self.xr_settings_row = 0;
+                self.xr_settings_row = if c == KeybindingsHelp {
+                    self.keybindings_settings_start(&s.config)
+                } else { 0 };
+                self.binding_capture = None;
+                self.appearance_open = false;
+                self.keyboard_draft = None;
+                self.default_apps_open = false;
                 self.action(Action::XrPresentation {
                     top: Some(true),
                     bottom: None,

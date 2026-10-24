@@ -263,6 +263,8 @@ impl Dome {
         shell
     }
     pub fn launch_selected(&mut self) {
+        if let Some(index)=self.launch_navigation.quick_focus {self.launch_quick(index);return;}
+
         let apps = self.matching_apps();
         let executable = (!self.launch_navigation.navigated || apps.is_empty())
             .then(|| dome::desktop_entries::find_executable(self.launch_query.trim()))
@@ -274,15 +276,7 @@ impl Dome {
         } else {
             Err(format!("No application or executable found: {}", self.launch_query.trim()))
         };
-        if let Err(error) = result {
-            self.launch_navigation.error = error;
-            self.launch_navigation.repeat = None;
-            return;
-        }
-        self.launcher = false;
-        self.launch_query.clear();
-        self.launch_index = 0;
-        self.launch_navigation = Default::default();
+        self.finish_launcher_launch(result);
     }
     pub fn matching_apps(&self) -> Vec<service::App> {
         let query = self.launch_query.to_lowercase();
@@ -459,19 +453,7 @@ impl Dome {
             self.open_menu(None);
             return;
         }
-        if self.launcher {
-            if (20. ..620.).contains(&x) && (104. ..392.).contains(&y) {
-                let index = self.launch_navigation.offset + ((y - 104.) / 36.) as usize;
-                if index < self.matching_apps().len() {
-                    self.launch_index = index;
-                    self.launch_navigation.navigated = true;
-                    self.launch_selected();
-                    return;
-                }
-            }
-            self.launcher = false;
-            return;
-        }
+        if self.launcher {self.launcher_button(x,y,0x110,true);return;}
         if self.desktop_manager {
             if x > width - 320. && y > height - 380. && y < height - 100. {
                 let i = ((y - (height - 380.)) / 32.) as usize;
@@ -517,6 +499,7 @@ impl Dome {
         let items:Vec<_>=self.menu.map(|m|self.menu_items(m)).unwrap_or_default().iter().map(|(text,shortcut,command)|{let bindings=&scene.config.keybindings;let chord=if dome::shortcuts::defaults().iter().any(|b|b.command==*command){bindings.iter().find(|b|b.enabled&&b.command==*command).map(|b|b.label()).unwrap_or_default()}else{shortcut.to_string()};serde_json::json!({"text":text,"shortcut":chord,"enabled":self.command_enabled(*command),"separator":matches!(command,dome::shortcuts::Command::Separator)})}).collect();
         let popup = self.task_popup_json(width, height);
         let mut model = serde_json::json!({"kind":"shell","menu_headers":self.menu_headers(),"appmenu_panels":self.appmenu_panels(width,height),"keyboard":if self.keyboard_config.ime {dome::keyboard::input_method_label(&ime.method).map(str::to_owned).unwrap_or_else(||self.keyboard_config.label())}else{self.keyboard_config.label()},"keyboard_flag":dome::keyboard::input_method_flag(if self.keyboard_config.ime { &ime.method } else { self.keyboard_config.layout.split(',').nth(self.keyboard_config.active).unwrap_or("us") }),"keyboard_settings":self.keyboard_draft,"keyboard_field":self.keyboard_field,"keyboard_error":if self.keyboard_error.is_empty(){self.ime.snapshot().error}else{self.keyboard_error.clone()},"keyboard_shortcut":self.keyboard_draft.as_ref().map(|d|d.switch_shortcut.label()),"audio":self.audio_json(width,height),"history":self.history_json(width,height),"notifications": if !self.audio_open && self.history_panel.is_none() && self.input_realm == dome::Realm::Desktop {self.notifications.layout(width,height)} else {vec![]},"xr_settings":self.xr_settings_json(width,height),"default_apps":self.default_apps_json(width,height),"appearance":self.appearance,"appearance_open":self.appearance_open,"shell_selection":self.shell_selection,"session_confirm":self.session_confirm.map(|s|s.label()),"session_error":self.session.state().error,"about":self.about,"about_is_app":self.shell_error=="@app-info","width":width,"height":height,"app":app,"app_info":entry,"menu":self.menu.map(|m|m as i32).unwrap_or(-1),"hover":self.menu_hover,"items":items,"tasks":tasks,"tray":self.visible_tray(width),"task_popup":popup,"launcher":self.launcher,"launch_index":self.launch_index.saturating_sub(self.launch_navigation.offset),"launch_offset":self.launch_navigation.offset,"launch_total":self.matching_apps().len(),"launch_error":self.launch_navigation.error,"xr_active":self.input_xr_active,"manager":self.desktop_manager,"query":self.launch_query,"apps":self.matching_apps().into_iter().skip(self.launch_navigation.offset).take(crate::launcher::ROWS).collect::<Vec<_>>(),"desktops":scene.workspaces.iter().map(|w|w.name.clone()).collect::<Vec<_>>()});
+        model["quick_launch"] = self.quick_launch_json();
         if self.appearance_open && self.keyboard_draft.is_none() {
             model["appearance_font"] = serde_json::to_value(self.appearance_font_description()).unwrap();
         }

@@ -1,6 +1,6 @@
-//! Keep the complete shell surface inside the common binocular view.
-use super::{shell_quads_in_view, Quad};
-use crate::{xr_transport::{ShellLayout, NOTIFICATIONS, TASK_BAR, TOP_BAR}, Pose, Scene};
+//! Dome-attached bars with optical fitting for expanded controls and notifications.
+use super::{shell_quads_in_view, DomePatch, Quad};
+use crate::{xr_transport::{ShellLayout, NOTIFICATIONS, TASK_BAR, TOP_BAR, TOP_PANEL, BOTTOM_PANEL}, Pose, Scene};
 use glam::{Quat, Vec3};
 
 /// Conservative head-relative FOV shared by all eyes, including eye offsets,
@@ -44,7 +44,15 @@ fn valid([left, right, down, up]: [f32; 4]) -> bool {
 
 fn inset(fov: [f32; 4]) -> [f32; 4] {
     let margin = 3_f32.to_radians().min((fov[1] - fov[0]).min(fov[3] - fov[2]) * 0.08);
-    [fov[0] + margin, fov[1] - margin, fov[2] + margin, fov[3] - margin]
+    // Optical visibility extends well beyond a comfortable control area on
+    // wide/asymmetric headsets. Edge-aligning chrome against that entire FOV
+    // pins it to the lens rim; following head pitch then prevents looking at it.
+    // Keep opened controls in the central view, while retaining the smaller
+    // binocular bounds on narrow headsets. Input uses this same fitted geometry.
+    let horizontal = 40_f32.to_radians();
+    let vertical = 30_f32.to_radians();
+    [(fov[0] + margin).max(-horizontal), (fov[1] - margin).min(horizontal),
+        (fov[2] + margin).max(-vertical), (fov[3] - margin).min(vertical)]
 }
 
 /// Exact support bounds of the whole flat/cylindrical patch, not just corners:
@@ -100,23 +108,39 @@ fn fit(q: &mut Quad, head: Pose, fov: [f32; 4], near: f32) {
     } else { q.pose.position_m = target.to_array(); }
 }
 
-/// Renderer and hit testing use this identical, optical-FOV-constrained layout.
-/// Bars follow the view, while application windows retain their own anchoring.
+/// Rendering and hit testing share dome bars and frozen, pulled-out menu panels.
 pub fn shell_quads_in_fov(scene: &Scene, head: Pose, shell: &ShellLayout, viewport: [f32; 4]) -> Vec<Quad> {
     if !valid(viewport) { return vec![]; }
     let safe = inset(viewport);
     let near = scene.config.bar_distance_m.min(scene.config.radius_m).max(0.1);
-    let mut quads = shell_quads_in_view(scene, head, shell, (safe[1] - safe[0]).to_degrees());
+    let mut resting = shell.clone();
+    if shell.pullout.is_some() {
+        resting.top = shell.top.min(36);
+        resting.bottom = shell.bottom.min(60);
+    }
+    let mut quads = shell_quads_in_view(scene, head, &resting, (safe[1] - safe[0]).to_degrees());
     quads.retain(|q| q.size.iter().all(|s| s.is_finite() && *s > 0.));
-    for q in quads.iter_mut().filter(|q| q.id != NOTIFICATIONS) {
-        if let Some(d) = &mut q.dome {
-            // Shell controls belong to the view, not a room-anchored lane.
-            d.frame = head;
-            q.pose = d.layer_pose();
-        } else {
-            q.pose = Pose { position_m: head.transform([0., 0., -scene.config.radius_m]), ..head };
+    if let Some(pulled) = &shell.pullout {
+        if !scene.locked && pulled.anchor.validate().is_ok() && valid(pulled.viewport) {
+            for id in [TOP_PANEL, BOTTOM_PANEL] {
+                if let Some([_, _, w, h]) = shell.surface_rect(id).filter(|r| r[2] > 0 && r[3] > 0) {
+                    let radius = scene.config.pullout_distance_m;
+                    let width = 1.3_f32.min(radius * 85_f32.to_radians());
+                    let height = width * h as f32 / w as f32;
+                    let patch = DomePatch {
+                        frame: Pose { position_m: pulled.anchor.transform([0., -0.06, 0.]), ..pulled.anchor },
+                        radius, horizontal: width / radius,
+                        top: height / (2. * radius), bottom: -height / (2. * radius),
+                    };
+                    let mut panel = Quad { id, pose: patch.layer_pose(),
+                        size: [width, height], dome: Some(patch) };
+                    // Fit once against the frozen opening pose/optics, exactly
+                    // as a pulled window stays put after head movement.
+                    fit(&mut panel, pulled.anchor, inset(pulled.viewport), radius.min(near));
+                    quads.push(panel);
+                }
+            }
         }
-        fit(q, head, safe, near);
     }
     let mut bottom_angle = safe[2] + (8_f32.to_radians()).min((safe[3] - safe[2]) * 0.15);
     if let Some(bar) = quads.iter().find(|q| q.id == TASK_BAR) {

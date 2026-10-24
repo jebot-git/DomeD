@@ -271,7 +271,7 @@ impl Dome {
                         }
                         if state.launcher && pressed {
                             state.shell_keys.insert(code);
-                            state.launcher_key(code, sym.raw(), sym.key_char(), !mods.ctrl && !mods.alt && !mods.logo);
+                            state.launcher_key(code, sym.raw(), sym.key_char(), !mods.ctrl && !mods.alt && !mods.logo, mods.shift);
                             return FilterResult::Intercept(());
                         }
                         if state.input_xr_active
@@ -386,6 +386,11 @@ impl Dome {
                     && self.spatial_popups.iter().any(|(_,p)| matches!(p, smithay::desktop::PopupKind::Xdg(_))) {
                     // Shell controls keep priority over an application's popup grab.
                     self.dismiss_wayland_popups();
+                }
+                let launcher_pos=pos-self.shell_geometry().loc.to_f64();
+                if self.launcher_button(launcher_pos.x,launcher_pos.y,button,button_state==ButtonState::Pressed) {
+                    if button_state==ButtonState::Pressed {self.context_scroll_buttons.insert(button);}else{self.context_scroll_buttons.remove(&button);}
+                    return;
                 }
                 if button_state == ButtonState::Released
                     && self.context_scroll_buttons.remove(&button)
@@ -569,6 +574,7 @@ impl Dome {
                 let audio_size = self.shell_geometry().size;
                 let audio_pos = self.seat.get_pointer().unwrap().current_location()
                     - self.shell_geometry().loc.to_f64();
+                if self.launcher_scroll(audio_pos.x,audio_pos.y,vertical_amount) {return;}
                 if self.menu_scroll(audio_pos.x, audio_pos.y, vertical_amount * 3., audio_size.w, audio_size.h) { return; }
                 if self.audio_scroll(
                     audio_pos.x,
@@ -648,6 +654,7 @@ impl Dome {
         let pointer = self.seat.get_pointer().unwrap();
 
         let local = pos - self.output_geometry_at(pos).loc.to_f64();
+        self.launcher_motion(local.x,local.y);
         self.audio_motion(local.x, size.w, size.h);
         self.task_motion(local.x, local.y, size.w, size.h);
         if self.chrome_button_motion(pos.x, pos.y) || self.chrome_motion(pos.x, pos.y) {

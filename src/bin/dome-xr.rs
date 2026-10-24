@@ -195,6 +195,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             if let Ok(layout) =
                                 response.into_json::<dome::xr_transport::ShellLayout>()
                             {
+                                for id in [dome::xr_transport::TOP_PANEL, dome::xr_transport::BOTTOM_PANEL] {
+                                    if layout.surface_rect(id).is_some() { ids.push(id); }
+                                }
                                 if layout.notifications.is_some() {
                                     ids.push(dome::xr_transport::NOTIFICATIONS);
                                 }

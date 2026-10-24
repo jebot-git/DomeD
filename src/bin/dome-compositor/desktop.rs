@@ -85,7 +85,9 @@ impl DesktopRenderer {
                     state.clipboard.revision,
                     state.history_panel,
                     state.history_selected,
-                    (state.launch_index, state.launch_navigation.offset, state.launch_navigation.error.clone()),
+                    (state.launch_index, state.launch_navigation.offset, state.launch_navigation.error.clone(),
+                        (state.quick_launch.desktop_ids.clone(), state.launch_navigation.quick_focus,
+                         state.launch_navigation.quick_offset, state.launch_navigation.quick_drag.is_some())),
                     state.audio.state().revision,
                     state.audio_open,
                     state.audio_selected

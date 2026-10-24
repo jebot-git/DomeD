@@ -125,9 +125,10 @@ impl Dome {
         };
         let popup = self.task_popup.filter(|_| active).map(|index| (index, self.task_context));
         let inside = popup.is_some_and(|(index, _)| {
-            cursor.filter(|c| c.id == dome::xr_transport::TASK_BAR).is_some_and(|c| {
-                let x = c.uv[0] as f64 * layout.width as f64;
-                let y = layout.height as f64 - layout.bottom as f64 + c.uv[1] as f64 * layout.bottom as f64;
+            cursor.filter(|c| dome::xr_transport::is_bottom(c.id)).is_some_and(|c| {
+                let Some([rx, ry, rw, rh]) = layout.surface_rect(c.id) else { return false; };
+                let x = rx as f64 + c.uv[0] as f64 * rw as f64;
+                let y = ry as f64 + c.uv[1] as f64 * rh as f64;
                 self.task_popup_contains(index, x, y, layout.width as i32, layout.height as i32)
                     || (y >= (layout.height as f64 - 60.) && x >= 110. + index as f64 * 130. && x < 110. + (index+1) as f64 * 130.)
             })

@@ -132,6 +132,31 @@ int main(int argc, char **argv) try {
   }
   require(dome_qt_hit(240, 80, 14, 14) == 1 && dome_qt_hit(240, 80, 194, 14) == 3 && dome_qt_hit(240, 80, 224, 14) == 6,
           "Workbench icons must match close/zoom/depth release actions");
+  for (auto point : {std::pair<int,int>{2,68}, {14,78}})
+    require(dome_qt_hit(240,80,point.first,point.second)==7,"Bottom-left rim must resize diagonally over both legs");
+  for (auto point : {std::pair<int,int>{238,68}, {226,78}})
+    require(dome_qt_hit(240,80,point.first,point.second)==8,"Bottom-right rim must resize diagonally over both legs");
+  require(dome_qt_hit(240,80,-2,68)==7 && dome_qt_hit(240,80,14,82)==7 &&
+          dome_qt_hit(240,80,242,68)==8 && dome_qt_hit(240,80,226,82)==8,
+          "Bottom corners must provide an outward four-pixel grab margin");
+  require(dome_qt_hit(240,80,-5,68)==0 && dome_qt_hit(240,80,14,84)==0 && dome_qt_hit(240,80,-2,40)==0,
+          "Corner grab margins must stay bounded and leave straight-edge padding transparent");
+  require(dome_qt_hit(240,80,14,68)==0 && dome_qt_hit(240,80,226,68)==0,
+          "Corner grips must never consume application content");
+  require(dome_qt_hit(240,80,120,78)==5 && dome_qt_hit(240,80,2,55)==5,
+          "Straight rim segments must retain single-axis resizing");
+  for (bool light : {false,true}) for(bool active : {false,true}) {
+    auto pixels=frame(light,active,false,0,128);
+    require((pixels[68*240+2]>>24) > (pixels[78*240+120]>>24),
+            "Corner grips must be more visible than the straight rim in both palettes and focus states");
+    require((pixels[78*240+2]>>24)<=128,"Corner overlap must respect configured chrome opacity");
+    require(pixels[68*240+14]==0 && pixels[68*240+226]==0,"Painting must preserve transparent client content");
+  }
+  {
+    auto pixels=frame(false,true,false,0);
+    auto image=cairo_image_surface_create_for_data((unsigned char*)pixels.data(),CAIRO_FORMAT_ARGB32,240,80,240*4);
+    cairo_surface_write_to_png(image,(std::string(argv[2])+".resize-rims.png").c_str());cairo_surface_destroy(image);
+  }
   // A separate contact sheet makes light/dark, inactive and pressed states reviewable.
   auto preview = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, 480, 240);
   auto preview_cr = cairo_create(preview);

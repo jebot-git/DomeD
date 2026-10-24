@@ -492,7 +492,7 @@ the complete set; unavailable engines are omitted from the switch cycle.
 Nested tests start the framework only with `DOME_START_IME=1`; a normal nested
 preview leaves the host input-method service alone.
 
-Open **Dome menu → Keyboard Layouts…** to edit up to four comma-separated XKB
+Open **Dome menu → Settings… → Keyboard Layouts…** to edit up to four comma-separated XKB
 layout names, positional variants, options and switching shortcut. The panel also
 selects whether the shortcut switches input methods or XKB layout groups.
 Click a text field, use Ctrl+A to clear it, and Enter to apply or Esc to cancel.
@@ -561,9 +561,9 @@ profiles gain it automatically unless Super+P is already assigned, in which
 case the new action starts disabled. A third pull leaves that window on the
 dome. Scaling grows panels outward from the central gap.
 
-The same native menu/tray/taskbar is rendered into two XR shell layers,
-with adjustable bar heights and automatic lane attachment. Menu and preview expansion
-keeps the original top/bottom edges fixed. Mouse clicks invoke native shell
+The same native menu/tray/taskbar is rendered into two dome-attached XR bar layers,
+with adjustable heights. Expanded menus and previews use separate, curved
+pull-out layers and keep both bars attached to their lanes. Mouse clicks invoke native shell
 commands, including application actions, task previews and status menus. Horizontal
 bar widths automatically fit the runtime field of view; no width or offset settings are needed.
 
@@ -691,13 +691,16 @@ The cursor stops inside the headset viewport edges, including after head movemen
 Held buttons capture the
 original target through a drag. Outside XR, the mouse uses desktop stacking.
 
-The XR menu/tray and taskbar follow the headset view and stay inside its upper
-and lower edges, with a safety inset. Placement uses the common visible field
-of both eyes, including eye separation and canted optics. The whole curved
-surface and expanded menus are fitted, so turning, pitching, rolling or moving
-the head cannot strand controls outside the view. Application windows keep their
-own room/head anchoring. **Upper tray height** and **Taskbar height** control the
-preferred size; oversized controls shrink to remain fully visible.
+The resting XR menu/tray and taskbar attach to the top and bottom dome lanes,
+including the upper lane's tilt. They track horizontal head turns around the
+dome, while head pitch, roll and movement leave the room anchor unchanged.
+Look up or down to bring either bar into the centre of view. Expanded menus,
+launchers and settings use separate curved panels at the configured pull-out
+distance. Like pulled-out windows, their upright opening pose stays fixed in
+space as the head turns or moves. Both bars retain their dome attachment while
+panels are open. Panel content fits the binocular control area captured on opening;
+rendering and pointer input share the same surface crops and geometry.
+**Upper tray height** and **Taskbar height** control the resting bars' preferred size.
 XR notifications are centred near the bottom of the view, raised above the
 taskbar with a gap. Notification stacks grow upward and fit the available view;
 their desktop crop position does not determine XR placement. Rendering and
@@ -728,6 +731,11 @@ Gadgets act on release; dragging off cancels the click. Minimize remains availab
 through the Window menu, taskbar and Super+M. Border resizing and Shift-drag tiling
 continue to work. These gadgets apply to desktop frames; XR client panels retain
 their existing presentation.
+Bottom corners have brighter 20-pixel L-shaped grip segments and a four-pixel
+outward grab margin. Both legs resize diagonally while preserving the opposite
+edges; the client area and straight-edge resize behavior remain unchanged.
+`scripts/test-resize-rims.py` checks native FLTK drags and client clicks on a private
+Wayland compositor.
 
 Appearance offers a light/dark colour scheme, accent, chrome
 opacity, global bitmap font and native pixel size, persisted in `$XDG_CONFIG_HOME/dome/appearance.json`.
@@ -1081,6 +1089,18 @@ without a desktop entry. Using cursor keys to select a menu match makes Enter
 launch that desktop entry instead. Failed launches leave the menu open with an
 error so the query can be corrected.
 
+The launcher's bottom quick-launch row stores pinned applications separately from
+the taskbar. **Shift-click** a search result to pin it without launching. Pins snap
+into slots from the left edge; **Shift-drag** reorders them and dropping outside the
+row cancels the move. **Shift-right-click** removes a pin. Click a pin to launch it.
+While the launcher is open, **Tab / Shift+Tab** cycles pinned items and **Enter**
+launches the selected pin, independently of the search query. Overflow scrolls into
+view with keyboard selection; the wheel also scrolls the pinned row. Order is saved
+as stable desktop-file IDs in `$XDG_CONFIG_HOME/dome/launcher.json` and shared by
+desktop and XR. `scripts/test-launcher-quick-launch.py` checks real pointer and
+keyboard gestures, persistence, overflow redraw and XR shell routing on a private
+compositor and bus.
+
 `scripts/test-launcher.py` exercises real held-key navigation, filtering, scrolled
 mouse selection and PATH launching. `scripts/test-session-restore.py` exercises
 logout/login with actual desktop/XR clients, private saved arguments and a late
@@ -1149,7 +1169,15 @@ The taskbar’s rightmost **Desktop / XR** button switches physical input betwee
 views, starting XR when needed. The launcher supports cursor keys, Home/End and
 Enter for selecting and launching a match.
 
-Open **View → Displays, XR & Keybindings** (Super+Comma), select a keybinding
+The Dome menu keeps Settings and Keybinding Help accessible in desktop and XR
+regardless of the focused application's exported menus. Appearance and Keyboard
+Layouts are the first entries in Settings. The launcher and desktop manager remain
+on the taskbar; default applications remain available in Appearance. Their duplicate
+main-menu entries are removed. Universal Window menus put **Send to Desktop** first,
+including when an application exports its own Window menu. This hides the selected
+window in XR and presents it on the desktop; the application keeps running.
+
+Open **Dome menu → Settings…** (Super+Comma), or **Dome menu → Keybinding Help…** to jump directly to the current bindings. Select a keybinding
 row and press Enter or click its value to record a replacement chord. Escape
 cancels; Backspace disables that binding. Changes persist in `dome/xr.json`.
 Duplicate chords are rejected. Bare function keys pass to qimgvr, mpvr, fsv-xr

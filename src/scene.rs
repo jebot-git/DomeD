@@ -29,6 +29,15 @@ impl Default for Pose {
     }
 }
 impl Pose {
+    /// Freeze the horizontal viewing direction, shared by pulled windows and menus.
+    pub fn upright(self) -> Self {
+        let forward = glam::Vec3::from_array(self.rotate([0., 0., -1.]));
+        let yaw = if forward.x * forward.x + forward.z * forward.z > 0.001 {
+            (-forward.x).atan2(-forward.z)
+        } else { 0. };
+        Self { position_m: self.position_m,
+            orientation_xyzw: glam::Quat::from_rotation_y(yaw).to_array() }
+    }
     pub fn validate(&self) -> Result<(), String> {
         let q = self.orientation_xyzw.iter().map(|x| x * x).sum::<f32>();
         if self
@@ -761,16 +770,7 @@ impl Scene {
                     .find(|slot| !self.windows.iter().any(|w| w.pullout_slot == Some(*slot)))
                     .ok_or("Both pull-out slots are occupied")?;
                 if self.pullout_anchor.is_none() {
-                    let forward = glam::Vec3::from_array(head.rotate([0., 0., -1.]));
-                    let yaw = if forward.x * forward.x + forward.z * forward.z > 0.001 {
-                        (-forward.x).atan2(-forward.z)
-                    } else {
-                        0.
-                    };
-                    self.pullout_anchor = Some(Pose {
-                        position_m: head.position_m,
-                        orientation_xyzw: glam::Quat::from_rotation_y(yaw).to_array(),
-                    });
+                    self.pullout_anchor = Some(head.upright());
                 }
                 let w = self.window_mut(id)?;
                 w.pullout_slot = Some(slot);

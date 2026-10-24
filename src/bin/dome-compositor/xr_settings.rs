@@ -1,6 +1,13 @@
 use crate::Dome;
 use dome::{geometry_settings, Action, Config};
 
+// Painting and hit testing must share the same section-aware scroll offset.
+fn settings_first(selected: usize, visible: usize, count: usize, bindings: usize, binding_count: usize) -> usize {
+    let section = if (bindings..bindings + binding_count).contains(&selected) { bindings } else { 0 };
+    selected.saturating_sub(visible.saturating_sub(1)).max(section)
+        .min(count.saturating_sub(visible))
+}
+
 fn cycle_display_offset(current: i32, resolution: i32, direction: f32) -> i32 {
     let step = if direction > 0. { 1 } else { -1 };
     let next = (current.signum() + step + 1).rem_euclid(3) - 1;
@@ -9,7 +16,17 @@ fn cycle_display_offset(current: i32, resolution: i32, direction: f32) -> i32 {
 
 #[cfg(test)]
 mod tests {
-    use super::cycle_display_offset;
+    use super::{cycle_display_offset, settings_first};
+
+    #[test]
+    fn keybinding_help_starts_at_the_binding_section_and_scrolls_with_selection() {
+        assert_eq!(settings_first(0, 12, 90, 17, 50), 0);
+        assert_eq!(settings_first(16, 12, 90, 17, 50), 5);
+        assert_eq!(settings_first(17, 12, 90, 17, 50), 17);
+        assert_eq!(settings_first(25, 12, 90, 17, 50), 17);
+        assert_eq!(settings_first(30, 12, 90, 17, 50), 19);
+        assert_eq!(settings_first(89, 12, 90, 17, 50), 78);
+    }
 
     #[test]
     fn display_offsets_cycle_both_directions_at_each_axis_resolution() {
@@ -69,13 +86,19 @@ impl Dome {
             .collect();
         let [x, y, w, h, row_height] = self.xr_settings_rect(width, height);
         let visible = ((h - 150.) / row_height).floor().max(1.) as usize;
-        let first = self
-            .xr_settings_row
-            .saturating_sub(visible - 1)
-            .min(rows.len().saturating_sub(visible));
+        let first = settings_first(self.xr_settings_row, visible, rows.len(),
+            self.keybindings_settings_start(&c), c.keybindings.len());
         serde_json::json!({"x":x,"y":y,"w":w,"h":h,"row_height":row_height,"rows":rows,"first":first,"visible":visible,"selected":self.xr_settings_row,"error":self.geometry_error})
     }
     pub fn adjust_xr_setting(&mut self, row: usize, direction: f32) {
+        // These settings links use the same compositor-owned dialogs in both realms.
+        if row < 2 {
+            self.xr_settings_open = false;
+            self.binding_capture = None;
+            self.command(if row == 0 { dome::shortcuts::Command::Appearance } else { dome::shortcuts::Command::KeyboardSettings });
+            return;
+        }
+        let row = row - 2;
         let c = self.scene.lock().unwrap().config.clone();
         let geometry_count = geometry_settings::rows(&c).len();
         if row >= geometry_count && row < geometry_count + c.keybindings.len() {
@@ -118,19 +141,18 @@ impl Dome {
     }
     pub fn xr_settings_click(&mut self, x: f64, y: f64, width: i32, height: i32) {
         let [left, top, w, h, row] = self.xr_settings_rect(width, height);
-        let count = self.settings_rows(&self.scene.lock().unwrap().config).len();
+        let c = self.scene.lock().unwrap().config.clone();
+        let count = self.settings_rows(&c).len();
         let visible = ((h - 150.) / row).floor().max(1.) as usize;
-        let first = self
-            .xr_settings_row
-            .saturating_sub(visible - 1)
-            .min(count.saturating_sub(visible));
+        let first = settings_first(self.xr_settings_row, visible, count,
+            self.keybindings_settings_start(&c), c.keybindings.len());
         if y >= top + 40.
             && y < top + 40. + visible as f64 * row
             && x >= left + 12.
             && x < left + w - 12.
         {
             self.xr_settings_row = (first + ((y - top - 40.) / row) as usize).min(count - 1);
-            if x >= left + w - 270. {
+            if self.xr_settings_row < 2 || x >= left + w - 270. {
                 self.adjust_xr_setting(
                     self.xr_settings_row,
                     if x < left + w - 200. { -1. } else { 1. },
@@ -194,11 +216,15 @@ impl Dome {
         }
         true
     }
+    pub fn keybindings_settings_start(&self, c: &Config) -> usize {
+        2 + geometry_settings::rows(c).len()
+    }
     fn settings_rows(&self, c: &Config) -> Vec<(String, String)> {
-        let mut rows: Vec<_> = geometry_settings::rows(c)
+        let mut rows = vec![("Appearance…".to_owned(), "Open".to_owned()),
+            ("Keyboard Layouts…".to_owned(), self.keyboard_config.label())];
+        rows.extend(geometry_settings::rows(c)
             .into_iter()
-            .map(|(a, b)| (a.to_string(), b))
-            .collect();
+            .map(|(a, b)| (a.to_string(), b)));
         for (index, binding) in c.keybindings.iter().enumerate() {
             rows.push((
                 format!(

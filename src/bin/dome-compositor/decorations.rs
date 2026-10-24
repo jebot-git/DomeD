@@ -25,9 +25,11 @@ impl Dome {
             let width = w.desktop.w as i32 + 8;
             let height = w.desktop.h as i32 + self.appearance.caption_height() + 4;
             let (px, py) = (x - pos.x as f64 + 4., y - pos.y as f64 + self.appearance.caption_height() as f64);
-            if px >= 0. && py >= 0. && px < width as f64 && py < height as f64 {
-                let hit = crate::qt::hit(width, height, px as i32, py as i32, self.appearance.caption_height());
-                return if hit == 0 { None } else { Some((id, hit)) };
+            if px >= -4. && py >= 0. && px < width as f64 + 4. && py < height as f64 + 4. {
+                let hit = crate::qt::hit(width, height, px.floor() as i32, py.floor() as i32, self.appearance.caption_height());
+                if hit != 0 { return Some((id, hit)); }
+                // Transparent padding must not mask another window underneath.
+                if px >= 0. && px < width as f64 && py < height as f64 { return None; }
             }
         }
         None
@@ -49,13 +51,15 @@ impl Dome {
                     id,
                     start: [x, y],
                     rect,
-                    resize: hit == 5,
-                    edges: [
+                    resize: matches!(hit, 5 | 7 | 8),
+                    edges: if hit == 7 { [true, false, false, true] }
+                        else if hit == 8 { [false, false, true, true] }
+                        else { [
                         x < rect.x as f64,
                         y < (rect.y - (self.appearance.caption_height() - 4) as f32) as f64,
                         x >= (rect.x + rect.w) as f64,
                         y >= (rect.y + rect.h) as f64,
-                    ],
+                    ] },
                 });
             }
         }

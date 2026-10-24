@@ -15,8 +15,17 @@ pub struct Surface {
 pub const TOP_BAR: u64 = 0;
 pub const NOTIFICATIONS: u64 = u64::MAX - 3;
 pub const TASK_BAR: u64 = u64::MAX - 2;
+pub const TOP_PANEL: u64 = u64::MAX - 5;
+pub const BOTTOM_PANEL: u64 = u64::MAX - 6;
+pub fn is_top(id: u64) -> bool { matches!(id, TOP_BAR | TOP_PANEL | NOTIFICATIONS) }
+pub fn is_bottom(id: u64) -> bool { matches!(id, TASK_BAR | BOTTOM_PANEL) }
 pub fn is_shell(id: u64) -> bool {
-    id == TOP_BAR || id == TASK_BAR || id == NOTIFICATIONS
+    is_top(id) || is_bottom(id)
+}
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct ShellPullout {
+    pub anchor: crate::Pose,
+    pub viewport: [f32; 4],
 }
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct ShellLayout {
@@ -26,6 +35,22 @@ pub struct ShellLayout {
     pub bottom: u32,
     #[serde(default)]
     pub notifications: Option<[u32; 4]>,
+    #[serde(default)]
+    pub pullout: Option<ShellPullout>,
+}
+impl ShellLayout {
+    pub fn surface_rect(&self, id: u64) -> Option<[u32; 4]> {
+        let separate = self.pullout.is_some();
+        match id {
+            TOP_BAR => Some([0, 0, self.width, if separate { self.top.min(36) } else { self.top }]),
+            TASK_BAR => { let h = if separate { self.bottom.min(60) } else { self.bottom };
+                Some([0, self.height.saturating_sub(h), self.width, h]) },
+            TOP_PANEL if separate && self.top > 36 => Some([0, 36, self.width, self.top.min(self.height.saturating_sub(60)).saturating_sub(36)]),
+            BOTTOM_PANEL if separate && self.bottom > 60 => Some([0, self.height.saturating_sub(self.bottom), self.width, self.bottom - 60]),
+            NOTIFICATIONS => self.notifications,
+            _ => None,
+        }
+    }
 }
 pub struct Bridge {
     pub screenshot_request: Option<u64>,

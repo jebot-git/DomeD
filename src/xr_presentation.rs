@@ -19,9 +19,9 @@ impl Default for Presentation {
 impl Presentation {
     pub fn interactive(self, id: u64) -> bool {
         self.desktop
-            && if id == crate::xr_transport::TOP_BAR || id == crate::xr_transport::NOTIFICATIONS {
+            && if crate::xr_transport::is_top(id) {
                 self.top
-            } else if id == crate::xr_transport::TASK_BAR {
+            } else if crate::xr_transport::is_bottom(id) {
                 self.bottom
             } else {
                 true
@@ -118,9 +118,9 @@ impl Frame {
     pub fn interactive(self, target: Presentation, id: u64) -> bool {
         target.interactive(id)
             && self.opacity >= 1.
-            && if id == crate::xr_transport::TOP_BAR || id == crate::xr_transport::NOTIFICATIONS {
+            && if crate::xr_transport::is_top(id) {
                 self.top >= 1.
-            } else if id == crate::xr_transport::TASK_BAR {
+            } else if crate::xr_transport::is_bottom(id) {
                 self.bottom >= 1.
             } else {
                 true
@@ -138,11 +138,10 @@ impl Frame {
             if self.opacity <= 0. {
                 return false;
             }
-            let amount = if q.id == crate::xr_transport::TOP_BAR
-                || q.id == crate::xr_transport::NOTIFICATIONS
+            let amount = if crate::xr_transport::is_top(q.id)
             {
                 self.top
-            } else if q.id == crate::xr_transport::TASK_BAR {
+            } else if crate::xr_transport::is_bottom(q.id) {
                 self.bottom
             } else {
                 return true;
@@ -154,9 +153,9 @@ impl Frame {
         });
     }
     pub fn surface_opacity(self, id: u64) -> f32 {
-        self.opacity * if id == crate::xr_transport::TOP_BAR || id == crate::xr_transport::NOTIFICATIONS {
+        self.opacity * if crate::xr_transport::is_top(id) {
             self.top
-        } else if id == crate::xr_transport::TASK_BAR { self.bottom } else { 1. }
+        } else if crate::xr_transport::is_bottom(id) { self.bottom } else { 1. }
     }
     /// OpenXR expects premultiplied alpha; attenuate RGB and alpha together.
     pub fn fade_rgba(self, rgba: &mut [u8]) {
@@ -264,7 +263,7 @@ mod tests {
             height: 800,
             top: 36,
             bottom: 60,
-            notifications: None,
+            notifications: None, pullout: None
         };
         let mut q = crate::xr_input::shell_quads(&s, head, &layout);
         let original = q.clone();

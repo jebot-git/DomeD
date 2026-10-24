@@ -91,7 +91,11 @@ w.end();DesktopMenu exported(w,m);w.show();return Fl::run();}
         def send(events):request('/api/xr-input',{'actions':[],'events':events}).close()
         def motion(x,y):
             shell=layout()
-            send([{'kind':'motion','id':task_id,'uv':[x/shell['width'],(y-shell['height']+shell['bottom'])/shell['bottom']]}])
+            panel = shell.get('pullout') and y < shell['height']-60
+            ident = 2**64-7 if panel else task_id
+            start = shell['height']-shell['bottom'] if panel else shell['height']-60
+            rows = shell['bottom']-60 if panel else 60
+            send([{'kind':'motion','id':ident,'uv':[x/shell['width'],(y-start)/rows]}])
         def anchor():
             shell=layout();motion(150,shell['height']-30)
         def hold_anchor(seconds):

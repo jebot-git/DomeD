@@ -518,7 +518,7 @@ pub fn mouse_target(
 ) -> Option<(u64, [f32; 2], f32)> {
     surfaces.iter()
         .filter(|q| if modal {
-            q.id == crate::xr_transport::TOP_BAR
+            matches!(q.id, crate::xr_transport::TOP_BAR | crate::xr_transport::TOP_PANEL)
         } else {
             captured.is_none_or(|id| id == q.id)
         })
