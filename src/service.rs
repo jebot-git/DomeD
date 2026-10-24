@@ -94,6 +94,22 @@ pub fn serve_native(
                 );
                 continue;
             }
+            if request.method() == &Method::Get && request.url() == "/api/integrations/comic-chat" {
+                let status = bridge.as_ref().map(|b| {
+                    let (session, socket) = {
+                        let b = b.lock().unwrap(); (b.session.clone(), b.xr_socket.clone())
+                    };
+                    let s = scene.lock().unwrap();
+                    let quads = crate::xr_input::render_quads_in_fov(&s, session.head, session.mouse_viewport);
+                    serde_json::json!({"version":1,"compositor_pid":std::process::id(),
+                        "xr_socket":socket,"sbs_app_id":crate::stereo::COMIC_CHAT_SBS_APP_ID,
+                        "eyes":session.eyes,"head":session.head,"quads":quads})
+                }).unwrap_or_else(|| serde_json::json!({"version":1}));
+                let _ = request.respond(Response::from_string(status.to_string())
+                    .with_header(Header::from_bytes("Content-Type", "application/json").unwrap())
+                    .with_header(Header::from_bytes("Cache-Control", "no-store").unwrap()));
+                continue;
+            }
             if request.method() == &Method::Get && matches!(request.url(), "/api/integrations/qimgvr" | "/api/integrations/mpvr" | "/api/integrations/gmsh") {
                 let app_id = match request.url() {
                     "/api/integrations/mpvr" => crate::stereo::MPVR_SBS_APP_ID,

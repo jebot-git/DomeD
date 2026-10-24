@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 pub const QIMGVR_SBS_APP_ID: &str = "org.qimgvr.Sbs";
 pub const MPVR_SBS_APP_ID: &str = "org.mpvr.Sbs";
 pub const GMSH_SBS_APP_ID: &str = "org.gmsh.Sbs";
+// Comic Chat packs its complete UI only while XR presentation is active.
+pub const COMIC_CHAT_SBS_APP_ID: &str = "org.de_xr.ComicChat.Sbs";
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -19,7 +21,7 @@ pub struct Region { pub eye: Eye, pub x: u32, pub width: u32 }
 
 impl Stereo {
     pub fn for_app_id(app_id: &str) -> Self {
-        if matches!(app_id, QIMGVR_SBS_APP_ID | MPVR_SBS_APP_ID | GMSH_SBS_APP_ID) { Self::SideBySide } else { Self::Mono }
+        if matches!(app_id, QIMGVR_SBS_APP_ID | MPVR_SBS_APP_ID | GMSH_SBS_APP_ID | COMIC_CHAT_SBS_APP_ID) { Self::SideBySide } else { Self::Mono }
     }
     pub fn layer_count(self) -> usize { if self == Self::SideBySide { 2 } else { 1 } }
     pub fn regions(self, width: u32) -> Vec<Region> {
@@ -39,6 +41,8 @@ mod tests {
         assert_eq!(Stereo::for_app_id(QIMGVR_SBS_APP_ID), Stereo::SideBySide);
         assert_eq!(Stereo::for_app_id(MPVR_SBS_APP_ID), Stereo::SideBySide);
         assert_eq!(Stereo::for_app_id(GMSH_SBS_APP_ID), Stereo::SideBySide);
+        assert_eq!(Stereo::for_app_id(COMIC_CHAT_SBS_APP_ID), Stereo::SideBySide);
+        assert_eq!(Stereo::for_app_id("org.de_xr.ComicChat"), Stereo::Mono);
         assert_eq!(Stereo::for_app_id("gmsh"), Stereo::Mono);
         assert_eq!(Stereo::for_app_id("mpv"), Stereo::Mono);
         let stereo = Stereo::SideBySide;

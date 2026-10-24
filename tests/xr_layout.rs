@@ -1317,3 +1317,30 @@ fn render_density_is_validated_persisted_and_independent_of_spatial_geometry() {
     let mut max = default; max.xr_render_scale=2.;
     assert!(geometry_settings::adjust(&max,14,1.).is_err());
 }
+
+#[test]
+fn comic_stereo_screen_is_planar_and_input_matches_rendering() {
+    let mut s = Scene::new("Comic stereo");
+    let id = s.add("Comic", dome::stereo::COMIC_CHAT_SBS_APP_ID);
+    let head = dome::Pose { position_m:[0.25,1.8,0.5],
+        orientation_xyzw:glam::Quat::from_rotation_y(0.7).to_array() };
+    s.apply(Action::PullOut { id, head }).unwrap();
+    for distance in [0.6,1.2,2.8] {
+        s.config.pullout_distance_m=distance;
+        let rendered=dome::xr_input::render_quads(&s,head);
+        let input=dome::xr_input::quads(&s,head);
+        let a=rendered.iter().find(|q|q.id==id).unwrap();
+        let b=input.iter().find(|q|q.id==id).unwrap();
+        assert!(a.dome.is_none());
+        assert_eq!(serde_json::to_value(a).unwrap(),serde_json::to_value(b).unwrap());
+        let local=glam::Vec3::from_array(a.pose.inverse_rotate(
+            (glam::Vec3::from_array(head.position_m)-glam::Vec3::from_array(a.pose.position_m)).to_array()));
+        assert!((local.z-distance).abs()<0.002);
+        let origin=glam::Vec3::from_array(head.position_m);
+        for uv in [[0.1,0.2],[0.5,0.5],[0.8,0.7]] {
+            let target=a.point(uv);
+            let hit=b.hit(origin,(target-origin).normalize(),false).unwrap();
+            assert!((hit[0]-uv[0]).abs()<1e-5 && (hit[1]-uv[1]).abs()<1e-5);
+        }
+    }
+}

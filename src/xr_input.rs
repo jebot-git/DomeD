@@ -308,6 +308,19 @@ fn window_quads(scene: &Scene, head: Pose, backgrounds: bool, viewport: Option<[
             }
         }
     }
+    // Perspective stereo clients need a physical planar screen. Keep the
+    // cylinder's centre, orientation and extent, and share this with hit tests.
+    for panel in &mut panels {
+        if scene.window(panel.id).is_some_and(|w|w.app_id == crate::stereo::COMIC_CHAT_SBS_APP_ID) {
+            if let Some(d) = panel.dome.take() {
+                panel.pose = Pose {
+                    position_m: d.frame.transform([0., d.radius*(d.top+d.bottom)/2., -d.radius]),
+                    orientation_xyzw: d.frame.orientation_xyzw,
+                };
+                panel.size = [d.radius*d.horizontal, d.radius*(d.top-d.bottom)];
+            }
+        }
+    }
     panels.sort_by_key(|q| window_order(scene, q.id));
     crate::spatial_popup::append_quads(scene, &mut panels, head);
     panels

@@ -76,10 +76,14 @@ impl Dome {
                     .unwrap();
                 (a.title.clone(), a.app_id.clone())
             });
+            let client_pid = surface.client()
+                .and_then(|client|client.get_credentials(&self.display_handle).ok())
+                .map_or(0,|cred|cred.pid as u32);
             let mut scene = self.scene.lock().unwrap();
             if let Some(w) = scene.windows.iter_mut().find(|w| w.id == id) {
                 let entering_gmsh = w.app_id != dome::stereo::GMSH_SBS_APP_ID
                     && app.as_deref() == Some(dome::stereo::GMSH_SBS_APP_ID);
+                w.client_pid = client_pid;
                 w.title = title.unwrap_or("Untitled".into());
                 w.app_id = app.unwrap_or("Application".into());
                 w.stereo = dome::stereo::Stereo::for_app_id(&w.app_id);

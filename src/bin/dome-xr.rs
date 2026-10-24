@@ -126,20 +126,20 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let mut last_heartbeat = Instant::now() - Duration::from_secs(1);
         while r.load(Ordering::Relaxed) {
             if last_heartbeat.elapsed() >= Duration::from_millis(5) {
-                let (mut status, timing_supported) = {
+                let (mut status, timing_supported, stereo_supported) = {
                     let state = n.lock().unwrap();
                     let mut status = state.session.clone();
                     status.visible &= state
                         .sampled
                         .is_some_and(|t| t.elapsed() < Duration::from_millis(750));
-                    (status, state.control.frame_period_ns.is_some())
+                    (status, state.control.frame_period_ns.is_some(), state.control.stereo_views)
                 };
                 if !r.load(Ordering::Relaxed) {
                     status.visible = false;
                 }
                 let _ = agent
                     .post(&format!("{base}/api/xr-session"))
-                    .send_json(status.wire_value(timing_supported));
+                    .send_json(status.stereo_wire_value(timing_supported, stereo_supported));
                 if let Ok(response) = agent.get(&format!("{base}/api/xr-control")).call() {
                     if let Ok(control) = response.into_json::<dome::xr_transport::Control>() {
                         let mut state = n.lock().unwrap();
@@ -805,6 +805,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         horizontal_fov_deg: horizontal.max(30.),
                         frame_period_ns: frame.predicted_display_period.as_nanos().max(0) as u64,
                         mouse_viewport,
+                        eyes: (head_valid && views.len() == 2 && webxr_view_flags.contains(
+                            xr::ViewStateFlags::POSITION_VALID | xr::ViewStateFlags::ORIENTATION_VALID))
+                            .then(|| [pose(views[0].pose), pose(views[1].pose)])
+                            .filter(|eyes| {
+                                let distance = eyes[0].position_m.iter().zip(eyes[1].position_m)
+                                    .map(|(a,b)|(a-b)*(a-b)).sum::<f32>().sqrt();
+                                (0.035..=0.09).contains(&distance)
+                            }),
                     };
                     state.sampled = Some(Instant::now());
                 }

@@ -119,8 +119,16 @@ pub struct Session {
     pub frame_period_ns: u64,
     /// Shared eye viewport angles in radians: left, right, down, up.
     pub mouse_viewport: Option<[f32; 4]>,
+    /// Runtime eye poses for in-window stereo clients, in stage coordinates.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub eyes: Option<[crate::Pose; 2]>,
 }
 impl Session {
+    pub fn stereo_wire_value(&self, timing_supported: bool, stereo_supported: bool) -> serde_json::Value {
+        let mut value = self.wire_value(timing_supported);
+        if !stereo_supported { value.as_object_mut().unwrap().remove("eyes"); }
+        value
+    }
     pub fn wire_value(&self, timing_supported: bool) -> serde_json::Value {
         let mut value = serde_json::to_value(self).unwrap();
         // A renderer may be restarted after installation while the previous
@@ -136,6 +144,8 @@ pub struct Cursor {
 }
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct Control {
+    #[serde(default)]
+    pub stereo_views: bool,
     #[serde(default)]
     pub screenshot_request: Option<u64>,
     /// Presence advertises support for runtime timing in session heartbeats.
@@ -201,6 +211,7 @@ impl Bridge {
     }
     pub fn control(&self) -> Control {
         Control {
+            stereo_views: true,
             screenshot_request: self.screenshot_request,
             frame_period_ns: Some(self.frame_interval().map_or(0, |period| period.as_nanos() as u64)),
             gpu_socket: self.gpu_socket.clone(),
@@ -218,6 +229,14 @@ impl Bridge {
     }
     pub fn heartbeat(&mut self, session: Session) -> Result<(), String> {
         session.head.validate()?;
+        if let Some(eyes) = session.eyes {
+            for eye in eyes { eye.validate()?; }
+            let separation = glam::Vec3::from_array(eyes[1].position_m)
+                .distance(glam::Vec3::from_array(eyes[0].position_m));
+            if !(0.035..=0.09).contains(&separation) {
+                return Err("Invalid eye separation".into());
+            }
+        }
         if session.frame_period_ns != 0 && frame_interval(session.frame_period_ns).is_none() {
             return Err("Invalid XR display period".into());
         }
@@ -267,6 +286,23 @@ impl Bridge {
 mod tests {
     use super::*;
     use std::time::Duration;
+    #[test]
+    fn stereo_eyes_are_validated_and_omitted_for_legacy_compositors() {
+        let mut eyes = [crate::Pose::default(); 2];
+        eyes[0].position_m[0] = -0.032;
+        eyes[1].position_m[0] = 0.032;
+        let session = Session { eyes: Some(eyes), ..Default::default() };
+        assert!(session.stereo_wire_value(true, false).get("eyes").is_none());
+        assert!(session.stereo_wire_value(true, true).get("eyes").is_some());
+        let mut bridge = Bridge::default();
+        assert!(bridge.control().stereo_views);
+        bridge.heartbeat(session.clone()).unwrap();
+        for separation in [0., 0.02, 0.1, 10.] {
+            let mut bad=session.clone();
+            bad.eyes.as_mut().unwrap()[1].position_m[0] = -0.032+separation;
+            assert!(bridge.heartbeat(bad).is_err());
+        }
+    }
     #[test]
     fn cursor_appearance_crosses_transport_and_preserves_reticle_geometry() {
         let mut bridge = Bridge::default();

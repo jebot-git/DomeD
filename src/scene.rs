@@ -321,6 +321,9 @@ fn default_visible() -> bool {
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Window {
+    /// Same-user Wayland peer PID, refreshed from the live surface metadata.
+    #[serde(default)]
+    pub client_pid: u32,
     #[serde(default)]
     pub stereo: crate::stereo::Stereo,
     #[serde(default)]
@@ -579,6 +582,7 @@ impl Scene {
         self.next_id += 1;
         let n = self.windows.len() as f32;
         self.windows.push(Window {
+            client_pid: 0,
             stereo: crate::stereo::Stereo::for_app_id(app_id),
             origin: Realm::Desktop,
             desktop_visible: true,
