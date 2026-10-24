@@ -123,6 +123,7 @@ impl Dome {
             .xr_animator
             .update(self.start_time.elapsed().as_secs_f64(), presentation);
         if presentation != self.xr_presentation {
+            self.cancel_super_mmb();
             self.xr_presentation = presentation;
             if self.input_xr_active {
                 self.ignored_buttons.extend(self.physical_buttons.drain());
@@ -571,6 +572,7 @@ impl Dome {
         true
     }
     pub fn xr_mouse_motion(&mut self, dx: f64, dy: f64) {
+        if self.super_mmb_motion(dx) {return;}
         let (session, layout, cursor, captured) = {
             let b = self.xr_bridge.lock().unwrap();
             (

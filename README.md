@@ -247,6 +247,12 @@ resolution/refresh, enable it, choose a primary display, or position it explicit
 The X/Y position buttons cycle between negative resolution, zero, and positive
 resolution, using the selected display's width for X and height for Y. Changing
 resolution updates nonzero manual offsets to the new width or height.
+**Super + middle-button drag** moves a desktop window from anywhere in its
+content and snaps at monitor edges/corners without Shift. In XR, the same gesture
+rotates all dome lanes in the active workspace together, preserving focus, window
+order and other workspaces. Drag horizontally to rotate; release MMB to finish,
+even if Super was released first. Ordinary middle-click remains application input.
+
 Hold **Shift** while dragging either a client titlebar or a DomeD titlebar to tile
 a window into halves at monitor edges or quarters at corners. A translucent preview
 shows the destination; drop while holding Shift to apply it, or release Shift to

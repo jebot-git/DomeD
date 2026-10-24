@@ -64,3 +64,5 @@ pub mod clock;
 pub mod font_export;
 
 pub mod screenshot;
+
+pub mod super_mmb;

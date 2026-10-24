@@ -82,6 +82,7 @@ impl Dome {
         }
         pointer.unset_grab(self, SERIAL_COUNTER.next_serial(), time);
         self.dismiss_wayland_popups();
+        self.cancel_super_mmb();
         self.chrome_drag = None;
         self.xr_target = None;
         self.xr_shell_pos = None;

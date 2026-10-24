@@ -39,6 +39,7 @@ mod session_services;
 mod gtk_menu;
 mod shell;
 mod snapping;
+mod super_mmb;
 mod spatial_popups;
 mod state;
 mod tasks;

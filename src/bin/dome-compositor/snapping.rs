@@ -2,7 +2,7 @@ use crate::Dome;
 use smithay::utils::{Logical, Point};
 impl Dome {
     pub fn drag_snap_preview(&mut self, id: u64, p: Point<f64, Logical>) {
-        self.snap_preview = if self.seat.get_keyboard().unwrap().modifier_state().shift {
+        self.snap_preview = if self.seat.get_keyboard().unwrap().modifier_state().shift || matches!(self.super_mmb,Some(crate::super_mmb::Gesture::Desktop{..})) {
             let g = self.output_geometry_at(p);
             let work = dome::Rect {
                 x: g.loc.x as f32,
@@ -17,7 +17,7 @@ impl Dome {
     }
     pub fn finish_desktop_move(&mut self, id: u64) {
         let preview = self.snap_preview.take().filter(|(owner, _)| *owner == id);
-        if !self.seat.get_keyboard().unwrap().modifier_state().shift {
+        if !self.seat.get_keyboard().unwrap().modifier_state().shift && !matches!(self.super_mmb,Some(crate::super_mmb::Gesture::Desktop{..})) {
             return;
         }
         if let Some((_, r)) = preview {

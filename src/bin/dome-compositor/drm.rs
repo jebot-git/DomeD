@@ -780,6 +780,7 @@ impl Dome {
             pointer.frame(self);
         }
         self.native_ignored_keys.extend(self.shell_keys.drain());
+        self.cancel_super_mmb();
         self.chrome_drag = None;
         self.chrome_button = None;
         self.snap_preview = None;

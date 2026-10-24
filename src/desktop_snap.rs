@@ -1,4 +1,4 @@
-//! Shift-drag tiling in the target monitor's work area (outer frame coordinates).
+//! Desktop drag tiling in the target monitor's work area (outer frame coordinates).
 use crate::Rect;
 pub fn tile(work: Rect, pointer: [f32; 2], threshold: f32) -> Option<Rect> {
     let left = pointer[0] <= work.x + threshold;

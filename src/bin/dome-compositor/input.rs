@@ -293,6 +293,7 @@ impl Dome {
             InputEvent::PointerMotion { event, .. } => {
                 let delta = event.delta();
                 if delta.x != 0. || delta.y != 0. {
+                    if self.super_mmb_motion(delta.x) {return;}
                     if self.mouse_takeover() {
                         self.xr_mouse_motion(delta.x, delta.y);
                     } else {
@@ -317,6 +318,7 @@ impl Dome {
                 let delta = previous
                     .map(|p| [pos.x - p[0], pos.y - p[1]])
                     .unwrap_or([0., 0.]);
+                if self.super_mmb_motion(delta[0]) {return;}
                 if previous.is_none_or(|p| p != [pos.x, pos.y]) && self.mouse_takeover() {
                     self.xr_mouse_motion(delta[0], delta[1]);
                     return;
@@ -345,6 +347,7 @@ impl Dome {
                     self.physical_buttons.insert(code);
                 }
                 let xr_mouse = self.mouse_takeover();
+                if self.super_mmb_button(code,event.state()==ButtonState::Pressed,xr_mouse) {return;}
                 let realm = if xr_mouse { dome::Realm::Xr } else { dome::Realm::Desktop };
                 let position = if xr_mouse {
                     // Angular mouse coordinates are stable across XR surfaces.
