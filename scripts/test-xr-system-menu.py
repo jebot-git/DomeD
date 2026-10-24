@@ -99,13 +99,29 @@ w.end();DesktopMenu exported(w,m);w.show();return Fl::run();}
         opened=layout()['pullout']
         world=read('/api/xr-layout')
         panel_before=next(q for q in world['shell'] if q['id']==2**64-6)
-        tracking.update(position_m=[.6,1.9,-.4],orientation_xyzw=[.24740396,0,0,.96891242]);time.sleep(.4)
+        bar_before=next(q for q in world['shell'] if q['id']==0)
+        assert opened['top_attached'] and panel_before['dome']['frame']==bar_before['dome']['frame']
+        assert panel_before['dome']['top']<bar_before['dome']['bottom']
+        tracking.update(position_m=[.6,1.9,-.4],orientation_xyzw=[0,.2955202,0,.9553365]);time.sleep(.4)
         assert layout()['pullout']==opened
         panel_after=next(q for q in read('/api/xr-layout')['shell'] if q['id']==2**64-6)
-        assert panel_before==panel_after
+        bar_after=next(q for q in read('/api/xr-layout')['shell'] if q['id']==0)
+        assert panel_after['dome']['frame']==bar_after['dome']['frame'] and panel_before!=panel_after
         with request('/api/xr-frame/0') as response:assert int(response.headers['X-Dome-Height'])==36
-        check(True,'Expanded menu uses a separate world-anchored curved pullout and leaves the dome bar texture unchanged')
+        check(True,'Universal-menu dropdown stays below and follows its top-bar origin, preserving the bar texture')
         tracking.update(position_m=[0,1.6,0],orientation_xyzw=[0,0,0,1]);time.sleep(.2)
+        key('Escape');wait(lambda:layout()['top']==36)
+        key('Super_L',True);key('F10');key('Super_L',False)
+        wait(lambda:layout()['top']>36)
+        assert not layout()['pullout']['top_attached']
+        keyboard_before=next(q for q in read('/api/xr-layout')['shell'] if q['id']==2**64-6)
+        tracking.update(position_m=[.6,1.9,-.4],orientation_xyzw=[0,.2955202,0,.9553365]);time.sleep(.4)
+        keyboard_after=next(q for q in read('/api/xr-layout')['shell'] if q['id']==2**64-6)
+        assert keyboard_before==keyboard_after
+        check(True,'Keyboard-origin menu retains frozen pullout placement')
+        key('Escape');wait(lambda:layout()['top']==36)
+        tracking.update(position_m=[0,1.6,0],orientation_xyzw=[0,0,0,1]);time.sleep(.2)
+        main_menu()
         click(160,40+4+24+5*28+14)
         shell=wait(lambda:(l if (l:=layout())['top']==l['height'] else None));capture('02-settings')
         w,h=shell['width'],shell['height'];pw=min(800,w-16);ph=min(650,h-100);left=(w-pw)/2;top=36+max(0,h-96-ph)/2
