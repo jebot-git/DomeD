@@ -93,6 +93,29 @@ w.end();DesktopMenu exported(w,m);w.show();return Fl::run();}
             wait(frame).save(out/(name+'.png'))
         def main_menu():
             click(20,18);wait(lambda:layout()['top']>36);time.sleep(.1)
+        # Hover the fixture's task button: the preview strip uses the same
+        # horizontal UVs as the taskbar and extends upward from its top edge.
+        shell=layout()
+        request('/api/xr-input',{'actions':[],'events':[{'kind':'motion','id':2**64-3,'uv':[150/shell['width'],.5]}]}).close()
+        wait(lambda:layout()['bottom']>60)
+        assert layout()['pullout']['bottom_attached']
+        before=read('/api/xr-layout')['shell']
+        preview=next(q for q in before if q['id']==2**64-7)
+        taskbar=next(q for q in before if q['id']==2**64-3)
+        assert preview['dome']['frame']==taskbar['dome']['frame']
+        assert preview['dome']['radius']==taskbar['dome']['radius']
+        assert preview['dome']['bottom']>taskbar['dome']['top']
+        with request('/api/xr-frame/'+str(2**64-7)) as response:
+            assert int(response.headers['X-Dome-Width'])==shell['width']
+            assert int(response.headers['X-Dome-Height'])==layout()['bottom']-60
+        tracking.update(position_m=[.6,1.9,-.4],orientation_xyzw=[0,.2955202,0,.9553365]);time.sleep(.25)
+        after=read('/api/xr-layout')['shell']
+        preview_after=next(q for q in after if q['id']==2**64-7)
+        taskbar_after=next(q for q in after if q['id']==2**64-3)
+        assert preview_after['dome']['frame']==taskbar_after['dome']['frame'] and preview_after!=preview
+        check(True,'Taskbar preview extends above and follows its bar origin, preserving desktop horizontal UVs and texture crop')
+        key('Escape');wait(lambda:layout()['bottom']==60)
+        tracking.update(position_m=[0,1.6,0],orientation_xyzw=[0,0,0,1]);time.sleep(.2)
         # A native application View category replaces fallback View; Dome commands
         # must remain available from the compositor's own main menu.
         main_menu();capture('01-main-menu')

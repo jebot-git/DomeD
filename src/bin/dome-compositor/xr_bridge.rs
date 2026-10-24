@@ -88,12 +88,14 @@ impl Dome {
         let mut pullout = if top > 36 || bottom > 60 {
             b.shell.pullout.clone().or_else(|| Some(dome::xr_transport::ShellPullout {
                 top_attached: false,
+                bottom_attached: false,
                 anchor: b.session.head.upright(),
                 viewport: b.session.mouse_viewport.unwrap_or([-0.65, 0.65, -0.6, 0.6]),
             }))
         } else { None };
         if let Some(p) = &mut pullout {
             p.top_attached=self.menu.is_some() && self.menu_has_ui_origin;
+            p.bottom_attached=self.task_popup.is_some();
         }
         b.shell = ShellLayout {
             width: width as u32,

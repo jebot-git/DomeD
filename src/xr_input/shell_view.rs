@@ -163,6 +163,51 @@ pub fn shell_quads_in_fov(scene: &Scene, head: Pose, shell: &ShellLayout, viewpo
                         }
                         continue;
                     }
+                    if id == BOTTOM_PANEL && pulled.bottom_attached {
+                        if let Some(bar) = quads.iter().find(|q| q.id == TASK_BAR).cloned() {
+                            let mut panel = bar.clone();
+                            panel.id = BOTTOM_PANEL;
+                            let height = bar.size[1] * h as f32 / 60.;
+                            panel.size[1] = height;
+                            if let Some(patch) = &mut panel.dome {
+                                patch.bottom = patch.top + 0.001;
+                                patch.top = patch.bottom + height / patch.radius;
+                                // Keep the whole curved upper edge below the upper bar.
+                                if let Some(upper) = quads.iter().find(|q| q.id == TOP_BAR) {
+                                    let frame = head.upright();
+                                    let slope = |point: Vec3| {
+                                        let p = frame.inverse_rotate((point - Vec3::from_array(frame.position_m)).to_array());
+                                        p[1] / p[0].hypot(p[2]).max(0.01)
+                                    };
+                                    let ceiling = [0., 0.5, 1.].map(|u| slope(upper.point([u, 1.])))
+                                        .into_iter().fold(f32::INFINITY, f32::min);
+                                    let fits = |edge: f32| (0..=32).all(|step| {
+                                        let angle = (step as f32 / 32. - 0.5) * patch.horizontal;
+                                        slope(Vec3::from_array(patch.frame.transform([
+                                            patch.radius * angle.sin(), patch.radius * edge,
+                                            -patch.radius * angle.cos()]))) <= ceiling - 0.001
+                                    });
+                                    if !fits(patch.top) {
+                                        let mut low = patch.bottom + 0.001;
+                                        let mut high = patch.top;
+                                        for _ in 0..32 {
+                                            let mid = (low + high) / 2.;
+                                            if fits(mid) { low = mid; } else { high = mid; }
+                                        }
+                                        patch.top = low;
+                                    }
+                                }
+                                panel.size[1] = patch.radius * (patch.top - patch.bottom);
+                                panel.pose = patch.layer_pose();
+                            } else {
+                                let up = Quat::from_array(bar.pose.orientation_xyzw) * Vec3::Y;
+                                panel.pose.position_m = (Vec3::from_array(bar.pose.position_m)
+                                    + up * (bar.size[1] + height) / 2.).to_array();
+                            }
+                            quads.push(panel);
+                        }
+                        continue;
+                    }
                     let radius = scene.config.pullout_distance_m;
                     let width = 1.3_f32.min(radius * 85_f32.to_radians());
                     let height = width * h as f32 / w as f32;

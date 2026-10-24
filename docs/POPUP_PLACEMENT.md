@@ -11,6 +11,11 @@ This preserves their relationship to their menu header. Menus opened without a
 visible UI origin (for example the menu keyboard command) retain frozen pullout
 placement. Application dialogs continue to use their popup placement.
 
-The `top_attached` shell transport flag distinguishes these cases. A new
+Taskbar window previews and taskbar context menus extend immediately upward
+from the taskbar, using its cylindrical frame, horizontal span and desktop
+texture coordinates. They follow the bar as the headset turns and stop below
+the upper bar. Notification placement is independent.
+
+The `top_attached` and `bottom_attached` shell transport flags distinguish these cases. A new
 compositor and XR renderer are required to activate the placement update; the
 active session need not be restarted during installation.
