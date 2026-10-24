@@ -5,6 +5,7 @@ pub const QIMGVR_SBS_APP_ID: &str = "org.qimgvr.Sbs";
 pub const MPVR_SBS_APP_ID: &str = "org.mpvr.Sbs";
 pub const GMSH_SBS_APP_ID: &str = "org.gmsh.Sbs";
 // Comic Chat packs its complete UI only while XR presentation is active.
+pub const FSVR_SBS_APP_ID: &str = "org.fsvxr.fsvr.Sbs";
 pub const COMIC_CHAT_SBS_APP_ID: &str = "org.de_xr.ComicChat.Sbs";
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -21,7 +22,7 @@ pub struct Region { pub eye: Eye, pub x: u32, pub width: u32 }
 
 impl Stereo {
     pub fn for_app_id(app_id: &str) -> Self {
-        if matches!(app_id, QIMGVR_SBS_APP_ID | MPVR_SBS_APP_ID | GMSH_SBS_APP_ID | COMIC_CHAT_SBS_APP_ID) { Self::SideBySide } else { Self::Mono }
+        if matches!(app_id, QIMGVR_SBS_APP_ID | MPVR_SBS_APP_ID | GMSH_SBS_APP_ID | COMIC_CHAT_SBS_APP_ID | FSVR_SBS_APP_ID) { Self::SideBySide } else { Self::Mono }
     }
     pub fn layer_count(self) -> usize { if self == Self::SideBySide { 2 } else { 1 } }
     pub fn regions(self, width: u32) -> Vec<Region> {
@@ -45,6 +46,8 @@ mod tests {
         assert_eq!(Stereo::for_app_id("org.de_xr.ComicChat"), Stereo::Mono);
         assert_eq!(Stereo::for_app_id("gmsh"), Stereo::Mono);
         assert_eq!(Stereo::for_app_id("mpv"), Stereo::Mono);
+        assert_eq!(Stereo::for_app_id(FSVR_SBS_APP_ID), Stereo::SideBySide);
+        assert_eq!(Stereo::for_app_id("org.fsvxr.fsvr"), Stereo::Mono);
         let stereo = Stereo::SideBySide;
         assert_eq!(stereo.layer_count(), 2);
         assert_eq!(stereo.regions(1280), vec![Region { eye: Eye::Left, x: 0, width: 640 }, Region { eye: Eye::Right, x: 640, width: 640 }]);

@@ -32,3 +32,9 @@ be installed for runtime eye tracking; the updated compositor alone supports
 stereo with the fallback baseline. Stage and verify them before system
 installation. Leave the active compositor running; use the update on a later
 session start.
+
+fsvr uses the same contract at `GET /api/integrations/fsvr`, with the opt-in
+identity `org.fsvxr.fsvr.Sbs`. Its FLTK browser packs the full window, renders
+filesystem geometry per eye, and reprojects only its 3D viewport onto the
+reported cylinder. The saved **View → Stereo 3D** option controls depth; turning
+it off keeps identical window images in both eyes. Desktop presentation is mono.
