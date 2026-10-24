@@ -6,9 +6,10 @@ surface. Comic Chat packs two complete eye views only during XR presentation;
 its dialogs use the mono `org.de_xr.ComicChat` identity. Both eye copies of the
 controls share the original logical input coordinates.
 
-The XR window is a flat plane at the centre of its usual dome patch, including
-pull-out placement and focus lift. Rendering and pointer hit tests use the same
-geometry. This gives the client's off-axis perspective a physical screen plane.
+The application window retains ordinary dome curvature, lane spacing and focus
+outsets. The integration reports that same cylinder for client-side per-eye
+reprojection of the 3D chat viewport. Controls and text preserve normal window
+UVs. Pointer hit tests use the unchanged compositor surface geometry.
 
 `GET /api/integrations/comic-chat` advertises version 1, compositor identity,
 application identity, current window geometry, head pose and optional eye poses.

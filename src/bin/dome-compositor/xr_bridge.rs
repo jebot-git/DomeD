@@ -85,12 +85,16 @@ impl Dome {
                 },
             );
         }
-        let pullout = if top > 36 || bottom > 60 {
+        let mut pullout = if top > 36 || bottom > 60 {
             b.shell.pullout.clone().or_else(|| Some(dome::xr_transport::ShellPullout {
+                top_attached: false,
                 anchor: b.session.head.upright(),
                 viewport: b.session.mouse_viewport.unwrap_or([-0.65, 0.65, -0.6, 0.6]),
             }))
         } else { None };
+        if let Some(p) = &mut pullout {
+            p.top_attached=self.menu.is_some() && self.menu_has_ui_origin;
+        }
         b.shell = ShellLayout {
             width: width as u32,
             height: height as u32,

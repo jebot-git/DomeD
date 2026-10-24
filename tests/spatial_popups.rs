@@ -214,3 +214,39 @@ fn parented_dialog_is_a_popup_instead_of_an_independent_dome_card() {
     scene.apply(dome::Action::Close { id: root }).unwrap();
     assert!(scene.windows.is_empty() && scene.popups.is_empty());
 }
+
+#[test]
+fn every_popup_stays_between_actual_bar_edges_with_shared_ray_geometry() {
+    for lane in 0..3 {
+        for tilt in [0., 25.] {
+            let (mut scene, root, popup)=fixture(Projection::RoomDome);
+            scene.config.dome_upper_tilt_deg=tilt;
+            scene.apply(dome::Action::Move{id:root,lane,workspace:0}).unwrap();
+            scene.popups[0].anchor.h=5000.;
+            let child=POPUP_ID_BASE+2;
+            scene.popups.push(Popup{id:child,parent:popup,root,context_at:None,viewport:None,
+                anchor:Rect{x:0.,y:0.,w:400.,h:3000.}});
+            let head=Pose{orientation_xyzw:(Quat::from_rotation_y(0.4)*Quat::from_rotation_x(0.25)).to_array(),..Pose::default()};
+            let shell=dome::xr_transport::ShellLayout{width:1024,height:768,top:36,bottom:60,..Default::default()};
+            let bars=xr_input::shell_quads_in_view(&scene,head,&shell,100.);
+            let frame=head.upright();
+            let slope=|p:Vec3| {let p=frame.inverse_rotate((p-Vec3::from_array(frame.position_m)).to_array());p[1]/p[0].hypot(p[2])};
+            let top=bars.iter().find(|q|q.id==dome::xr_transport::TOP_BAR).unwrap();
+            let bottom=bars.iter().find(|q|q.id==dome::xr_transport::TASK_BAR).unwrap();
+            let upper=[0.,0.5,1.].map(|u|slope(top.point([u,1.]))).into_iter().fold(f32::INFINITY,f32::min);
+            let lower=[0.,0.5,1.].map(|u|slope(bottom.point([u,0.]))).into_iter().fold(f32::NEG_INFINITY,f32::max);
+            let quads=xr_input::quads(&scene,head);
+            for id in [popup,child] {
+                let q=quads.iter().find(|q|q.id==id).unwrap();
+                for uv in [[0.,0.],[1.,0.],[0.,1.],[1.,1.]] {
+                    let value=slope(q.point(uv));
+                    assert!(value>=lower-1e-5 && value<=upper+1e-5,"lane {lane}: {value} outside {lower}..{upper}");
+                }
+                let origin=Vec3::from_array(head.position_m);
+                let target=q.point([0.3,0.7]);
+                let hit=q.hit(origin,(target-origin).normalize(),false).unwrap();
+                assert!((hit[0]-0.3).abs()<1e-4 && (hit[1]-0.7).abs()<1e-4);
+            }
+        }
+    }
+}

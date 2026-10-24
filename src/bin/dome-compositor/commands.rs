@@ -328,6 +328,7 @@ impl Dome {
                 self.desktop_manager = true;
             }
             Menu => {
+                self.menu_has_ui_origin = false;
                 self.open_menu(Some(0));
                 self.menu_hover = 0;
             }

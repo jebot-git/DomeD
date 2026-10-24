@@ -31,7 +31,7 @@ fn expanded_controls_stay_in_both_eyes_after_head_motion_and_during_visibility_t
                     let viewport = xr_input::shared_viewport(head, &eyes, near).unwrap();
                     for (top, bottom) in [(36, 60), (320, 350), (800, 0)] {
                         let layout = ShellLayout { width: 1280, height: 800, top, bottom,
-                            notifications: Some([890, 48, 360, 650]), pullout: Some(ShellPullout { anchor: head, viewport }) };
+                            notifications: Some([890, 48, 360, 650]), pullout: Some(ShellPullout { top_attached: false, anchor: head, viewport }) };
                         let original = xr_input::shell_quads_in_fov(&scene, head, &layout, viewport);
                         for amount in [0.01, 0.5, 1.] {
                             let frame = Frame { top: amount, bottom: amount, opacity: 1. };
@@ -125,7 +125,7 @@ fn expanded_controls_remain_in_central_view_and_every_control_is_mouse_reachable
             let mut scene = Scene::new("reachable shell");
             scene.add("overlapping application", "fixture");
             for (top, bottom) in [(36, 60), (456, 60), (36, 390), (768, 60)] {
-                let shell = ShellLayout { width: 1024, height: 768, top, bottom, notifications: None, pullout: Some(ShellPullout { anchor: head, viewport }) };
+                let shell = ShellLayout { width: 1024, height: 768, top, bottom, notifications: None, pullout: Some(ShellPullout { top_attached: false, anchor: head, viewport }) };
                 let bars = xr_input::shell_quads_in_fov(&scene, head, &shell, viewport);
                 let mut surfaces = xr_input::quads_in_fov(&scene, head, Some(viewport));
                 surfaces.extend(bars.clone());
@@ -224,7 +224,7 @@ fn pulled_menus_freeze_opening_pose_and_leave_both_bars_on_the_dome() {
     let idle = ShellLayout { width: 1024, height: 768, top: 36, bottom: 60,
         notifications: None, pullout: None };
     let mut shell = ShellLayout { top: 456, bottom: 390,
-        pullout: Some(ShellPullout { anchor: opening.upright(), viewport }), ..idle.clone() };
+        pullout: Some(ShellPullout { top_attached: false, anchor: opening.upright(), viewport }), ..idle.clone() };
     for top in [456, 768] {
         shell.top = top;
         let original = xr_input::shell_quads_in_fov(&scene, opening, &shell, viewport);
@@ -255,5 +255,34 @@ fn pulled_menus_freeze_opening_pose_and_leave_both_bars_on_the_dome() {
         assert_eq!(shell.surface_rect(TOP_PANEL), Some([0,36,1024,top.min(708)-36]));
         assert_eq!(shell.surface_rect(BOTTOM_PANEL), Some([0,378,1024,330]));
         assert!(idle.surface_rect(TOP_PANEL).is_none());
+    }
+}
+
+#[test]
+fn universal_dropdown_stays_below_its_menu_bar_instead_of_using_pullout() {
+    let mut scene=Scene::new("anchored menu");
+    scene.config.dome_upper_tilt_deg=25.;
+    let head=Pose::default();
+    let viewport=[-0.7,0.7,-0.65,0.65];
+    let shell=ShellLayout{width:1024,height:768,top:740,bottom:60,notifications:None,
+        pullout:Some(ShellPullout{top_attached:true,anchor:head,viewport})};
+    for yaw in [0.,0.6] {
+        let moved=Pose{orientation_xyzw:Quat::from_rotation_y(yaw).to_array(),..head};
+        let quads=xr_input::shell_quads_in_fov(&scene,moved,&shell,viewport);
+        let bar=quads.iter().find(|q|q.id==TOP_BAR).unwrap();
+        let panel=quads.iter().find(|q|q.id==TOP_PANEL).unwrap();
+        let a=bar.dome.as_ref().unwrap();let b=panel.dome.as_ref().unwrap();
+        assert_eq!(a.frame,b.frame);
+        assert!((a.horizontal-b.horizontal).abs()<1e-6);
+        assert!((b.top-a.bottom+0.001).abs()<1e-6);
+        let bottom=quads.iter().find(|q|q.id==TASK_BAR).unwrap();
+        let frame=moved.upright();
+        let slope=|point:Vec3|{let p=frame.inverse_rotate((point-Vec3::from_array(frame.position_m)).to_array());p[1]/p[0].hypot(p[2])};
+        let lower=[0.,0.5,1.].map(|u|slope(bottom.point([u,0.]))).into_iter().fold(f32::NEG_INFINITY,f32::max);
+        for u in [0.,0.25,0.5,0.75,1.] {assert!(slope(panel.point([u,1.]))>=lower-1e-5);}
+        let origin=Vec3::from_array(moved.position_m);
+        let p=panel.point([0.3,0.6]);
+        let uv=panel.hit(origin,(p-origin).normalize(),false).unwrap();
+        assert!((uv[0]-0.3).abs()<1e-4 && (uv[1]-0.6).abs()<1e-4);
     }
 }

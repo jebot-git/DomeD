@@ -1,0 +1,16 @@
+# Popup placement
+
+All client popup panels, nested menus and transient dialogs are bounded by the
+actual inner edges of the top and bottom XR bars. They move into the available
+band first and shrink uniformly when too large; rendering and input share the
+same resulting geometry. Tilted upper lanes and focus outsets are included.
+
+Dropdowns opened from the universal menu stay immediately below the originating
+top bar, using the same cylindrical frame, horizontal span and texture mapping.
+This preserves their relationship to their menu header. Menus opened without a
+visible UI origin (for example the menu keyboard command) retain frozen pullout
+placement. Application dialogs continue to use their popup placement.
+
+The `top_attached` shell transport flag distinguishes these cases. A new
+compositor and XR renderer are required to activate the placement update; the
+active session need not be restarted during installation.

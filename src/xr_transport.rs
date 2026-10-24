@@ -24,6 +24,9 @@ pub fn is_shell(id: u64) -> bool {
 }
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct ShellPullout {
+    /// A dropdown with a visible universal-menu origin stays below the top bar.
+    #[serde(default)]
+    pub top_attached: bool,
     pub anchor: crate::Pose,
     pub viewport: [f32; 4],
 }

@@ -1319,7 +1319,7 @@ fn render_density_is_validated_persisted_and_independent_of_spatial_geometry() {
 }
 
 #[test]
-fn comic_stereo_screen_is_planar_and_input_matches_rendering() {
+fn comic_stereo_keeps_standard_dome_geometry_and_input_alignment() {
     let mut s = Scene::new("Comic stereo");
     let id = s.add("Comic", dome::stereo::COMIC_CHAT_SBS_APP_ID);
     let head = dome::Pose { position_m:[0.25,1.8,0.5],
@@ -1331,11 +1331,15 @@ fn comic_stereo_screen_is_planar_and_input_matches_rendering() {
         let input=dome::xr_input::quads(&s,head);
         let a=rendered.iter().find(|q|q.id==id).unwrap();
         let b=input.iter().find(|q|q.id==id).unwrap();
-        assert!(a.dome.is_none());
+        assert!(a.dome.is_some());
+        let mut ordinary=s.clone();
+        ordinary.windows.iter_mut().find(|w|w.id==id).unwrap().app_id="ordinary.application".into();
+        ordinary.windows.iter_mut().find(|w|w.id==id).unwrap().stereo=dome::stereo::Stereo::Mono;
+        let normal=dome::xr_input::quads(&ordinary,head);
+        let normal=normal.iter().find(|q|q.id==id).unwrap();
+        assert_eq!(serde_json::to_value(a).unwrap(),serde_json::to_value(normal).unwrap());
         assert_eq!(serde_json::to_value(a).unwrap(),serde_json::to_value(b).unwrap());
-        let local=glam::Vec3::from_array(a.pose.inverse_rotate(
-            (glam::Vec3::from_array(head.position_m)-glam::Vec3::from_array(a.pose.position_m)).to_array()));
-        assert!((local.z-distance).abs()<0.002);
+        assert!((a.dome.as_ref().unwrap().radius-distance).abs()<0.002);
         let origin=glam::Vec3::from_array(head.position_m);
         for uv in [[0.1,0.2],[0.5,0.5],[0.8,0.7]] {
             let target=a.point(uv);

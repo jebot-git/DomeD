@@ -131,6 +131,21 @@ impl Scene {
 
 /// Append children after parents so OpenXR composition order follows popup depth.
 pub fn append_quads(scene: &Scene, panels: &mut Vec<Quad>, head: Pose) {
+    let frame=head.upright();
+    let shell=crate::xr_transport::ShellLayout {width:1024,height:768,top:36,bottom:60,notifications:None,pullout:None};
+    let bars=crate::xr_input::bar_quads_from_surfaces(scene,head,&shell,100.,panels);
+    let mut lower=f32::NEG_INFINITY;
+    let mut upper=f32::INFINITY;
+    for bar in &bars {
+        let y=if bar.id==crate::xr_transport::TOP_BAR {1.} else {0.};
+        for x in [0.,0.5,1.] {
+            let p=frame.inverse_rotate((bar.point([x,y])-Vec3::from_array(frame.position_m)).to_array());
+            let radius=p[0].hypot(p[2]).max(0.01);
+            if bar.id==crate::xr_transport::TOP_BAR {upper=upper.min(p[1]/radius);}
+            else {lower=lower.max(p[1]/radius);}
+        }
+    }
+
     for _ in 0..scene.popups.len() {
         let before = panels.len();
         for popup in &scene.popups {
@@ -151,12 +166,17 @@ pub fn append_quads(scene: &Scene, panels: &mut Vec<Quad>, head: Pose) {
             let Some([pw, ph]) = parent_pixels else {
                 continue;
             };
-            let size = [
+            let mut size = [
                 parent.size[0] * popup.anchor.w / pw,
                 parent.size[1] * popup.height() / ph,
             ];
             let q = Quat::from_array(parent.pose.orientation_xyzw);
-            let center = Vec3::from_array(parent.pose.position_m);
+            let center = parent.point([0.5,0.5]);
+            let local=frame.inverse_rotate((center-Vec3::from_array(frame.position_m)).to_array());
+            let capacity=(upper-lower)*local[0].hypot(local[2])*0.9;
+            if capacity.is_finite() && capacity>0. && size[1]>capacity {
+                let scale=capacity/size[1];size=size.map(|v|v*scale);
+            }
             let depth = 0.14;
             let click_center = popup.context_at.map(|point| {
                 let point = scene
@@ -182,14 +202,34 @@ pub fn append_quads(scene: &Scene, panels: &mut Vec<Quad>, head: Pose) {
                 size,
                 dome: None,
             };
-            if popup.context_at.is_some() {
-                crate::context_menu::fit_xr(&mut panel, head, &scene.config);
-            }
+            fit_between_bars(&mut panel,frame,lower,upper);
             panels.push(panel);
         }
         if panels.len() == before {
             break;
         }
+    }
+}
+
+/// Keep every corner within the bar edges, including tilted/nested dialogs.
+/// Move first; uniformly shrink an oversized surface while retaining its UVs.
+fn fit_between_bars(panel: &mut Quad, frame: Pose, lower: f32, upper: f32) {
+    if !lower.is_finite() || !upper.is_finite() || lower>=upper {return;}
+    for _ in 0..32 {
+        let mut bottom=f32::NEG_INFINITY;
+        let mut top=f32::INFINITY;
+        for uv in [[0.,0.],[1.,0.],[0.,1.],[1.,1.]] {
+            let p=frame.inverse_rotate((panel.point(uv)-Vec3::from_array(frame.position_m)).to_array());
+            let radius=p[0].hypot(p[2]).max(0.01);
+            bottom=bottom.max(lower*radius-p[1]);
+            top=top.min(upper*radius-p[1]);
+        }
+        if bottom<=top {
+            let shift=0f32.clamp(bottom,top);
+            panel.pose.position_m=(Vec3::from_array(panel.pose.position_m)+Vec3::from_array(frame.rotate([0.,shift,0.]))).to_array();
+            return;
+        }
+        panel.size=panel.size.map(|v|v*0.8);
     }
 }
 

@@ -430,6 +430,7 @@ impl Dome {
                 return;
             }
             let next = self.menu_index(x);
+            self.menu_has_ui_origin = true;
             self.open_menu(if self.menu == next { None } else { next });
             self.task_popup = None;
             self.task_context = false;

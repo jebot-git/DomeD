@@ -308,19 +308,6 @@ fn window_quads(scene: &Scene, head: Pose, backgrounds: bool, viewport: Option<[
             }
         }
     }
-    // Perspective stereo clients need a physical planar screen. Keep the
-    // cylinder's centre, orientation and extent, and share this with hit tests.
-    for panel in &mut panels {
-        if scene.window(panel.id).is_some_and(|w|w.app_id == crate::stereo::COMIC_CHAT_SBS_APP_ID) {
-            if let Some(d) = panel.dome.take() {
-                panel.pose = Pose {
-                    position_m: d.frame.transform([0., d.radius*(d.top+d.bottom)/2., -d.radius]),
-                    orientation_xyzw: d.frame.orientation_xyzw,
-                };
-                panel.size = [d.radius*d.horizontal, d.radius*(d.top-d.bottom)];
-            }
-        }
-    }
     panels.sort_by_key(|q| window_order(scene, q.id));
     crate::spatial_popup::append_quads(scene, &mut panels, head);
     panels
@@ -357,6 +344,12 @@ pub fn cursor_pixels(light: bool) -> Vec<u8> {
 /// latitudes and orbit the dome anchor with the headset's horizontal yaw.
 /// Head pitch stays independent so looking up/down can reach either bar.
 fn bar_quads(scene: &Scene, head: Pose, shell: &crate::xr_transport::ShellLayout, horizontal_fov_deg: f32) -> Vec<Quad> {
+    let surfaces=quads(scene,head);
+    bar_quads_from_surfaces(scene,head,shell,horizontal_fov_deg,&surfaces)
+}
+/// Shared physical bar geometry without recursively generating popup panels.
+pub(crate) fn bar_quads_from_surfaces(scene: &Scene, head: Pose,
+    shell: &crate::xr_transport::ShellLayout, horizontal_fov_deg: f32, surfaces: &[Quad]) -> Vec<Quad> {
     if shell.width == 0 || shell.height == 0 {
         return vec![];
     }
@@ -383,7 +376,6 @@ fn bar_quads(scene: &Scene, head: Pose, shell: &crate::xr_transport::ShellLayout
         }];
     }
     let spans = scene.packed_lane_spans(scene.active_workspace);
-    let surfaces = quads(scene, head);
     let forward = Vec3::from_array(head.rotate([0., 0., -1.]));
     let forward = Vec3::new(forward.x, 0., forward.z).normalize_or_zero();
     let horizontal = if horizontal_fov_deg.is_finite() {

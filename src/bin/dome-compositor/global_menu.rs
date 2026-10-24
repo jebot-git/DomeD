@@ -260,6 +260,7 @@ impl Dome {
             self.dismiss_wayland_popups();
         }
         self.menu = index;
+        if index.is_none() { self.menu_has_ui_origin=false; }
         self.menu_hover = -1;
         self.appmenu_path.clear();
         self.menu_offsets.clear();
@@ -359,6 +360,7 @@ impl Dome {
                 .filter(|i| self.menu_headers()[*i].enabled)
             {
                 if self.menu != Some(next) {
+                    self.menu_has_ui_origin = true;
                     self.open_menu(Some(next));
                 }
             }

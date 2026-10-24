@@ -124,6 +124,45 @@ pub fn shell_quads_in_fov(scene: &Scene, head: Pose, shell: &ShellLayout, viewpo
         if !scene.locked && pulled.anchor.validate().is_ok() && valid(pulled.viewport) {
             for id in [TOP_PANEL, BOTTOM_PANEL] {
                 if let Some([_, _, w, h]) = shell.surface_rect(id).filter(|r| r[2] > 0 && r[3] > 0) {
+                    if id==TOP_PANEL && pulled.top_attached {
+                        if let Some(bar)=quads.iter().find(|q|q.id==TOP_BAR).cloned() {
+                            let mut panel=bar.clone(); panel.id=TOP_PANEL;
+                            let height=bar.size[1]*h as f32/36.;
+                            panel.size[1]=height;
+                            if let Some(patch)=&mut panel.dome {
+                                patch.top=patch.bottom-0.001;
+                                patch.bottom=patch.top-height/patch.radius;
+                                // Bound the entire curved edge, including upper-lane lean.
+                                if let Some(bottom)=quads.iter().find(|q|q.id==TASK_BAR) {
+                                    let frame=head.upright();
+                                    let slope=|point:Vec3| {
+                                        let p=frame.inverse_rotate((point-Vec3::from_array(frame.position_m)).to_array());
+                                        p[1]/p[0].hypot(p[2]).max(0.01)
+                                    };
+                                    let lower=[0.,0.5,1.].map(|u|slope(bottom.point([u,0.]))).into_iter().fold(f32::NEG_INFINITY,f32::max);
+                                    let fits=|edge:f32| (0..=32).all(|step| {
+                                        let angle=(step as f32/32.-0.5)*patch.horizontal;
+                                        slope(Vec3::from_array(patch.frame.transform([patch.radius*angle.sin(),patch.radius*edge,-patch.radius*angle.cos()])))>=lower+0.001
+                                    });
+                                    if !fits(patch.bottom) {
+                                        let mut low=patch.bottom;let mut high=patch.top-0.001;
+                                        for _ in 0..32 {
+                                            let mid=(low+high)/2.;
+                                            if fits(mid) {high=mid;} else {low=mid;}
+                                        }
+                                        patch.bottom=high;
+                                    }
+                                }
+                                panel.size[1]=patch.radius*(patch.top-patch.bottom);
+                                panel.pose=patch.layer_pose();
+                            } else {
+                                let down=Quat::from_array(bar.pose.orientation_xyzw)*Vec3::Y;
+                                panel.pose.position_m=(Vec3::from_array(bar.pose.position_m)-down*(bar.size[1]+height)/2.).to_array();
+                            }
+                            quads.push(panel);
+                        }
+                        continue;
+                    }
                     let radius = scene.config.pullout_distance_m;
                     let width = 1.3_f32.min(radius * 85_f32.to_radians());
                     let height = width * h as f32 / w as f32;
