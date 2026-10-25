@@ -61,16 +61,18 @@ pub fn serve_native(
             }
             if request.method() == &Method::Post && request.url().starts_with("/api/screenshot/xr/") {
                 let id=request.url().trim_start_matches("/api/screenshot/xr/").parse::<u64>().ok();
-                let png=request.headers().iter().any(|h|h.field.equiv("Content-Type")&&h.value.as_str()=="image/png");
+                let mime=request.headers().iter().find(|h|h.field.equiv("Content-Type"))
+                    .map(|h|h.value.as_str()).unwrap_or("").to_owned();
                 let mut bytes=vec![];
-                let read=request.as_reader().take(134217729).read_to_end(&mut bytes);
+                let read=request.as_reader().take((crate::screenshot::MAX_CAPTURE_BYTES+1) as u64).read_to_end(&mut bytes);
                 let mut accepted=false;
-                if read.is_ok() && bytes.len()<=134217728 {
+                if read.is_ok() && bytes.len()<=crate::screenshot::MAX_CAPTURE_BYTES {
+                    let result=if mime=="text/plain" {
+                        Err(String::from_utf8_lossy(&bytes[..bytes.len().min(4096)]).into_owned())
+                    } else { crate::screenshot::Capture::from_xr(&mime,bytes) };
                     if let Some(shared)=&bridge {
                         let mut b=shared.lock().unwrap();
                         if id.is_some() && id==b.screenshot_request {
-                            let result=if png && bytes.starts_with(b"\x89PNG\r\n\x1a\n") {Ok(bytes)}
-                                else {Err(String::from_utf8_lossy(&bytes[..bytes.len().min(4096)]).into_owned())};
                             b.screenshot_result=Some(result);b.screenshot_request=None;accepted=true;
                         }
                     }

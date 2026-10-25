@@ -60,7 +60,7 @@ impl ShellLayout {
 }
 pub struct Bridge {
     pub screenshot_request: Option<u64>,
-    pub screenshot_result: Option<Result<Vec<u8>,String>>,
+    pub screenshot_result: Option<Result<crate::screenshot::Capture,String>>,
     pub gpu_socket: Option<String>,
     #[cfg(feature = "nested")]
     pub gpu_frames: HashMap<u64, Arc<crate::xr_gpu::Published>>,
@@ -157,6 +157,9 @@ pub struct Control {
     pub stereo_views: bool,
     #[serde(default)]
     pub screenshot_request: Option<u64>,
+    /// New helpers export scene geometry; old desktops retain SBS PNG replies.
+    #[serde(default)]
+    pub screenshot_gltf: bool,
     /// Presence advertises support for runtime timing in session heartbeats.
     #[serde(default)]
     pub frame_period_ns: Option<u64>,
@@ -223,6 +226,7 @@ impl Bridge {
             centered_popups: true,
             stereo_views: true,
             screenshot_request: self.screenshot_request,
+            screenshot_gltf: true,
             frame_period_ns: Some(self.frame_interval().map_or(0, |period| period.as_nanos() as u64)),
             gpu_socket: self.gpu_socket.clone(),
             finder_seconds: self.finder_started.map(|t| t.elapsed().as_secs_f32())
@@ -296,6 +300,14 @@ impl Bridge {
 mod tests {
     use super::*;
     use std::time::Duration;
+    #[test]
+    fn gltf_capture_is_advertised_without_breaking_legacy_control() {
+        let bridge=Bridge::default();
+        assert!(bridge.control().screenshot_gltf);
+        let mut legacy=serde_json::to_value(bridge.control()).unwrap();
+        legacy.as_object_mut().unwrap().remove("screenshot_gltf");
+        assert!(!serde_json::from_value::<Control>(legacy).unwrap().screenshot_gltf);
+    }
     #[test]
     fn stereo_eyes_are_validated_and_omitted_for_legacy_compositors() {
         let mut eyes = [crate::Pose::default(); 2];

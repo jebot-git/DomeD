@@ -1,5 +1,5 @@
 //! Compositor-owned screenshot selection; compression and storage run off-thread.
-use dome::screenshot::Pixels;
+use dome::screenshot::{Capture, Pixels};
 use smithay::{
     backend::renderer::{
         damage::OutputDamageTracker,
@@ -78,8 +78,8 @@ pub struct Screenshots {
     serial: u64,
     busy: bool,
     xr_started: Option<Instant>,
-    send: mpsc::Sender<Result<(Vec<u8>, Result<std::path::PathBuf, String>), String>>,
-    receive: mpsc::Receiver<Result<(Vec<u8>, Result<std::path::PathBuf, String>), String>>,
+    send: mpsc::Sender<Result<(Capture, Result<std::path::PathBuf, String>), String>>,
+    receive: mpsc::Receiver<Result<(Capture, Result<std::path::PathBuf, String>), String>>,
 }
 impl Default for Screenshots {
     fn default() -> Self {
@@ -187,7 +187,7 @@ impl crate::Dome {
                 std::thread::spawn(move || {
                     let result = pixels.png().map(|png| {
                         let path = dome::screenshot::save_png(&png, false);
-                        (png, path)
+                        (Capture::Png { bytes:png, stereo:false }, path)
                     });
                     let _ = send.send(result);
                 });
@@ -237,9 +237,9 @@ impl crate::Dome {
             let send = self.screenshot.send.clone();
             self.screenshot.xr_started = None;
             std::thread::spawn(move || {
-                let _ = send.send(result.map(|png| {
-                    let path = dome::screenshot::save_png(&png, true);
-                    (png, path)
+                let _ = send.send(result.map(|capture| {
+                    let path = capture.save();
+                    (capture, path)
                 }));
             });
         }
@@ -259,11 +259,12 @@ impl crate::Dome {
         while let Ok(result) = self.screenshot.receive.try_recv() {
             self.screenshot.busy = false;
             match result {
-                Ok((png, path)) => {
-                    self.publish_screenshot(png);
+                Ok((capture, path)) => {
+                    let gltf = matches!(capture, Capture::Gltf(_));
+                    self.publish_capture(capture);
                     match path {
                         Ok(path) => self.screenshot_notice(
-                            "Screenshot copied and saved",
+                            if gltf { "XR glTF capture copied and saved" } else { "Screenshot copied and saved" },
                             &path.display().to_string(),
                         ),
                         Err(e) => self.screenshot_notice("Screenshot copied; saving failed", &e),

@@ -1,9 +1,43 @@
-//! PNG capture storage and stereo projection, shared by desktop and XR.
+//! Capture storage, spatial glTF export and stereo projection.
+mod gltf;
+pub use gltf::{glb, validate_glb};
 use std::{
     io::Write,
     path::{Path, PathBuf},
 };
 pub const MAX_PIXELS: usize = 32 * 1024 * 1024;
+pub const MAX_CAPTURE_BYTES: usize = 128 * 1024 * 1024;
+#[derive(Clone, Debug)]
+pub enum Capture {
+    Png { bytes: Vec<u8>, stereo: bool },
+    Gltf(Vec<u8>),
+}
+impl Capture {
+    pub fn bytes(&self) -> &[u8] {
+        match self { Self::Png { bytes, .. } | Self::Gltf(bytes) => bytes }
+    }
+    pub fn mime_type(&self) -> &'static str {
+        match self { Self::Png { .. } => "image/png", Self::Gltf(_) => "model/gltf-binary" }
+    }
+    pub fn from_xr(mime: &str, bytes: Vec<u8>) -> Result<Self, String> {
+        if bytes.len() > MAX_CAPTURE_BYTES { return Err("XR capture is too large".into()); }
+        match mime {
+            "model/gltf-binary" => { validate_glb(&bytes)?; Ok(Self::Gltf(bytes)) },
+            // A renderer from an already-running older session can still reply.
+            "image/png" if bytes.starts_with(b"\x89PNG\r\n\x1a\n") =>
+                Ok(Self::Png { bytes, stereo: true }),
+            _ => Err("Unsupported XR capture format".into()),
+        }
+    }
+    pub fn save(&self) -> Result<PathBuf, String> {
+        let suffix = match self {
+            Self::Gltf(_) => "_XR.glb",
+            Self::Png { stereo: true, .. } => "_SBS.png",
+            Self::Png { .. } => ".png",
+        };
+        save_bytes(self.bytes(), suffix)
+    }
+}
 #[derive(Clone, Debug)]
 pub struct Pixels {
     pub width: u32,
@@ -110,6 +144,9 @@ pub fn pictures_dir(home: &Path, config: &str) -> PathBuf {
     }
 }
 pub fn save_png(png: &[u8], stereo: bool) -> Result<PathBuf, String> {
+    save_bytes(png, if stereo { "_SBS.png" } else { ".png" })
+}
+fn save_bytes(bytes: &[u8], suffix: &str) -> Result<PathBuf, String> {
     use std::os::unix::fs::OpenOptionsExt;
     let home = PathBuf::from(std::env::var_os("HOME").ok_or("HOME is not set")?);
     let config = std::env::var_os("XDG_CONFIG_HOME")
@@ -120,7 +157,7 @@ pub fn save_png(png: &[u8], stereo: bool) -> Result<PathBuf, String> {
     let folder = pictures_dir(&home, &contents).join("Screenshots");
     std::fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
     let stamp = chrono::Local::now().format("%Y-%m-%d_%H-%M-%S_%f");
-    let name = format!("Screenshot_{stamp}{}.png", if stereo { "_SBS" } else { "" });
+    let name = format!("Screenshot_{stamp}{suffix}");
     let path = folder.join(name);
     let mut file = std::fs::OpenOptions::new()
         .write(true)
@@ -128,7 +165,7 @@ pub fn save_png(png: &[u8], stereo: bool) -> Result<PathBuf, String> {
         .mode(0o600)
         .open(&path)
         .map_err(|e| e.to_string())?;
-    if let Err(e) = file.write_all(png).and_then(|_| file.sync_all()) {
+    if let Err(e) = file.write_all(bytes).and_then(|_| file.sync_all()) {
         drop(file);
         let _ = std::fs::remove_file(&path);
         return Err(e.to_string());

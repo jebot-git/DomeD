@@ -28,6 +28,8 @@ impl Entry {
             .any(|(m, _)| m == "text/uri-list" || m == "x-special/gnome-copied-files")
         {
             "Files".into()
+        } else if self.formats.iter().any(|(m, _)| m == "model/gltf-binary") {
+            "XR model".into()
         } else if self.formats.iter().any(|(m, _)| m.starts_with("image/")) {
             "Image".into()
         } else if self
@@ -205,13 +207,17 @@ pub fn send_data(fd: OwnedFd, data: Vec<u8>) {
     });
 }
 impl crate::Dome {
-    pub fn publish_screenshot(&mut self, png: Vec<u8>) {
+    pub fn publish_capture(&mut self, capture: dome::screenshot::Capture) {
+        let mime = capture.mime_type().to_owned();
+        let bytes = match capture {
+            dome::screenshot::Capture::Png { bytes, .. } | dome::screenshot::Capture::Gltf(bytes) => bytes,
+        };
         self.clipboard.next += 1;
         let entry = Arc::new(Entry { id: self.clipboard.next, timestamp: now(),
-            formats: vec![("image/png".into(), png)] });
+            formats: vec![(mime.clone(), bytes)] });
         self.clipboard.record((*entry).clone());
         set_data_device_selection::<Self>(&self.display_handle, &self.seat,
-            vec!["image/png".into()], entry);
+            vec![mime], entry);
     }
 
     pub fn restore_clipboard(&mut self, id: u64) {

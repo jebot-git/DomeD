@@ -2,7 +2,7 @@
 """Private DomeD screenshot test: selection, exact pixels, XDG storage and PNG clipboard.
 Run: uv run --no-project --with python-xlib --with pillow python scripts/test-screenshots.py
 """
-import io,json,os,re,signal,socket,subprocess,sys,tempfile,time,urllib.request
+import io,json,os,re,signal,socket,struct,subprocess,sys,tempfile,time,urllib.request
 from pathlib import Path
 from PIL import Image,ImageChops
 from Xlib import X,XK,display
@@ -105,6 +105,36 @@ try:
     check(stereo[0].read_bytes()==encoded.getvalue(),'XR result is saved as SBS PNG in the same screenshots folder')
     png=subprocess.check_output(['wl-paste','--type','image/png','--no-newline'],env=paste_env,timeout=5)
     check(png==encoded.getvalue(),'XR capture is also published to the session PNG clipboard')
+    # A matching new helper replies with GLB. Keep the older PNG renderer test
+    # above: upgrades must not mislabel an old session's SBS image as a model.
+    request('/api/xr-session',{'id':741,'visible':True,'focused':True})
+    key('Print')
+    control=wait(lambda:json.loads(request('/api/xr-control')) if json.loads(request('/api/xr-control')).get('screenshot_request') else None)
+    check(control['screenshot_gltf'],'New compositor advertises spatial glTF capture to the XR helper')
+    fixture=os.environ.get('DOME_SCREENSHOT_GLTF_FIXTURE')
+    if fixture:model=Path(fixture).read_bytes()
+    else:
+        # Minimal bounded transport fixture; the Rust export suite covers meshes.
+        document=json.dumps({'asset':{'version':'2.0'},'buffers':[{'byteLength':4}]},separators=(',',':')).encode()
+        document+=b' '*((-len(document))%4)
+        model=b'glTF'+struct.pack('<4I',2,28+len(document)+4,len(document),0x4e4f534a)+document+struct.pack('<2I',4,0x004e4942)+b'\0'*4
+    request('/api/screenshot/xr/'+str(control['screenshot_request']),model,'model/gltf-binary')
+    spatial=wait(lambda:list(folder.glob('*_XR.glb')))
+    check(spatial[0].read_bytes()==model,'XR glTF result is saved intact as GLB instead of another SBS image')
+    check(len(list(folder.glob('*_SBS.png')))==1,'Spatial capture creates no additional SBS PNG file')
+    check(spatial[0].stat().st_mode&0o777==0o600,'XR model capture uses private file permissions')
+    copied=subprocess.check_output(['wl-paste','--type','model/gltf-binary','--no-newline'],env=paste_env,timeout=5)
+    check(copied==model,'XR clipboard offers the exact saved model with its glTF MIME type')
+    # Invalid data, stale replies and helper errors must not create bogus models.
+    try:request('/api/screenshot/xr/'+str(control['screenshot_request']),model,'model/gltf-binary');assert False,'stale result accepted'
+    except urllib.error.HTTPError as e:check(e.code==400,'Duplicate/stale XR capture results are rejected')
+    for payload,kind in [(b'glTF broken','model/gltf-binary'),(b'capture fixture unavailable','text/plain')]:
+        request('/api/xr-session',{'id':741,'visible':True,'focused':True});key('Print')
+        current=wait(lambda:json.loads(request('/api/xr-control')).get('screenshot_request'))
+        request('/api/screenshot/xr/'+str(current),payload,kind);time.sleep(.3)
+        check(len(list(folder.glob('*_XR.glb')))==1,'Malformed model or renderer error does not save a partial capture')
+    copied=subprocess.check_output(['wl-paste','--type','model/gltf-binary','--no-newline'],env=paste_env,timeout=5)
+    check(copied==model,'A failed XR capture preserves the previous clipboard model')
     check(compositor.poll() is None,'Compositor remains healthy after desktop and XR captures')
 finally:
     (out/'report.json').write_text(json.dumps(checks,indent=2)+'\n')

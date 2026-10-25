@@ -1114,7 +1114,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     let size=[eye_sizes.iter().map(|s|s[0]).max().unwrap_or(1024).min(2048),
                               eye_sizes.iter().map(|s|s[1]).max().unwrap_or(1024).min(2048)];
                     screenshot::capture(screenshot_base.clone(),id,sources,eyes,size,scene.as_ref().map_or(0,|s|s.config.window_border_px),
-                        scene.as_ref().filter(|s|s.xr_fullscreen().is_none()).and_then(|s|s.focused),control.accent,browser_visible);
+                        scene.as_ref().filter(|s|s.xr_fullscreen().is_none()).and_then(|s|s.focused),control.accent,browser_visible,
+                        control.screenshot_gltf,head_pose);
                 }
             }
             peak_stereo = peak_stereo.max(

@@ -1486,7 +1486,7 @@ Left/Right or Enter toggles it. Escape closes the popup. Desktop and XR use the
 same model, painting data and hit geometry. Opening another shell panel dismisses
 the clock calendar.
 
-Screenshot capture is available from the camera tray icon and PrintScreen: desktop region selection, PNG clipboard and XDG Pictures/Screenshots storage, or an XR SBS view. See [Screenshots](docs/SCREENSHOTS.md).
+Screenshot capture is available from the camera tray icon and PrintScreen: desktop region selection with PNG clipboard/storage, or an XR glTF scene export with embedded textures in XDG Pictures/Screenshots. See [Screenshots](docs/SCREENSHOTS.md).
 
 Expanded universal menus use bounded viewports on desktop and XR. In XR the menu height is limited by the shared binocular field of view; long menus show scroll arrows. Hold the pointer over an arrow or use the wheel to scroll, and keyboard selection automatically reveals the selected action. Nested panels preserve application action IDs and share their viewport between rendering and hit testing.
 
