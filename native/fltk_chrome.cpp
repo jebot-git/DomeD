@@ -769,7 +769,7 @@ extern "C" int dome_qt_paint(const char *json, unsigned char *pixels,
                         4, std::max(4, w - 284)),
              36, 280, num(tray, "selected", -1));
     p.taskPopup(obj(o, "task_popup"));
-    p.panelRows(obj(o, "xr_settings"), "Settings · Monitors, GPU, XR & Keys", 28);
+    p.panelRows(obj(o, "xr_settings"), str(obj(o, "xr_settings"), "title", "Settings"), 28);
     p.panelRows(obj(o, "default_apps"),
                 str(obj(o, "default_apps"), "title", "Default applications"),
                 44, 64);
@@ -814,8 +814,11 @@ extern "C" int dome_qt_paint(const char *json, unsigned char *pixels,
     if (!xr.empty()) {
       int x = num(xr, "x"), y = num(xr, "y"), pw = num(xr, "w"),
           ph = num(xr, "h");
-      p.button(x + 20, y + ph - 66, 240, 36, "Anchor at headset");
-      p.button(x + 280, y + ph - 66, 240, 36, "Restore defaults");
+      if (yes(xr, "submenu")) p.button(x + pw - 140, y + 4, 120, 32, "Back");
+      if (yes(xr, "graphics")) {
+        p.button(x + 20, y + ph - 66, 240, 36, "Anchor at headset");
+        p.button(x + 280, y + ph - 66, 240, 36, "Restore defaults");
+      } else if (yes(xr, "submenu")) p.button(x + 20, y + ph - 66, 120, 36, "Back");
       p.button(x + pw - 140, y + ph - 66, 120, 36, "Close");
     }
     auto calendar = obj(obj(o, "clock"), "popup");

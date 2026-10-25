@@ -61,7 +61,7 @@ impl Dome {
                 ("Open Files", "⌘E", FileManager),
                 ("Open Terminal", "⌘T", Terminal),
                 ("Take Screenshot", "PrintScreen", Screenshot),
-                ("Monitor, GPU & XR Settings…", "⌘,", XrSettings),
+                ("Settings…", "⌘,", XrSettings),
                 ("Keybinding Help…", "", KeybindingsHelp),
                 ("", "", Separator),
                 ("Start XR", "", StartXr),
@@ -119,7 +119,7 @@ impl Dome {
                 ("Show / Hide Upper XR Bar", "⌥⌘T", ToggleXrTop),
                 ("Show / Hide XR Taskbar", "⌥⌘B", ToggleXrBottom),
                 ("Show / Hide XR Desktop", "⇧⌘D", ToggleXrDesktop),
-                ("Monitor, GPU & XR Settings…", "⌘,", XrSettings),
+                ("Settings…", "⌘,", XrSettings),
                 ("Anchor Dome at Headset", "⌃⌘R", AnchorHere),
                 ("", "", Separator),
                 ("Focus Previous Lane", "⌃⌥↑", CycleLane(-1)),
@@ -248,9 +248,8 @@ impl Dome {
             XrSettings | KeybindingsHelp => {
                 self.gpu_choices = dome::gpu_settings::discover();
                 self.xr_settings_open = true;
-                self.xr_settings_row = if c == KeybindingsHelp {
-                    self.keybindings_settings_start(&s.config)
-                } else { 0 };
+                self.settings_page = if c == KeybindingsHelp { crate::xr_settings::SettingsPage::Keybindings } else { crate::xr_settings::SettingsPage::General };
+                self.xr_settings_row = 0;
                 self.binding_capture = None;
                 self.appearance_open = false;
                 self.keyboard_draft = None;

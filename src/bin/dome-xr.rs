@@ -184,7 +184,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             if let Ok(response) = agent.get(&format!("{base}/api/state")).call() {
                 last_server = Instant::now();
                 if let Ok(value) = response.into_json::<serde_json::Value>() {
-                    if let Ok(scene) = serde_json::from_value::<Scene>(value["scene"].clone()) {
+                    let decoded = serde_json::from_value::<Scene>(value["scene"].clone());
+                    if let Err(error) = &decoded {
+                        let message = format!("XR scene data rejected: {error}. Install matching dome-compositor and dome-xr builds");
+                        eprintln!("{message}");
+                        n.lock().unwrap().gpu_error = Some(message);
+                        r.store(false, Ordering::Relaxed);
+                        break;
+                    }
+                    if let Ok(scene) = decoded {
                         let mut ids: Vec<_> = scene
                             .windows
                             .iter()

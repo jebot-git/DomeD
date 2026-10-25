@@ -172,22 +172,28 @@ w.end();DesktopMenu exported(w,m);w.show();return Fl::run();}
         shell=wait(lambda:(l if (l:=layout())['top']==l['height'] else None));capture('02-settings')
         w,h=shell['width'],shell['height'];pw=min(800,w-16);ph=min(700,h-100);left=(w-pw)/2;top=36+max(0,h-96-ph)/2
         original_size=win()['desktop'].copy();density=state()['config']['xr_render_scale']
-        # Wrap in both directions through the real settings key handler.
+        # The root contains links; graphical controls and bindings live on separate pages.
+        key('Home');key('Up');key('Right') # wrap to Keybindings and enter
+        key('Home');key('Up');key('Right') # wrap to last binding and capture
         previous_bindings=state()['config']['keybindings']
-        key('Home');key('Up');key('Right')
         key('Super_L',True);key('F8');key('Super_L',False)
         wait(lambda:state()['config']['keybindings'][-1]['key']==0xffc5)
         assert state()['config']['keybindings'][:-1]==previous_bindings[:-1]
-        for _ in range(4):key('Down') # last → first, keyboard, GPU, first XR setting
-        old_anchor=state()['config']['anchor_mode'];key('Right')
-        wait(lambda:state()['config']['anchor_mode']!=old_anchor)
+        key('Down');key('Right') # last binding wraps to first
+        key('Escape') # cancel capture
+        key('Escape') # submenu back to root, retaining Keybindings selection
+        key('Up');key('Right') # Graphical Settings
+        capture('02-graphical-settings')
+        key('Home');key('Up');key('Down');key('Down')
+        old_anchor=state()['config']['anchor_mode']
+        key('Right');wait(lambda:state()['config']['anchor_mode']!=old_anchor)
         key('Left');wait(lambda:state()['config']['anchor_mode']==old_anchor)
-        check(True,'Settings wrap first↔last, retain visible selection, and route following adjustments to the right section')
+        check(True,'Settings and graphical/keybinding submenus wrap independently and return to their parent')
         key('Home')
         gpu_cards=[p for p in Path('/sys/class/drm').glob('card[0-9]*')
                    if p.name.removeprefix('card').isdigit() and 'PCI_ID=' in (p/'device/uevent').read_text()]
         if gpu_cards:
-            click(left+pw-100,top+40+2*34+17)
+            click(left+pw-100,top+40+17)
             first_gpu=wait(lambda:state()['config'].get('gpu_device'))
             saved=runtime/'config/dome/xr.json'
             wait(lambda:saved.exists() and json.loads(saved.read_text()).get('gpu_device')==first_gpu)
@@ -198,13 +204,19 @@ w.end();DesktopMenu exported(w,m);w.show();return Fl::run();}
             check(True,'GPU selector uses aligned pointer targets, saves a DRM card, and wraps through Automatic in both directions')
         key('Home')
         key('Home')
-        for _ in range(18):key('Down') # two session links, GPU selector, then geometry row 15
+        for _ in range(16):key('Down') # GPU selector, then geometry row 15
         key('Right');wait(lambda:state()['config']['xr_window_resolution']=='1440p')
         capture('02-xr-window-resolution')
         saved=runtime/'config/dome/xr.json'
         wait(lambda:saved.exists() and json.loads(saved.read_text())['xr_window_resolution']=='1440p')
         assert win()['desktop']==original_size and state()['config']['xr_render_scale']==density
         key('Left');wait(lambda:state()['config']['xr_window_resolution']=='1080p');key('Home')
+        bindings_before_reset=state()['config']['keybindings']
+        click(left+400,top+ph-48) # graphical defaults must preserve keybindings
+        assert state()['config']['keybindings']==bindings_before_reset
+        check(True,'Restoring graphical defaults preserves remapped keybindings')
+        click(left+pw-80,top+18) # submenu Back header button
+        key('Home')
         check(True,'New XR window resolution is adjustable and saved from Settings without resizing the open window or changing density')
         click(left+150,top+40+34+17);capture('03-keyboard-layouts')
         click((w-600)/2+450,(h-400)/2+364)

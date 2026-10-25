@@ -1,11 +1,22 @@
 use crate::Dome;
 use dome::{geometry_settings, Action, Config};
 
-// Painting and hit testing must share the same section-aware scroll offset.
-fn settings_first(selected: usize, visible: usize, count: usize, bindings: usize, binding_count: usize) -> usize {
-    let section = if (bindings..bindings + binding_count).contains(&selected) { bindings } else { 0 };
-    selected.saturating_sub(visible.saturating_sub(1)).max(section)
-        .min(count.saturating_sub(visible))
+#[derive(Clone, Copy, Default, PartialEq)]
+pub enum SettingsPage {
+    #[default]
+    General,
+    Graphics,
+    Keybindings,
+}
+impl SettingsPage {
+    fn title(self) -> &'static str {
+        match self { Self::General => "Settings", Self::Graphics => "Settings · Graphical", Self::Keybindings => "Settings · Keybindings" }
+    }
+}
+
+// Painting and hit testing share the selected page's scroll offset.
+fn settings_first(selected: usize, visible: usize, count: usize) -> usize {
+    selected.saturating_sub(visible.saturating_sub(1)).min(count.saturating_sub(visible))
 }
 
 fn display_settings_rows(displays: &std::collections::BTreeMap<String, Vec<smithay::output::Mode>>,
@@ -107,7 +118,7 @@ mod tests {
             assert_eq!(settings_next(count - 1, 1, count), 0);
             for delta in [-8, -3, 3, 8] {
                 let selected = settings_next(count - 1, delta, count);
-                let first = settings_first(selected, 12, count, 30, 50);
+                let first = settings_first(selected, 12, count);
                 assert!(first <= selected && selected < first + 12);
             }
         }
@@ -117,13 +128,11 @@ mod tests {
     }
 
     #[test]
-    fn keybinding_help_starts_at_the_binding_section_and_scrolls_with_selection() {
-        assert_eq!(settings_first(0, 12, 90, 17, 50), 0);
-        assert_eq!(settings_first(16, 12, 90, 17, 50), 5);
-        assert_eq!(settings_first(17, 12, 90, 17, 50), 17);
-        assert_eq!(settings_first(25, 12, 90, 17, 50), 17);
-        assert_eq!(settings_first(30, 12, 90, 17, 50), 19);
-        assert_eq!(settings_first(89, 12, 90, 17, 50), 78);
+    fn each_submenu_scrolls_from_its_own_first_row() {
+        for count in [4, 18, 50] {
+            assert_eq!(settings_first(0, 12, count), 0);
+            assert_eq!(settings_first(count - 1, 12, count), count.saturating_sub(12));
+        }
     }
 
     #[test]
@@ -185,33 +194,41 @@ impl Dome {
         let [x, y, w, h, row_height] = self.xr_settings_rect(width, height);
         let visible = ((h - 150.) / row_height).floor().max(1.) as usize;
         let selected = self.xr_settings_row.min(rows.len().saturating_sub(1));
-        let first = settings_first(selected, visible, rows.len(),
-            self.keybindings_settings_start(&c), c.keybindings.len());
-        serde_json::json!({"x":x,"y":y,"w":w,"h":h,"row_height":row_height,"rows":rows,"first":first,"visible":visible,"selected":selected,"error":self.geometry_error,"wrap":true})
+        let first = settings_first(selected, visible, rows.len());
+        serde_json::json!({"x":x,"y":y,"w":w,"h":h,"row_height":row_height,"rows":rows,"first":first,"visible":visible,"selected":selected,"error":self.geometry_error,"wrap":true,"title":self.settings_page.title(),"graphics":self.settings_page == SettingsPage::Graphics,"submenu":self.settings_page != SettingsPage::General})
     }
     pub fn adjust_xr_setting(&mut self, row: usize, direction: f32) {
-        // These settings links use the same compositor-owned dialogs in both realms.
-        if row < 2 {
-            self.xr_settings_open = false;
+        if self.settings_page == SettingsPage::General {
             self.binding_capture = None;
-            self.command(if row == 0 { dome::shortcuts::Command::Appearance } else { dome::shortcuts::Command::KeyboardSettings });
+            self.geometry_error.clear();
+            match row {
+                0 | 1 => {
+                    self.xr_settings_open = false;
+                    self.command(if row == 0 { dome::shortcuts::Command::Appearance } else { dome::shortcuts::Command::KeyboardSettings });
+                }
+                2 | 3 => {
+                    self.settings_page = if row == 2 { SettingsPage::Graphics } else { SettingsPage::Keybindings };
+                    self.xr_settings_row = 0;
+                }
+                _ => (),
+            }
             return;
         }
         let c = self.scene.lock().unwrap().config.clone();
-        let display_count = self.display_modes.len() * 6;
-        let geometry_start = 3 + display_count;
-        let binding_start = self.keybindings_settings_start(&c);
-        if (binding_start..binding_start + c.keybindings.len()).contains(&row) {
-            self.binding_capture = Some(row - binding_start);
-            self.geometry_error = "Press a key chord; Backspace disables, Escape cancels".into();
+        if self.settings_page == SettingsPage::Keybindings {
+            if row < c.keybindings.len() {
+                self.binding_capture = Some(row);
+                self.geometry_error = "Press a key chord; Backspace disables, Escape cancels".into();
+            }
             return;
         }
-        let adjusted = if row == 2 {
+        let geometry_start = 1 + self.display_modes.len() * 6;
+        let adjusted = if row == 0 {
             let mut config = c.clone();
             config.gpu_device = dome::gpu_settings::cycle(c.gpu_device.as_deref(), &self.gpu_choices, direction as i32);
             config.validate().map(|_| config)
         } else if row < geometry_start {
-            self.adjust_display_setting(&c, row - 3, direction)
+            self.adjust_display_setting(&c, row - 1, direction)
         } else {
             geometry_settings::adjust(&c, row - geometry_start, direction)
         };
@@ -248,15 +265,16 @@ impl Dome {
         let c = self.scene.lock().unwrap().config.clone();
         let count = self.settings_rows(&c).len();
         let visible = ((h - 150.) / row).floor().max(1.) as usize;
-        let first = settings_first(self.xr_settings_row, visible, count,
-            self.keybindings_settings_start(&c), c.keybindings.len());
-        if y >= top + 40.
-            && y < top + 40. + visible as f64 * row
+        let first = settings_first(self.xr_settings_row, visible, count);
+        if self.settings_page != SettingsPage::General && y >= top && y < top + 36. && x >= left + w - 140. && x < left + w - 16. {
+            self.settings_back();
+        } else if y >= top + 40.
+            && y < top + 40. + visible.min(count.saturating_sub(first)) as f64 * row
             && x >= left + 12.
             && x < left + w - 12.
         {
             self.xr_settings_row = (first + ((y - top - 40.) / row) as usize).min(count - 1);
-            if self.xr_settings_row < 2 || x >= left + w - 270. {
+            if self.settings_page == SettingsPage::General || x >= left + w - 270. {
                 self.adjust_xr_setting(
                     self.xr_settings_row,
                     if x < left + w - 200. { -1. } else { 1. },
@@ -265,13 +283,15 @@ impl Dome {
         } else if y >= top + 40. + visible as f64 * row && y < top + h - 70. {
             self.xr_settings_scroll(if x < left + w / 2. { -15. } else { 15. });
         } else if y >= top + h - 66. && y < top + h - 30. {
-            if x >= left + 20. && x < left + 260. {
+            if self.settings_page == SettingsPage::Graphics && x >= left + 20. && x < left + 260. {
                 self.anchor_here();
-            } else if x >= left + 280. && x < left + 520. {
-                self.action(Action::Configure {
-                    config: Config::default(),
-                });
+            } else if self.settings_page == SettingsPage::Graphics && x >= left + 280. && x < left + 520. {
+                let mut config = Config::default();
+                config.keybindings = c.keybindings.clone();
+                self.action(Action::Configure { config });
                 self.persist_geometry();
+            } else if self.settings_page != SettingsPage::General && x >= left + 20. && x < left + 140. {
+                self.settings_back();
             } else if x >= left + w - 140. && x < left + w - 20. {
                 self.xr_settings_open = false;
             }
@@ -288,9 +308,9 @@ impl Dome {
         self.xr_settings_row = self.xr_settings_row.min(last);
         match key {
             0xff1b => {
-                self.xr_settings_open = false;
-                self.binding_capture = None;
+                self.settings_back();
             }
+            0xff08 => self.settings_back(),
             0xff52 => self.xr_settings_row = settings_next(self.xr_settings_row, -1, last + 1),
             0xff54 => self.xr_settings_row = settings_next(self.xr_settings_row, 1, last + 1),
             0xff51 => self.adjust_xr_setting(self.xr_settings_row, -1.),
@@ -321,18 +341,34 @@ impl Dome {
         }
         true
     }
-    pub fn keybindings_settings_start(&self, c: &Config) -> usize {
-        3 + self.display_modes.len() * 6 + geometry_settings::rows(c).len()
+    pub fn settings_back(&mut self) {
+        if self.settings_page == SettingsPage::General {
+            self.xr_settings_open = false;
+        } else {
+            self.xr_settings_row = if self.settings_page == SettingsPage::Graphics { 2 } else { 3 };
+            self.settings_page = SettingsPage::General;
+        }
+        self.binding_capture = None;
+        self.geometry_error.clear();
     }
     fn settings_rows(&self, c: &Config) -> Vec<(String, String)> {
-        let mut rows = vec![("Appearance…".to_owned(), "Open".to_owned()),
-            ("Keyboard Layouts…".to_owned(), self.keyboard_config.label())];
-        rows.push(("Compositor GPU · next session".into(),
-            dome::gpu_settings::label(c.gpu_device.as_deref(), self.active_gpu_device.as_deref(), &self.gpu_choices)));
-        rows.extend(display_settings_rows(&self.display_modes, &self.space, c));
-        rows.extend(geometry_settings::rows(c)
-            .into_iter()
-            .map(|(a, b)| (a.to_string(), b)));
+        match self.settings_page {
+            SettingsPage::General => return vec![
+                ("Appearance…".into(), "Open".into()),
+                ("Keyboard Layouts…".into(), self.keyboard_config.label()),
+                ("Graphical Settings…".into(), "Open".into()),
+                ("Keybindings…".into(), "Open".into()),
+            ],
+            SettingsPage::Graphics => {
+                let mut rows = vec![("Compositor GPU · next session".into(),
+                    dome::gpu_settings::label(c.gpu_device.as_deref(), self.active_gpu_device.as_deref(), &self.gpu_choices))];
+                rows.extend(display_settings_rows(&self.display_modes, &self.space, c));
+                rows.extend(geometry_settings::rows(c).into_iter().map(|(a,b)| (a.to_string(),b)));
+                return rows;
+            }
+            SettingsPage::Keybindings => (),
+        }
+        let mut rows = Vec::new();
         for (index, binding) in c.keybindings.iter().enumerate() {
             rows.push((
                 format!(

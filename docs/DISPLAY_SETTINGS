@@ -1,7 +1,8 @@
 Monitor and GPU settings
 
-Open Settings from Dome's universal menu or press Super+comma. The GPU selector
-and connected monitor controls precede XR geometry and keybindings.
+Open Settings from Dome's universal menu or press Super+comma. Choose Graphical
+Settings for GPU selection, connected monitor controls, and XR geometry. Keybindings have their own submenu, alongside Appearance and Keyboard
+Layouts. Escape or Back returns to Settings and keeps the parent selection.
 
 Each connected monitor offers enable/disable, supported resolution and refresh,
 X/Y position, automatic arrangement, and primary-display selection. Changes are
@@ -27,3 +28,8 @@ monitor modes. Keybinding Help opens directly at the binding section.
 Validation uses GPU discovery/configuration unit tests, disabled-monitor rows,
 wrap/scroll tests, and a private FLTK/XR shell integration test for pointer
 alignment, GPU preference persistence, and wrapped keyboard navigation.
+
+The compositor and dome-xr renderer must be installed from the same build: the
+shared scene/configuration schema is strict. Install both release binaries
+together. Scene decoding errors are reported by dome-xr instead of silently
+running an empty XR session.
