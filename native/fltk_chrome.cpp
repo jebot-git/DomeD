@@ -704,7 +704,17 @@ extern "C" int dome_qt_paint(const char *json, unsigned char *pixels,
         p.rect(x + 7, 32, 8, 2, p.accent);
     }
     p.text(12, h - 60, 86, 60, "Launch", p.fg);
-    p.text(w - 240, h - 60, 140, 60, "Desktops", p.fg);
+    const auto desktops = arr(o, "desktops");
+    const int activeDesktop = num(o, "active_workspace", -1);
+    const bool hasActiveDesktop = activeDesktop >= 0 && activeDesktop < int(desktops.size());
+    if (hasActiveDesktop) {
+      p.text(w - 240, h - 58, 140, 28,
+             "Desktops " + std::to_string(activeDesktop + 1) + "/" + std::to_string(desktops.size()), p.fg);
+      p.text(w - 240, h - 30, 140, 28,
+             desktops[activeDesktop].is_string() ? desktops[activeDesktop].get<std::string>() : "Desktop", p.fg);
+    } else {
+      p.text(w - 240, h - 60, 140, 60, "Desktops", p.fg);
+    }
     p.text(w - 90, h - 60, 86, 60, yes(o, "xr_active") ? "Desktop" : "XR",
            p.fg);
     i = 0;
@@ -763,11 +773,16 @@ extern "C" int dome_qt_paint(const char *json, unsigned char *pixels,
     if (yes(o, "manager")) {
       p.rect(w - 330, h - 390, 320, 320, p.bg);
       i = 0;
-      for (auto &d : arr(o, "desktops")) {
+      for (auto &d : desktops) {
+        const int y = h - 384 + i * 32;
         if (i == num(o, "shell_selection"))
-          p.rect(w - 320, h - 384 + i * 32, 300, 32, p.sel);
-        p.text(w - 310, h - 384 + i++ * 32, 280, 32,
+          p.rect(w - 320, y, 300, 32, p.sel);
+        // The current desktop stays marked while keyboard selection moves.
+        if (i == activeDesktop)
+          p.rect(w - 310, y + 11, 6, 10, p.fg);
+        p.text(w - 294, y, 264, 32,
                d.is_string() ? d.get<std::string>() : "Desktop", p.fg);
+        ++i;
       }
       p.text(w - 310, h - 384 + i * 32, 280, 32, "+ New desktop", p.fg);
     }

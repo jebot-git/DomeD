@@ -753,6 +753,9 @@ Left/Right to adjust it, with visible keyboard focus. Tray menus skip disabled
 items and use Right/Left to enter and leave submenus. Keyboard settings, desktop
 switching, grouped task previews and confirmation dialogs also accept cursor keys;
 confirmation dialogs initially select Cancel.
+The bar's desktop switcher shows the current desktop's name and its number out
+of the total in desktop and XR. A marker in the desktop list identifies the
+current desktop independently of the keyboard selection highlight.
 
 **Super+F10** opens the universal menu bar from the keyboard. Left/Right switch
 between enabled headers; Up/Down wrap through enabled items and skip separators.

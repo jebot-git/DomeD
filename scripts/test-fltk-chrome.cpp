@@ -85,6 +85,37 @@ int main(int argc, char **argv) try {
   require((headerPixels[18 * 640 + 63] & 0xFFFFFF) == 0x00FF00,
           "Application icon missing from universal menu bar");
   std::filesystem::remove(iconPath);
+  // Current desktop identity is independent of the switcher's keyboard cursor.
+  for (bool light : {false, true}) {
+    auto desktop = [light](int active, int selected, std::string name = "Writing") {
+      J value = {{"kind", "shell"}, {"width", 640}, {"height", 480},
+                 {"desktops", J::array({"Desktop 1", name, "Desktop 3"})},
+                 {"active_workspace", active}, {"shell_selection", selected},
+                 {"manager", true}, {"appearance", {{"light", light}}}};
+      std::vector<uint32_t> pixels(640 * 480);
+      require(dome_qt_paint(value.dump().c_str(), (unsigned char *)pixels.data(), pixels.size() * 4) == 1,
+              "Desktop switcher painting failed");
+      return pixels;
+    };
+    auto first = desktop(0, 0), second = desktop(1, 1), cursor = desktop(1, 2);
+    auto renamed = desktop(1, 2, "作業 · Žluťoučký desktop with a long name");
+    auto regionDiffers = [](const auto &a, const auto &b, int x, int y, int w, int h) {
+      for (int row = y; row < y + h; ++row) for (int col = x; col < x + w; ++col)
+        if (a[row * 640 + col] != b[row * 640 + col]) return true;
+      return false;
+    };
+    require(regionDiffers(first, second, 400, 422, 140, 28), "Bar desktop number did not update");
+    require(regionDiffers(second, renamed, 400, 450, 140, 28), "Bar omitted the current desktop name");
+    require(!regionDiffers(second, cursor, 390, 420, 160, 60), "Keyboard cursor changed current desktop identity");
+    const int marker = 333;
+    require(first[110 * 640 + marker] == second[142 * 640 + marker], "Active desktop marker did not follow the workspace");
+    require(second[142 * 640 + marker] == cursor[142 * 640 + marker], "Keyboard cursor moved the active desktop marker");
+    require(cursor[142 * 640 + marker] != cursor[174 * 640 + marker], "Keyboard target was marked as the active desktop");
+    require(!regionDiffers(cursor, renamed, 540, 420, 100, 60), "Long desktop name escaped into the XR button");
+    auto image = cairo_image_surface_create_for_data((unsigned char *)cursor.data(), CAIRO_FORMAT_ARGB32, 640, 480, 640 * 4);
+    cairo_surface_write_to_png(image, (std::string(argv[2]) + (light ? ".desktop-light.png" : ".desktop-dark.png")).c_str());
+    cairo_surface_destroy(image);
+  }
   // Button pixels must be identical across fonts and native sizes.
   std::vector<unsigned char> reference;
   for (auto &font : fonts) {
@@ -176,5 +207,5 @@ int main(int argc, char **argv) try {
   cairo_surface_write_to_png(surface, argv[2]);
   cairo_destroy(cr); cairo_surface_destroy(surface);
   std::filesystem::remove_all(dir);
-  std::cout << "PASS: inherited/absolute theme icons, original icon colours, bitmap fallback, font-independent Workbench close/zoom/depth gadgets\n";
+  std::cout << "PASS: theme icons, bitmap fallback, current desktop indicators, font-independent Workbench close/zoom/depth gadgets\n";
 } catch (const std::exception &e) { std::cerr << e.what() << '\n'; return 1; }
