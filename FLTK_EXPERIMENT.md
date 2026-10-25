@@ -39,3 +39,9 @@ FLTK dialogs inherit the DomeD bitmap font and live palette. The isolated
 `first-configure` toolkit patch prevents transient dialogs from freezing while
 waiting for a redundant second Wayland configure. Ordinary third-party FLTK
 applications need the same appearance hook to follow DomeD automatically.
+
+The `escape-dialogs` runtime patch limits FLTK's unhandled Escape close callback
+to modal/non-modal dialogs and menu/tooltip windows. Root application windows
+stay open. Widget Escape actions, explicit shortcuts, titlebar close and Quit
+remain available. New processes pick up a runtime update; active applications
+keep their loaded library until restarted normally.

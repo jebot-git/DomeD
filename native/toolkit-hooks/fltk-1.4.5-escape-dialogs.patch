@@ -1,0 +1,19 @@
+--- a/src/Fl.cxx
++++ b/src/Fl.cxx
+@@ -1564,10 +1564,13 @@
+     // try using add_handle() functions:
+     if (send_handlers(FL_SHORTCUT)) return 1;
+ 
+-    // make Escape key close windows:
++    // DomeD: unhandled Escape dismisses dialogs/popups, never root applications.
++    // Widget-specific Escape actions and explicit shortcuts were tried above.
+     if (event_key()==FL_Escape) {
+-      wi = modal(); if (!wi) wi = window;
+-      wi->do_callback(FL_REASON_CANCELLED);
++      Fl_Window *cancel = modal(); if (!cancel) cancel = window;
++      if (!cancel || !(cancel->non_modal() || cancel->menu_window() || cancel->tooltip_window()))
++        return 0;
++      cancel->do_callback(FL_REASON_CANCELLED);
+       return 1;
+     }
+ 
