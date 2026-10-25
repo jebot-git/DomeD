@@ -170,10 +170,35 @@ w.end();DesktopMenu exported(w,m);w.show();return Fl::run();}
         main_menu()
         click(160,40+4+24+5*28+14)
         shell=wait(lambda:(l if (l:=layout())['top']==l['height'] else None));capture('02-settings')
-        w,h=shell['width'],shell['height'];pw=min(800,w-16);ph=min(650,h-100);left=(w-pw)/2;top=36+max(0,h-96-ph)/2
+        w,h=shell['width'],shell['height'];pw=min(800,w-16);ph=min(700,h-100);left=(w-pw)/2;top=36+max(0,h-96-ph)/2
         original_size=win()['desktop'].copy();density=state()['config']['xr_render_scale']
+        # Wrap in both directions through the real settings key handler.
+        previous_bindings=state()['config']['keybindings']
+        key('Home');key('Up');key('Right')
+        key('Super_L',True);key('F8');key('Super_L',False)
+        wait(lambda:state()['config']['keybindings'][-1]['key']==0xffc5)
+        assert state()['config']['keybindings'][:-1]==previous_bindings[:-1]
+        for _ in range(4):key('Down') # last → first, keyboard, GPU, first XR setting
+        old_anchor=state()['config']['anchor_mode'];key('Right')
+        wait(lambda:state()['config']['anchor_mode']!=old_anchor)
+        key('Left');wait(lambda:state()['config']['anchor_mode']==old_anchor)
+        check(True,'Settings wrap first↔last, retain visible selection, and route following adjustments to the right section')
         key('Home')
-        for _ in range(17):key('Down') # two session rows plus geometry row 15
+        gpu_cards=[p for p in Path('/sys/class/drm').glob('card[0-9]*')
+                   if p.name.removeprefix('card').isdigit() and 'PCI_ID=' in (p/'device/uevent').read_text()]
+        if gpu_cards:
+            click(left+pw-100,top+40+2*34+17)
+            first_gpu=wait(lambda:state()['config'].get('gpu_device'))
+            saved=runtime/'config/dome/xr.json'
+            wait(lambda:saved.exists() and json.loads(saved.read_text()).get('gpu_device')==first_gpu)
+            capture('02-gpu-selector')
+            key('Left');wait(lambda:state()['config']['gpu_device'] is None)
+            key('Left');wait(lambda:state()['config']['gpu_device'] is not None)
+            key('Right');wait(lambda:state()['config']['gpu_device'] is None)
+            check(True,'GPU selector uses aligned pointer targets, saves a DRM card, and wraps through Automatic in both directions')
+        key('Home')
+        key('Home')
+        for _ in range(18):key('Down') # two session links, GPU selector, then geometry row 15
         key('Right');wait(lambda:state()['config']['xr_window_resolution']=='1440p')
         capture('02-xr-window-resolution')
         saved=runtime/'config/dome/xr.json'
@@ -199,6 +224,12 @@ w.end();DesktopMenu exported(w,m);w.show();return Fl::run();}
         check(client.poll()is None and not (runtime/'native-marker').exists(),'Universal Window Send to Desktop precedes native Window actions and transfers the running XR application')
         xd.close()
         (out/'checks.json').write_text(json.dumps(checks,indent=2)+'\n')
+except Exception:
+    try:
+        (out/'failure-state.json').write_text(json.dumps(read('/api/state'),indent=2))
+        capture('failure')
+    except Exception:pass
+    raise
 finally:
     stop.set()
     for child in reversed(children):

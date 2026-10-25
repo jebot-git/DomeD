@@ -1,0 +1,29 @@
+Monitor and GPU settings
+
+Open Settings from Dome's universal menu or press Super+comma. The GPU selector
+and connected monitor controls precede XR geometry and keybindings.
+
+Each connected monitor offers enable/disable, supported resolution and refresh,
+X/Y position, automatic arrangement, and primary-display selection. Changes are
+saved in the Dome profile and applied to the current native session. Disabled
+monitors remain listed so they can be enabled again; their saved mode and
+position remain visible. The final physical display cannot be disabled here.
+
+Compositor GPU selection is saved for the next native Dome session. Automatic
+keeps the session default. Available PCI GPUs have model names and DRM card
+identifiers; preferences use stable PCI aliases when available, so card-number
+changes do not change the chosen GPU. A removed GPU falls back to the session
+default. This controls DomeD's compositor GPU; the OpenXR runtime assigns its own
+rendering/encoding device. An explicit DOME_DRM_DEVICE launch override takes
+precedence, followed by the saved selection, a compiled device default, and the
+seat's normal device selection. No session is restarted by saving a selection.
+
+Up/Down wrap from the first setting to the last and back. Page Up/Page Down and
+scroll navigation wrap as well. Home/End go to the beginning/end. The selected
+row stays visible, and painting uses the same row spacing as pointer hit tests.
+Left/Right cycle a setting's choices, including GPU Automatic and supported
+monitor modes. Keybinding Help opens directly at the binding section.
+
+Validation uses GPU discovery/configuration unit tests, disabled-monitor rows,
+wrap/scroll tests, and a private FLTK/XR shell integration test for pointer
+alignment, GPU preference persistence, and wrapped keyboard navigation.

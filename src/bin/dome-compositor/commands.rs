@@ -61,7 +61,7 @@ impl Dome {
                 ("Open Files", "⌘E", FileManager),
                 ("Open Terminal", "⌘T", Terminal),
                 ("Take Screenshot", "PrintScreen", Screenshot),
-                ("Settings…", "⌘,", XrSettings),
+                ("Monitor, GPU & XR Settings…", "⌘,", XrSettings),
                 ("Keybinding Help…", "", KeybindingsHelp),
                 ("", "", Separator),
                 ("Start XR", "", StartXr),
@@ -119,7 +119,7 @@ impl Dome {
                 ("Show / Hide Upper XR Bar", "⌥⌘T", ToggleXrTop),
                 ("Show / Hide XR Taskbar", "⌥⌘B", ToggleXrBottom),
                 ("Show / Hide XR Desktop", "⇧⌘D", ToggleXrDesktop),
-                ("Displays, XR & Keybindings…", "⌘,", XrSettings),
+                ("Monitor, GPU & XR Settings…", "⌘,", XrSettings),
                 ("Anchor Dome at Headset", "⌃⌘R", AnchorHere),
                 ("", "", Separator),
                 ("Focus Previous Lane", "⌃⌥↑", CycleLane(-1)),
@@ -246,6 +246,7 @@ impl Dome {
             }
             KeyboardSettings => self.keyboard_settings_open(),
             XrSettings | KeybindingsHelp => {
+                self.gpu_choices = dome::gpu_settings::discover();
                 self.xr_settings_open = true;
                 self.xr_settings_row = if c == KeybindingsHelp {
                     self.keybindings_settings_start(&s.config)

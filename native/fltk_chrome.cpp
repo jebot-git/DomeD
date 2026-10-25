@@ -440,6 +440,7 @@ struct Paint {
     rect(x, y, w, h, bg);
     text(x + 16, y + 4, w - 32, 32, title, fg);
     auto rows = arr(panel, "rows");
+    rowHeight = num(panel, "row_height", rowHeight);
     int first = num(panel, "first"),
         visible = num(panel, "visible", rows.size());
     for (int i = first; i < std::min(int(rows.size()), first + visible); ++i) {
@@ -451,6 +452,11 @@ struct Paint {
            str(r, "label", str(r, "text")), fg);
       text(x + w * 2 / 3, ry, w / 3 - 18, rowHeight,
            str(r, "value", str(r, "detail")), muted);
+    }
+    if (yes(panel, "wrap") && int(rows.size()) > visible) {
+      int ry = y + top + visible * rowHeight;
+      text(x + 18, ry, w / 2 - 18, 30, "▲ Previous", fg);
+      text(x + w / 2, ry, w / 2 - 18, 30, "Next ▼", fg);
     }
     text(x + 16, y + h - 30, w - 32, 26, str(panel, "error"), accent);
   }
@@ -763,7 +769,7 @@ extern "C" int dome_qt_paint(const char *json, unsigned char *pixels,
                         4, std::max(4, w - 284)),
              36, 280, num(tray, "selected", -1));
     p.taskPopup(obj(o, "task_popup"));
-    p.panelRows(obj(o, "xr_settings"), "Settings · Displays, XR & Keybindings", 28);
+    p.panelRows(obj(o, "xr_settings"), "Settings · Monitors, GPU, XR & Keys", 28);
     p.panelRows(obj(o, "default_apps"),
                 str(obj(o, "default_apps"), "title", "Default applications"),
                 44, 64);

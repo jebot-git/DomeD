@@ -8,6 +8,71 @@ fn settings_first(selected: usize, visible: usize, count: usize, bindings: usize
         .min(count.saturating_sub(visible))
 }
 
+fn display_settings_rows(displays: &std::collections::BTreeMap<String, Vec<smithay::output::Mode>>,
+    space: &smithay::desktop::Space<smithay::desktop::Window>, c: &Config) -> Vec<(String,String)> {
+    let mut rows = Vec::new();
+    for name in displays.keys() {
+        let profile = c.displays.iter().find(|d| d.name == *name);
+        let output = space.outputs().find(|o| o.name() == *name);
+        let mode = output.and_then(|o| o.current_mode()).or_else(|| {
+            let profile = profile?;
+            displays[name].iter().find(|mode| mode.size.w == profile.width
+                && mode.size.h == profile.height && (profile.refresh == 0 || profile.refresh == mode.refresh)).copied()
+        });
+        let pos = output
+            .and_then(|o| space.output_geometry(o))
+            .map(|g| g.loc)
+            .unwrap_or_else(|| (profile.and_then(|d| d.x).unwrap_or(0), profile.map_or(0, |d| d.y)).into());
+        for (label, value) in [
+            (
+                "Enabled",
+                if profile.is_none_or(|d| d.enabled) {
+                    "Yes".into()
+                } else {
+                    "No".into()
+                },
+            ),
+            (
+                "Resolution / refresh",
+                mode.map(|m| {
+                    format!(
+                        "{}×{} {:.2}Hz",
+                        m.size.w,
+                        m.size.h,
+                        m.refresh as f64 / 1000.
+                    )
+                })
+                .unwrap_or_else(|| "Disabled".into()),
+            ),
+            ("Position X", format!("{} px", pos.x)),
+            ("Position Y", format!("{} px", pos.y)),
+            (
+                "Automatic arrangement",
+                if profile.is_none_or(|d| d.x.is_none()) {
+                    "Yes".into()
+                } else {
+                    "No".into()
+                },
+            ),
+            (
+                "Primary display",
+                if profile.is_some_and(|d| d.primary) {
+                    "Yes".into()
+                } else {
+                    "No".into()
+                },
+            ),
+        ] {
+            rows.push((format!("{name} · {label}"), value));
+        }
+    }
+    rows
+}
+
+fn settings_next(selected: usize, delta: isize, count: usize) -> usize {
+    if count == 0 { 0 } else { (selected.min(count - 1) as isize + delta).rem_euclid(count as isize) as usize }
+}
+
 fn cycle_display_offset(current: i32, resolution: i32, direction: f32) -> i32 {
     let step = if direction > 0. { 1 } else { -1 };
     let next = (current.signum() + step + 1).rem_euclid(3) - 1;
@@ -16,7 +81,40 @@ fn cycle_display_offset(current: i32, resolution: i32, direction: f32) -> i32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{cycle_display_offset, settings_first};
+    use super::{cycle_display_offset, settings_first, settings_next, display_settings_rows};
+
+    #[test]
+    fn disabled_monitors_keep_saved_modes_and_positions_in_settings() {
+        let mut config = dome::Config::default();
+        config.displays.push(dome::DisplayConfig { name: "DisplayPort-1".into(), enabled: false,
+            width: 1920, height: 1080, refresh: 60000, x: Some(-1920), y: -1080, primary: true });
+        let modes = std::collections::BTreeMap::from([("DisplayPort-1".into(), vec![
+            smithay::output::Mode { size: (1920,1080).into(), refresh: 60000 }])]);
+        let rows = display_settings_rows(&modes, &smithay::desktop::Space::default(), &config);
+        assert_eq!(rows.len(),6);
+        assert_eq!(rows[0].1,"No");
+        assert_eq!(rows[1].1,"1920×1080 60.00Hz");
+        assert_eq!(rows[2].1,"-1920 px");
+        assert_eq!(rows[3].1,"-1080 px");
+        assert_eq!(rows[4].1,"No");
+        assert_eq!(rows[5].1,"Yes");
+    }
+
+    #[test]
+    fn settings_navigation_wraps_and_keeps_the_destination_visible() {
+        for count in [1, 16, 100] {
+            assert_eq!(settings_next(0, -1, count), count - 1);
+            assert_eq!(settings_next(count - 1, 1, count), 0);
+            for delta in [-8, -3, 3, 8] {
+                let selected = settings_next(count - 1, delta, count);
+                let first = settings_first(selected, 12, count, 30, 50);
+                assert!(first <= selected && selected < first + 12);
+            }
+        }
+        assert_eq!(settings_next(0, -1, 0), 0);
+        assert_eq!(settings_next(150, 1, 100), 0); // monitor removed while Settings is open
+        assert_eq!(settings_next(150, -1, 100), 98);
+    }
 
     #[test]
     fn keybinding_help_starts_at_the_binding_section_and_scrolls_with_selection() {
@@ -65,7 +163,7 @@ impl Dome {
     }
     pub fn xr_settings_rect(&self, width: i32, height: i32) -> [f64; 5] {
         let w = 800f64.min((width - 16).max(1) as f64);
-        let h = 650f64.min((height - 100).max(1) as f64);
+        let h = 700f64.min((height - 100).max(1) as f64);
         [
             (width as f64 - w) / 2.,
             36. + ((height - 96) as f64 - h).max(0.) / 2.,
@@ -86,9 +184,10 @@ impl Dome {
             .collect();
         let [x, y, w, h, row_height] = self.xr_settings_rect(width, height);
         let visible = ((h - 150.) / row_height).floor().max(1.) as usize;
-        let first = settings_first(self.xr_settings_row, visible, rows.len(),
+        let selected = self.xr_settings_row.min(rows.len().saturating_sub(1));
+        let first = settings_first(selected, visible, rows.len(),
             self.keybindings_settings_start(&c), c.keybindings.len());
-        serde_json::json!({"x":x,"y":y,"w":w,"h":h,"row_height":row_height,"rows":rows,"first":first,"visible":visible,"selected":self.xr_settings_row,"error":self.geometry_error})
+        serde_json::json!({"x":x,"y":y,"w":w,"h":h,"row_height":row_height,"rows":rows,"first":first,"visible":visible,"selected":selected,"error":self.geometry_error,"wrap":true})
     }
     pub fn adjust_xr_setting(&mut self, row: usize, direction: f32) {
         // These settings links use the same compositor-owned dialogs in both realms.
@@ -98,18 +197,23 @@ impl Dome {
             self.command(if row == 0 { dome::shortcuts::Command::Appearance } else { dome::shortcuts::Command::KeyboardSettings });
             return;
         }
-        let row = row - 2;
         let c = self.scene.lock().unwrap().config.clone();
-        let geometry_count = geometry_settings::rows(&c).len();
-        if row >= geometry_count && row < geometry_count + c.keybindings.len() {
-            self.binding_capture = Some(row - geometry_count);
+        let display_count = self.display_modes.len() * 6;
+        let geometry_start = 3 + display_count;
+        let binding_start = self.keybindings_settings_start(&c);
+        if (binding_start..binding_start + c.keybindings.len()).contains(&row) {
+            self.binding_capture = Some(row - binding_start);
             self.geometry_error = "Press a key chord; Backspace disables, Escape cancels".into();
             return;
         }
-        let adjusted = if row < geometry_count {
-            geometry_settings::adjust(&c, row, direction)
+        let adjusted = if row == 2 {
+            let mut config = c.clone();
+            config.gpu_device = dome::gpu_settings::cycle(c.gpu_device.as_deref(), &self.gpu_choices, direction as i32);
+            config.validate().map(|_| config)
+        } else if row < geometry_start {
+            self.adjust_display_setting(&c, row - 3, direction)
         } else {
-            self.adjust_display_setting(&c, row - geometry_count - c.keybindings.len(), direction)
+            geometry_settings::adjust(&c, row - geometry_start, direction)
         };
         match adjusted {
             Ok(config) => {
@@ -181,17 +285,18 @@ impl Dome {
             .settings_rows(&self.scene.lock().unwrap().config)
             .len()
             .saturating_sub(1);
+        self.xr_settings_row = self.xr_settings_row.min(last);
         match key {
             0xff1b => {
                 self.xr_settings_open = false;
                 self.binding_capture = None;
             }
-            0xff52 => self.xr_settings_row = self.xr_settings_row.saturating_sub(1),
-            0xff54 => self.xr_settings_row = (self.xr_settings_row + 1).min(last),
+            0xff52 => self.xr_settings_row = settings_next(self.xr_settings_row, -1, last + 1),
+            0xff54 => self.xr_settings_row = settings_next(self.xr_settings_row, 1, last + 1),
             0xff51 => self.adjust_xr_setting(self.xr_settings_row, -1.),
             0xff53 | 0xff0d => self.adjust_xr_setting(self.xr_settings_row, 1.),
-            0xff55 => self.xr_settings_row = self.xr_settings_row.saturating_sub(8),
-            0xff56 => self.xr_settings_row = (self.xr_settings_row + 8).min(last),
+            0xff55 => self.xr_settings_row = settings_next(self.xr_settings_row, -8, last + 1),
+            0xff56 => self.xr_settings_row = settings_next(self.xr_settings_row, 8, last + 1),
             0xff50 => self.xr_settings_row = 0,
             0xff57 => self.xr_settings_row = last,
             _ => (),
@@ -210,18 +315,21 @@ impl Dome {
             .len()
             .saturating_sub(1);
         if delta > 0. {
-            self.xr_settings_row = (self.xr_settings_row + 3).min(last);
+            self.xr_settings_row = settings_next(self.xr_settings_row, 3, last + 1);
         } else if delta < 0. {
-            self.xr_settings_row = self.xr_settings_row.saturating_sub(3);
+            self.xr_settings_row = settings_next(self.xr_settings_row, -3, last + 1);
         }
         true
     }
     pub fn keybindings_settings_start(&self, c: &Config) -> usize {
-        2 + geometry_settings::rows(c).len()
+        3 + self.display_modes.len() * 6 + geometry_settings::rows(c).len()
     }
     fn settings_rows(&self, c: &Config) -> Vec<(String, String)> {
         let mut rows = vec![("Appearance…".to_owned(), "Open".to_owned()),
             ("Keyboard Layouts…".to_owned(), self.keyboard_config.label())];
+        rows.push(("Compositor GPU · next session".into(),
+            dome::gpu_settings::label(c.gpu_device.as_deref(), self.active_gpu_device.as_deref(), &self.gpu_choices)));
+        rows.extend(display_settings_rows(&self.display_modes, &self.space, c));
         rows.extend(geometry_settings::rows(c)
             .into_iter()
             .map(|(a, b)| (a.to_string(), b)));
@@ -237,57 +345,6 @@ impl Dome {
                     binding.label()
                 },
             ));
-        }
-        for name in self.display_modes.keys() {
-            let profile = c.displays.iter().find(|d| d.name == *name);
-            let output = self.space.outputs().find(|o| o.name() == *name);
-            let mode = output.and_then(|o| o.current_mode());
-            let pos = output
-                .and_then(|o| self.space.output_geometry(o))
-                .map(|g| g.loc)
-                .unwrap_or_default();
-            for (label, value) in [
-                (
-                    "Enabled",
-                    if profile.is_none_or(|d| d.enabled) {
-                        "Yes".into()
-                    } else {
-                        "No".into()
-                    },
-                ),
-                (
-                    "Resolution / refresh",
-                    mode.map(|m| {
-                        format!(
-                            "{}×{} {:.2}Hz",
-                            m.size.w,
-                            m.size.h,
-                            m.refresh as f64 / 1000.
-                        )
-                    })
-                    .unwrap_or_else(|| "Disabled".into()),
-                ),
-                ("Position X", format!("{} px", pos.x)),
-                ("Position Y", format!("{} px", pos.y)),
-                (
-                    "Automatic arrangement",
-                    if profile.is_none_or(|d| d.x.is_none()) {
-                        "Yes".into()
-                    } else {
-                        "No".into()
-                    },
-                ),
-                (
-                    "Primary display",
-                    if profile.is_some_and(|d| d.primary) {
-                        "Yes".into()
-                    } else {
-                        "No".into()
-                    },
-                ),
-            ] {
-                rows.push((format!("{name} · {label}"), value));
-            }
         }
         rows
     }

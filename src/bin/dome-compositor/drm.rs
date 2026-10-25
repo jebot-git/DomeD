@@ -62,6 +62,7 @@ struct Native {
     renderer: GlesRenderer,
     renderer_name: String,
     outputs: Vec<NativeOutput>,
+    display_names: Vec<String>,
     device_id: u64,
     path: PathBuf,
     token: Option<RegistrationToken>,
@@ -93,6 +94,9 @@ impl Native {
         let wanted = std::env::var("DOME_DRM_CONNECTOR").ok();
         let config = state.scene.lock().unwrap().config.clone();
         let resources = self.drm.resource_handles()?;
+        for name in self.display_names.drain(..) {
+            state.display_modes.remove(&name);
+        }
         let mut connected = Vec::new();
         for handle in resources.connectors() {
             let info = self.drm.get_connector(*handle, true)?;
@@ -105,6 +109,7 @@ impl Native {
             let mut modes: Vec<_> = info.modes().iter().copied().map(OutputMode::from).collect();
             modes.sort_by_key(|m| (m.size.w, m.size.h, m.refresh));
             modes.dedup();
+            self.display_names.push(name.clone());
             state.display_modes.insert(name.clone(), modes);
             let profile = config.displays.iter().find(|d| d.name == name);
             if profile.is_some_and(|d| !d.enabled) {
@@ -428,9 +433,12 @@ pub fn init(event_loop: &mut EventLoop<CalloopData>, data: &mut CalloopData) -> 
         paths.split(',').map(PathBuf::from).collect()
     } else if let Some(path) = test_device.clone() {
         vec![path]
-    } else if let Some(path) = option_env!("DOME_BUILD_DRM_DEVICE") {
-        vec![path.into()]
     } else if let Some(path) = std::env::var_os("DOME_DRM_DEVICE") {
+        vec![path.into()]
+    } else if let Some(path) = dome::gpu_settings::available_choice(
+        data.state.scene.lock().unwrap().config.gpu_device.as_deref(), &data.state.gpu_choices) {
+        vec![path]
+    } else if let Some(path) = option_env!("DOME_BUILD_DRM_DEVICE").filter(|path| Path::new(path).exists()) {
         vec![path.into()]
     } else {
         #[cfg(feature = "multi-gpu")]
@@ -465,6 +473,8 @@ pub fn init(event_loop: &mut EventLoop<CalloopData>, data: &mut CalloopData) -> 
     devices
         .borrow_mut()
         .sort_by_key(|g| g.borrow().outputs.is_empty());
+    data.state.active_gpu_device = devices.borrow().first()
+        .map(|gpu| gpu.borrow().path.to_string_lossy().into_owned());
     relayout(&devices, &mut data.state)?;
     // Multi-GPU builds advertise only formats importable on every GPU.
     let formats = {
@@ -637,6 +647,9 @@ pub fn init(event_loop: &mut EventLoop<CalloopData>, data: &mut CalloopData) -> 
                             }
                             if let Some(token) = gpu.token.take() {
                                 hotplug_handle.remove(token);
+                            }
+                            for name in gpu.display_names.drain(..) {
+                                data.state.display_modes.remove(&name);
                             }
                             for output in gpu.outputs.drain(..) {
                                 data.state.space.unmap_output(&output.output);
@@ -881,6 +894,7 @@ fn init_gpu_inner(
         renderer,
         renderer_name,
         outputs: Vec::new(),
+        display_names: Vec::new(),
         device_id,
         path: path.into(),
         token: None,

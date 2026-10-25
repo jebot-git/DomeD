@@ -32,6 +32,7 @@ pub mod input_routing;
 
 pub mod context_menu;
 pub mod geometry_settings;
+pub mod gpu_settings;
 pub mod spatial_popup;
 pub mod terminal;
 #[cfg(feature = "xr")]

@@ -120,6 +120,8 @@ impl Default for DisplayConfig {
 #[serde(default, deny_unknown_fields)]
 pub struct Config {
     pub displays: Vec<DisplayConfig>,
+    /// Native compositor GPU, applied when the next session starts.
+    pub gpu_device: Option<String>,
     pub projection: Projection,
     #[serde(rename = "xr_pointer_mode", deserialize_with = "discard_retired_setting", skip_serializing)]
     pub retired_pointer_mode: (),
@@ -164,6 +166,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             displays: Vec::new(),
+            gpu_device: None,
             projection: Projection::RoomDome,
             retired_pointer_mode: (),
             retired_pointer_smoothing: (),
@@ -197,6 +200,9 @@ impl Default for Config {
 impl Config {
     pub fn validate(&self) -> Result<(), String> {
         crate::shortcuts::validate(&self.keybindings)?;
+        if self.gpu_device.as_deref().is_some_and(|path| !crate::gpu_settings::valid_path(path)) {
+            return Err("GPU must be a DRM card device".into());
+        }
         let mut names = std::collections::HashSet::new();
         for display in &self.displays {
             if display.name.is_empty()
