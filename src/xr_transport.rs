@@ -24,7 +24,7 @@ pub fn is_shell(id: u64) -> bool {
 }
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct ShellPullout {
-    /// A dropdown with a visible universal-menu origin stays below the top bar.
+    /// A dropdown originating in the universal menu or tray stays below the top bar.
     #[serde(default)]
     pub top_attached: bool,
     /// Taskbar previews and context menus extend upward from their taskbar origin.

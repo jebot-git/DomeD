@@ -94,7 +94,9 @@ impl Dome {
             }))
         } else { None };
         if let Some(p) = &mut pullout {
-            p.top_attached=self.menu.is_some() && self.menu_has_ui_origin;
+            // StatusNotifier and input-method menus originate in the upper tray.
+            // Permanent audio/history widgets keep their existing placement.
+            p.top_attached=(self.menu.is_some() && self.menu_has_ui_origin) || tray.menu.is_some();
             p.bottom_attached=self.task_popup.is_some();
         }
         b.shell = ShellLayout {

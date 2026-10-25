@@ -57,3 +57,9 @@ changed as part of the evaluation.
 The separate [New XR window resolution](XR_WINDOW_RESOLUTION.md) setting now
 chooses new clients' logical content dimensions (720p through QHD, default 1080p).
 It changes neither UI scale nor XR render density and applies only at launch.
+
+Tray application and input-method dropdowns attach below the upper bar in XR,
+using its curvature and horizontal menu coordinates. They follow the bar as the
+head moves, like universal-menu dropdowns. Permanent volume, clipboard and
+notification widgets retain their existing placement. Task previews attach above
+the taskbar; menus without a visible bar origin retain the frozen pullout.

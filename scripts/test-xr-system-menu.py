@@ -116,6 +116,29 @@ w.end();DesktopMenu exported(w,m);w.show();return Fl::run();}
         check(True,'Taskbar preview extends above and follows its bar origin, preserving desktop horizontal UVs and texture crop')
         key('Escape');wait(lambda:layout()['bottom']==60)
         tracking.update(position_m=[0,1.6,0],orientation_xyzw=[0,0,0,1]);time.sleep(.2)
+        # A real StatusNotifier menu shares the upper bar geometry and remains
+        # clickable after head movement; permanent widgets use separate paths.
+        tray_journal=runtime/'tray-events.jsonl'
+        start([sys.executable,str(root/'scripts/tray-client.py'),str(tray_journal)],env,'tray-client')
+        wait(lambda:tray_journal.exists() and 'registered' in tray_journal.read_text())
+        time.sleep(.8)
+        click(layout()['width']-220-14,18) # last tray icon, before keyboard and clock
+        wait(lambda:layout()['top']>36)
+        assert layout()['pullout']['top_attached']
+        tray_before=next(q for q in read('/api/xr-layout')['shell'] if q['id']==2**64-6)
+        tracking.update(position_m=[.6,1.9,-.4],orientation_xyzw=[0,.2955202,0,.9553365]);time.sleep(.3)
+        quads=read('/api/xr-layout')['shell']
+        tray_after=next(q for q in quads if q['id']==2**64-6)
+        tray_bar=next(q for q in quads if q['id']==0)
+        assert tray_after!=tray_before and tray_after['dome']['frame']==tray_bar['dome']['frame']
+        assert tray_after['dome']['radius']==tray_bar['dome']['radius']
+        assert tray_after['dome']['top']<tray_bar['dome']['bottom']
+        capture('01-tray-menu')
+        click(layout()['width']-220-20,54)
+        wait(lambda:'"event": "clicked"' in tray_journal.read_text())
+        wait(lambda:layout()['top']==36)
+        check(True,'StatusNotifier tray menu follows the upper bar curvature and head movement, with working action hit testing')
+        tracking.update(position_m=[0,1.6,0],orientation_xyzw=[0,0,0,1]);time.sleep(.2)
         # A native application View category replaces fallback View; Dome commands
         # must remain available from the compositor's own main menu.
         main_menu();capture('01-main-menu')
