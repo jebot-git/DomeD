@@ -77,7 +77,7 @@ impl DesktopRenderer {
                 state.pins.clone(),
                 (
                     (
-                        state.tray.state().revision,
+                        state.tray.visual_key(),
                         state.appmenus.state().revision,
                         state.appmenu_path.clone()
                     ),
@@ -98,7 +98,7 @@ impl DesktopRenderer {
             state.desktop_manager,
             state.launch_query,
             size,
-            state.menu,
+            (state.menu, &state.menu_offsets),
             state.menu_hover,
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)

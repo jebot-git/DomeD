@@ -32,7 +32,7 @@ impl Dome {
         }
         let tray = self.tray.state();
         if tray.menu.is_some() {
-            top = top.max((40 + tray.rows.len() as i32 * 28 + 4).min(height));
+            top = top.max((44 + self.tray_menu_viewport(height).height.ceil() as i32).min(height));
         }
         if self.launcher {
             top = 456.min(height);
@@ -274,6 +274,10 @@ impl Dome {
             let time = self.start_time.elapsed().as_millis() as u32;
             match e {
                 SeatEvent::Motion { id, uv } => {
+                    if !dome::xr_transport::is_shell(id) {
+                        self.menu_edge_hover = false;
+                        self.menu_pointer = None;
+                    }
                     if !dome::xr_transport::is_shell(id)
                         && !self.scene.lock().unwrap().surface_visible_in(id, dome::Realm::Xr)
                     {
@@ -282,7 +286,6 @@ impl Dome {
                         continue;
                     }
                     self.context_scroll_hover = None;
-                    self.menu_edge_hover = false;
                     if !self
                         .xr_animation
                         .interactive(self.scene.lock().unwrap().presentation, id)
@@ -530,6 +533,7 @@ impl Dome {
                     self.audio_drag = None;
                     self.context_scroll_hover = None;
                     self.menu_edge_hover = false;
+                    self.menu_pointer = None;
                     self.xr_target = None;
                     self.xr_shell_pos = None;
                     self.xr_bridge.lock().unwrap().cursor = None;
@@ -548,6 +552,7 @@ impl Dome {
                     self.audio_drag = None;
                     self.context_scroll_hover = None;
                     self.menu_edge_hover = false;
+                    self.menu_pointer = None;
                     self.xr_shell_pos = None;
                     for button in self.xr_buttons.drain().collect::<Vec<_>>() {
                         if self.xr_shell_buttons.remove(&button) { continue; }

@@ -145,6 +145,15 @@ impl Dome {
     }
     /// Wheel and edge controls retain absolute source rows and remote action IDs.
     pub fn menu_scroll(&mut self, x: f64, y: f64, delta: f64, width: i32, height: i32) -> bool {
+        let tray = self.visible_tray(width);
+        if tray.menu.is_some() {
+            let x0 = self.tray_menu_x(&tray, width);
+            let viewport = self.tray_menu_viewport(height);
+            if x >= x0 && x < x0 + 280. && y >= 36. && y < 44. + viewport.height as f64 {
+                self.tray.scroll(self.menu_limit(height), delta as f32);
+            }
+            return true;
+        }
         let Some(menu) = self.menu else { return false; };
         if self.panel_menu(menu) {
             for (level, panel) in self.appmenu_panels(width, height).iter().enumerate().rev() {
@@ -166,6 +175,11 @@ impl Dome {
         true
     }
     fn menu_edge(&self, x: f64, y: f64, width: i32, height: i32) -> Option<i32> {
+        let tray = self.visible_tray(width);
+        if tray.menu.is_some() {
+            let x0 = self.tray_menu_x(&tray, width);
+            return (x >= x0 && x < x0 + 280.).then(|| self.tray_menu_viewport(height).control((y - 40.) as f32)).flatten();
+        }
         let menu = self.menu?;
         if self.panel_menu(menu) {
             for panel in self.appmenu_panels(width, height).iter().rev() {
@@ -354,6 +368,12 @@ impl Dome {
         self.menu_pointer = Some([x,y]);
         self.menu_edge_hover = self.menu_edge(x, y, width, height).is_some();
         if self.menu_edge_hover { self.repeat_menu_scroll(); return; }
+        let tray = self.visible_tray(width);
+        if tray.menu.is_some() {
+            let x0 = self.tray_menu_x(&tray, width);
+            self.tray.hover(self.menu_limit(height), if x >= x0 && x < x0 + 280. { (y - 40.) as f32 } else { -1. });
+            return;
+        }
         if y < 36. && self.menu.is_some() {
             if let Some(next) = self
                 .menu_index(x)

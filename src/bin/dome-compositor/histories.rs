@@ -155,6 +155,8 @@ impl Dome {
         true
     }
     pub fn activate_tray(&mut self, index: usize, x: i32, y: i32, context: bool) {
+        self.menu_edge_hover = false;
+        self.menu_pointer = None;
         match index {
             0 => self.toggle_audio(),
             1 => self.open_history(Kind::Clipboard),

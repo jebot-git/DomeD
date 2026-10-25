@@ -72,7 +72,7 @@ impl crate::Dome {
             return true;
         }
         if self.shell_modal_open() { return false; }
-        if self.tray.key(key) { return true; }
+        if self.tray.key(key) { self.menu_edge_hover = false; return true; }
         if self.task_context { return false; }
         if let Some(index) = self.task_popup {
             let windows = self.task_list().get(index).map(|t| t.windows.clone()).unwrap_or_default();

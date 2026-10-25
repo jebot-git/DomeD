@@ -36,6 +36,13 @@ class Menu(ServiceInterface):
  @method()
  def GetLayout(self,parent:'i',depth:'i',properties:'as')->'u(ia{sv}av)':
   record('layout')
+  if '--long' in sys.argv:
+   children=[]
+   for i in range(80):
+    props={'label':Variant('s',f'Action {i:02d}'),'enabled':Variant('b',i!=10)}
+    if i==11:props['type']=Variant('s','separator')
+    children.append(Variant('(ia{sv}av)',[1000+i*7,props,[]]))
+   return [1,[0,{},children]]
   return [1,[0,{},[Variant('(ia{sv}av)',[10,{'label':Variant('s','Tray Test Action'),'enabled':Variant('b',True)},[]]),Variant('(ia{sv}av)',[11,{'label':Variant('s','Unavailable'),'enabled':Variant('b',False)},[]])]]]
  @method()
  def Event(self,id:'i',event:'s',data:'v',timestamp:'u'):record('event',id=id,event=event)

@@ -767,7 +767,7 @@ extern "C" int dome_qt_paint(const char *json, unsigned char *pixels,
       p.menu(arr(tray, "rows"),
              std::clamp(yes(tray, "keyboard_menu") ? w - 284 : w - reserve - int(extras.size() - num(tray, "menu")) * 28,
                         4, std::max(4, w - 284)),
-             36, 280, num(tray, "selected", -1));
+             36, 280, num(tray, "selected", -1), obj(o, "tray_viewport"));
     p.taskPopup(obj(o, "task_popup"));
     p.panelRows(obj(o, "xr_settings"), str(obj(o, "xr_settings"), "title", "Settings"), 28);
     p.panelRows(obj(o, "default_apps"),

@@ -68,6 +68,7 @@ pub struct Snapshot {
     pub menu: Option<usize>,
     pub rows: Vec<Row>,
     pub selected: Option<usize>,
+    pub offset: f32,
     pub error: String,
     pub keyboard_menu: bool,
     pub screenshot_managed: bool,
@@ -77,9 +78,20 @@ impl Snapshot {
         self.menu = None;
         self.rows.clear();
         self.selected = None;
+        self.offset = 0.;
         self.keyboard_menu = false;
         // Also invalidate a queued activation that has not opened a popup yet.
         self.revision += 1;
+    }
+    fn viewport(&self, limit: f32) -> dome::context_menu::Viewport {
+        let mut viewport = dome::context_menu::Viewport::new(self.rows.len() as f32 * 28., limit, self.offset);
+        if let Some(selected) = self.selected { viewport.reveal(selected as f32 * 28., 28.); }
+        viewport
+    }
+    fn row_at(&self, viewport: dome::context_menu::Viewport, y: f32) -> Option<usize> {
+        if y < viewport.band() || y >= viewport.height - viewport.band() { return None; }
+        let row = (viewport.content_y(y) / 28.).floor() as usize;
+        self.rows.get(row).filter(|r| r.enabled && !r.separator).map(|_| row)
     }
     fn active_item(&self) -> Option<Item> {
         self.menu?;
@@ -196,8 +208,35 @@ impl Tray {
     pub fn take_screenshot_request(&self) -> bool {
         self.screenshot.swap(false, Ordering::AcqRel)
     }
+    pub fn visual_key(&self) -> (u64, Option<usize>, u32) {
+        let state = self.snapshot.lock().unwrap();
+        (state.revision, state.selected, state.offset.to_bits())
+    }
     pub fn state(&self) -> Snapshot {
         self.snapshot.lock().unwrap().clone()
+    }
+    pub fn viewport(&self, limit: f32) -> dome::context_menu::Viewport {
+        let mut state = self.snapshot.lock().unwrap();
+        let viewport = state.viewport(limit);
+        state.offset = viewport.offset;
+        viewport
+    }
+    pub fn scroll(&self, limit: f32, delta: f32) {
+        let mut state = self.snapshot.lock().unwrap();
+        let mut viewport = state.viewport(limit);
+        viewport.scroll(delta);
+        state.offset = viewport.offset;
+        state.selected = None;
+    }
+    pub fn hover(&self, limit: f32, y: f32) {
+        let mut state = self.snapshot.lock().unwrap();
+        let viewport = state.viewport(limit);
+        state.offset = viewport.offset;
+        state.selected = state.row_at(viewport, y);
+    }
+    pub fn row_at(&self, limit: f32, y: f32) -> Option<usize> {
+        let state = self.snapshot.lock().unwrap();
+        state.row_at(state.viewport(limit), y)
     }
     pub fn activate(&self, index: usize, x: i32, y: i32, context: bool) {
         let revision = self.snapshot.lock().unwrap().revision;
@@ -218,6 +257,7 @@ impl Tray {
         state.keyboard_menu = true;
         state.selected = None;
         state.rows = loading_rows();
+        state.offset = 0.;
         state.revision += 1;
         if self.send.try_send((state.revision, Request::Keyboard)).is_err() {
             state.dismiss();
@@ -392,7 +432,7 @@ fn run(
                         Ok(rows) => {
                             s.menu = Some(0); s.keyboard_menu = true;
                             s.selected = rows.iter().position(|r| r.enabled && !r.separator);
-                            s.rows = rows; parents = vec![0]; s.error.clear();
+                            s.rows = rows; s.offset = 0.; parents = vec![0]; s.error.clear();
                         }
                         Err(error) => {
                             s.error = error.to_string();
@@ -409,7 +449,7 @@ fn run(
                                 let mut s = state.lock().unwrap();
                                 if s.revision != snapshot.revision { continue; }
                                 s.selected = rows.iter().position(|r| r.enabled && !r.separator);
-                                s.rows = rows;
+                                s.rows = rows; s.offset = 0.;
                                 s.revision += 1;
                             }
                         }
@@ -443,7 +483,7 @@ fn run(
                                     s.keyboard_menu = false;
                                     s.selected = rows.iter().position(|r| r.enabled && !r.separator);
                                     parents = vec![0];
-                                    s.rows = rows;
+                                    s.rows = rows; s.offset = 0.;
                                     s.revision += 1;
                                 }
                                 Err(_) => {
@@ -488,7 +528,7 @@ fn run(
                                 let requested_revision = if snapshot.keyboard_menu {
                                     let mut s = state.lock().unwrap();
                                     if s.revision != snapshot.revision { continue; }
-                                    s.rows = loading_rows(); s.selected = None;
+                                    s.rows = loading_rows(); s.offset = 0.; s.selected = None;
                                     s.revision += 1;
                                     s.revision
                                 } else { snapshot.revision };
@@ -499,7 +539,7 @@ fn run(
                                     Ok(rows) => {
                                         parents.push(row.id);
                                         s.selected = rows.iter().position(|r| r.enabled && !r.separator);
-                                        s.rows = rows;
+                                        s.rows = rows; s.offset = 0.;
                                     }
                                     Err(e) => {
                                         s.error = e.to_string();
@@ -668,6 +708,14 @@ fn run(
 }
 
 impl crate::Dome {
+    pub fn tray_menu_x(&self, tray: &Snapshot, width: i32) -> f64 {
+        (if tray.keyboard_menu { width as f64 - 284. }
+         else { width as f64 - self.clock_reserve() as f64 - tray.items.len().saturating_sub(tray.menu.unwrap_or(0)) as f64 * 28. })
+            .clamp(4., (width as f64 - 284.).max(4.))
+    }
+    pub fn tray_menu_viewport(&self, height: i32) -> dome::context_menu::Viewport {
+        self.tray.viewport(self.menu_limit(height))
+    }
     pub fn visible_tray(&self, width: i32) -> Snapshot {
         let mut state = self.tray.state();
         if let Some(index) = state.menu.as_mut().filter(|_| !state.keyboard_menu) {
@@ -720,6 +768,46 @@ impl crate::Dome {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn long_tray() -> Tray {
+        let rows = (0..80).map(|i| Row { id: 1000 + i * 7, text: format!("Action {i}"),
+            enabled: i != 10, separator: i == 11, checked: false, checkable: false,
+            submenu: false, icon: String::new(), radio: false }).collect();
+        let (send, _receive) = mpsc::sync_channel(32);
+        Tray { snapshot: Arc::new(Mutex::new(Snapshot { menu: Some(0), rows,
+            selected: Some(0), ..Default::default() })), send,
+            screenshot: Arc::new(AtomicBool::new(false)) }
+    }
+    #[test]
+    fn long_tray_keyboard_and_pointer_share_clipping_and_source_rows() {
+        let tray = long_tray();
+        assert!(tray.key(0xff57)); // End reveals last source row in a short XR panel.
+        let end = tray.viewport(244.);
+        assert_eq!(end.offset, end.max_offset());
+        let last_y = end.band() + 79. * 28. - end.offset + 14.;
+        assert_eq!(tray.row_at(244., last_y), Some(79));
+        assert_eq!(tray.state().rows[79].id, 1553);
+        assert_eq!(tray.row_at(244., 2.), None);
+        assert_eq!(tray.row_at(244., 243.), None);
+        let key = tray.visual_key();
+        for _ in 0..100 { tray.scroll(244., -28.); }
+        assert_eq!(tray.viewport(244.).offset, 0.);
+        assert_ne!(tray.visual_key(), key);
+        let revision = tray.state().revision;
+        tray.hover(244., 24.+14.);
+        assert_eq!(tray.state().selected, Some(0));
+        assert_eq!(tray.state().revision, revision, "Hover must not invalidate pending D-Bus replies");
+        for _ in 0..100 { tray.scroll(244., 28.); }
+        assert_eq!(tray.viewport(244.).offset, end.offset);
+        tray.key(0xff50); // Home reveals first action without mouse movement.
+        assert_eq!(tray.viewport(244.).offset, 0.);
+        tray.key(0xff56);tray.key(0xff56); // Page Down skips disabled/separator rows.
+        assert_eq!(tray.state().selected, Some(12));
+        let viewport = tray.viewport(244.);
+        assert_eq!(tray.row_at(244., viewport.band()+10.*28.-viewport.offset+14.), None);
+        assert_eq!(tray.row_at(244., viewport.band()+11.*28.-viewport.offset+14.), None);
+        assert_eq!(tray.viewport(3000.).offset, 0., "Resizing clamps the old offset");
+        tray.close();assert_eq!(tray.state().offset, 0.);
+    }
     #[test]
     fn popup_dismisses_while_client_worker_is_blocked() {
         let snapshot = Arc::new(Mutex::new(Snapshot {
