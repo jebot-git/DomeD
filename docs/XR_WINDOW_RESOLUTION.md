@@ -3,27 +3,34 @@
 DomeD Settings provides **New XR window resolution** with these content-size
 presets, independent of the headset model, monitor size and UI scale:
 
-| Preset | Content size |
-| --- | --- |
-| 720p | 1280 × 720 |
-| 900p | 1600 × 900 |
-| 1080p (default) | 1920 × 1080 |
-| QHD | 2560 × 1440 |
+| Preset | Main window | Popup/dialog budget |
+| --- | --- | --- |
+| 720p | 1280 × 720 | 640 × 360 |
+| 900p | 1600 × 900 | 800 × 450 |
+| 1080p (default) | 1920 × 1080 | 960 × 540 |
+| QHD | 2560 × 1440 | 1280 × 720 |
 
 The preference is stored as `xr_window_resolution` in the existing
 `$XDG_CONFIG_HOME/dome/xr.json` configuration (`~/.config/dome/xr.json` by
 default). Older configurations default to 1080p. Changing this option affects
-only new ordinary windows launched through the XR socket. It does not resize
-existing windows, change UI/buffer scale, change `xr_render_scale`, maximize a
+new windows and parented dialogs launched through the XR socket. It does not resize
+existing main windows, change UI/buffer scale, change `xr_render_scale`, maximize a
 window, or modify its `xr_scale` spatial zoom. Later user resizing remains
 available, including below the launch preset.
 
-Parented dialogs, popups, notification surfaces and X11 bridge windows do not
-receive the launch-size override. Explicit client minimum/maximum sizes remain
-authoritative, so fixed-size clients can remain smaller. Restored or explicitly
+Parented XR dialogs default to half the configured width and height, including
+nested dialogs; this is a quarter of the main window's pixel area. Smaller menus
+retain their natural size. Popups with client-controlled buffers (menus, input
+methods and fixed dialogs) also fit within this budget when displayed in XR,
+using uniform scaling that preserves their complete content and input mapping.
+Explicit client minimum/maximum sizes remain authoritative for buffer sizes,
+so a fixed 320×180 dialog stays 320×180. Desktop launches, notification surfaces
+and X11 bridge windows do not receive the launch-size override. Restored or explicitly
 assigned geometry takes precedence over the default 720×460 launch rectangle.
-The first configure waits for the initial surface commit so client parent and
-size constraints are known; decoration negotiation must not send it early.
+The first configure waits for the initial surface commit so size constraints
+are available; decoration negotiation must not send it early. If a toolkit
+announces a transient parent after that configure, DomeD corrects its own launch
+suggestion once. Later client/user resizing remains authoritative.
 
 Content resolution is separate from XR capture density. The latter still
 multiplies logical pixels and remains subject to the 4096-pixel capture dimension
@@ -44,8 +51,9 @@ rectangle is 720×460.
 An isolated compositor test with the actual installed VRCX executable, an empty
 profile, offline mode and preview-read-only mode verified a 720×460 desktop
 launch and a 2560×1440 XR launch with QHD selected. A native FLTK probe verified
-all four presets with identical UI scale 1 and buffer scale 1; its modal dialog
-stayed 320×180, and a fixed-size client stayed 640×480. Changing presets did not
+all four presets with identical UI scale 1 and buffer scale 1; its small modal dialog
+stayed 320×180, resizable/nested dialogs used half resolution, and a fixed-size
+client stayed 640×480. Changing presets did not
 resize an already-open window. Unit/layout tests cover setting adjustment,
 configuration round trips and independence from render density and dome geometry.
 

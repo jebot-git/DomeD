@@ -170,6 +170,12 @@ pub fn append_quads(scene: &Scene, panels: &mut Vec<Quad>, head: Pose) {
                 parent.size[0] * popup.anchor.w / pw,
                 parent.size[1] * popup.height() / ph,
             ];
+            // Some clients cannot resize their popup buffers (menus, input
+            // methods or fixed dialogs). Keep all UVs and hit coordinates while
+            // bounding their displayed size to the same half-resolution budget.
+            let popup_scale = scene.config.xr_window_resolution
+                .popup_scale([popup.anchor.w, popup.height()]);
+            size = size.map(|dimension| dimension * popup_scale);
             let q = Quat::from_array(parent.pose.orientation_xyzw);
             let center = parent.point([0.5,0.5]);
             let local=frame.inverse_rotate((center-Vec3::from_array(frame.position_m)).to_array());

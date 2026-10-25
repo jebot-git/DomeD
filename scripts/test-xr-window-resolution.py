@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Real Wayland launch sizes, unchanged FLTK scale, fixed/dialog exceptions and VRCX."""
+"""Real Wayland launch sizes, unchanged FLTK scale, half-resolution dialogs, fixed clients and VRCX."""
 import json,os,signal,socket,subprocess,tempfile,threading,time,urllib.request
 from pathlib import Path
 signal.pthread_sigmask(signal.SIG_SETMASK,[])
@@ -20,16 +20,51 @@ def start(args,env,name):
 try:
  with tempfile.TemporaryDirectory(prefix='dome-resolution-') as directory:
   runtime=Path(directory);runtime.chmod(0o700)
-  source=runtime/'probe.cpp';source.write_text('''#include <FL/Fl.H>
+  source=runtime/'probe.cpp';source.write_text(r'''#include <FL/Fl.H>
 #include <FL/Fl_Double_Window.H>
 #include <fstream>
 #include <string>
 #include <cstdio>
 extern int fl_wl_buffer_scale(Fl_Window*);
-static Fl_Double_Window *w,*dialog;static std::string report;
-static void sample(void*){std::ofstream f(report+".tmp");f<<"{\\\"width\\\":"<<w->w()<<",\\\"height\\\":"<<w->h()<<",\\\"buffer_scale\\\":"<<fl_wl_buffer_scale(w)<<",\\\"ui_scale\\\":"<<Fl::screen_scale(w->screen_num())<<",\\\"dialog\\\":["<<(dialog?dialog->w():0)<<","<<(dialog?dialog->h():0)<<"]}";f.close();std::rename((report+".tmp").c_str(),report.c_str());Fl::repeat_timeout(.1,sample);}
-static void child(void*){dialog=new Fl_Double_Window(320,180,"Resolution Dialog");dialog->xclass("org.domed.ResolutionDialog");dialog->set_modal();dialog->end();dialog->show();}
-int main(int argc,char**argv){report=argv[1];bool fixed=std::string(argv[3])=="fixed";w=new Fl_Double_Window(fixed?640:720,fixed?480:460,"Resolution Probe");w->xclass(argv[2]);w->end();if(fixed)w->size_range(640,480,640,480);else w->resizable(w);w->show();Fl::add_timeout(.1,sample);if(!fixed)Fl::add_timeout(.4,child);return Fl::run();}
+static Fl_Double_Window *w,*dialog,*resizable_dialog,*nested_dialog;
+static std::string report;
+static void sample(void*) {
+    std::ifstream resize(report+".resize");int width,height;
+    if(resizable_dialog && resize >> width >> height) {
+        resizable_dialog->size(width,height);std::remove((report+".resize").c_str());
+    }
+    std::ofstream f(report+".tmp");
+    f << "{\"width\":" << w->w() << ",\"height\":" << w->h()
+      << ",\"buffer_scale\":" << fl_wl_buffer_scale(w)
+      << ",\"ui_scale\":" << Fl::screen_scale(w->screen_num())
+      << ",\"dialog\":[" << (dialog?dialog->w():0) << "," << (dialog?dialog->h():0)
+      << "],\"resizable_dialog\":[" << (resizable_dialog?resizable_dialog->w():0)
+      << "," << (resizable_dialog?resizable_dialog->h():0)
+      << "],\"nested_dialog\":[" << (nested_dialog?nested_dialog->w():0)
+      << "," << (nested_dialog?nested_dialog->h():0) << "]}";
+    f.close();std::rename((report+".tmp").c_str(),report.c_str());
+    Fl::repeat_timeout(.1,sample);
+}
+static Fl_Double_Window *child_window(const char *title,const char *identity,bool resizable) {
+    auto child = new Fl_Double_Window(resizable?1600:320,resizable?900:180,title);
+    child->xclass(identity);child->set_modal();
+    if(resizable)child->resizable(child);
+    child->end();child->show();return child;
+}
+static void child(void*) {
+    dialog=child_window("Resolution Dialog","org.domed.ResolutionDialog",false);
+    resizable_dialog=child_window("Resizable Dialog","org.domed.ResizableDialog",true);
+    nested_dialog=child_window("Nested Dialog","org.domed.NestedDialog",true);
+}
+int main(int argc,char**argv) {
+    report=argv[1];bool fixed=std::string(argv[3])=="fixed";
+    w=new Fl_Double_Window(fixed?640:720,fixed?480:460,"Resolution Probe");
+    w->xclass(argv[2]);w->end();
+    if(fixed)w->size_range(640,480,640,480);else w->resizable(w);
+    w->show();Fl::add_timeout(.1,sample);
+    if(!fixed)Fl::add_timeout(.4,child);
+    return Fl::run();
+}
 ''')
   subprocess.run(['g++','-O2','-I/opt/fltk-vr/toolkit/include',str(source),'-L/opt/fltk-vr/toolkit/lib','-Wl,-rpath,/opt/fltk-vr/toolkit/lib','-lfltk','-o',str(runtime/'probe'),*subprocess.check_output(['pkg-config','--cflags','cairo'],text=True).split()],check=True)
   rd,wr=os.pipe();xvfb=subprocess.Popen(['Xvfb','-displayfd',str(wr),'-screen','0','2560x1440x24','-nolisten','tcp'],pass_fds=(wr,),stderr=subprocess.DEVNULL);children.append(xvfb);os.close(wr)
@@ -57,21 +92,33 @@ int main(int argc,char**argv){report=argv[1];bool fixed=std::string(argv[3])=="f
   assert [results['Desktop']['width'],results['Desktop']['height']]==[720,460],results
   assert [results['XR']['width'],results['XR']['height']]==[1920,1080],results
   assert results['XR']['dialog']==[320,180],results
+  assert results['XR']['resizable_dialog']==[960,540],results
+  assert results['XR']['nested_dialog']==[960,540],results
+  native_dialogs={w['app_id']:w['id'] for w in state()['windows'] if w.get('client_pid')==xr.pid}
+  nested_id=native_dialogs['org.domed.NestedDialog']
+  assert next(p for p in state()['popups'] if p['id']==nested_id)['parent']==native_dialogs['org.domed.ResizableDialog']
+  assert results['Desktop']['resizable_dialog']==[1600,900],results
   assert [results['Fixed']['width'],results['Fixed']['height']]==[640,480],results
   assert (results['XR']['buffer_scale'],results['XR']['ui_scale'])==(results['Desktop']['buffer_scale'],results['Desktop']['ui_scale']),results
   density=state()['config']['xr_render_scale']
   request('/api/action',{'op':'desktop_resize','id':ident,'w':800,'h':500})
   wait(lambda:json.loads(path.read_text())['width']==800 and json.loads(path.read_text())['height']==500)
+  Path(str(path)+'.resize').write_text('1280 800')
+  wait(lambda:json.loads(path.read_text())['resizable_dialog']==[1280,800])
   assert state()['config']['xr_render_scale']==density
-  print('PASS 1080p default, unchanged desktop launch/scale, dialogs/fixed clients and later user resize',flush=True)
+  print('PASS 1080p default, half-resolution XR/nested dialogs, unchanged desktop scale and fixed clients and later user resize',flush=True)
   for preset,expected in [('720p',[1280,720]),('900p',[1600,900]),('1440p',[2560,1440])]:
    config=state()['config'];config['xr_window_resolution']=preset
    request('/api/action',{'op':'configure','config':config});time.sleep(.15)
    assert state()['config']['xr_render_scale']==density
    assert [json.loads(path.read_text())['width'],json.loads(path.read_text())['height']]==[800,500]
+   assert json.loads(path.read_text())['resizable_dialog']==[1280,800]
    _,_,_=probe('Preset'+preset,'xr')
    result=results['Preset'+preset]
    assert [result['width'],result['height']]==expected,result
+   assert result['resizable_dialog']==[value//2 for value in expected],result
+   assert result['nested_dialog']==[value//2 for value in expected],result
+   assert result['dialog']==[320,180],result
    assert (result['buffer_scale'],result['ui_scale'])==(results['Desktop']['buffer_scale'],results['Desktop']['ui_scale']),result
   print('PASS 720p/900p/1080p/QHD presets apply only to new windows, preserving scale and existing sizes',flush=True)
   # Compare the actual installed VRCX executable with its desktop launch.

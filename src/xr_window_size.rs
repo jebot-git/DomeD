@@ -28,7 +28,22 @@ impl Resolution {
     }
     /// Explicit client limits take precedence over the ordinary launch default.
     pub fn initial_size(self, min: [i32;2], max: [i32;2]) -> [i32;2] {
-        let requested = self.pixels();
+        Self::clamp(self.pixels(), min, max)
+    }
+    /// Transient windows use half of each configured dimension, not half the area.
+    pub fn popup_pixels(self) -> [i32;2] {
+        self.pixels().map(|pixels| pixels / 2)
+    }
+    pub fn initial_popup_size(self, min: [i32;2], max: [i32;2]) -> [i32;2] {
+        Self::clamp(self.popup_pixels(), min, max)
+    }
+    /// Bound client-sized popups without cropping their content or changing aspect.
+    pub fn popup_scale(self, size: [f32;2]) -> f32 {
+        let limit = self.popup_pixels();
+        (limit[0] as f32 / size[0].max(1.))
+            .min(limit[1] as f32 / size[1].max(1.)).min(1.)
+    }
+    fn clamp(requested: [i32;2], min: [i32;2], max: [i32;2]) -> [i32;2] {
         std::array::from_fn(|i| {
             let lo = min[i].max(1);
             let hi = if max[i] > 0 { max[i].max(lo) } else { i32::MAX };
@@ -57,5 +72,19 @@ mod tests {
         assert_eq!(Resolution::Qhd.initial_size([640,480],[640,480]),[640,480]);
         assert_eq!(Resolution::Hd.initial_size([1600,900],[0,0]),[1600,900]);
         assert_eq!(Resolution::Qhd.initial_size([0,0],[1920,1080]),[1920,1080]);
+    }
+    #[test]
+    fn popups_use_half_of_each_preset_and_respect_client_limits() {
+        for resolution in Resolution::ALL {
+            assert_eq!(resolution.initial_popup_size([0,0],[0,0]),
+                resolution.pixels().map(|pixels| pixels / 2));
+            assert_eq!(resolution.initial_popup_size([320,180],[320,180]),[320,180]);
+            assert_eq!(resolution.popup_scale([240.,180.]),1.);
+            let full = resolution.pixels().map(|pixels| pixels as f32);
+            assert_eq!(resolution.popup_scale(full),0.5);
+        }
+        assert_eq!(Resolution::FullHd.initial_popup_size([0,0],[0,0]),[960,540]);
+        assert_eq!(Resolution::Hd.initial_popup_size([640,480],[0,0]),[640,480]);
+        assert_eq!(Resolution::FullHd.initial_popup_size([0,0],[800,400]),[800,400]);
     }
 }

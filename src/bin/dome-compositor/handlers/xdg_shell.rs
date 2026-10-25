@@ -27,6 +27,13 @@ use crate::{
     Dome,
 };
 
+// Remember only compositor-assigned launch geometry. Some toolkits announce
+// their transient parent after the bufferless commit that triggers configure.
+// A later parent association may correct that suggestion once, but must not
+// overwrite restored geometry or a user's subsequent resize.
+#[derive(Default)]
+struct XrLaunchSize(std::sync::Mutex<Option<[i32; 2]>>);
+
 impl XdgShellHandler for Dome {
     fn xdg_shell_state(&mut self) -> &mut XdgShellState {
         &mut self.xdg_shell_state
@@ -255,32 +262,48 @@ fn check_grab(
 }
 
 impl Dome {
-    /// Apply only on the first bufferless commit, after parent and size limits
-    /// have arrived. Do not resize existing windows or change their UI scale.
+    /// Suggest launch geometry, correcting a delayed transient-parent hint once.
     pub fn configure_initial_xr_size(&mut self, surface: &WlSurface) {
         let Some(id) = self.id_for(surface) else { return; };
         if self.notification_windows.entries.contains_key(&id)
             || self.selection_tooltips.contains_key(&id) || self.is_x11_bridge(surface) { return; }
         let Some(window) = self.registry.iter().find(|(i,_)| *i == id).map(|(_,w)| w) else { return; };
-        let ordinary_new = with_states(surface, |states| {
+        let (initial, transient) = with_states(surface, |states| {
             let data = states.data_map.get::<XdgToplevelSurfaceData>().unwrap().lock().unwrap();
-            !data.initial_configure_sent && data.parent.is_none()
+            (!data.initial_configure_sent, data.parent.is_some())
         });
-        if !ordinary_new { return; }
+        if !initial && !transient { return; }
+        let launch_size = with_states(surface, |states| {
+            states.data_map.insert_if_missing(XrLaunchSize::default);
+            *states.data_map.get::<XrLaunchSize>().unwrap().0.lock().unwrap()
+        });
         let limits = with_states(surface, |states| {
             let mut cached = states.cached_state.get::<smithay::wayland::shell::xdg::SurfaceCachedState>();
             let state = cached.current();
             ([state.min_size.w, state.min_size.h], [state.max_size.w, state.max_size.h])
         });
         let mut scene = self.scene.lock().unwrap();
-        let size = scene.config.xr_window_resolution.initial_size(limits.0, limits.1);
+        let resolution = scene.config.xr_window_resolution;
+        let size = if transient { resolution.initial_popup_size(limits.0, limits.1) }
+            else { resolution.initial_size(limits.0, limits.1) };
         let Some(w) = scene.windows.iter_mut().find(|w| w.id == id) else { return; };
         // Restored/explicit geometry wins over the new-window launch default.
-        if w.origin != dome::Realm::Xr || w.desktop.w != 720. || w.desktop.h != 460. { return; }
+        if w.origin != dome::Realm::Xr { return; }
+        if initial {
+            if w.desktop.w != 720. || w.desktop.h != 460. { return; }
+        } else if launch_size != Some([w.desktop.w as i32,w.desktop.h as i32]) {
+            return;
+        }
+        with_states(surface, |states| {
+            *states.data_map.get::<XrLaunchSize>().unwrap().0.lock().unwrap() =
+                if transient { None } else { Some(size) };
+        });
         w.desktop.w = size[0] as f32;
         w.desktop.h = size[1] as f32;
         scene.revision += 1;
-        window.toplevel().unwrap().with_pending_state(|state| state.size = Some((size[0],size[1]).into()));
+        let toplevel = window.toplevel().unwrap();
+        toplevel.with_pending_state(|state| state.size = Some((size[0],size[1]).into()));
+        if !initial { toplevel.send_pending_configure(); }
     }
 }
 

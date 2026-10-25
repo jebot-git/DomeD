@@ -26,6 +26,47 @@ fn fixture(projection: Projection) -> (Scene, u64, u64) {
 }
 
 #[test]
+fn oversized_xr_popups_use_half_resolution_and_keep_full_surface_input() {
+    for resolution in dome::xr_window_size::Resolution::ALL {
+        let (mut scene, root, popup) = fixture(Projection::RoomDome);
+        scene.config.xr_window_resolution = resolution;
+        let [width,height] = resolution.pixels();
+        let window = scene.windows.iter_mut().find(|w| w.id == root).unwrap();
+        window.desktop.w = width as f32;
+        window.desktop.h = height as f32;
+        scene.popups[0].anchor.w = width as f32;
+        scene.popups[0].anchor.h = height as f32;
+        let original = scene.popups[0].anchor;
+        let head = Pose::default();
+        let quads = xr_input::quads(&scene,head);
+        let parent = quads.iter().find(|q| q.id == root).unwrap();
+        let panel = quads.iter().find(|q| q.id == popup).unwrap();
+        assert!(panel.size[0] <= parent.size[0] * 0.5 + 1e-5);
+        assert!(panel.size[1] <= parent.size[1] * 0.5 + 1e-5);
+        assert!((panel.size[0]/parent.size[0] - panel.size[1]/parent.size[1]).abs() < 1e-5);
+        assert_eq!(scene.popups[0].anchor,original);
+        for uv in [[0.05,0.1],[0.5,0.5],[0.95,0.9]] {
+            let origin = Vec3::from_array(head.position_m);
+            let hit = panel.hit(origin,(panel.point(uv)-origin).normalize(),false).unwrap();
+            assert!((hit[0]-uv[0]).abs()<1e-5 && (hit[1]-uv[1]).abs()<1e-5);
+        }
+    }
+}
+
+#[test]
+fn small_popups_keep_their_size_across_resolution_presets() {
+    let (mut scene,_,popup) = fixture(Projection::RoomDome);
+    let mut previous = None;
+    for resolution in dome::xr_window_size::Resolution::ALL {
+        scene.config.xr_window_resolution = resolution;
+        let quads = xr_input::quads(&scene,Pose::default());
+        let panel = quads.iter().find(|q| q.id == popup).unwrap();
+        if let Some(size) = previous { assert_eq!(panel.size,size); }
+        previous = Some(panel.size);
+    }
+}
+
+#[test]
 fn desktop_uses_hierarchy_anchor_or_cursor_and_keeps_popups_on_screen() {
     let work = Rect { x: 0., y: 36., w: 1280., h: 704. };
     let parent = Rect { x: 100., y: 80., w: 720., h: 460. };
