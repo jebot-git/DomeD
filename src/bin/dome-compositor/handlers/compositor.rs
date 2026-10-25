@@ -74,6 +74,7 @@ impl CompositorHandler for Dome {
         if let Some(id) = self.id_for(surface) {
             if let Some(dirty) = self.notification_windows.entries.get_mut(&id) { *dirty = true; }
         }
+        self.configure_initial_xr_size(surface);
         xdg_shell::handle_commit(&mut self.popups, &self.registry, surface);
         resize_grab::handle_commit(&mut self.space, surface);
         self.applied_revision = u64::MAX;

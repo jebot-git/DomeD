@@ -148,6 +148,16 @@ w.end();DesktopMenu exported(w,m);w.show();return Fl::run();}
         click(160,40+4+24+5*28+14)
         shell=wait(lambda:(l if (l:=layout())['top']==l['height'] else None));capture('02-settings')
         w,h=shell['width'],shell['height'];pw=min(800,w-16);ph=min(650,h-100);left=(w-pw)/2;top=36+max(0,h-96-ph)/2
+        original_size=win()['desktop'].copy();density=state()['config']['xr_render_scale']
+        key('Home')
+        for _ in range(17):key('Down') # two session rows plus geometry row 15
+        key('Right');wait(lambda:state()['config']['xr_window_resolution']=='1440p')
+        capture('02-xr-window-resolution')
+        saved=runtime/'config/dome/xr.json'
+        wait(lambda:saved.exists() and json.loads(saved.read_text())['xr_window_resolution']=='1440p')
+        assert win()['desktop']==original_size and state()['config']['xr_render_scale']==density
+        key('Left');wait(lambda:state()['config']['xr_window_resolution']=='1080p');key('Home')
+        check(True,'New XR window resolution is adjustable and saved from Settings without resizing the open window or changing density')
         click(left+150,top+40+34+17);capture('03-keyboard-layouts')
         click((w-600)/2+450,(h-400)/2+364)
         wait(lambda:layout()['top']==36)

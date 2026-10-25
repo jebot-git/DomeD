@@ -254,6 +254,36 @@ fn check_grab(
     Some(start_data)
 }
 
+impl Dome {
+    /// Apply only on the first bufferless commit, after parent and size limits
+    /// have arrived. Do not resize existing windows or change their UI scale.
+    pub fn configure_initial_xr_size(&mut self, surface: &WlSurface) {
+        let Some(id) = self.id_for(surface) else { return; };
+        if self.notification_windows.entries.contains_key(&id)
+            || self.selection_tooltips.contains_key(&id) || self.is_x11_bridge(surface) { return; }
+        let Some(window) = self.registry.iter().find(|(i,_)| *i == id).map(|(_,w)| w) else { return; };
+        let ordinary_new = with_states(surface, |states| {
+            let data = states.data_map.get::<XdgToplevelSurfaceData>().unwrap().lock().unwrap();
+            !data.initial_configure_sent && data.parent.is_none()
+        });
+        if !ordinary_new { return; }
+        let limits = with_states(surface, |states| {
+            let mut cached = states.cached_state.get::<smithay::wayland::shell::xdg::SurfaceCachedState>();
+            let state = cached.current();
+            ([state.min_size.w, state.min_size.h], [state.max_size.w, state.max_size.h])
+        });
+        let mut scene = self.scene.lock().unwrap();
+        let size = scene.config.xr_window_resolution.initial_size(limits.0, limits.1);
+        let Some(w) = scene.windows.iter_mut().find(|w| w.id == id) else { return; };
+        // Restored/explicit geometry wins over the new-window launch default.
+        if w.origin != dome::Realm::Xr || w.desktop.w != 720. || w.desktop.h != 460. { return; }
+        w.desktop.w = size[0] as f32;
+        w.desktop.h = size[1] as f32;
+        scene.revision += 1;
+        window.toplevel().unwrap().with_pending_state(|state| state.size = Some((size[0],size[1]).into()));
+    }
+}
+
 /// Should be called on `WlSurface::commit`
 pub fn handle_commit(popups: &mut PopupManager, registry: &[(u64, Window)], surface: &WlSurface) {
     // Handle toplevel commits.

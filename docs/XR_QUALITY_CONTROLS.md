@@ -53,3 +53,7 @@ and frame-time measurements; WiVRn supersampling alone is not a substitute.
 This is a source-code evaluation, not a headset quality/performance measurement.
 No settings, defaults, saved configuration keys or optical projections were
 changed as part of the evaluation.
+
+The separate [New XR window resolution](XR_WINDOW_RESOLUTION.md) setting now
+chooses new clients' logical content dimensions (720p through QHD, default 1080p).
+It changes neither UI scale nor XR render density and applies only at launch.

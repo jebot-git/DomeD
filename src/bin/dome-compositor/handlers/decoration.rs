@@ -10,7 +10,9 @@ impl XdgDecorationHandler for Dome {
     }
     fn request_mode(&mut self, s: ToplevelSurface, _: Mode) {
         s.with_pending_state(|p| p.decoration_mode = Some(Mode::ServerSide));
-        s.send_pending_configure();
+        // The first configure follows the initial surface commit, after the
+        // client has supplied parent/size limits and XR launch sizing is known.
+        if s.is_initial_configure_sent() { s.send_pending_configure(); }
     }
     fn unset_mode(&mut self, s: ToplevelSurface) {
         self.request_mode(s, Mode::ServerSide);

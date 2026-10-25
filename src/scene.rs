@@ -149,6 +149,8 @@ pub struct Config {
     pub radius_m: f32,
     /// XR texture density in pixels per Wayland logical pixel.
     pub xr_render_scale: f32,
+    /// Initial logical content size for ordinary XR-launched windows.
+    pub xr_window_resolution: crate::xr_window_size::Resolution,
     pub pullout_distance_m: f32,
     pub center_m: [f32; 3],
     pub yaw_deg: f32,
@@ -181,6 +183,7 @@ impl Default for Config {
             retired_lower_inset_deg: (),
             radius_m: 2.2,
             xr_render_scale: 1.5,
+            xr_window_resolution: Default::default(),
             pullout_distance_m: 2.0,
             center_m: [0., 1.4, 0.],
             yaw_deg: 0.,

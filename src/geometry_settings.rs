@@ -97,6 +97,7 @@ pub fn rows(c: &Config) -> Vec<(&'static str, String)> {
             format!("{:.0}°", c.dome_upper_tilt_deg),
         ),
         ("XR render density", format!("{:.0}%", c.xr_render_scale * 100.)),
+        ("New XR window resolution", c.xr_window_resolution.label().into()),
     ]
 }
 pub fn adjust(config: &Config, row: usize, direction: f32) -> Result<Config, String> {
@@ -121,6 +122,7 @@ pub fn adjust(config: &Config, row: usize, direction: f32) -> Result<Config, Str
         12 => c.vertical_fov_deg += direction * 5.,
         13 => c.dome_upper_tilt_deg += direction,
         14 => c.xr_render_scale += direction * 0.25,
+        15 => c.xr_window_resolution = c.xr_window_resolution.step(direction),
         _ => return Err("Unknown XR setting".into()),
     }
     c.validate()?;

@@ -1228,7 +1228,7 @@ fn retired_tracking_settings_are_ignored_and_not_saved() {
     let saved = serde_json::to_value(&config).unwrap();
     assert!(saved.get("xr_pointer_mode").is_none());
     assert!(saved.get("gaze_smoothing").is_none());
-    assert_eq!(geometry_settings::rows(&config).len(), 15);
+    assert_eq!(geometry_settings::rows(&config).len(), 16);
 }
 
 #[test]
@@ -1347,4 +1347,20 @@ fn comic_stereo_keeps_standard_dome_geometry_and_input_alignment() {
             assert!((hit[0]-uv[0]).abs()<1e-5 && (hit[1]-uv[1]).abs()<1e-5);
         }
     }
+}
+
+#[test]
+fn xr_launch_resolution_is_independent_of_density_and_survives_config_roundtrip() {
+    use dome::xr_window_size::Resolution;
+    let default = Config::default();
+    assert_eq!(default.xr_window_resolution, Resolution::FullHd);
+    assert_eq!(serde_json::from_str::<Config>("{}").unwrap(), default);
+    let hd = geometry_settings::adjust(&default,15,-1.).unwrap();
+    let hd = geometry_settings::adjust(&hd,15,-1.).unwrap();
+    assert_eq!(hd.xr_window_resolution, Resolution::Hd);
+    assert_eq!(hd.xr_render_scale, default.xr_render_scale);
+    assert_eq!(hd.radius_m, default.radius_m);
+    assert_eq!(hd.dome_vertical_span_deg, default.dome_vertical_span_deg);
+    assert_eq!(serde_json::from_str::<Config>(&serde_json::to_string(&hd).unwrap()).unwrap(),hd);
+    assert!(serde_json::from_str::<Config>(r#"{"xr_window_resolution":"2160p"}"#).is_err());
 }
