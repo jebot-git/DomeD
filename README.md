@@ -379,8 +379,8 @@ already running Vivaldi must be fully closed before relaunching to pick it up.
 
 The native FLTK tray manager exposes KDE Connect controls after the session's
 Wayland display is ready; its daemon activates over D-Bus. Set
-`DOME_START_KDECONNECT=0` to disable this startup. Its daemon/CLI supplies the backend for the FLTK interface. DomeD does not yet run general XDG autostart
-entries. Remote phone mouse/keyboard control is currently unavailable because DomeD
+`DOME_START_KDECONNECT=0` to disable this startup. Its daemon/CLI supplies the backend for the FLTK interface. Login applications use standard XDG autostart
+entries through systemd. Remote phone mouse/keyboard control is currently unavailable because DomeD
 has no Remote Desktop portal backend. DomeD now supplies the notification server
 and action buttons used by KDE Connect, including pairing requests. Device pairing,
 network file transfers and phone-side operation require a real-device test. The
@@ -404,6 +404,13 @@ The login publishes its ready display to D-Bus and systemd before starting
 `dome-session.target`, which holds `graphical-session.target` as a dependency.
 This also supports distributions which forbid starting the shared target directly.
 Logout releases the Dome session target. Portal service units must inherit `XDG_CURRENT_DESKTOP=Dome` rather than forcing `KDE`.
+
+At login, the session refreshes systemd's generated XDG autostart services, then
+pulls in `xdg-desktop-autostart.target` after publishing the ready display.
+Application preferences such as Penguin Mail's start-at-login option therefore
+apply at the next login. Hidden entries and missing `TryExec` programs are
+excluded; desktop restrictions remain handled by systemd's autostart conditions.
+Nested compositor tests do not start login applications.
 
 WayVR and other portal clients can share one or several monitors after choosing
 sources in the native sharing picker (FLTK by default). Each chosen monitor has its own PipeWire node and logical

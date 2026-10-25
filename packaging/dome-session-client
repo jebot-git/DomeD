@@ -24,6 +24,13 @@ args = ["/usr/local/bin/dome-compositor", "--backend", "drm"]
 if os.environ.get("DOME_SESSION_TERMINAL", "1") != "0":
     args.append("--terminal")
 try:
+    if os.environ.get("DOME_LOGIN_SESSION") == "1":
+        # Refresh generated XDG entries before the compositor publishes its
+        # ready display and starts dome-session.target. The user manager can
+        # survive logout while applications change their login preferences.
+        status = subprocess.run(["systemctl", "--user", "daemon-reload"], check=False)
+        if status.returncode:
+            print("Could not refresh login applications", file=sys.stderr, flush=True)
     child = subprocess.Popen(args, start_new_session=True)
     print(f"DomeD compositor PID: {child.pid}", flush=True)
     result = child.wait()

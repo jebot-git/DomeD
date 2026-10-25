@@ -2,3 +2,4 @@
 Description=DomeD graphical session
 BindsTo=graphical-session.target
 After=graphical-session.target
+Wants=xdg-desktop-autostart.target
