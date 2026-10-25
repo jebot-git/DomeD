@@ -28,3 +28,15 @@ edge flips. These menus bypass the central pullout offset and retain a connectio
 to the control as the owning window moves. They do not need a decorative beam.
 Dialogs and context menus without a rollout origin keep their central placement.
 All popup types remain bounded between the XR bars with matching input geometry.
+
+Rollouts are flat UI overlays, not independent spatial popup panels. They share
+exactly the owning dialog's plane, orientation and pixel scale, including nested
+rollouts. They do not receive extra pullout depth, density reduction or independent
+bar/FOV fitting. Composition priority and workspace ordering come from the
+owning UI surface, with the rollout painted after it. Coplanar pointer hits use
+the same child-above-parent order. XR-only dialogs select rollout direction from
+the persistent XR route, even when their asynchronous request arrives after the
+input event has finished.
+
+The `flat_rollouts` control capability keeps a newly restarted XR helper aligned
+with an older running compositor until both support the flat UI geometry.

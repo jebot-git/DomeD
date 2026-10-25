@@ -74,6 +74,17 @@ pub fn rollout_rect(parent: Rect, control: Rect, requested: Rect, work: Rect, ne
         [placed.w, placed.h], work)
 }
 
+/// A rollout belongs to its nearest non-rollout UI surface for composition.
+pub fn ui_owner(scene: &Scene, mut id: u64) -> u64 {
+    for _ in 0..scene.popups.len() {
+        match scene.popup(id).filter(|p| p.rollout) {
+            Some(popup) if popup.parent != id => id = popup.parent,
+            _ => break,
+        }
+    }
+    id
+}
+
 impl Scene {
     pub fn popup(&self, id: u64) -> Option<&Popup> {
         self.popups.iter().find(|p| p.id == id)
@@ -156,13 +167,13 @@ pub fn append_quads(scene: &Scene, panels: &mut Vec<Quad>, head: Pose) {
 /// Center transient surfaces slightly below their origin, then fit them to the
 /// same binocular viewport used for rendering and pointer hit testing.
 pub fn append_quads_in_fov(scene: &Scene, panels: &mut Vec<Quad>, head: Pose, viewport: Option<[f32; 4]>) {
-    append_quads_with_policy(scene, panels, head, viewport, true);
+    append_quads_with_policy(scene, panels, head, viewport, true, true);
 }
 
 /// An XR helper restarted inside an older desktop must retain that desktop's
 /// geometry until both processes advertise the centered placement capability.
 pub(crate) fn append_quads_with_policy(scene: &Scene, panels: &mut Vec<Quad>, head: Pose,
-    viewport: Option<[f32; 4]>, centered: bool) {
+    viewport: Option<[f32; 4]>, centered: bool, flat_rollouts: bool) {
     let frame=head.upright();
     let shell=crate::xr_transport::ShellLayout {width:1024,height:768,top:36,bottom:60,notifications:None,pullout:None};
     let bars=crate::xr_input::bar_quads_from_surfaces(scene,head,&shell,100.,panels);
@@ -202,6 +213,20 @@ pub(crate) fn append_quads_with_policy(scene: &Scene, panels: &mut Vec<Quad>, he
                 parent.size[0] * popup.anchor.w / pw,
                 parent.size[1] * popup.height() / ph,
             ];
+            // Native rollouts are UI overlays in their parent's plane. They
+            // inherit its density and fit, without another popup scale/depth.
+            if popup.rollout && flat_rollouts {
+                let origin = parent.point([popup.anchor.x / pw, popup.anchor.y / ph]);
+                let q = Quat::from_array(parent.pose.orientation_xyzw);
+                panels.push(Quad {
+                    id: popup.id,
+                    pose: Pose { position_m: (origin + q * Vec3::new(size[0]/2., -size[1]/2., 0.)).to_array(),
+                        ..parent.pose },
+                    size,
+                    dome: None,
+                });
+                continue;
+            }
             // Some clients cannot resize their popup buffers (menus, input
             // methods or fixed dialogs). Keep all UVs and hit coordinates while
             // bounding their displayed size to the same half-resolution budget.
@@ -222,16 +247,13 @@ pub(crate) fn append_quads_with_policy(scene: &Scene, panels: &mut Vec<Quad>, he
                     .map_or(point, |p| p.display_point(point));
                 parent.point([point[0] / pw, point[1] / ph])
             });
-            // A rollout's configured rectangle is relative to the actual
-            // control/menu parent; central pullout policy must not override it.
-            let rollout_origin = popup.rollout.then(|| parent.point([
-                popup.anchor.x / pw, popup.anchor.y / ph]));
-            let origin = rollout_origin.or(click_center).unwrap_or(center);
+            let legacy_rollout = popup.rollout.then(||parent.point([popup.anchor.x/pw,popup.anchor.y/ph]));
+            let origin = legacy_rollout.or(click_center).unwrap_or(center);
             let distance = origin.distance(Vec3::from_array(head.position_m));
             // A small angular offset stays consistent across window resolutions
             // and parent distances. Do not lift the entire dialog above its parent.
-            let offset = if rollout_origin.is_some() {
-                Vec3::new(size[0] / 2., -size[1] / 2., depth)
+            let offset = if legacy_rollout.is_some() {
+                Vec3::new(size[0]/2., -size[1]/2., depth)
             } else if centered {
                 Vec3::new(0., -distance * 5_f32.to_radians().tan(), depth)
             } else if click_center.is_some() {

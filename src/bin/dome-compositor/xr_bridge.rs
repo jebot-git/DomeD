@@ -648,8 +648,8 @@ impl Dome {
         self.mouse_angles = Some(angles);
         let ray = dome::xr_input::mouse_ray(session.head, angles);
         self.xr_bridge.lock().unwrap().mouse_angles = Some(angles);
-        let target = dome::xr_input::mouse_target(
-            &surfaces, head, ray,
+        let target = dome::xr_input::mouse_target_with_ui(
+            &scene, &surfaces, head, ray,
             if captured { cursor.as_ref().map(|c| c.id) } else { None },
             self.shell_modal_open(),
         );

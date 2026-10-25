@@ -415,8 +415,7 @@ fn xr_rollouts_keep_control_origin_instead_of_central_pullout_and_preserve_input
     let panel = quads.iter().find(|q|q.id==id).unwrap();
     let window = scene.window(root).unwrap();
     let expected = parent.point([50./window.desktop.w, 40./window.desktop.h]);
-    let normal = Quat::from_array(parent.pose.orientation_xyzw)*Vec3::Z;
-    assert!((panel.point([0.,0.])-expected-normal*0.14).length()<1e-4);
+    assert!((panel.point([0.,0.])-expected).length()<1e-4);
     let origin=Vec3::from_array(head.position_m);
     for uv in [[0.1,0.1],[0.5,0.5],[0.9,0.9]] {
         let hit=panel.hit(origin,(panel.point(uv)-origin).normalize(),false).unwrap();
@@ -426,4 +425,60 @@ fn xr_rollouts_keep_control_origin_instead_of_central_pullout_and_preserve_input
     assert_eq!(encoded["rollout"],true);
     let mut old=encoded; old.as_object_mut().unwrap().remove("rollout");
     assert!(!serde_json::from_value::<Popup>(old).unwrap().rollout);
+}
+
+#[test]
+fn dialog_rollouts_inherit_plane_scale_and_composition_priority_without_popup_depth() {
+    let (mut scene, root, dialog) = fixture(Projection::RoomDome);
+    scene.popups[0].anchor.w=1600.; scene.popups[0].anchor.h=900.;
+    scene.focused=Some(dialog);
+    let child=POPUP_ID_BASE+2;
+    scene.popups.push(Popup { id:child,parent:dialog,root,rollout:true,context_at:None,viewport:None,
+        anchor:Rect{x:80.,y:100.,w:1000.,h:600.} });
+    let head=Pose::default();
+    let quads=xr_input::quads(&scene,head);
+    let parent=quads.iter().find(|q|q.id==dialog).unwrap();
+    let menu=quads.iter().find(|q|q.id==child).unwrap();
+    assert_eq!(menu.pose.orientation_xyzw,parent.pose.orientation_xyzw);
+    assert!((menu.size[0]-parent.size[0]*1000./1600.).abs()<1e-5);
+    assert!((menu.size[1]-parent.size[1]*600./900.).abs()<1e-5);
+    assert!((menu.point([0.,0.])-parent.point([80./1600.,100./900.])).length()<1e-5);
+    let local=Quat::from_array(parent.pose.orientation_xyzw).conjugate()
+        *(Vec3::from_array(menu.pose.position_m)-Vec3::from_array(parent.pose.position_m));
+    assert!(local.z.abs()<1e-6);
+    assert_eq!(spatial_popup::ui_owner(&scene,child),dialog);
+    assert_eq!(xr_input::window_order(&scene,child),xr_input::window_order(&scene,dialog));
+    let origin=Vec3::from_array(head.position_m);
+    let hit=xr_input::mouse_target(&quads,origin,(menu.point([0.5,0.5])-origin).normalize(),None,false).unwrap();
+    assert_eq!(hit.0,child,"coplanar dropdown must receive the pointer above its dialog");
+}
+
+#[test]
+fn flat_rollout_receives_hits_above_its_curved_backing_window() {
+    let (mut scene, root, popup)=fixture(Projection::RoomDome);
+    scene.popups[0].rollout=true;
+    scene.popups[0].anchor=Rect{x:500.,y:100.,w:200.,h:180.};
+    let head=Pose::default(); let quads=xr_input::quads(&scene,head);
+    let menu=quads.iter().find(|q|q.id==popup).unwrap();
+    let origin=Vec3::from_array(head.position_m); let ray=(menu.point([0.7,0.5])-origin).normalize();
+    assert_eq!(xr_input::mouse_target(&quads,origin,ray,None,false).unwrap().0,root);
+    assert_eq!(xr_input::mouse_target_with_ui(&scene,&quads,origin,ray,None,false).unwrap().0,popup);
+    assert_eq!(xr_input::mouse_target_with_ui(&scene,&quads,origin,ray,Some(root),false).unwrap().0,root);
+}
+
+#[test]
+fn restarted_helper_preserves_spatial_rollouts_until_compositor_supports_flat_ui() {
+    let (mut scene,root,popup)=fixture(Projection::RoomDome);
+    scene.popups[0].rollout=true;
+    let head=Pose::default();let current=dome::xr_transport::Bridge::default().control();
+    assert!(current.flat_rollouts);
+    let mut wire=serde_json::to_value(&current).unwrap();wire.as_object_mut().unwrap().remove("flat_rollouts");
+    let legacy: dome::xr_transport::Control=serde_json::from_value(wire).unwrap();assert!(!legacy.flat_rollouts);
+    for (control,depth) in [(&legacy,0.14),(&current,0.)] {
+        let quads=xr_input::render_quads_for_control(&scene,head,None,control);
+        let parent=quads.iter().find(|q|q.id==root).unwrap();let panel=quads.iter().find(|q|q.id==popup).unwrap();
+        let origin=parent.point([scene.popups[0].anchor.x/720.,scene.popups[0].anchor.y/460.]);
+        let delta=Quat::from_array(parent.pose.orientation_xyzw).conjugate()*(panel.point([0.,0.])-origin);
+        assert!((delta.z-depth).abs()<1e-5);
+    }
 }

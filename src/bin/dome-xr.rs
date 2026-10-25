@@ -1074,13 +1074,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 true
             });
             visible.sort_by_key(|(q, _)| {
-                let group = if q.id == u64::MAX - 32 {
+                let owner = scene.as_ref().map_or(q.id, |s| dome::spatial_popup::ui_owner(s, q.id));
+                let group = if owner == u64::MAX - 32 {
                     0
                 } else if q.id == dome::performance_floor::ID {
                     1
                 } else if dome::xr_transport::is_shell(q.id) || q.id >= u64::MAX - 1 {
                     5
-                } else if popup_ids.contains(&q.id) {
+                } else if popup_ids.contains(&owner) {
                     4
                 } else if q.id & dome::spatial_popup::BEAM_ID_BASE != 0 {
                     3
@@ -1094,7 +1095,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 let depth = scene
                     .as_ref()
                     .and_then(|s| {
-                        s.window(q.id).map(|w| {
+                        s.window(owner).map(|w| {
                             (w.workspace + s.workspaces.len() - s.active_workspace)
                                 % s.workspaces.len()
                         })

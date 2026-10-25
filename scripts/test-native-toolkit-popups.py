@@ -214,7 +214,7 @@ try:
                     post("/api/xr-session", {"visible": True, "focused": True,
                          "head": {"position_m": [0, 1.4, 0], "orientation_xyzw": [0, 0, 0, 1]}, "horizontal_fov_deg": 100, "mouse_viewport": [-.4,.47,-.32,.36]})
                 except OSError:
-                    return
+                    pass
                 stop.wait(.1)
         pulse = threading.Thread(target=heartbeat, daemon=True); pulse.start()
         wait(lambda: get("/api/xr-control")["input_realm"] == "xr")
@@ -301,6 +301,37 @@ try:
         wait(lambda: not popups()); time.sleep(.6)
         check(not popups(), toolkit + " XR shell dismisses native menus without reopening")
         check(client.poll() is None, toolkit + " stays alive after popup/focus realm changes")
+        if toolkit == "fltk":
+            xr_socket = next(p.name.removesuffix('.dome-session.json') for p in Path(tmp).glob('*.dome-session.json')
+                             if json.loads(p.read_text())['realm']=='xr')
+            dialog_client=start([os.environ.get("DOME_TOOLKIT_CLIENT",str(root/'build/toolkit-popups/fltk-popup-client')), '--dialog'],
+                                'dialog-client',{**client_env,'WAYLAND_DISPLAY':xr_socket})
+            dialog=wait(lambda:next((w for w in scene()['windows'] if w['app_id']=='org.domed.FltkPopupDialog'),None))
+            did=dialog['id'];post('/api/action',{'op':'focus','id':did})
+            dialog=wait(lambda:next((w for w in scene()['windows'] if w['id']==did and w['desktop']['w']==480 and w['desktop']['h']==320),None))
+            time.sleep(.5)
+            for label,py in [('upper',48),('lower',268)]:
+                xr_click(did,[280/dialog['desktop']['w'],py/dialog['desktop']['h']])
+                menu=wait(lambda:next((p for p in scene()['popups'] if p['parent']==did and p.get('rollout')),None))
+                (out/('dialog-'+label+'.json')).write_text(json.dumps({'scene':scene(),'layout':get('/api/xr-layout')},indent=2))
+                assert abs(menu['anchor']['x']-180)<2, menu
+                if label=='upper':assert 25<=menu['anchor']['y']<=80,menu
+                else:assert menu['anchor']['y']<250 and menu['anchor']['y']+menu['anchor']['h']<=288,menu
+                quads=get('/api/xr-layout')['quads'];pq=next(q for q in quads if q['id']==did);mq=next(q for q in quads if q['id']==menu['id'])
+                assert mq['pose']['orientation_xyzw']==pq['pose']['orientation_xyzw']
+                x,y,z,w=pq['pose']['orientation_xyzw']; normal=[2*(x*z+w*y),2*(y*z-w*x),1-2*(x*x+y*y)]
+                delta=[a-b for a,b in zip(mq['pose']['position_m'],pq['pose']['position_m'])]
+                assert abs(sum(a*b for a,b in zip(delta,normal)))<1e-5,'rollout must share dialog plane'
+                assert abs(mq['size'][0]/pq['size'][0]-menu['anchor']['w']/480)<1e-5
+                assert abs(mq['size'][1]/pq['size'][1]-menu['anchor']['h']/320)<1e-5
+                check(True,'fltk '+label+' rollout is a coplanar UI overlay at modal-dialog content coordinates')
+                if label=='upper':
+                    owner=menu['root'];before=next(w['title'] for w in scene()['windows'] if w['id']==owner)
+                    xr_click(menu['id'],[.4,.125]);wait(lambda:any(w['id']==owner and w['title']!=before for w in scene()['windows']))
+                    check(True,'fltk modal-dialog rollout selection reaches the native callback')
+                else:key('Escape')
+                wait(lambda:not any(p['parent']==did and p.get('rollout') for p in scene()['popups']))
+            dialog_client.terminate();dialog_client.wait(timeout=5)
         if toolkit == "fltk" and os.environ.get("DOME_TEST_REAL_APPS") == "1":
             # Exercise the installed clients which reported premature dismissal,
             # including their timers, GL children and runtime style integration.

@@ -153,21 +153,21 @@ pub fn render_quads(scene: &Scene, head: Pose) -> Vec<Quad> {
 }
 /// Use the renderer's shared binocular viewport for fullscreen media hit testing.
 pub fn quads_in_fov(scene: &Scene, head: Pose, viewport: Option<[f32; 4]>) -> Vec<Quad> {
-    window_quads(scene, head, false, viewport, true)
+    window_quads(scene, head, false, viewport, true, true)
 }
 pub fn render_quads_in_fov(scene: &Scene, head: Pose, viewport: Option<[f32; 4]>) -> Vec<Quad> {
-    window_quads(scene, head, true, viewport, true)
+    window_quads(scene, head, true, viewport, true, true)
 }
 /// Use the desktop's advertised geometry when an XR helper is restarted across
 /// an installation, so native pointer hits remain aligned with rendered popups.
 pub fn render_quads_for_control(scene: &Scene, head: Pose, viewport: Option<[f32; 4]>, control: &crate::xr_transport::Control) -> Vec<Quad> {
-    window_quads(scene, head, true, viewport, control.centered_popups)
+    window_quads(scene, head, true, viewport, control.centered_popups, control.flat_rollouts)
 }
-fn window_quads(scene: &Scene, head: Pose, backgrounds: bool, viewport: Option<[f32; 4]>, centered: bool) -> Vec<Quad> {
+fn window_quads(scene: &Scene, head: Pose, backgrounds: bool, viewport: Option<[f32; 4]>, centered: bool, flat_rollouts: bool) -> Vec<Quad> {
     if scene.locked { return vec![]; }
     if let Some(fullscreen) = media_view::fullscreen_quad(scene, head, viewport) {
         let mut panels = vec![fullscreen];
-        crate::spatial_popup::append_quads_with_policy(scene, &mut panels, head, viewport, centered);
+        crate::spatial_popup::append_quads_with_policy(scene, &mut panels, head, viewport, centered, flat_rollouts);
         return panels;
     }
     let old = scene.frame_pose();
@@ -315,11 +315,12 @@ fn window_quads(scene: &Scene, head: Pose, backgrounds: bool, viewport: Option<[
         }
     }
     panels.sort_by_key(|q| window_order(scene, q.id));
-    crate::spatial_popup::append_quads_with_policy(scene, &mut panels, head, viewport, centered);
+    crate::spatial_popup::append_quads_with_policy(scene, &mut panels, head, viewport, centered, flat_rollouts);
     panels
 }
 /// Back-to-front order shared by layer submission and geometry.
 pub fn window_order(scene: &Scene, id: u64) -> u8 {
+    let id = crate::spatial_popup::ui_owner(scene, id);
     if scene.focused == Some(id) { 2 }
     else if scene.window(id).is_some_and(|w| w.xr_scale > 1.) { 0 }
     else { 1 }
@@ -527,18 +528,37 @@ pub fn mouse_ray(head: Pose, angles: [f32; 2]) -> Vec3 {
 pub fn mouse_target(
     surfaces: &[Quad], origin: Vec3, ray: Vec3, captured: Option<u64>, modal: bool,
 ) -> Option<(u64, [f32; 2], f32)> {
-    surfaces.iter()
-        .filter(|q| if modal {
+    surfaces.iter().enumerate()
+        .filter(|(_, q)| if modal {
             matches!(q.id, crate::xr_transport::TOP_BAR | crate::xr_transport::TOP_PANEL)
         } else {
             captured.is_none_or(|id| id == q.id)
         })
-        .filter_map(|q| q.hit(origin, ray, captured.is_some() && !modal)
-            .map(|uv| (q.id, uv, q.point(uv).distance(origin))))
+        .filter_map(|(index,q)| q.hit(origin, ray, captured.is_some() && !modal)
+            .map(|uv| (q.id, uv, q.point(uv).distance(origin), index)))
         .min_by(|a, b| {
             crate::xr_transport::is_shell(b.0).cmp(&crate::xr_transport::is_shell(a.0))
-                .then_with(|| a.2.total_cmp(&b.2))
-        })
+                .then_with(|| if (a.2-b.2).abs() < 0.0001 {
+                    b.3.cmp(&a.3) // coplanar UI: last painted child wins
+                } else { a.2.total_cmp(&b.2) })
+        }).map(|(id,uv,distance,_)| (id,uv,distance))
+}
+
+/// Flat UI overlays win over their own backing surface, even where that
+/// backing surface curves in front of the overlay plane. Capture and shell
+/// controls retain their normal priority.
+pub fn mouse_target_with_ui(scene: &Scene, surfaces: &[Quad], origin: Vec3, ray: Vec3,
+    captured: Option<u64>, modal: bool) -> Option<(u64, [f32; 2], f32)> {
+    let target = mouse_target(surfaces, origin, ray, captured, modal)?;
+    if captured.is_some() || modal || crate::xr_transport::is_shell(target.0) { return Some(target); }
+    let owner = crate::spatial_popup::ui_owner(scene, target.0);
+    for quad in surfaces.iter().rev().filter(|q| scene.popup(q.id).is_some_and(|p|p.rollout)
+        && crate::spatial_popup::ui_owner(scene,q.id)==owner) {
+        if let Some(uv) = quad.hit(origin,ray,false) {
+            return Some((quad.id,uv,quad.point(uv).distance(origin)));
+        }
+    }
+    Some(target)
 }
 
 pub fn move_mouse(angles: &mut [f32; 2], dx: f64, dy: f64) {

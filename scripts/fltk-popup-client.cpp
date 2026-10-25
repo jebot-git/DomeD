@@ -31,6 +31,13 @@ int main(int argc, char **argv) {
     Fl_Choice choice(260,60,180,36,"Character"); items(choice,"");
     Fl_Choice lowerChoice(260,250,180,36,"Lower rollout"); items(lowerChoice,"");
     Fl_Box info(30,150,420,70,"Native FLTK menus: activate, nested, disabled, toggle");
-    top.end(); top.show(argc,argv);
+    top.end(); top.show();
+    if (argc > 1 && std::string(argv[1]) == "--dialog") {
+        Fl_Window *dialog = new Fl_Window(140,120,480,320,"FLTK modal dialog");
+        dialog->xclass("org.domed.FltkPopupDialog");
+        Fl_Choice *upper = new Fl_Choice(180,30,220,36,"Upper"); items(*upper,"");
+        Fl_Choice *lower = new Fl_Choice(180,250,220,36,"Lower"); items(*lower,"");
+        dialog->end(); dialog->set_modal(); dialog->show();
+    }
     return Fl::run();
 }

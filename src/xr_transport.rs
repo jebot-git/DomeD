@@ -153,6 +153,9 @@ pub struct Control {
     /// Shared popup geometry capability; absent on an already-running older desktop.
     #[serde(default)]
     pub centered_popups: bool,
+    /// Native rollouts share their owning UI plane instead of popup depth.
+    #[serde(default)]
+    pub flat_rollouts: bool,
     #[serde(default)]
     pub stereo_views: bool,
     #[serde(default)]
@@ -224,6 +227,7 @@ impl Bridge {
     pub fn control(&self) -> Control {
         Control {
             centered_popups: true,
+            flat_rollouts: true,
             stereo_views: true,
             screenshot_request: self.screenshot_request,
             screenshot_gltf: true,

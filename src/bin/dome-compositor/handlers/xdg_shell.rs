@@ -352,15 +352,19 @@ impl Dome {
         let Ok(root) = find_popup_root_surface(&PopupKind::Xdg(popup.clone())) else {
             return;
         };
-        let Some(window) = self
-            .space
-            .elements()
-            .find(|w| w.toplevel().unwrap().wl_surface() == &root)
-        else {
-            return;
+        // Dialogs are popup UI surfaces, not independent Space elements, but
+        // they still own native dropdowns. Look them up in the full registry.
+        let Some((owner, window)) = self.registry.iter()
+            .find(|(_, w)| w.toplevel().unwrap().wl_surface() == &root)
+        else { return; };
+        let window_geo = if let Some(geometry) = self.space.element_geometry(window) {
+            geometry
+        } else {
+            let scene = self.scene.lock().unwrap();
+            let Some(owner) = scene.window(*owner) else { return; };
+            Rectangle::new((owner.desktop.x.round() as i32, owner.desktop.y.round() as i32).into(),
+                window.geometry().size)
         };
-
-        let window_geo = self.space.element_geometry(window).unwrap();
         let output_geo = self.output_geometry_at(
             (
                 window_geo.loc.x as f64 + window_geo.size.w as f64 / 2.,
@@ -417,6 +421,13 @@ impl Dome {
             .iter()
             .find(|m| m.surface == *popup.wl_surface());
         let nested = popup.get_parent_surface().is_some_and(|surface| surface != root);
+        // Popup requests arrive after input dispatch restores its temporary realm.
+        // Use persistent input ownership, including XR-only dialog owners.
+        let xr_popup = self.input_xr_active || self.id_for(&root).is_some_and(|id|
+            self.scene.lock().unwrap().window(id).is_some_and(|w| w.xr_visible && !w.desktop_visible));
+        if std::env::var_os("DOME_MENU_TRACE").is_some() {
+            eprintln!("popup placement: xr={xr_popup} active={} realm={:?} parent={parent:?} window={window_geo:?} nested={nested}", self.input_xr_active, self.input_realm);
+        }
         popup.with_pending_state(|state| {
             let size = state.positioner.get_geometry().size;
             let placed = if let Some(context) = context {
@@ -426,7 +437,7 @@ impl Dome {
                     [size.w as f32, (size.h as f32).min(work.h)],
                     work,
                 )
-            } else if self.input_realm == dome::Realm::Xr {
+            } else if xr_popup {
                 let positioner = state.positioner;
                 let geometry = positioner.get_unconstrained_geometry(Rectangle::new(
                     ((window_geo.loc.x as f32 - parent.x) as i32,
