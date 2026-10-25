@@ -28,6 +28,10 @@ with tempfile.TemporaryDirectory(prefix='dome-tray-ui-') as directory:
   with os.fdopen(rd) as pipe:disp=':'+pipe.readline().strip()
   env={**os.environ,'DISPLAY':disp,'XDG_RUNTIME_DIR':directory,'XDG_CONFIG_HOME':str(runtime/'config'),'XDG_STATE_HOME':str(runtime/'state'),'XDG_CURRENT_DESKTOP':'Dome','DE_XR_GL_TRACE':'1','FLTK_BACKEND':'x11','LIBGL_ALWAYS_SOFTWARE':'1','TRAY_FIXTURE_READY':str(runtime/'ready')}
   for key in ['WAYLAND_DISPLAY','WAYLAND_SOCKET']:env.pop(key,None)
+  env['DBUS_SYSTEM_BUS_ADDRESS']=env['DBUS_SESSION_BUS_ADDRESS']
+  env['BLUETOOTH_FIXTURE_READY']=str(runtime/'bluetooth-ready')
+  env['BLUETOOTH_FIXTURE_LOG']=str(runtime/'bluetooth-events.json')
+  start([sys.executable,str(ROOT/'tests/tray/mock_bluetooth.py')],env,'ui-bluetooth.log');wait(lambda:(runtime/'bluetooth-ready').exists())
   env['TRAY_FIXTURE_CONFIG_REQUESTS']=str(runtime/'config-requests')
   start([sys.executable,str(ROOT/'tests/tray/mock_services.py')],env,'ui-services.log');wait(lambda:(runtime/'ready').exists())
   manager=start([str(BUILD/'dome-tray')],env,'ui-frontend.log')
@@ -69,10 +73,10 @@ with tempfile.TemporaryDirectory(prefix='dome-tray-ui-') as directory:
    xtest.fake_input(d,X.ButtonPress,1);xtest.fake_input(d,X.ButtonRelease,1);d.sync();time.sleep(.3)
   menu='/TrayApplications/Menu'
   layout=dbus(menu,'com.canonical.dbusmenu.GetLayout','0','1','[]')
-  for label in ['Tray applications','KDE Connect','Input methods','Wallets','Translator','Screenshot']:assert label in layout,layout
+  for label in ['Tray applications','KDE Connect','Input methods','Wallets','Translator','Screenshot','Bluetooth']:assert label in layout,layout
   dbus(menu,'com.canonical.dbusmenu.Event','99','clicked','<0>','0')
   assert window() is None,'Unknown menu events must not open a page'
-  for row,page in enumerate(['tray','devices','input','wallets','translator','screenshot'],1):
+  for row,page in enumerate(['tray','devices','input','wallets','translator','screenshot','bluetooth'],1):
    dbus(menu,'com.canonical.dbusmenu.Event',str(row),'clicked','<0>','0');w=wait(window);w.set_input_focus(X.RevertToParent,X.CurrentTime);d.sync();time.sleep(.6)
    assert w.get_geometry().height==632, 'DomeD manager must reclaim the local menu bar space'
    geo=w.get_geometry();raw=w.get_image(0,0,geo.width,geo.height,X.ZPixmap,0xffffffff)
@@ -82,6 +86,19 @@ with tempfile.TemporaryDirectory(prefix='dome-tray-ui-') as directory:
    assert len(img.getcolors(geo.width*geo.height))>8,page
    if page=='input':
     assert (190,101,112) in [color for _,color in img.crop((28,140,438,310)).getcolors(410*170)],'Native input-method flags were not drawn'
+   if page=='bluetooth':
+    def events():return json.loads((runtime/'bluetooth-events.json').read_text())
+    assert not any(e.get('key')=='Powered' for e in events()),'Opening Bluetooth must not power on a radio'
+    click(w,600,102)
+    wait(lambda:any(e.get('key')=='Powered' and e['value'] for e in events()))
+    click(w,80,210);click(w,450,334)
+    time.sleep(.6)
+    geo=w.get_geometry();raw=w.get_image(0,0,geo.width,geo.height,X.ZPixmap,0xffffffff)
+    Image.frombytes('RGB',(geo.width,geo.height),raw.data,'raw','BGRX').save(out/'ui-bluetooth-pairing.png')
+    click(w,410,530)
+    wait(lambda:any(e.get('op')=='paired' for e in events()))
+    click(w,775,102)
+    wait(lambda:any(e.get('op')=='StartDiscovery' for e in events()))
    if page=='devices':click(w,80,110)
    if page=='input':click(w,390,424)
    if page=='wallets':click(w,470,95);click(w,80,160)
@@ -91,6 +108,7 @@ with tempfile.TemporaryDirectory(prefix='dome-tray-ui-') as directory:
    elif page=='input':key('Escape')
    else:key('w',ctrl=True)
    wait(lambda:window() is None);assert manager.poll() is None
+   if page=='bluetooth':wait(lambda:any(e.get('op')=='StopDiscovery' for e in events()))
    asyncio.run(check_notifier())
   async def check_input_menu():
    bus=await MessageBus().connect()
@@ -188,7 +206,7 @@ with tempfile.TemporaryDirectory(prefix='dome-tray-ui-') as directory:
   w.set_input_focus(X.RevertToParent,X.CurrentTime);d.sync();time.sleep(.3);key('q',ctrl=True);assert fallback.poll() is None
   fallback.terminate();assert fallback.wait(timeout=4)==-15
   print('PASS: DomeD hides the local menu, exports its commands, preserves shortcuts, and other desktops retain the fallback')
-  print('PASS: one tray entry, four pages, two utility shortcuts, flags, Fcitx method/group/configuration submenus, fcitx5-configuration-fltk URI routing, GPU presentation, close/restore and permanent service')
+  print('PASS: one tray entry, five pages, Bluetooth pairing/discovery, two utility shortcuts, flags, Fcitx method/group/configuration submenus, fcitx5-configuration-fltk URI routing, GPU presentation, close/restore and permanent service')
  finally:
   for p in reversed(processes):p.terminate()
   for p in reversed(processes):

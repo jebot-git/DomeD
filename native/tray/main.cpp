@@ -3,6 +3,7 @@
 #include "gpu-window.h"
 #include "notifier.h"
 #include "services.h"
+#include "bluetooth.h"
 #include "keyboard-flags.h"
 #include <FL/Fl_Box.H>
 #include <FL/Fl_Button.H>
@@ -54,7 +55,19 @@ class Manager : public dx::GpuWindow {
   Fl_Menu_Bar menu{0, 0, 940, 28};
   DesktopMenu exported;
   Fl_Tabs tabs{12, 38, 916, 566};
-  Fl_Group *trayTab, *deviceTab, *inputTab, *walletTab;
+  Fl_Group *trayTab, *deviceTab, *inputTab, *walletTab, *bluetoothTab;
+  bluetooth::Client bluetoothClient;
+  Fl_Choice *bluetoothAdapters;
+  Fl_Hold_Browser *bluetoothDevices;
+  Fl_Multiline_Output *bluetoothInfo, *bluetoothPrompt;
+  Fl_Box *bluetoothStatus;
+  Fl_Secret_Input *bluetoothCode;
+  Fl_Button *bluetoothPower, *bluetoothScan, *bluetoothVisible,
+      *bluetoothPairable, *bluetoothAccept, *bluetoothReject;
+  std::map<std::string, Fl_Button *> bluetoothButtons;
+  Json bluetoothState, bluetoothRows = Json::array();
+  std::string bluetoothAdapter, bluetoothDevice, bluetoothRevision;
+  unsigned bluetoothPromptId = 0;
   Fl_Box status{12, 612, 916, 36};
   Fl_Hold_Browser *trayList, *trayRows, *deviceList, *plugins, *available,
       *enabled, *folderList, *entryList, *configList;
@@ -89,7 +102,7 @@ class Manager : public dx::GpuWindow {
     }
     return image.get();
   }
-  int handle = -1;
+  int walletHandle = -1;
   Fl_Choice *walletList;
   std::future<Json> pending;
   std::function<void(Json)> completed;
@@ -157,6 +170,7 @@ class Manager : public dx::GpuWindow {
       }
       self->redraw();
     }
+    self->updateBluetooth();
     while (g_main_context_pending(nullptr))
       g_main_context_iteration(nullptr, FALSE);
     if (self->pending.valid() && self->pending.wait_for(std::chrono::seconds(
@@ -451,7 +465,7 @@ class Manager : public dx::GpuWindow {
           return Json{{"handle", h}, {"folders", services::folders(h)}};
         },
         [this](Json d) {
-          handle = d.at("handle");
+          walletHandle = d.at("handle");
           folderList->clear();
           entryList->clear();
           for (auto &f : d["folders"])
@@ -459,10 +473,10 @@ class Manager : public dx::GpuWindow {
         });
   }
   void loadFolder() {
-    if (handle < 0)
+    if (walletHandle < 0)
       return;
     selectedFolder = selected(folderList);
-    auto h = handle;
+    auto h = walletHandle;
     auto f = selectedFolder;
     clearSecret();
     submit([h, f] { return services::entries(h, f); },
@@ -487,18 +501,18 @@ class Manager : public dx::GpuWindow {
   }
   void walletAction(const std::string &action, std::string key = {},
                     std::string value = {}) {
-    if (handle < 0) {
+    if (walletHandle < 0) {
       message("Open a wallet first.");
       return;
     }
-    auto h = handle;
+    auto h = walletHandle;
     auto f = selectedFolder;
     command([action, h, f, key,
              value] { services::walletAction(action, h, f, key, value); },
             [this, action] {
               clearSecret();
               if (action == "lock") {
-                handle = -1;
+                walletHandle = -1;
                 folderList->clear();
                 entryList->clear();
                 message("Wallet locked or access released.");
@@ -509,7 +523,7 @@ class Manager : public dx::GpuWindow {
             });
   }
   void readEntry() {
-    if (handle < 0)
+    if (walletHandle < 0)
       return;
     int i = entryList->value() - 1;
     if (i < 0 || size_t(i) >= entryData.size())
@@ -519,7 +533,7 @@ class Manager : public dx::GpuWindow {
           "This entry contains a map or binary stream; use the data editor.");
       return;
     }
-    auto h = handle;
+    auto h = walletHandle;
     auto f = selectedFolder;
     auto key = entryData[i]["key"].get<std::string>();
     submit([h, f, key] { return Json(services::readPassword(h, f, key)); },
@@ -530,7 +544,7 @@ class Manager : public dx::GpuWindow {
            });
   }
   void dataEditor(bool read) {
-    if (handle < 0 || selectedFolder.empty()) {
+    if (walletHandle < 0 || selectedFolder.empty()) {
       message("Open a wallet and select a folder first.");
       return;
     }
@@ -567,7 +581,7 @@ class Manager : public dx::GpuWindow {
       while (dialog.shown())
         Fl::wait();
       if (accepted) {
-        auto h = handle;
+        auto h = walletHandle;
         auto folder = selectedFolder;
         Json result = {{"type", type.value() + 1}, {"data", content.value()}};
         content.value("");
@@ -585,12 +599,210 @@ class Manager : public dx::GpuWindow {
         message("Use Read password for masked password viewing.");
         return;
       }
-      auto h = handle;
+      auto h = walletHandle;
       auto folder = selectedFolder;
       submit([h, folder, key] { return services::readData(h, folder, key); },
              edit);
     } else
       edit({{"type", 3}, {"data", "{}"}});
+  }
+
+  Json bluetoothSelection() const {
+    for (const auto &row : bluetoothRows)
+      if (row["path"] == bluetoothDevice)
+        return row;
+    return Json::object();
+  }
+  void bluetoothAction(const std::string &op, bool adapter = false) {
+    bluetoothClient.action(adapter ? bluetoothAdapter : bluetoothDevice, op);
+  }
+  void updateBluetooth(bool force = false) {
+    auto data = bluetoothClient.snapshot();
+    auto revision = data.dump();
+    if (!force && revision == bluetoothRevision)
+      return;
+    bluetoothRevision = revision;
+    bluetoothState = data;
+    auto &adapters = data["adapters"];
+    bluetoothAdapters->clear();
+    int selectedAdapter = -1;
+    for (size_t i = 0; i < adapters.size(); ++i) {
+      auto label = adapters[i].value("Alias", std::string("Bluetooth")) + " (" +
+                   adapters[i].value("Address", std::string()) + ")";
+      // FLTK menu labels use slashes as submenu separators.
+      size_t at = 0;
+      while ((at = label.find('/', at)) != std::string::npos) {
+        label.replace(at, 1, "\\/");
+        at += 2;
+      }
+      bluetoothAdapters->add(label.c_str());
+      if (adapters[i]["path"] == bluetoothAdapter)
+        selectedAdapter = i;
+    }
+    if (selectedAdapter < 0 && !adapters.empty())
+      selectedAdapter = 0;
+    bluetoothAdapters->value(selectedAdapter);
+    Json adapter =
+        selectedAdapter < 0 ? Json::object() : adapters[selectedAdapter];
+    bluetoothAdapter = adapter.value("path", std::string());
+    bluetoothRows = Json::array();
+    bluetoothDevices->clear();
+    int selectedRow = 0;
+    for (const auto &d : data["devices"])
+      if (d.value("Adapter", std::string()) == bluetoothAdapter) {
+        bluetoothRows.push_back(d);
+        auto label =
+            d.value("Alias", d.value("Address", std::string("Device"))) +
+            (d.value("Connected", false) ? " — connected"
+             : d.value("Paired", false)  ? " — paired"
+                                         : " — nearby");
+        bluetoothDevices->add(label.c_str());
+        if (d["path"] == bluetoothDevice)
+          selectedRow = bluetoothRows.size();
+      }
+    bluetoothDevices->value(selectedRow);
+    if (!selectedRow)
+      bluetoothDevice.clear();
+    auto d = bluetoothSelection();
+    std::string details;
+    if (!d.empty()) {
+      details = d.value("Alias", std::string()) + "\n" +
+                d.value("Address", std::string()) + "\n" +
+                (d.value("Connected", false) ? "Connected" : "Disconnected") +
+                " · " + (d.value("Paired", false) ? "Paired" : "Not paired") +
+                " · " +
+                (d.value("Trusted", false) ? "Trusted" : "Not trusted") +
+                (d.value("Blocked", false) ? " · Blocked" : "");
+      if (d.contains("battery"))
+        details +=
+            "\nBattery: " + std::to_string(d["battery"].get<int>()) + "%";
+      if (d.contains("RSSI"))
+        details +=
+            " · Signal: " + std::to_string(d["RSSI"].get<int>()) + " dBm";
+    }
+    bluetoothInfo->value(details.empty() ? "Select a device to see its details."
+                                         : details.c_str());
+    bool powered = adapter.value("Powered", false),
+         scanning = adapter.value("scanning", false);
+    bluetoothPower->copy_label(powered ? "Power off" : "Power on");
+    bluetoothScan->copy_label(scanning ? "Stop scan" : "Scan (60 sec)");
+    bluetoothVisible->copy_label(adapter.value("Discoverable", false)
+                                     ? "Hide adapter"
+                                     : "Visible (3 min)");
+    bluetoothPairable->copy_label(
+        adapter.value("Pairable", false) ? "Disable pairing" : "Allow pairing");
+    auto isBusy = [&](const std::string &path) {
+      return std::find(data["busy"].begin(), data["busy"].end(), path) !=
+             data["busy"].end();
+    };
+    auto enable = [](Fl_Widget *w, bool on) {
+      if (on)
+        w->activate();
+      else
+        w->deactivate();
+    };
+    enable(bluetoothAdapters, !adapters.empty());
+    enable(bluetoothPower, !adapter.empty() && !isBusy(bluetoothAdapter));
+    enable(bluetoothScan, powered && !isBusy(bluetoothAdapter));
+    enable(bluetoothVisible, powered && !isBusy(bluetoothAdapter));
+    enable(bluetoothPairable, powered && !isBusy(bluetoothAdapter));
+    for (auto &[op, b] : bluetoothButtons)
+      enable(b, powered && !d.empty() && !isBusy(bluetoothDevice));
+    enable(bluetoothButtons["cancel"],
+           !d.empty() &&
+               std::find(data["pairing"].begin(), data["pairing"].end(),
+                         bluetoothDevice) != data["pairing"].end());
+    enable(bluetoothButtons["pair"],
+           powered && !d.empty() && !d.value("Paired", false) &&
+               !d.value("Blocked", false) && data.value("agent", false) &&
+               !isBusy(bluetoothDevice));
+    enable(bluetoothButtons["connect"],
+           powered && !d.empty() && !d.value("Connected", false) &&
+               !d.value("Blocked", false) && !isBusy(bluetoothDevice));
+    enable(bluetoothButtons["disconnect"], !d.empty() &&
+                                               d.value("Connected", false) &&
+                                               !isBusy(bluetoothDevice));
+    bluetoothButtons["trust"]->copy_label(d.value("Trusted", false) ? "Untrust"
+                                                                    : "Trust");
+    bluetoothButtons["block"]->copy_label(d.value("Blocked", false) ? "Unblock"
+                                                                    : "Block");
+    auto status = data.value("error", std::string());
+    if (status.empty())
+      status = adapters.empty()
+                   ? "No Bluetooth adapters found. Check the adapter "
+                     "connection and hardware radio switch."
+               : !powered ? "Bluetooth is powered off. If power-on fails, "
+                            "check airplane mode or the hardware radio switch."
+               : scanning ? "Scanning for nearby devices for up to 60 seconds…"
+               : !data["busy"].empty() ? "Bluetooth operation in progress…"
+                                       : "Ready. Scan to find nearby devices.";
+    bluetoothStatus->copy_label(status.c_str());
+    auto prompt = data["prompt"];
+    if (prompt.is_null()) {
+      bluetoothPromptId = 0;
+      bluetoothPrompt->value("");
+      bluetoothCode->value("");
+      bluetoothCode->hide();
+      bluetoothAccept->hide();
+      bluetoothReject->hide();
+    } else {
+      auto id = prompt["id"].get<unsigned>();
+      auto kind = prompt.value("kind", std::string());
+      bool input = kind == "RequestPinCode" || kind == "RequestPasskey";
+      bool display = kind == "DisplayPinCode" || kind == "DisplayPasskey";
+      std::string identity = prompt["device"];
+      for (const auto &device : data["devices"])
+        if (device["path"] == prompt["device"])
+          identity = device.value("Alias", std::string()) + " (" +
+                     device.value("Address", std::string()) + ")";
+      std::string text = identity + "\n";
+      if (input)
+        text += kind == "RequestPinCode"
+                    ? "Enter the device PIN (1–16 bytes)."
+                    : "Enter the six-digit device passkey.";
+      else if (display)
+        text += "Type " + prompt.value("code", std::string()) +
+                " on the remote device" +
+                (kind == "DisplayPasskey"
+                     ? " (" + std::to_string(prompt.value("entered", 0)) +
+                           " digits entered)"
+                     : "") +
+                ".";
+      else if (kind == "RequestConfirmation")
+        text += "Confirm that both devices show " +
+                prompt.value("code", std::string()) + ".";
+      else
+        text += "Allow " +
+                std::string(kind == "AuthorizeService"
+                                ? "Bluetooth service " +
+                                      prompt.value("uuid", std::string())
+                                : "pairing with this device") +
+                "?";
+      bluetoothPrompt->value(text.c_str());
+      bluetoothAccept->copy_label(display ? "Dismiss"
+                                  : input ? "Submit"
+                                          : "Confirm");
+      bluetoothAccept->show();
+      if (display)
+        bluetoothReject->hide();
+      else
+        bluetoothReject->show();
+      if (input)
+        bluetoothCode->show();
+      else
+        bluetoothCode->hide();
+      if (id != bluetoothPromptId) {
+        bluetoothPromptId = id;
+        bluetoothCode->value("");
+        if (tabs.value() != bluetoothTab || !visible())
+          showPage("bluetooth");
+        if (input)
+          bluetoothCode->take_focus();
+        else
+          bluetoothReject->take_focus();
+      }
+    }
+    redraw();
   }
 
 public:
@@ -621,6 +833,8 @@ public:
         "&View/&Wallets", FL_ALT + '4',
         [](Fl_Widget *, void *p) { ((Manager *)p)->showPage("wallets"); },
         this);
+    menu.add("&View/&Bluetooth", FL_ALT + '5',
+             [](Fl_Widget *, void *p) { ((Manager *)p)->showPage("bluetooth"); }, this);
     menu.add("&Input methods/&Configure…", FL_CTRL + ',',
              [](Fl_Widget *, void *p) { ((Manager *)p)->showPage("input"); }, this);
     menu.add("&Input methods/&Global options…", 0,
@@ -656,7 +870,7 @@ public:
                   "Cancel", "Delete", nullptr) == 1)
             self->command([name] { services::walletLifecycle("delete", name); },
                           [self] {
-                            self->handle = -1;
+                            self->walletHandle = -1;
                             self->folderList->clear();
                             self->entryList->clear();
                             self->clearSecret();
@@ -916,8 +1130,99 @@ public:
     button(724, 480, 180, "Edit map / binary…", [this] { dataEditor(true); });
     button(724, 524, 180, "New map / binary…", [this] { dataEditor(false); });
     walletTab->end();
+    bluetoothTab = new Fl_Group(12, 66, 916, 538, "Bluetooth");
+    bluetoothAdapters = new Fl_Choice(110, 88, 420, 30, "Adapter:");
+    on(bluetoothAdapters, [this] {
+      bluetoothClient.stopDiscovery();
+      int i = bluetoothAdapters->value();
+      if (i >= 0 && size_t(i) < bluetoothState["adapters"].size())
+        bluetoothAdapter = bluetoothState["adapters"][i]["path"];
+      bluetoothDevice.clear();
+      updateBluetooth(true);
+    });
+    bluetoothPower = button(550, 88, 150, "Power on", [this] {
+      auto &a = bluetoothState["adapters"];
+      for (const auto &row : a)
+        if (row["path"] == bluetoothAdapter)
+          bluetoothAction(
+              row.value("Powered", false) ? "power-off" : "power-on", true);
+    });
+    bluetoothScan = button(716, 88, 192, "Scan (60 sec)", [this] {
+      for (const auto &row : bluetoothState["adapters"])
+        if (row["path"] == bluetoothAdapter)
+          bluetoothAction(row.value("scanning", false) ? "stop" : "scan", true);
+    });
+    bluetoothVisible = button(28, 134, 190, "Visible (3 min)", [this] {
+      for (const auto &row : bluetoothState["adapters"])
+        if (row["path"] == bluetoothAdapter)
+          bluetoothAction(row.value("Discoverable", false) ? "visible-off"
+                                                           : "visible-on",
+                          true);
+    });
+    bluetoothPairable = button(234, 134, 190, "Allow pairing", [this] {
+      for (const auto &row : bluetoothState["adapters"])
+        if (row["path"] == bluetoothAdapter)
+          bluetoothAction(row.value("Pairable", false) ? "pairable-off"
+                                                       : "pairable-on",
+                          true);
+    });
+    button(440, 134, 150, "Refresh", [this] { bluetoothClient.refresh(); });
+    bluetoothDevices = new Fl_Hold_Browser(28, 198, 350, 246, "Devices");
+    bluetoothDevices->align(FL_ALIGN_TOP_LEFT);
+    bluetoothDevices->format_char(0);
+    on(bluetoothDevices, [this] {
+      int i = bluetoothDevices->value() - 1;
+      bluetoothDevice = i >= 0 && size_t(i) < bluetoothRows.size()
+                            ? bluetoothRows[i]["path"].get<std::string>()
+                            : "";
+      updateBluetooth(true);
+    });
+    bluetoothInfo = new Fl_Multiline_Output(394, 198, 514, 104);
+    int n = 0;
+    for (const auto &item : std::vector<std::pair<std::string, const char *>>{
+             {"pair", "Pair"},
+             {"cancel", "Cancel pair"},
+             {"connect", "Connect"},
+             {"disconnect", "Disconnect"},
+             {"trust", "Trust"},
+             {"block", "Block"},
+             {"remove", "Remove…"}}) {
+      auto op = item.first;
+      bluetoothButtons[op] = button(
+          394 + (n % 3) * 174, 320 + (n / 3) * 44, 164, item.second,
+          [this, op] {
+            auto action = op;
+            auto d = bluetoothSelection();
+            if (op == "trust" && d.value("Trusted", false))
+              action = "untrust";
+            if (op == "block" && d.value("Blocked", false))
+              action = "unblock";
+            if (op == "remove" &&
+                fl_choice("Remove this Bluetooth device and its saved pairing?",
+                          "Cancel", "Remove", nullptr) != 1)
+              return;
+            bluetoothAction(action);
+          });
+      ++n;
+    }
+    bluetoothPrompt = new Fl_Multiline_Output(28, 460, 880, 46);
+    bluetoothCode = new Fl_Secret_Input(28, 516, 300, 30);
+    bluetoothAccept = button(344, 516, 150, "Confirm", [this] {
+      bluetoothClient.respond(bluetoothPromptId, true, bluetoothCode->value());
+      bluetoothCode->value("");
+    });
+    bluetoothReject = button(510, 516, 150, "Reject", [this] {
+      bluetoothClient.respond(bluetoothPromptId, false);
+      bluetoothCode->value("");
+    });
+    bluetoothStatus = new Fl_Box(28, 552, 880, 44);
+    bluetoothStatus->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE | FL_ALIGN_WRAP);
+    bluetoothTab->end();
     tabs.end();
+    updateBluetooth(true);
     on(&tabs, [this] {
+      if(tabs.value()!=bluetoothTab)
+        bluetoothClient.stopDiscovery();
       clearSecret();
       refresh();
     });
@@ -937,22 +1242,35 @@ public:
     callback([](Fl_Widget *, void *p) { ((Manager *)p)->close(); }, this);
     Fl::add_timeout(.04, tick, this);
   }
+  int handle(int event) override {
+    if ((event == FL_KEYDOWN || event == FL_SHORTCUT) &&
+        Fl::event_key() == FL_Escape && !Fl::modal()) {
+      close();
+      return 1;
+    }
+    return dx::GpuWindow::handle(event);
+  }
   ~Manager() {
     Fl::remove_timeout(tick, this);
     clearSecret();
   }
   void close() {
+    bluetoothClient.stopDiscovery();
+    bluetoothClient.cancelPairing();
+    bluetoothCode->value("");
     clearSecret();
     hide();
   }
   void showPage(const std::string &name) {
+    if(name!="bluetooth")bluetoothClient.stopDiscovery();
     requestedInputConfig.clear();
     requestedSuite = name == "translator" ? "dome.translator"
                    : name == "screenshot" ? "dome.screenshot" : "";
     const bool input = name == "input" || name.rfind("input:fcitx://config/", 0) == 0;
     if (name.rfind("input:fcitx://config/", 0) == 0)
       requestedInputConfig = name.substr(6);
-    tabs.value(name == "devices"   ? deviceTab
+    tabs.value(name == "bluetooth" ? bluetoothTab
+               : name == "devices"   ? deviceTab
                : input             ? inputTab
                : name == "wallets" ? walletTab
                                    : trayTab);
@@ -960,7 +1278,8 @@ public:
     refresh();
   }
   void refresh() {
-    if (tabs.value() == deviceTab)
+    if (tabs.value() == bluetoothTab) { bluetoothClient.refresh(); updateBluetooth(true); }
+    else if (tabs.value() == deviceTab)
       refreshDevices();
     else if (tabs.value() == inputTab)
       refreshInput();
@@ -983,14 +1302,14 @@ int main(int argc, char **argv) try {
     if (a == "--daemon")
       showWindow = false;
     else if (a == "--tray" || a == "--devices" || a == "--input" ||
-             a == "--wallets" || a == "--translator" || a == "--screenshot") {
+             a == "--bluetooth" || a == "--wallets" || a == "--translator" || a == "--screenshot") {
       page = a.substr(2);
       showWindow = true;
     } else if (a == "--help") {
 #ifdef DOME_FCITX_CONFIGURATION
       puts("fcitx5-configuration-fltk [fcitx://config/global|fcitx://config/inputmethod/ID|fcitx://config/addon/ID]");
 #else
-      puts("dome-tray [--daemon|--tray|--devices|--input|--wallets|--translator|--screenshot]\n"
+      puts("dome-tray [--daemon|--tray|--devices|--input|--wallets|--bluetooth|--translator|--screenshot]\n"
            "Close hides the permanent session tray manager.");
 #endif
       return 0;

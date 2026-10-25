@@ -9,7 +9,7 @@ assert os.environ.get('TRAY_TEST_PRIVATE_BUS')=='1'
 assert os.environ.get('WAYLAND_DISPLAY') or os.environ.get('DISPLAY')
 with tempfile.TemporaryDirectory(prefix='tray-gpu-') as directory:
  runtime=Path(directory);out=ROOT/'artifacts/tray-frontends';out.mkdir(exist_ok=True)
- env={**os.environ,'TRAY_FIXTURE_READY':str(runtime/'ready'),'XDG_CONFIG_HOME':str(runtime/'config'),'XDG_STATE_HOME':str(runtime/'state'),'XDG_CURRENT_DESKTOP':'Dome','DE_XR_GL_TRACE':'1'}
+ env={**os.environ,'DBUS_SYSTEM_BUS_ADDRESS':'unix:path=/nonexistent/dome-tray-test-system-bus','TRAY_FIXTURE_READY':str(runtime/'ready'),'XDG_CONFIG_HOME':str(runtime/'config'),'XDG_STATE_HOME':str(runtime/'state'),'XDG_CURRENT_DESKTOP':'Dome','DE_XR_GL_TRACE':'1'}
  for key in ['LIBGL_ALWAYS_SOFTWARE','GALLIUM_DRIVER','WAYLAND_SOCKET']:env.pop(key,None)
  env['FLTK_BACKEND']='wayland' if env.get('WAYLAND_DISPLAY') else 'x11'
  fixture=subprocess.Popen([sys.executable,str(ROOT/'tests/tray/mock_services.py')],env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)

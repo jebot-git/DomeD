@@ -541,6 +541,7 @@ void walletAction(const std::string &action, int handle,
 std::string frontend(const std::string &identity) {
   auto name = identity;
   std::transform(name.begin(), name.end(), name.begin(), ::tolower);
+  if (name.find("dome.bluetooth") != std::string::npos)return "bluetooth";
   if (name.find("kdeconnect") != std::string::npos ||
       name.find("kde connect") != std::string::npos)
     return "devices";
@@ -579,7 +580,7 @@ static bool movable(const Json &item) {
   auto id = item.value("Id", std::string());
   auto identity = id + " " + item.value("Title", std::string());
   std::transform(identity.begin(), identity.end(), identity.begin(), ::tolower);
-  return !id.empty() && id != "dome.tray" && identity.find("fcitx") == std::string::npos;
+  return !id.empty() && id != "dome.tray" && id != "dome.bluetooth" && identity.find("fcitx") == std::string::npos;
 }
 void trayPlacement(const Json &item, bool managed) {
   if (!movable(item)) throw std::runtime_error("This session tray item has a fixed placement");
@@ -606,11 +607,12 @@ Json trayItems() {
     out.push_back(suiteItem("dome.translator", "DomeD Translator"));
   g_free(translator);
   out.push_back(suiteItem("dome.screenshot", "Screenshot (PrintScreen)"));
+  out.push_back(suiteItem("dome.bluetooth", "Bluetooth"));
   const auto settings = placements();
   auto annotate = [&](Json &item) {
     auto id = item.value("Id", std::string());
     item["movable"] = movable(item);
-    item["managed"] = settings.value(id, id == "dome.translator" || id == "wivrn.pro");
+    item["managed"] = id == "dome.bluetooth" || settings.value(id, id == "dome.translator" || id == "wivrn.pro");
   };
   for (auto &item : out) annotate(item);
   if (!owned("org.kde.StatusNotifierWatcher")) return out;

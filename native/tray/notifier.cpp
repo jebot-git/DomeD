@@ -115,8 +115,8 @@ struct Notifier::Impl {
           GVariantBuilder children;
           g_variant_builder_init(&children, G_VARIANT_TYPE("av"));
           const char *labels[] = {"Tray applications…", "KDE Connect…",
-                                  "Input methods…", "Wallets…", "Translator…", "Screenshot…"};
-          for (int i = 0; i < 6; ++i) {
+                                  "Input methods…", "Wallets…", "Translator…", "Screenshot…", "Bluetooth…"};
+          for (int i = 0; i < 7; ++i) {
             GVariantBuilder p, c;
             g_variant_builder_init(&p, G_VARIANT_TYPE("a{sv}"));
             g_variant_builder_add(&p, "{sv}", "label",
@@ -144,8 +144,8 @@ struct Notifier::Impl {
           guint32 timestamp;
           g_variant_get(args, "(i&svu)", &id, &event, &value, &timestamp);
           g_variant_unref(value);
-          const char *pages[] = {"tray", "devices", "input", "wallets", "translator", "screenshot"};
-          if (!strcmp(event, "clicked") && id >= 1 && id <= 6)
+          const char *pages[] = {"tray", "devices", "input", "wallets", "translator", "screenshot", "bluetooth"};
+          if (!strcmp(event, "clicked") && id >= 1 && id <= 7)
             icon->owner->show(pages[id - 1]);
         }
       } else if (strcmp(method, "Scroll"))

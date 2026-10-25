@@ -27,7 +27,7 @@ try:
   rd,wr=os.pipe();start(['Xvfb','-displayfd',str(wr),'-screen','0','1600x1000x24','-nolisten','tcp'],os.environ.copy(),'xvfb',pass_fds=(wr,));os.close(wr)
   with os.fdopen(rd) as pipe:disp=':'+pipe.readline().strip()
   with socket.socket() as sock:sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
-  env={**os.environ,'DISPLAY':disp,'XDG_RUNTIME_DIR':directory,'XDG_CONFIG_HOME':str(runtime/'config'),'XDG_DATA_HOME':str(runtime/'data'),'XDG_STATE_HOME':str(runtime/'state'),'XDG_CURRENT_DESKTOP':'Dome','DOME_LOGIN_SESSION':'0','DOME_START_IME':'0','DOME_START_XR':'0','DOME_SESSION_RESTORE':'0','DOME_RENDERER':'gles','LIBGL_ALWAYS_SOFTWARE':'1','DOME_PREVIEW_PORT':str(port),'TRAY_FIXTURE_READY':str(runtime/'ready')}
+  env={**os.environ,'DBUS_SYSTEM_BUS_ADDRESS':'unix:path=/nonexistent/dome-tray-test-system-bus','DISPLAY':disp,'XDG_RUNTIME_DIR':directory,'XDG_CONFIG_HOME':str(runtime/'config'),'XDG_DATA_HOME':str(runtime/'data'),'XDG_STATE_HOME':str(runtime/'state'),'XDG_CURRENT_DESKTOP':'Dome','DOME_LOGIN_SESSION':'0','DOME_START_IME':'0','DOME_START_XR':'0','DOME_SESSION_RESTORE':'0','DOME_RENDERER':'gles','LIBGL_ALWAYS_SOFTWARE':'1','DOME_PREVIEW_PORT':str(port),'TRAY_FIXTURE_READY':str(runtime/'ready')}
   for key in ['WAYLAND_DISPLAY','WAYLAND_SOCKET']:env.pop(key,None)
   env['TRAY_FIXTURE_CONFIG_REQUESTS']=str(runtime/'config-requests')
   applications=runtime/'data/applications';applications.mkdir(parents=True)

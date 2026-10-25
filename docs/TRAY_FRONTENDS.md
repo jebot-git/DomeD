@@ -6,7 +6,7 @@ its universal DBusMenu application-menu export. It does not link Qt.
 
 The default tray contains one **DomeD tray applications** entry. Its menu opens
 **Tray applications…**, **KDE Connect…**, **Input methods…**, **Wallets…**,
-**Translator…**, or **Screenshot…** in
+**Translator…**, **Screenshot…**, or **Bluetooth…** in
 one shared manager window. All FLTK service frontends are pages of this manager;
 their compatibility desktop launchers are hidden from the applications menu.
 The compact three-applications-in-a-tray icon is maintained in
@@ -15,9 +15,9 @@ are embedded in the companion and supplied as SNI ARGB pixmaps, so the entry
 does not depend on an installed icon theme.
 
 `dome-tray` (or `--daemon`) registers this single tray entry without showing a
-window. `--tray`, `--devices`, `--input`, `--wallets` open the relevant page.
+window. `--tray`, `--devices`, `--input`, `--wallets`, `--bluetooth` open the relevant page.
 Additional invocations route to the existing instance. Ctrl+R refreshes, Ctrl+W/Escape closes
-the window, Alt+1..4 selects a page, and normal Tab /
+the window, Alt+1..5 selects a page, and normal Tab /
 arrow navigation uses the native widgets. Closing the window always clears the
 password field and keeps the tray entry available, including when started with
 a page option. There is no Quit action: the manager is a permanent session service.
@@ -25,6 +25,10 @@ The compositor supervises its process and restarts it after a crash, with bounde
 backoff for repeated startup failures. The supervisor ends with the compositor;
 diagnostic sessions can still disable service startup.
 
+* [Bluetooth](BLUETOOTH.md): adapter selection/power, bounded discovery and
+  visibility, PIN/passkey pairing and confirmation, cancel, connect/disconnect,
+  trust/block/remove, live battery/signal details, and adapter hotplug. Uses BlueZ
+  directly on the system bus with native pairing controls and explicit approval.
 * KDE Connect: discovery, pairing/accept/cancel/unpair, verification/battery state,
   ping, find-phone, file/URL/text sharing and plugin enable/disable.
 * Fcitx5: active input/group selection, group creation/removal, method ordering,
@@ -61,7 +65,7 @@ desktop and XR. Plain XKB mode retains click-to-cycle behavior.
 instance. It also accepts `fcitx://config/global`,
 `fcitx://config/inputmethod/ID`, and `fcitx://config/addon/ID` to open a specific
 configuration. It shares the universal application menu, live DomeD palette,
-bitmap fonts, Ctrl+R, Ctrl+W/Escape, Ctrl+Q, and Alt+1..4 page bindings.
+bitmap fonts, Ctrl+R, Ctrl+W/Escape, Ctrl+Q, and Alt+1..5 page bindings.
 Ctrl+, opens input-method configuration. Global/engine/addon settings use
 Fcitx's GetConfig/SetConfig protocol and preserve fields that were not edited.
 An already running Fcitx instance is observed and controlled without rewriting
@@ -134,7 +138,7 @@ environments retain the local menu bar as a fallback.
 
 The manager has no applications-menu launcher. Its hidden canonical desktop
 metadata (`org.domed.Tray`) supplies the correct application name and icon;
-Connect/InputMethods/Wallets compatibility entries also remain hidden.
+Connect/InputMethods/Wallets/Bluetooth compatibility entries also remain hidden.
 
 Select a tray application and use **Move to manager** or **Move to tray**. The
 list marks the current placement; applications with individual icons remain in

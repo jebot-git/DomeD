@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+NoDisplay=true
+Name=Bluetooth (FLTK)
+Comment=Manage Bluetooth adapters and devices in DomeD
+Exec=dome-tray --bluetooth
+TryExec=dome-tray
+Icon=bluetooth
+Terminal=false
+Categories=Settings;HardwareSettings;
+StartupWMClass=org.domed.Tray

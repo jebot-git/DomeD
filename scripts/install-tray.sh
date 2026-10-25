@@ -17,7 +17,9 @@ files=(usr/local/bin/dome-tray usr/local/bin/dome-session
     usr/local/share/icons/hicolor/scalable/apps/org.domed.Tray.svg
     usr/local/share/applications/org.domed.Connect.desktop
     usr/local/share/applications/org.domed.InputMethods.desktop
+    usr/local/share/applications/org.domed.Bluetooth.desktop
     usr/local/share/applications/org.domed.Wallets.desktop
+    usr/local/share/doc/domed/BLUETOOTH.md
     usr/local/share/doc/domed/TRAY_FRONTENDS.md
     usr/local/share/doc/domed/SCREENSHOTS.md
     usr/local/share/doc/domed/FLTK_GPU_AUDIT.md)

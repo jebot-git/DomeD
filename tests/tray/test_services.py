@@ -44,6 +44,9 @@ with tempfile.TemporaryDirectory(prefix='tray-services-') as directory:
   call('wallet-action',action='create-folder',handle=h,folder='FixtureFolder');assert 'FixtureFolder' in call('folders',handle=h)
   call('wallet-action',action='remove-folder',handle=h,folder='FixtureFolder');call('wallet-action',action='lock',handle=h)
   items=call('tray')
+  bluetooth=next(i for i in items if i['Id']=='dome.bluetooth')
+  assert bluetooth['managed'] and not bluetooth['movable']
+  assert call('menu',item=bluetooth,parent=0)[0]['id']==-1
   translator=next(i for i in items if i['Id']=='dome.translator')
   screenshot=next(i for i in items if i['Id']=='dome.screenshot')
   assert len([i for i in items if i['Id']=='dome.translator'])==1

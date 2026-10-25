@@ -2,11 +2,11 @@
 Type=Application
 NoDisplay=true
 Name=DomeD Tray Applications
-Comment=Manage tray applications, translation, screenshots, input methods and wallets
+Comment=Manage tray applications, translation, screenshots, Bluetooth, input methods and wallets
 Exec=dome-tray --tray
 TryExec=dome-tray
 Icon=org.domed.Tray
 Terminal=false
 Categories=Utility;
-Keywords=tray;translator;screenshot;input;wallet;devices;
+Keywords=tray;translator;screenshot;input;wallet;devices;bluetooth;
 StartupWMClass=org.domed.Tray
