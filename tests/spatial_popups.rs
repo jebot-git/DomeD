@@ -9,7 +9,7 @@ fn fixture(projection: Projection) -> (Scene, u64, u64) {
     scene.config.projection = projection;
     let root = scene.add("Parent", "test");
     let popup = POPUP_ID_BASE + 1;
-    scene.popups.push(Popup {
+    scene.popups.push(Popup { rollout: false,
         context_at: None,
         viewport: None,
         id: popup,
@@ -92,7 +92,7 @@ fn desktop_menus_use_configured_geometry_and_nested_flipped_edges() {
     let child = POPUP_ID_BASE + 2;
     scene.popups.insert(
         0,
-        Popup {
+        Popup { rollout: false,
             id: child,
             parent: popup,
             root,
@@ -175,7 +175,7 @@ fn nested_popups_follow_parent_and_inherit_visibility_without_lane_slots() {
     let child = POPUP_ID_BASE + 2;
     scene.popups.insert(
         0,
-        Popup {
+        Popup { rollout: false,
             context_at: None,
             viewport: None,
             id: child,
@@ -233,7 +233,7 @@ fn nested_popups_follow_parent_and_inherit_visibility_without_lane_slots() {
 fn parented_dialog_is_a_popup_instead_of_an_independent_dome_card() {
     let (mut scene, root, _) = fixture(Projection::RoomDome);
     let dialog = scene.add("Dialog", "test");
-    scene.popups.push(Popup {
+    scene.popups.push(Popup { rollout: false,
         context_at: None,
         viewport: None,
         id: dialog,
@@ -268,7 +268,7 @@ fn every_popup_stays_between_actual_bar_edges_with_shared_ray_geometry() {
             scene.apply(dome::Action::Move{id:root,lane,workspace:0}).unwrap();
             scene.popups[0].anchor.h=5000.;
             let child=POPUP_ID_BASE+2;
-            scene.popups.push(Popup{id:child,parent:popup,root,context_at:None,viewport:None,
+            scene.popups.push(Popup{ rollout:false,id:child,parent:popup,root,context_at:None,viewport:None,
                 anchor:Rect{x:0.,y:0.,w:400.,h:3000.}});
             let head=Pose{orientation_xyzw:(Quat::from_rotation_y(0.4)*Quat::from_rotation_x(0.25)).to_array(),..Pose::default()};
             let shell=dome::xr_transport::ShellLayout{width:1024,height:768,top:36,bottom:60,..Default::default()};
@@ -320,7 +320,7 @@ fn nested_dialogs_fit_narrow_asymmetric_binocular_fov_and_keep_render_input_iden
             scene.apply(dome::Action::Move{id:root,lane,workspace:0}).unwrap();
             scene.popups[0].anchor.w=1920.;scene.popups[0].anchor.h=1080.;
             let child=POPUP_ID_BASE+2;
-            scene.popups.push(Popup{id:child,parent:popup,root,context_at:None,viewport:None,
+            scene.popups.push(Popup{ rollout:false,id:child,parent:popup,root,context_at:None,viewport:None,
                 anchor:Rect{x:0.,y:0.,w:960.,h:540.}});
             let head=Pose{position_m:[0.2,1.4,0.1],orientation_xyzw:
                 (Quat::from_rotation_y(0.4)*Quat::from_rotation_x(-0.2)*Quat::from_rotation_z(0.1)).to_array()};
@@ -385,4 +385,45 @@ fn offscreen_parent_dialog_remains_readable_and_at_its_original_viewing_distance
     assert!(-local[2]>1.8 && local[1]<0., "dialog center {local:?}");
     let normal=Quat::from_array(dialog.pose.orientation_xyzw)*Vec3::Z;
     assert!(normal.dot(Vec3::Z)>0.99);
+}
+
+#[test]
+fn rollout_placement_expands_inward_from_upper_and_lower_controls() {
+    let parent = Rect { x: 0., y: 36., w: 1280., h: 672. };
+    let work = parent;
+    let requested = Rect { x: 0., y: 0., w: 240., h: 180. };
+    let upper = spatial_popup::rollout_rect(parent,
+        Rect { x: 80., y: 10., w: 100., h: 30. }, requested, work, false);
+    assert_eq!((upper.x, upper.y), (80., 76.));
+    let lower = spatial_popup::rollout_rect(parent,
+        Rect { x: 1100., y: 610., w: 100., h: 30. }, requested, work, false);
+    assert_eq!((lower.x, lower.y), (960., 466.));
+    let nested = spatial_popup::rollout_rect(parent,
+        Rect { x: 20., y: 40., w: 100., h: 30. },
+        Rect { x: 120., y: 40., ..requested }, work, true);
+    assert_eq!((nested.x, nested.y), (120., 76.));
+}
+
+#[test]
+fn xr_rollouts_keep_control_origin_instead_of_central_pullout_and_preserve_input() {
+    let (mut scene, root, id) = fixture(Projection::RoomDome);
+    scene.popups[0].rollout = true;
+    scene.popups[0].anchor = Rect { x: 50., y: 40., w: 120., h: 80. };
+    let head = Pose::default();
+    let quads = xr_input::quads(&scene, head);
+    let parent = quads.iter().find(|q|q.id==root).unwrap();
+    let panel = quads.iter().find(|q|q.id==id).unwrap();
+    let window = scene.window(root).unwrap();
+    let expected = parent.point([50./window.desktop.w, 40./window.desktop.h]);
+    let normal = Quat::from_array(parent.pose.orientation_xyzw)*Vec3::Z;
+    assert!((panel.point([0.,0.])-expected-normal*0.14).length()<1e-4);
+    let origin=Vec3::from_array(head.position_m);
+    for uv in [[0.1,0.1],[0.5,0.5],[0.9,0.9]] {
+        let hit=panel.hit(origin,(panel.point(uv)-origin).normalize(),false).unwrap();
+        assert!((hit[0]-uv[0]).abs()<1e-5 && (hit[1]-uv[1]).abs()<1e-5);
+    }
+    let encoded=serde_json::to_value(&scene.popups[0]).unwrap();
+    assert_eq!(encoded["rollout"],true);
+    let mut old=encoded; old.as_object_mut().unwrap().remove("rollout");
+    assert!(!serde_json::from_value::<Popup>(old).unwrap().rollout);
 }

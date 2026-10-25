@@ -16,6 +16,9 @@ pub struct Popup {
     pub root: u64,
     /// Requested rectangle in parent content coordinates; also identifies the origin.
     pub anchor: Rect,
+    /// A Wayland positioner identifies a visible control/menu origin.
+    #[serde(default)]
+    pub rollout: bool,
     #[serde(default)]
     pub context_at: Option<[f32; 2]>,
     #[serde(default)]
@@ -53,6 +56,22 @@ pub fn desktop_rect(
         w,
         h,
     }
+}
+
+/// Rollouts expand from their control toward the parent window's centre.
+/// Nested menus retain their horizontal cascade, flipping at the work-area edge.
+pub fn rollout_rect(parent: Rect, control: Rect, requested: Rect, work: Rect, nested: bool) -> Rect {
+    let mut placed = requested;
+    if !nested {
+        placed.x = if control.x + control.w / 2. <= parent.w / 2. {
+            control.x
+        } else { control.x + control.w - requested.w };
+        placed.y = if control.y + control.h / 2. <= parent.h / 2. {
+            control.y + control.h
+        } else { control.y - requested.h };
+    }
+    desktop_rect(parent, Some([placed.x, placed.y]), [parent.x, parent.y],
+        [placed.w, placed.h], work)
 }
 
 impl Scene {
@@ -203,11 +222,17 @@ pub(crate) fn append_quads_with_policy(scene: &Scene, panels: &mut Vec<Quad>, he
                     .map_or(point, |p| p.display_point(point));
                 parent.point([point[0] / pw, point[1] / ph])
             });
-            let origin = click_center.unwrap_or(center);
+            // A rollout's configured rectangle is relative to the actual
+            // control/menu parent; central pullout policy must not override it.
+            let rollout_origin = popup.rollout.then(|| parent.point([
+                popup.anchor.x / pw, popup.anchor.y / ph]));
+            let origin = rollout_origin.or(click_center).unwrap_or(center);
             let distance = origin.distance(Vec3::from_array(head.position_m));
             // A small angular offset stays consistent across window resolutions
             // and parent distances. Do not lift the entire dialog above its parent.
-            let offset = if centered {
+            let offset = if rollout_origin.is_some() {
+                Vec3::new(size[0] / 2., -size[1] / 2., depth)
+            } else if centered {
                 Vec3::new(0., -distance * 5_f32.to_radians().tan(), depth)
             } else if click_center.is_some() {
                 Vec3::new(0., size[1] / 2. + crate::context_menu::GAP * parent.size[1] / ph, depth)
@@ -224,7 +249,7 @@ pub(crate) fn append_quads_with_policy(scene: &Scene, panels: &mut Vec<Quad>, he
                 dome: None,
             };
             fit_between_bars(&mut panel,frame,lower,upper);
-            if let Some(viewport) = viewport.filter(|_| centered) {
+            if let Some(viewport) = viewport.filter(|_| centered && !popup.rollout) {
                 crate::xr_input::fit_popup(&mut panel, head, viewport);
             }
             panels.push(panel);
@@ -263,6 +288,7 @@ pub fn beams(scene: &Scene, panels: &[Quad], head: Pose) -> Vec<Quad> {
         .popups
         .iter()
         .filter_map(|popup| {
+            if popup.rollout { return None; }
             let panel = panels.iter().find(|q| q.id == popup.id)?;
             let parent = panels.iter().find(|q| q.id == popup.parent)?;
             let pixels = scene

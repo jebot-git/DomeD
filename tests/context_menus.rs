@@ -46,14 +46,14 @@ fn scroll_viewport_keeps_controls_out_of_content_and_reveals_last_item() {
 }
 
 #[test]
-fn context_panel_tracks_the_click_in_both_xr_projections_and_dome_beam_ends_there() {
+fn context_panel_keeps_central_policy_and_dome_beam_ends_at_click() {
     for projection in [Projection::RoomDome] {
         let mut scene = Scene::new("test");
         scene.config.projection = projection;
         let root = scene.add("parent", "test");
         let point = [500., 300.];
         let id = POPUP_ID_BASE + 1;
-        scene.popups.push(Popup {
+        scene.popups.push(Popup { rollout: false,
             id,
             parent: root,
             root,
@@ -79,9 +79,10 @@ fn context_panel_tracks_the_click_in_both_xr_projections_and_dome_beam_ends_ther
         let menu = panels.iter().find(|q| q.id == id).unwrap();
         let click = parent.point([point[0] / 720., point[1] / 460.]);
         let delta = Quat::from_array(parent.pose.orientation_xyzw).conjugate()
-            * (menu.point([0.5, 1.]) - click);
+            * (menu.point([0.5, 0.5]) - click);
         assert!(delta.x.abs() < 1e-5);
-        assert!((delta.y - context_menu::GAP * parent.size[1] / 460.).abs() < 1e-5);
+        let distance = click.distance(Vec3::from_array(head.position_m));
+        assert!((delta.y + distance * 5_f32.to_radians().tan()).abs() < 1e-5);
         assert!(
             (delta.z
                 - if projection == Projection::RoomDome {

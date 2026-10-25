@@ -232,8 +232,9 @@ try:
         geometry = get("/api/xr-layout")["quads"]
         popup_quad = next(q for q in geometry if q["id"] == p["id"])
         parent_quad = next(q for q in geometry if q["id"] == aid)
-        assert popup_quad["pose"]["position_m"][1] < parent_quad["pose"]["position_m"][1]
-        check(True, toolkit + " popup centers below its parent in a narrow XR viewport")
+        assert p.get("rollout")
+        assert popup_quad["pose"]["position_m"][1] > parent_quad["pose"]["position_m"][1]
+        check(True, toolkit + " upper-control XR rollout stays near its origin and expands downward")
         xr_click(p["id"], [.4, .125]); wait(lambda: "activate" in window()["title"])
         check(True, toolkit + " floating popup accepts XR pointer action")
         wait(lambda: not popups())
@@ -251,6 +252,15 @@ try:
             time.sleep(.8)
             check({v["id"] for v in popups()} == family,
                   "fltk XR Fl_Choice character-style dropdown survives parent hover and empty-space leave")
+            key("Escape"); wait(lambda: not popups())
+        if toolkit == "fltk":
+            xr_click(aid, [350 / r["w"], 268 / r["h"]])
+            p = wait(main_popup)
+            assert p.get("rollout") and p["parent"] == aid
+            assert p["anchor"]["y"] < 250
+            assert p["anchor"]["y"] + p["anchor"]["h"] <= 288
+            assert abs(p["anchor"]["x"] - 260) < 2
+            check(True, "fltk lower-control XR rollout expands upward toward the window centre")
             key("Escape"); wait(lambda: not popups())
         p = xr_open_menu(); before = window()["title"]
         xr_click(p["id"], [.4, .375])

@@ -61,7 +61,7 @@ fn nested_dialogs_follow_owner_even_when_transfer_starts_on_dialog() {
     let nested = scene.add("nested", "app");
     for (id, parent) in [(dialog, root), (nested, dialog)] {
         let anchor = scene.window(id).unwrap().desktop;
-        scene.popups.push(Popup {
+        scene.popups.push(Popup { rollout: false,
             id,
             parent,
             root,
@@ -187,7 +187,7 @@ fn explicit_both_restores_window_and_dialogs_without_changing_geometry() {
     let mut scene = Scene::new("test");
     let id = scene.add("owner", "app");
     let dialog = scene.add("dialog", "app");
-    scene.popups.push(Popup { id: dialog, parent: id, root: id,
+    scene.popups.push(Popup { rollout: false, id: dialog, parent: id, root: id,
         anchor: scene.window(dialog).unwrap().desktop, context_at: None, viewport: None });
     let desktop = scene.window(id).unwrap().desktop;
     let pose = scene.window(id).unwrap().xr_pose;

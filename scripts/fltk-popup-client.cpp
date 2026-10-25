@@ -29,6 +29,7 @@ int main(int argc, char **argv) {
     Fl_Menu_Bar bar(0,0,480,26); items(bar,"File/");
     Fl_Menu_Button menu(40,60,180,36,"Open menu"); items(menu,"");
     Fl_Choice choice(260,60,180,36,"Character"); items(choice,"");
+    Fl_Choice lowerChoice(260,250,180,36,"Lower rollout"); items(lowerChoice,"");
     Fl_Box info(30,150,420,70,"Native FLTK menus: activate, nested, disabled, toggle");
     top.end(); top.show(argc,argv);
     return Fl::run();

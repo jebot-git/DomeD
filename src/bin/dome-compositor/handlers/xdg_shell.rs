@@ -416,6 +416,7 @@ impl Dome {
             .context_menus
             .iter()
             .find(|m| m.surface == *popup.wl_surface());
+        let nested = popup.get_parent_surface().is_some_and(|surface| surface != root);
         popup.with_pending_state(|state| {
             let size = state.positioner.get_geometry().size;
             let placed = if let Some(context) = context {
@@ -426,12 +427,31 @@ impl Dome {
                     work,
                 )
             } else if self.input_realm == dome::Realm::Xr {
-                dome::Rect {
-                    x: parent.x + (parent.w - size.w as f32) / 2.,
-                    y: parent.y - size.h as f32 - 8.,
-                    w: size.w as f32,
-                    h: size.h as f32,
-                }
+                let positioner = state.positioner;
+                let geometry = positioner.get_unconstrained_geometry(Rectangle::new(
+                    ((window_geo.loc.x as f32 - parent.x) as i32,
+                     (window_geo.loc.y as f32 - parent.y) as i32).into(),
+                    window_geo.size,
+                ));
+                let control = positioner.anchor_rect;
+                let requested = positioner.get_geometry();
+                // XR content sizes are independent of the physical monitor.
+                // Constrain logical rollouts to their owning window, then apply
+                // the actual bar bounds to their shared render/input quad.
+                let rollout_work = dome::Rect {
+                    x: window_geo.loc.x as f32, y: window_geo.loc.y as f32,
+                    w: window_geo.size.w as f32, h: window_geo.size.h as f32 };
+                // FLTK's generic menus encode their source through the positioner
+                // offset and a 1px anchor rather than a full control rectangle.
+                let point_anchor = control.size.w <= 1 && control.size.h <= 1;
+                dome::spatial_popup::rollout_rect(parent,
+                    dome::Rect {
+                        x: if point_anchor { requested.loc.x } else { control.loc.x } as f32,
+                        y: if point_anchor { requested.loc.y } else { control.loc.y } as f32,
+                        w: if point_anchor { size.w } else { control.size.w } as f32,
+                        h: control.size.h as f32 },
+                    dome::Rect { x: geometry.loc.x as f32, y: geometry.loc.y as f32,
+                        w: size.w as f32, h: size.h as f32 }, rollout_work, nested)
             } else {
                 // Respect the client's tree/menu anchor, including edge flips for
                 // nested submenus. Only an absent anchor uses the cursor fallback.

@@ -19,3 +19,12 @@ the upper bar. Notification placement is independent.
 The `top_attached` and `bottom_attached` shell transport flags distinguish these cases. A new
 compositor and XR renderer are required to activate the placement update; the
 active session need not be restarted during installation.
+
+Application rollout menus (including FLTK Choice dropdowns and cascading menus)
+keep the anchor supplied by their Wayland positioner in XR. Upper controls open
+downward and lower controls open upward, toward the window centre. Horizontal
+placement also expands inward; nested menus preserve the client's cascade and
+edge flips. These menus bypass the central pullout offset and retain a connection
+to the control as the owning window moves. They do not need a decorative beam.
+Dialogs and context menus without a rollout origin keep their central placement.
+All popup types remain bounded between the XR bars with matching input geometry.

@@ -139,6 +139,7 @@ impl Dome {
                     [cursor.x as f32 - parent_rect.x, cursor.y as f32 + 8. - parent_rect.y]
                 });
             descriptors.push(Popup {
+                rollout: false,
                 context_at: self.selection_tooltips.get(id).and_then(|a|a.point),
                 viewport: None,
                 id: *id,
@@ -237,6 +238,7 @@ impl Dome {
                 }
             }
             descriptors.push(Popup {
+                rollout: context.is_none() && matches!(popup, PopupKind::Xdg(_)),
                 context_at: context.map(|m| m.point),
                 viewport: context.map(|m| {
                     dome::context_menu::Viewport::new(geo.size.h as f32, work_height, m.offset)
