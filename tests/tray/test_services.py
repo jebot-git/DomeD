@@ -17,6 +17,8 @@ with tempfile.TemporaryDirectory(prefix='tray-services-') as directory:
   translator=Path(directory)/'dome-translator'
   translator.write_text('#!/bin/sh\nprintf \'%s\\n\' "$@" > "'+str(Path(directory)/'launched')+'"\n')
   translator.chmod(0o755)
+  identities=Path(directory)/'dome-identities'
+  identities.write_text('#!/bin/sh\nprintf launched > "'+str(Path(directory)/'identities-launched')+'"\n');identities.chmod(0o755)
   driver=subprocess.Popen([str(BUILD/'tray-service-driver')],stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True,env={**os.environ,'PATH':directory+':'+os.environ['PATH'],'XDG_CONFIG_HOME':str(Path(directory)/'config')})
   def call(op,**args):
    driver.stdin.write(json.dumps({'op':op,**args})+'\n');driver.stdin.flush();out=json.loads(driver.stdout.readline());assert out['ok'],out;return out['value']
@@ -49,6 +51,15 @@ with tempfile.TemporaryDirectory(prefix='tray-services-') as directory:
   assert call('menu',item=bluetooth,parent=0)[0]['id']==-1
   translator=next(i for i in items if i['Id']=='dome.translator')
   screenshot=next(i for i in items if i['Id']=='dome.screenshot')
+  identity=next(i for i in items if i['Id']=='dome-identities');assert identity['managed'] and identity['suite']=='dome-identities'
+  assert len([i for i in items if i['Id']=='dome-identities'])==1
+  assert call('menu',item=identity,parent=0)==[{'id':1,'label':'Open identities','enabled':True}]
+  call('event',item=identity,id=1)
+  for _ in range(100):
+   if (Path(directory)/'identities-launched').exists():break
+   time.sleep(.02)
+  assert (Path(directory)/'identities-launched').read_text()=='launched'
+
   assert len([i for i in items if i['Id']=='dome.translator'])==1
   menu=call('menu',item=translator,parent=0);assert len(menu)==6 and not menu[4]['enabled']
   call('event',item=translator,id=4)

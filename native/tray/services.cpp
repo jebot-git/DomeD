@@ -606,6 +606,9 @@ Json trayItems() {
   if (translator || owned("org.domed.Translator"))
     out.push_back(suiteItem("dome.translator", "DomeD Translator"));
   g_free(translator);
+  auto *identities = g_find_program_in_path("dome-identities");
+  if (identities) out.push_back(suiteItem("dome-identities", "Identities"));
+  g_free(identities);
   out.push_back(suiteItem("dome.screenshot", "Screenshot (PrintScreen)"));
   out.push_back(suiteItem("dome.bluetooth", "Bluetooth"));
   const auto settings = placements();
@@ -636,6 +639,13 @@ Json trayItems() {
       if (item.value("Id", "") == "dome.translator") continue;
       item["service"] = service;
       item["path"] = path;
+      if (item.value("Id", "") == "dome-identities") {
+        item["suite"] = "dome-identities";
+        annotate(item);
+        auto found = std::find_if(out.begin(), out.end(), [](const Json &row) { return row.value("Id", "") == "dome-identities"; });
+        if (found != out.end()) *found = item; else out.push_back(item);
+        continue;
+      }
       annotate(item);
       if (item.value("Status", "") != "Passive")
         out.push_back(item);
@@ -649,6 +659,11 @@ Json trayMenu(const Json &item, int parent) {
   if (!native.empty())
     return Json::array({{{"id", -1}, {"label", "Open native controls"}, {"enabled", true}}});
   const auto suite = item.value("suite", std::string());
+  if (suite == "dome-identities") {
+    if (item.contains("service") && item.contains("Menu"))
+      return trayMenu({{"service", item["service"]}, {"Menu", item["Menu"]}}, parent);
+    return Json::array({{{"id", 1}, {"label", "Open identities"}, {"enabled", true}}});
+  }
   if (!suite.empty()) {
     Json rows = Json::array();
     const std::vector<std::string> labels = suite == "dome.translator"
@@ -704,6 +719,20 @@ Json trayMenu(const Json &item, int parent) {
 }
 void trayEvent(const Json &item, int id) {
   const auto suite = item.value("suite", std::string());
+  if (suite == "dome-identities") {
+    if (item.contains("service") && item.contains("Menu")) {
+      trayEvent({{"service", item["service"]}, {"Menu", item["Menu"]}}, id);
+      return;
+    }
+    if (id != 1) throw std::runtime_error("Unknown identity action");
+    const gchar *args[] = {"dome-identities", nullptr};
+    GError *error = nullptr;
+    auto *process = g_subprocess_newv(args, G_SUBPROCESS_FLAGS_NONE, &error);
+    if (!process) {
+      std::string message = error->message; g_error_free(error); throw std::runtime_error(message);
+    }
+    g_object_unref(process); return;
+  }
   if (suite == "dome.screenshot") {
     if (id != 1) throw std::runtime_error("Unknown screenshot action");
     call("org.domed.Compositor", "/org/domed/Compositor", "org.domed.Compositor", "Screenshot", nullptr);
