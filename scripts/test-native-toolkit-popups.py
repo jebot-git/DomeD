@@ -212,7 +212,7 @@ try:
             while not stop.is_set():
                 try:
                     post("/api/xr-session", {"visible": True, "focused": True,
-                         "head": {"position_m": [0, 1.4, 0], "orientation_xyzw": [0, 0, 0, 1]}, "horizontal_fov_deg": 100})
+                         "head": {"position_m": [0, 1.4, 0], "orientation_xyzw": [0, 0, 0, 1]}, "horizontal_fov_deg": 100, "mouse_viewport": [-.4,.47,-.32,.36]})
                 except OSError:
                     return
                 stop.wait(.1)
@@ -229,7 +229,11 @@ try:
         xr_click(aid, [(24 if toolkit == "fltk" else 100) / r["w"], (13 if toolkit == "fltk" else 80) / r["h"]])
         p = wait(lambda: (p if (p := main_popup()) and p["anchor"]["h"] >= 64 else None))
         time.sleep(.6)
-        check(p["anchor"]["y"] < 0, toolkit + " accepts above-parent popup configure in XR")
+        geometry = get("/api/xr-layout")["quads"]
+        popup_quad = next(q for q in geometry if q["id"] == p["id"])
+        parent_quad = next(q for q in geometry if q["id"] == aid)
+        assert popup_quad["pose"]["position_m"][1] < parent_quad["pose"]["position_m"][1]
+        check(True, toolkit + " popup centers below its parent in a narrow XR viewport")
         xr_click(p["id"], [.4, .125]); wait(lambda: "activate" in window()["title"])
         check(True, toolkit + " floating popup accepts XR pointer action")
         wait(lambda: not popups())

@@ -148,7 +148,7 @@ fn dome_popup_is_flat_and_ray_targets_match_its_surface() {
 }
 
 #[test]
-fn dome_popup_floats_above_and_forward_with_beam_back_to_origin() {
+fn dome_popup_centers_slightly_down_and_forward_with_beam_back_to_origin() {
     let (scene, root, popup) = fixture(Projection::RoomDome);
     let head = Pose::default();
     let quads = xr_input::quads(&scene, head);
@@ -157,7 +157,9 @@ fn dome_popup_floats_above_and_forward_with_beam_back_to_origin() {
     let delta = Quat::from_array(parent.pose.orientation_xyzw).conjugate()
         * (Vec3::from_array(panel.pose.position_m) - Vec3::from_array(parent.pose.position_m));
     assert!(parent.dome.is_some() && panel.dome.is_none());
-    assert!(delta.y > parent.size[1] / 2. + panel.size[1] / 2.);
+    let distance = parent.point([0.5,0.5]).distance(Vec3::from_array(head.position_m));
+    assert!(delta.x.abs() < 1e-5);
+    assert!((delta.y + distance * 5_f32.to_radians().tan()).abs() < 1e-5);
     assert!((delta.z - 0.14).abs() < 1e-5);
     let beams = spatial_popup::beams(&scene, &quads, head);
     assert_eq!(beams.len(), 1);
@@ -188,6 +190,7 @@ fn nested_popups_follow_parent_and_inherit_visibility_without_lane_slots() {
         },
     );
     let head = Pose::default();
+    scene.apply(dome::Action::PullOut { id: root, head }).unwrap();
     let before = xr_input::quads(&scene, head);
     assert_eq!(before.len(), 3);
     assert!(before.iter().position(|q| q.id == child) > before.iter().position(|q| q.id == popup));
@@ -290,4 +293,96 @@ fn every_popup_stays_between_actual_bar_edges_with_shared_ray_geometry() {
             }
         }
     }
+}
+
+#[test]
+fn popup_centers_below_the_explicit_click_origin_without_adding_its_height() {
+    let (mut scene, root, popup) = fixture(Projection::RoomDome);
+    scene.popups[0].context_at = Some([200.,100.]);
+    let head = Pose { position_m: [0.,1.4,0.], ..Pose::default() };
+    let quads = xr_input::quads(&scene,head);
+    let parent = quads.iter().find(|q|q.id==root).unwrap();
+    let panel = quads.iter().find(|q|q.id==popup).unwrap();
+    let origin = parent.point([200./720.,100./460.]);
+    let delta = Quat::from_array(parent.pose.orientation_xyzw).conjugate()
+        * (panel.point([0.5,0.5])-origin);
+    assert!(delta.x.abs()<1e-5 && delta.y<0. && delta.y.abs()<0.4);
+    assert!((delta.z-0.14).abs()<1e-5);
+}
+
+#[test]
+fn nested_dialogs_fit_narrow_asymmetric_binocular_fov_and_keep_render_input_identical() {
+    for anchor in [dome::AnchorMode::Room,dome::AnchorMode::Head] {
+        for lane in 0..3 {
+            let (mut scene,root,popup)=fixture(Projection::RoomDome);
+            scene.config.anchor_mode=anchor;
+            scene.config.dome_upper_tilt_deg=25.;
+            scene.apply(dome::Action::Move{id:root,lane,workspace:0}).unwrap();
+            scene.popups[0].anchor.w=1920.;scene.popups[0].anchor.h=1080.;
+            let child=POPUP_ID_BASE+2;
+            scene.popups.push(Popup{id:child,parent:popup,root,context_at:None,viewport:None,
+                anchor:Rect{x:0.,y:0.,w:960.,h:540.}});
+            let head=Pose{position_m:[0.2,1.4,0.1],orientation_xyzw:
+                (Quat::from_rotation_y(0.4)*Quat::from_rotation_x(-0.2)*Quat::from_rotation_z(0.1)).to_array()};
+            let fov=[-0.40_f32,0.47,-0.32,0.36];
+            let eyes=[-1.,1.].map(|side|(Pose{
+                position_m:head.transform([side*0.036,0.,0.01]),
+                orientation_xyzw:(Quat::from_array(head.orientation_xyzw)*Quat::from_rotation_y(side*0.08)).to_array(),
+            },fov));
+            let viewport=xr_input::shared_viewport(head,&eyes,1.).unwrap();
+            let input=xr_input::quads_in_fov(&scene,head,Some(viewport));
+            let rendered=xr_input::render_quads_in_fov(&scene,head,Some(viewport));
+            for id in [popup,child] {
+                let panel=input.iter().find(|q|q.id==id).unwrap();
+                let draw=rendered.iter().find(|q|q.id==id).unwrap();
+                assert_eq!(panel.pose,draw.pose);assert_eq!(panel.size,draw.size);
+                for uv in [[0.,0.],[1.,0.],[0.,1.],[1.,1.],[0.5,0.5]] {
+                    for (eye,fov) in eyes {
+                        let p=eye.inverse_rotate((panel.point(uv)-Vec3::from_array(eye.position_m)).to_array());
+                        assert!(p[2]<0.);
+                        let x=p[0]/-p[2];let y=p[1]/-p[2];
+                        assert!(x>=fov[0].tan()-1e-4 && x<=fov[1].tan()+1e-4,"lane {lane}: x={x}");
+                        assert!(y>=fov[2].tan()-1e-4 && y<=fov[3].tan()+1e-4,"lane {lane}: y={y}");
+                    }
+                }
+                let eye=Vec3::from_array(head.position_m);
+                for uv in [[0.1,0.2],[0.5,0.5],[0.9,0.8]] {
+                    let hit=panel.hit(eye,(panel.point(uv)-eye).normalize(),false).unwrap();
+                    assert!((hit[0]-uv[0]).abs()<1e-4 && (hit[1]-uv[1]).abs()<1e-4);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn restarted_xr_helper_negotiates_popup_geometry_with_the_running_desktop() {
+    let (scene, root, popup)=fixture(Projection::RoomDome);
+    let head=Pose{position_m:[0.,1.4,0.],..Pose::default()};
+    let bridge=dome::xr_transport::Bridge::default();
+    let current=bridge.control();assert!(current.centered_popups);
+    let mut wire=serde_json::to_value(&current).unwrap();
+    wire.as_object_mut().unwrap().remove("centered_popups");
+    let legacy: dome::xr_transport::Control=serde_json::from_value(wire).unwrap();
+    assert!(!legacy.centered_popups);
+    let old=xr_input::render_quads_for_control(&scene,head,None,&legacy);
+    let new=xr_input::render_quads_for_control(&scene,head,None,&current);
+    let root=old.iter().find(|q|q.id==root).unwrap();
+    let old=old.iter().find(|q|q.id==popup).unwrap();
+    let new=new.iter().find(|q|q.id==popup).unwrap();
+    assert!(old.pose.position_m[1]>root.pose.position_m[1]);
+    assert!(new.pose.position_m[1]<root.pose.position_m[1]);
+}
+
+#[test]
+fn offscreen_parent_dialog_remains_readable_and_at_its_original_viewing_distance() {
+    let (mut scene, root, popup)=fixture(Projection::RoomDome);
+    let head=Pose{position_m:[0.,1.4,0.],..Pose::default()};
+    scene.config.yaw_deg=-90.;
+    let quads=xr_input::quads_in_fov(&scene,head,Some([-0.4,0.47,-0.32,0.36]));
+    let dialog=quads.iter().find(|q|q.id==popup).unwrap();
+    let local=head.inverse_rotate((dialog.point([0.5,0.5])-Vec3::from_array(head.position_m)).to_array());
+    assert!(-local[2]>1.8 && local[1]<0., "dialog center {local:?}");
+    let normal=Quat::from_array(dialog.pose.orientation_xyzw)*Vec3::Z;
+    assert!(normal.dot(Vec3::Z)>0.99);
 }

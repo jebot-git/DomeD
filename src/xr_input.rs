@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 mod shell_view;
 mod media_view;
 pub use shell_view::{shell_quads_in_fov, shared_viewport};
+pub(crate) use shell_view::fit_popup;
 /// Open cylinder strip. Vertical coordinates are height/radius, in radians of
 /// unwrapped arc length; horizontal radius never shrinks towards a pole.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -152,16 +153,21 @@ pub fn render_quads(scene: &Scene, head: Pose) -> Vec<Quad> {
 }
 /// Use the renderer's shared binocular viewport for fullscreen media hit testing.
 pub fn quads_in_fov(scene: &Scene, head: Pose, viewport: Option<[f32; 4]>) -> Vec<Quad> {
-    window_quads(scene, head, false, viewport)
+    window_quads(scene, head, false, viewport, true)
 }
 pub fn render_quads_in_fov(scene: &Scene, head: Pose, viewport: Option<[f32; 4]>) -> Vec<Quad> {
-    window_quads(scene, head, true, viewport)
+    window_quads(scene, head, true, viewport, true)
 }
-fn window_quads(scene: &Scene, head: Pose, backgrounds: bool, viewport: Option<[f32; 4]>) -> Vec<Quad> {
+/// Use the desktop's advertised geometry when an XR helper is restarted across
+/// an installation, so native pointer hits remain aligned with rendered popups.
+pub fn render_quads_for_control(scene: &Scene, head: Pose, viewport: Option<[f32; 4]>, control: &crate::xr_transport::Control) -> Vec<Quad> {
+    window_quads(scene, head, true, viewport, control.centered_popups)
+}
+fn window_quads(scene: &Scene, head: Pose, backgrounds: bool, viewport: Option<[f32; 4]>, centered: bool) -> Vec<Quad> {
     if scene.locked { return vec![]; }
     if let Some(fullscreen) = media_view::fullscreen_quad(scene, head, viewport) {
         let mut panels = vec![fullscreen];
-        crate::spatial_popup::append_quads(scene, &mut panels, head);
+        crate::spatial_popup::append_quads_with_policy(scene, &mut panels, head, viewport, centered);
         return panels;
     }
     let old = scene.frame_pose();
@@ -309,7 +315,7 @@ fn window_quads(scene: &Scene, head: Pose, backgrounds: bool, viewport: Option<[
         }
     }
     panels.sort_by_key(|q| window_order(scene, q.id));
-    crate::spatial_popup::append_quads(scene, &mut panels, head);
+    crate::spatial_popup::append_quads_with_policy(scene, &mut panels, head, viewport, centered);
     panels
 }
 /// Back-to-front order shared by layer submission and geometry.

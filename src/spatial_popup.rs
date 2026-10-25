@@ -131,6 +131,19 @@ impl Scene {
 
 /// Append children after parents so OpenXR composition order follows popup depth.
 pub fn append_quads(scene: &Scene, panels: &mut Vec<Quad>, head: Pose) {
+    append_quads_in_fov(scene, panels, head, None);
+}
+
+/// Center transient surfaces slightly below their origin, then fit them to the
+/// same binocular viewport used for rendering and pointer hit testing.
+pub fn append_quads_in_fov(scene: &Scene, panels: &mut Vec<Quad>, head: Pose, viewport: Option<[f32; 4]>) {
+    append_quads_with_policy(scene, panels, head, viewport, true);
+}
+
+/// An XR helper restarted inside an older desktop must retain that desktop's
+/// geometry until both processes advertise the centered placement capability.
+pub(crate) fn append_quads_with_policy(scene: &Scene, panels: &mut Vec<Quad>, head: Pose,
+    viewport: Option<[f32; 4]>, centered: bool) {
     let frame=head.upright();
     let shell=crate::xr_transport::ShellLayout {width:1024,height:768,top:36,bottom:60,notifications:None,pullout:None};
     let bars=crate::xr_input::bar_quads_from_surfaces(scene,head,&shell,100.,panels);
@@ -190,25 +203,30 @@ pub fn append_quads(scene: &Scene, panels: &mut Vec<Quad>, head: Pose) {
                     .map_or(point, |p| p.display_point(point));
                 parent.point([point[0] / pw, point[1] / ph])
             });
-            let offset = if click_center.is_some() {
-                Vec3::new(
-                    0.,
-                    size[1] / 2. + crate::context_menu::GAP * parent.size[1] / ph,
-                    depth,
-                )
+            let origin = click_center.unwrap_or(center);
+            let distance = origin.distance(Vec3::from_array(head.position_m));
+            // A small angular offset stays consistent across window resolutions
+            // and parent distances. Do not lift the entire dialog above its parent.
+            let offset = if centered {
+                Vec3::new(0., -distance * 5_f32.to_radians().tan(), depth)
+            } else if click_center.is_some() {
+                Vec3::new(0., size[1] / 2. + crate::context_menu::GAP * parent.size[1] / ph, depth)
             } else {
-                Vec3::new(0., parent.size[1] / 2. + size[1] / 2. + 0.04, 0.14)
+                Vec3::new(0., parent.size[1] / 2. + size[1] / 2. + 0.04, depth)
             };
             let mut panel = Quad {
                 id: popup.id,
                 pose: Pose {
-                    position_m: (click_center.unwrap_or(center) + q * offset).to_array(),
+                    position_m: (origin + q * offset).to_array(),
                     ..parent.pose
                 },
                 size,
                 dome: None,
             };
             fit_between_bars(&mut panel,frame,lower,upper);
+            if let Some(viewport) = viewport.filter(|_| centered) {
+                crate::xr_input::fit_popup(&mut panel, head, viewport);
+            }
             panels.push(panel);
         }
         if panels.len() == before {

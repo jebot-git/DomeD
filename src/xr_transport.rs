@@ -150,6 +150,9 @@ pub struct Cursor {
 }
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct Control {
+    /// Shared popup geometry capability; absent on an already-running older desktop.
+    #[serde(default)]
+    pub centered_popups: bool,
     #[serde(default)]
     pub stereo_views: bool,
     #[serde(default)]
@@ -217,6 +220,7 @@ impl Bridge {
     }
     pub fn control(&self) -> Control {
         Control {
+            centered_popups: true,
             stereo_views: true,
             screenshot_request: self.screenshot_request,
             frame_period_ns: Some(self.frame_interval().map_or(0, |period| period.as_nanos() as u64)),

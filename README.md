@@ -604,9 +604,11 @@ Wayland `xdg_popup` menus, nested menus and parented `xdg_toplevel` dialogs are
 separate panels attached to their owning window. They do not take a lane slot.
 Their placement follows the active projection:
 
-* **Room dome:** a flat panel 14 cm forward and 4 cm above the parent's upper edge.
-  A thin blue beam connects its lower edge to the origin on the parent surface.
-  The beam is decorative and never captures mouse input.
+* **XR:** a flat panel centered on its parent with a small 5° downward offset
+  and 14 cm forward separation. The whole surface fits the headset's shared
+  binocular FOV, including narrow/asymmetric optics. Oversized panels shrink
+  uniformly; rendering and pointer hits share the fitted geometry. A thin blue
+  beam connects the popup to its origin and never captures mouse input.
 * **Desktop:** popups open at the client-provided hierarchy anchor. Nested menus
   respect the requested edge flips when approaching the work-area boundary. A popup
   without an anchor opens 8 logical pixels below the cursor. DomeD announces the
@@ -620,13 +622,12 @@ dismissal. Losing the owning window's focus or changing the input realm dismisse
 grabbed menus. Dialogs retain their normal client keyboard behavior. Content drawn
 inside a client's existing surface cannot be split into a spatial popup.
 
-**Right-click context menus** use a shared placement and scrolling policy instead
-of the general popup rules. Their bottom centre sits 8 logical pixels above the
-RMB point. Direct-view menus layer 6 cm forward; dome menus layer 14 cm forward
-and connect back to the exact click with a beam. Desktop placement clamps to the
-work area, and XR placement fits between the view-relative shell bars. Context
-menus receive keyboard focus as soon as they map, including clients that do not
-request an explicit popup grab. Other application popups keep the rules above.
+**Right-click context menus** use the exact RMB point as their origin. In XR,
+their center sits slightly below that point, with the same forward separation
+and optical fitting as other popups. On the desktop their bottom center sits
+8 logical pixels above the RMB point and clamps to the work area. Context menus
+receive keyboard focus as soon as they map, including clients that do not
+request an explicit popup grab.
 
 Menus taller than the work area have fixed top/bottom scroll controls with a
 bounded content viewport. Click the arrows or use the mouse wheel to reach hidden

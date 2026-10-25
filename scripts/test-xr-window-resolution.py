@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Real Wayland launch sizes, unchanged FLTK scale, half-resolution dialogs, fixed clients and VRCX."""
-import json,os,signal,socket,subprocess,tempfile,threading,time,urllib.request
+import json,math,os,signal,socket,subprocess,tempfile,threading,time,urllib.request
 from pathlib import Path
 signal.pthread_sigmask(signal.SIG_SETMASK,[])
 if os.environ.get('DOME_SIZE_TEST_BUS')!='1':os.execvpe('dbus-run-session',['dbus-run-session','--',os.sys.executable,*os.sys.argv],{**os.environ,'DOME_SIZE_TEST_BUS':'1'})
@@ -98,6 +98,36 @@ int main(int argc,char**argv) {
   nested_id=native_dialogs['org.domed.NestedDialog']
   assert next(p for p in state()['popups'] if p['id']==nested_id)['parent']==native_dialogs['org.domed.ResizableDialog']
   assert results['Desktop']['resizable_dialog']==[1600,900],results
+  # Use actual FLTK transient-parent descriptors and the optical XR layout.
+  tracking={'id':771,'visible':True,'focused':True,
+      'head':{'position_m':[0,1.4,0],'orientation_xyzw':[0,0,0,1]},
+      'horizontal_fov_deg':50,'mouse_viewport':[-.4,.47,-.32,.36]}
+  request('/api/xr-session',tracking)
+  def heartbeat():
+   while not stop.wait(.1):
+    try:request('/api/xr-session',tracking)
+    except OSError:return
+  threading.Thread(target=heartbeat,daemon=True).start()
+  assert request('/api/xr-control')['centered_popups']
+  geometry={q['id']:q for q in request('/api/xr-layout')['quads']}
+  for identity in ['org.domed.ResolutionDialog','org.domed.ResizableDialog','org.domed.NestedDialog']:
+   child_id=native_dialogs[identity]
+   descriptor=next(p for p in state()['popups'] if p['id']==child_id)
+   child=geometry[child_id];parent=geometry[descriptor['parent']]
+   assert child['pose']['position_m'][1] < 1.4,(identity,child)
+   # Native parent dialogs can already touch the optical edge. Verify the actual
+   # rendered corners, where fitting may override the preferred parent offset.
+   def cross(a,b):return [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]]
+   rotation=child['pose']['orientation_xyzw'];q=rotation[:3]
+   for sx,sy in [(-1,-1),(-1,1),(1,-1),(1,1)]:
+    corner=[sx*child['size'][0]/2,sy*child['size'][1]/2,0]
+    t=[2*v for v in cross(q,corner)];c=cross(q,t)
+    point=[child['pose']['position_m'][i]+corner[i]+rotation[3]*t[i]+c[i] for i in range(3)]
+    point[1]-=1.4
+    assert point[2]<0
+    x,y=point[0]/-point[2],point[1]/-point[2]
+    assert math.tan(-.4)<=x<=math.tan(.47) and math.tan(-.32)<=y<=math.tan(.36),(identity,point)
+  print('PASS real FLTK fixed, resizable and nested dialogs stay below eye level and entirely inside narrow XR view',flush=True)
   assert [results['Fixed']['width'],results['Fixed']['height']]==[640,480],results
   assert (results['XR']['buffer_scale'],results['XR']['ui_scale'])==(results['Desktop']['buffer_scale'],results['Desktop']['ui_scale']),results
   density=state()['config']['xr_render_scale']

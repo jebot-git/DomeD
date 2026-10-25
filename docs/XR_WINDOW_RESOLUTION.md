@@ -59,3 +59,25 @@ configuration round trips and independence from render density and dome geometry
 
 New compositor builds take effect in a new DomeD session. Installation preserves
 the active compositor and applications.
+
+### Popup placement in XR
+
+DomeD applies one placement rule to application popups and parented dialogs,
+including FLTK menus, choices, file choosers, and nested dialogs. Their center
+starts at the parent center, or an explicit context-click origin, with a small
+5° downward offset and a 14 cm forward separation. They no longer float wholly
+above the parent. The origin beam continues to identify the owning control.
+
+The renderer and pointer use the same fitted geometry. When the headset reports
+its binocular viewport, the whole popup is translated into the comfortable
+central view, with uniform shrinking only when needed to fit its corners.
+When a parent is outside view, the relocated dialog faces the headset and
+retains its viewing distance. This also handles narrow/asymmetric FOVs, tilted
+parents, and nested popups.
+The half-resolution budget, surface UVs, and native client input coordinates
+continue to apply. Desktop popup positioning follows the normal client layout.
+
+The desktop advertises its popup placement capability to the XR helper. A helper
+restarted during a continuing older desktop session retains that desktop's
+placement until the next normal session start, keeping visible surfaces and
+pointer hits synchronized across a staged update.

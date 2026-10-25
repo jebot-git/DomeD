@@ -108,6 +108,24 @@ fn fit(q: &mut Quad, head: Pose, fov: [f32; 4], near: f32) {
     } else { q.pose.position_m = target.to_array(); }
 }
 
+/// Flat application menus and dialogs use the same conservative optical fit as
+/// opened shell controls, including rotated parents and asymmetric optics.
+pub(crate) fn fit_popup(panel: &mut Quad, head: Pose, viewport: [f32; 4]) {
+    if !valid(viewport) { return; }
+    let center = panel.point([0.5, 0.5]);
+    let local = Vec3::from_array(head.inverse_rotate((center-Vec3::from_array(head.position_m)).to_array()));
+    let depth = -local.z;
+    let [left,right,down,up] = viewport.map(f32::tan);
+    if depth <= 0.1 || local.x < left*depth || local.x > right*depth
+        || local.y < down*depth || local.y > up*depth {
+        // Relocating a side/behind-parent dialog without rotating it leaves a
+        // nearly edge-on surface at an uncomfortably short view depth. Preserve
+        // its viewing distance and face the headset before the optical fit.
+        panel.pose = Pose { position_m: head.transform([local.x, local.y, -local.length().max(0.1)]), ..head };
+    }
+    fit(panel, head, inset(viewport), 0.1);
+}
+
 /// Rendering and hit testing share dome bars and frozen, pulled-out menu panels.
 pub fn shell_quads_in_fov(scene: &Scene, head: Pose, shell: &ShellLayout, viewport: [f32; 4]) -> Vec<Quad> {
     if !valid(viewport) { return vec![]; }

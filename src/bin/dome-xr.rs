@@ -801,7 +801,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 let mouse_viewport = dome::xr_input::shared_viewport(
                     head_pose, &eyes, scene.config.bar_distance_m.min(scene.config.radius_m).max(0.1),
                 );
-                geometry = dome::xr_input::render_quads_in_fov(scene, head_pose, mouse_viewport);
+                geometry = dome::xr_input::render_quads_for_control(scene, head_pose, mouse_viewport, &control);
                 popup_beams = dome::spatial_popup::beams(scene, &geometry, head_pose);
                 {
                     let mut state = network.lock().unwrap();
