@@ -43,6 +43,18 @@ Results, Wayland traces, screenshots and scene snapshots are saved under
 `artifacts/{fltk,sdl}-popups`. Tests create private displays and D-Bus sessions;
 XR interaction is driven through DomeD's XR input API without a physical headset.
 
+## Popup lifetime regression checks
+
+Pointer leave alone must preserve native menus, including every open submenu
+and `Fl_Choice` dropdowns. Selection, an outside click, or Escape dismisses them.
+The native popup test checks desktop leave and XR leave into empty space,
+outside-click dismissal even without an `xdg_popup` grab, and Escape.
+Set `DOME_TEST_REAL_APPS=1` with `DOME_TEST_TOOLKIT=fltk` to additionally exercise
+the installed Comic Chat character dropdown and fsvr right-click menu on the
+private XR compositor. This runs temporary clients without changing the active
+session. The reported immediate leave dismissal did not reproduce in these
+application tests; physical-device routing still needs a live reproduction.
+
 ## Miro appearance and universal menus
 
 `miro-0.12.0-dome-theme.patch` followed by `miro-0.12.0-global-menu.patch`

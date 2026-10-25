@@ -155,11 +155,19 @@ try:
         check(r["w"] == 480 and r["h"] == 320,
               toolkit + " fixed-size committed geometry matches scene/XR input dimensions")
         outer = next(v for v in popups() if v["parent"] == aid)
-        check(abs(outer["anchor"]["x"] - (r["w"] + 8)) < 1,
-              toolkit + " accepts compositor side-panel popup placement")
+        check(r["y"] + outer["anchor"]["y"] >= 36,
+              toolkit + " preserves native popup origin within the desktop work area")
         click(*point(p)); wait(lambda: "activate" in window()["title"])
         check(True, toolkit + " action accepts pointer at compositor placement")
         wait(lambda: not popups())
+        if toolkit == "fltk":
+            r = window()["desktop"]
+            click(r["x"] + 350, r["y"] + 78)
+            wait(main_popup); family = {v["id"] for v in popups()}
+            motion(1550, 920); time.sleep(.8)
+            check({v["id"] for v in popups()} == family,
+                  "fltk Fl_Choice character-style dropdown survives pointer leave")
+            key("Escape"); wait(lambda: not popups())
         p = open_menu(); before = window()["title"]
         click(*point(p, 2)); time.sleep(.3)
         check(window()["title"] == before, toolkit + " disabled item cannot activate")
@@ -170,7 +178,10 @@ try:
               toolkit + " clicking a submenu header keeps the popup open")
         # A pointer leave is not a dismissal gesture, including leaving the
         # entire application surface. Return to the same menu afterwards.
+        family = {v["id"] for v in popups()}
         motion(1550, 920); time.sleep(.8)
+        check({v["id"] for v in popups()} == family,
+              toolkit + " pointer leave preserves every open submenu")
         check(main_popup() is not None and window()["title"] == before,
               toolkit + " pointer leaving popup and application does not dismiss the menu")
         motion(*point(p, 1)); time.sleep(.8)
@@ -227,6 +238,16 @@ try:
             p = wait(lambda: (p if (p := main_popup()) and p["anchor"]["h"] >= 64 else None))
             time.sleep(.6)
             return p
+        if toolkit == "fltk":
+            xr_click(aid, [350 / r["w"], 78 / r["h"]])
+            wait(main_popup); family = {v["id"] for v in popups()}
+            post("/api/xr-input", {"events": [{"kind": "motion", "id": aid, "uv": [.7, .9]}], "actions": []})
+            time.sleep(.8)
+            post("/api/xr-input", {"events": [{"kind": "leave"}], "actions": []})
+            time.sleep(.8)
+            check({v["id"] for v in popups()} == family,
+                  "fltk XR Fl_Choice character-style dropdown survives parent hover and empty-space leave")
+            key("Escape"); wait(lambda: not popups())
         p = xr_open_menu(); before = window()["title"]
         xr_click(p["id"], [.4, .375])
         time.sleep(.6)
@@ -236,6 +257,11 @@ try:
         time.sleep(.8)
         check(main_popup() is not None and window()["title"] == before,
               toolkit + " XR pointer leaving popup keeps the menu open")
+        family = {v["id"] for v in popups()}
+        post("/api/xr-input", {"events": [{"kind": "leave"}], "actions": []})
+        time.sleep(.8)
+        check({v["id"] for v in popups()} == family,
+              toolkit + " XR ray leaving all surfaces preserves the popup family")
         for uv in ([.35, .375], [.4, .375]):
             post("/api/xr-input", {"events": [{"kind": "motion", "id": p["id"], "uv": uv}], "actions": []})
             time.sleep(.2)
@@ -245,11 +271,51 @@ try:
         check(True, toolkit + " nested floating menu accepts XR traversal and action")
         wait(lambda: not popups())
         p = xr_open_menu()
+        post("/api/xr-input", {"events": [{"kind": "leave"}], "actions": []})
+        time.sleep(.8)
+        check(main_popup() is not None, toolkit + " XR empty-space hover keeps the menu open")
+        post("/api/xr-input", {"events": [
+            {"kind": "button", "button": 272, "pressed": True},
+            {"kind": "button", "button": 272, "pressed": False}], "actions": []})
+        wait(lambda: not popups())
+        check(True, toolkit + " XR outside click dismisses the popup family")
+        p = xr_open_menu(); key("Escape"); wait(lambda: not popups())
+        check(True, toolkit + " XR Escape dismisses the popup family")
+        p = xr_open_menu()
         layout = get("/api/xr-shell")
         xr_click(0, [20 / layout["width"], 18 / layout["top"]])
         wait(lambda: not popups()); time.sleep(.6)
         check(not popups(), toolkit + " XR shell dismisses native menus without reopening")
         check(client.poll() is None, toolkit + " stays alive after popup/focus realm changes")
+        if toolkit == "fltk" and os.environ.get("DOME_TEST_REAL_APPS") == "1":
+            # Exercise the installed clients which reported premature dismissal,
+            # including their timers, GL children and runtime style integration.
+            xr_socket = next(p.name.removesuffix('.dome-session.json') for p in Path(tmp).glob('*.dome-session.json')
+                             if json.loads(p.read_text())['realm'] == 'xr')
+            app_env = {**client_env, 'WAYLAND_DISPLAY': xr_socket, 'XDG_CURRENT_DESKTOP': 'Dome'}
+            folder = Path(tmp)/'files'; folder.mkdir(); (folder/'sample.txt').write_text('test')
+            for program, args, identity, pixel, button in [
+                ('/usr/local/bin/comic-chat-xr', ['--demo'], 'org.de_xr.ComicChat.Sbs', (520,21), 272),
+                ('/usr/local/bin/fsvr', [str(folder)], 'org.fsvxr.fsvr.Sbs', (600,300), 273)]:
+                app = start([program, *args], Path(program).name, app_env)
+                aw = wait(lambda: next((w for w in scene()['windows'] if w['app_id']==identity), None))
+                app_id = aw['id']
+                post('/api/action', {'op':'focus','id':app_id});time.sleep(1)
+                def app_popups():return [p for p in scene()['popups'] if p['root']==app_id]
+                def app_motion(uv):post('/api/xr-input', {'actions':[], 'events':[{'kind':'motion','id':app_id,'uv':uv}]})
+                app_motion([pixel[0]/aw['desktop']['w'],pixel[1]/aw['desktop']['h']]);time.sleep(.2)
+                post('/api/xr-input', {'actions':[], 'events':[{'kind':'button','button':button,'pressed':True},{'kind':'button','button':button,'pressed':False}]})
+                wait(app_popups); time.sleep(.5)
+                family={p['id'] for p in app_popups()}
+                menu_popup=max(app_popups(),key=lambda p:p['anchor']['w']*p['anchor']['h'])
+                post('/api/xr-input', {'actions':[], 'events':[{'kind':'motion','id':menu_popup['id'],'uv':[.5,.3]}]})
+                time.sleep(.3)
+                app_motion([.9,.9]);time.sleep(1)
+                check({p['id'] for p in app_popups()}==family, Path(program).name+' keeps popup after cursor leaves for parent content')
+                post('/api/xr-input', {'actions':[], 'events':[{'kind':'leave'}]});time.sleep(1)
+                check({p['id'] for p in app_popups()}==family, Path(program).name+' keeps popup after cursor leaves into empty XR space')
+                key('Escape');wait(lambda:not app_popups())
+                app.terminate();app.wait(timeout=5)
         xd.close()
 except Exception as error:
     checks.append({"passed": False, "check": str(error)})

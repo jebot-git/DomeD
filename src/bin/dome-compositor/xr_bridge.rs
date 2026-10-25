@@ -400,6 +400,15 @@ impl Dome {
                             continue;
                         }
                     }
+                    if pressed && self.xr_target.is_none() {
+                        // FLTK popups do not request an xdg_popup grab. Empty-space
+                        // clicks must still dismiss them; ray leave alone must not.
+                        if self.spatial_popups.iter().any(|(_, popup)|
+                            matches!(popup, smithay::desktop::PopupKind::Xdg(_))) {
+                            self.dismiss_wayland_popups();
+                        }
+                        if !pointer.is_grabbed() { continue; }
+                    }
                     if pressed
                         && !pointer.is_grabbed()
                         && self.xr_target.is_none_or(|id| {
@@ -451,9 +460,6 @@ impl Dome {
 
                     if !pressed && !self.xr_buttons.contains(&button) { continue; }
 
-                    if pressed && self.xr_target.is_none() && !pointer.is_grabbed() {
-                        continue;
-                    }
                     if pressed {
                         self.xr_buttons.insert(button);
                     } else {
