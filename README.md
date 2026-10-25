@@ -756,6 +756,9 @@ confirmation dialogs initially select Cancel.
 The bar's desktop switcher shows the current desktop's name and its number out
 of the total in desktop and XR. A marker in the desktop list identifies the
 current desktop independently of the keyboard selection highlight.
+**Window → Send to…** lists the virtual desktops and marks the focused window's
+current desktop. Choosing another desktop moves the window there without switching
+your view; the submenu also works with keyboard navigation and in XR.
 
 **Super+F10** opens the universal menu bar from the keyboard. Left/Right switch
 between enabled headers; Up/Down wrap through enabled items and skip separators.

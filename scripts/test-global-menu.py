@@ -132,17 +132,29 @@ try:
     click(260,18);key('Home');key('Right');key('Right');key('Right');key('Right');key('Right');key('Home');key('Return')
     wait(lambda:title(aid)=='first-activated-4')
     check(True,'Left/Right traverse enabled menu headers and skip disabled top-level menus')
-    click(500,18);key('Home');key('Return');wait(lambda:title(aid)=='first-window-action')
+    click(500,18);key('Home');key('Down');key('Down');key('Return');wait(lambda:title(aid)=='first-window-action')
     check(True,'Native Window actions survive merging with compositor window controls')
-    click(500,18);key('Home');key('Down');key('Return');time.sleep(.3)
+    click(500,18);key('Home');key('Return');time.sleep(.3)
     check(next(w for w in scene()['windows'] if w['id']==aid)['xr_visible']==False,
         'Merged Window menu sends the focused exported client to Desktop using keyboard')
+    lane=next(w for w in scene()['windows'] if w['id']==aid)['lane']
+    click(500,18);key('Home');key('Down');key('Right');key('Return')
+    wait(lambda:next(w for w in scene()['windows'] if w['id']==aid)['workspace']==1)
+    check(scene()['active_workspace']==0 and title(aid)=='first-window-action'
+        and next(w for w in scene()['windows'] if w['id']==aid)['lane']==lane,
+        'Window Send to submenu moves the exported client without switching desktop, lane or activating an application action')
+    action({'op':'move','id':aid,'lane':lane,'workspace':0});action({'op':'focus','id':aid})
     p=start([str(fixture),'plain'],'plain',client_env)
     pid=wait(lambda:next((w['id'] for w in scene()['windows'] if w['title']=='plain'),None))
     action({'op':'focus','id':pid});time.sleep(.8);capture('04-no-exported-menu')
     click(450,18);key('Home');key('Return');time.sleep(.3)
     check(title(aid)=='first-window-action' and title(bid)=='second-nested-activated' and not next(w for w in scene()['windows'] if w['id']==pid)['xr_visible'],
         'Non-exporting app has working Window controls without stale application actions')
+    lane=next(w for w in scene()['windows'] if w['id']==pid)['lane']
+    click(450,18);key('Home');key('Down');key('Right');key('Return')
+    wait(lambda:next(w for w in scene()['windows'] if w['id']==pid)['workspace']==1)
+    check(scene()['active_workspace']==0,'Window Send to submenu also moves a non-exporting client')
+    action({'op':'move','id':pid,'lane':lane,'workspace':0});action({'op':'focus','id':pid})
     key('Escape')
     def chord(*names):
         codes=[xd.keysym_to_keycode(XK.string_to_keysym(name)) for name in names]

@@ -76,6 +76,29 @@ fn row_selection(rows: &[Node], current: i32, key: u32) -> Option<i32> {
     };
     Some(enabled[index])
 }
+// Local submenu IDs must not overlap the ordinary shell row indices.
+const SEND_TO_DESKTOP_MENU: i32 = i32::MIN;
+fn send_to_desktop_menu(scene: &dome::Scene) -> Node {
+    use dome::shortcuts::Command;
+    let window = scene.focused.and_then(|id| scene.window(id));
+    let children = scene.workspaces.iter().enumerate().map(|(workspace, desktop)| {
+        let command = Command::MoveWorkspace(workspace);
+        let current = window.is_some_and(|w| w.workspace == workspace);
+        Node {
+            id: workspace as i32, text: format!("{}: {}", workspace + 1, desktop.name),
+            shortcut: scene.config.keybindings.iter().find(|b| b.enabled && b.command == command)
+                .map(|b| b.label()).unwrap_or_default(),
+            enabled: window.is_some_and(|w| !w.minimized) && !current,
+            checked: current, checkable: true, radio: true,
+            command: Some(command), ..Default::default()
+        }
+    }).collect();
+    Node {
+        id: SEND_TO_DESKTOP_MENU, text: "Send to…".into(), submenu: true,
+        enabled: window.is_some_and(|w| !w.minimized) && scene.workspaces.len() > 1,
+        command: Some(Command::Separator), children, ..Default::default()
+    }
+}
 /// Keep application menu identities and ordering; reserve File/Edit first and Window
 /// before Help. Missing categories use compositor actions, including for binaries
 /// which have no menu export. Local command tags avoid remote ID collisions.
@@ -108,16 +131,21 @@ fn universal_menus(mut exported: Vec<Node>, shell: Vec<Node>) -> Vec<Node> {
                 || (matches!(row.command, Some(dome::shortcuts::Command::Undo | dome::shortcuts::Command::Redo))
                     && n.text.to_lowercase().starts_with(&(row.text.to_lowercase() + " ")))));
         }
-        // Keep the compositor's realm transfer visible before potentially long
+        // Keep the compositor's window transfers visible before potentially long
         // application Window menus. The command tag stays local to DomeD.
         if category == 3 {
-            if let Some(index) = additions.iter().position(|row| row.command == Some(
-                dome::shortcuts::Command::PresentWindow { desktop: true, xr: false })) {
-                let desktop = additions.remove(index);
+            let mut transfers = Vec::new();
+            additions.retain(|row| {
+                let transfer = row.command == Some(dome::shortcuts::Command::PresentWindow { desktop: true, xr: false })
+                    || (row.id == SEND_TO_DESKTOP_MENU && row.command.is_some());
+                if transfer { transfers.push(row.clone()); }
+                !transfer
+            });
+            if !transfers.is_empty() {
                 if !native.children.is_empty() {
-                    native.children.insert(0, Node { separator: true, ..Default::default() });
+                    transfers.push(Node { separator: true, ..Default::default() });
                 }
-                native.children.insert(0, desktop);
+                native.children.splice(0..0, transfers);
             }
         }
         if additions.is_empty() { return native; }
@@ -249,10 +277,8 @@ impl Dome {
     fn universal_menus(&self) -> Vec<Node> {
         let scene = self.shell_scene();
         let shell = ["File", "Edit", "View", "Window", "Help"].into_iter().enumerate()
-            .map(|(i, text)| Node {
-                text: text.into(), enabled: true, submenu: true,
-                command: Some(dome::shortcuts::Command::Separator),
-                children: self.shell_menu_items(i + 2).into_iter().enumerate().map(|(id, (text, shortcut, command))| {
+            .map(|(i, text)| {
+                let mut children: Vec<_> = self.shell_menu_items(i + 2).into_iter().enumerate().map(|(id, (text, shortcut, command))| {
                     let chord = if dome::shortcuts::defaults().iter().any(|b| b.command == command) {
                         scene.config.keybindings.iter().find(|b| b.enabled && b.command == command)
                             .map(|b| b.label()).unwrap_or_default()
@@ -265,7 +291,10 @@ impl Dome {
                         separator: command == dome::shortcuts::Command::Separator,
                         checked: presentation == Some(true), checkable: presentation.is_some(), radio: presentation.is_some(),
                         command: Some(command), ..Default::default() }
-                }).collect(), ..Default::default()
+                }).collect();
+                if i == 3 { children.insert(1, send_to_desktop_menu(&scene)); }
+                Node { text: text.into(), enabled: true, submenu: true,
+                    command: Some(dome::shortcuts::Command::Separator), children, ..Default::default() }
             }).collect();
         universal_menus(self.appmenu_snapshot().root.children, shell)
     }
@@ -486,8 +515,10 @@ impl Dome {
                             self.appmenu_path.truncate(level);
                             self.menu_offsets.truncate(level + 1);
                             self.appmenu_path.push(node.id);
-                            if let Some(address) = self.focused_menu_address() {
-                                self.appmenus.open(address, node.id);
+                            if node.command.is_none() {
+                                if let Some(address) = self.focused_menu_address() {
+                                    self.appmenus.open(address, node.id);
+                                }
                             }
                         }
                         self.menu_hover = -1;
@@ -523,8 +554,10 @@ impl Dome {
                             self.menu_offsets.truncate(level + 1);
                             self.appmenu_path.push(node.id);
                             self.menu_hover = -1;
-                            if let Some(a) = self.focused_menu_address() {
-                                self.appmenus.open(a, node.id);
+                            if node.command.is_none() {
+                                if let Some(a) = self.focused_menu_address() {
+                                    self.appmenus.open(a, node.id);
+                                }
                             }
                         } else {
                             self.activate_menu_node(node);
@@ -567,7 +600,9 @@ impl Dome {
                     self.menu_offsets.truncate(self.appmenu_path.len() + 1);
                     self.appmenu_path.push(node.id);
                     self.menu_hover = row_selection(&node.children, -1, 0xff50).unwrap_or(-1);
-                    if let Some(address) = self.focused_menu_address() { self.appmenus.open(address, node.id); }
+                    if node.command.is_none() {
+                        if let Some(address) = self.focused_menu_address() { self.appmenus.open(address, node.id); }
+                    }
                 } else if sym == 0xff53 {
                     self.switch_menu(1);
                 } else {
@@ -678,6 +713,55 @@ mod tests {
             assert!(rows[2].command.is_none());
             assert_eq!(rows.iter().filter(|n| n.command == Some(transfer)).count(), 1);
         }
+    }
+    #[test]
+    fn desktop_destinations_follow_window_location_and_live_desktop_names() {
+        use dome::{Action, shortcuts::Command};
+        let mut scene = dome::Scene::new("test");
+        assert!(!send_to_desktop_menu(&scene).enabled);
+        assert!(send_to_desktop_menu(&scene).children.iter().all(|n| !n.enabled));
+        let id = scene.add("Document", "test");
+        scene.apply(Action::RenameWorkspace { workspace: 1, name: "Práce · 作業".into() }).unwrap();
+        let menu = send_to_desktop_menu(&scene);
+        assert!(menu.enabled && menu.submenu && menu.command.is_some());
+        assert!(menu.children[0].checked && !menu.children[0].enabled);
+        let destination = &menu.children[1];
+        assert_eq!(destination.text, "2: Práce · 作業");
+        assert!(destination.enabled && !destination.checked);
+        assert_eq!(destination.command, Some(Command::MoveWorkspace(1)));
+        assert!(!destination.shortcut.is_empty());
+        let lane = scene.window(id).unwrap().lane;
+        scene.apply(Action::Move { id, lane, workspace: 1 }).unwrap();
+        scene.focused = Some(id); // Destination checks follow the window, not the active desktop.
+        let menu = send_to_desktop_menu(&scene);
+        assert_eq!(scene.active_workspace, 0);
+        assert!(menu.children[1].checked && !menu.children[1].enabled);
+        assert!(menu.children[0].enabled && !menu.children[0].checked);
+        scene.apply(Action::AddWorkspace { name: "Fourth".into() }).unwrap();
+        assert_eq!(send_to_desktop_menu(&scene).children.len(), 4);
+        scene.windows.iter_mut().find(|w| w.id == id).unwrap().minimized = true;
+        assert!(!send_to_desktop_menu(&scene).enabled);
+        let mut scene = dome::Scene::new("single desktop");
+        scene.workspaces.truncate(1);
+        scene.add("Document", "test");
+        assert!(!send_to_desktop_menu(&scene).enabled);
+    }
+    #[test]
+    fn desktop_destination_submenu_precedes_exported_items_and_keeps_local_commands() {
+        use dome::shortcuts::Command;
+        let mut scene = dome::Scene::new("test");
+        scene.add("Document", "test");
+        let mut fallback = shell();
+        fallback[3].children.push(send_to_desktop_menu(&scene));
+        let menus = universal_menus(vec![Node { text: "Window".into(), enabled: true,
+            children: vec![Node { id: 1, text: "Native window action".into(), enabled: true,
+                ..Default::default() }], ..Default::default() }], fallback);
+        let rows = &menus.iter().find(|m| m.text == "Window").unwrap().children;
+        assert_eq!(rows[0].id, SEND_TO_DESKTOP_MENU);
+        assert!(rows[0].submenu && rows[0].enabled && rows[1].separator);
+        assert_eq!(rows[0].children[1].command, Some(Command::MoveWorkspace(1)));
+        assert_eq!(rows[2].id, rows[0].children[1].id);
+        assert!(rows[2].command.is_none());
     }
     #[test]
     fn edit_keeps_native_operations_and_fills_only_missing_basics() {
