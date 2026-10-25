@@ -964,8 +964,11 @@ and OpenXR run on the same DRM render device and support compatible DMA-BUF
 layouts. Window captures stay in GPU memory: a private Unix socket passes buffer
 file descriptors to Vulkan, which renders into the OpenXR swapchain. Producer
 fences and socket leases keep captures immutable until the consumer releases them.
-The capture pool allows three buffers per surface, with a 256 MiB estimated total
-budget. Borders, focus highlights, fades and scrolling popup crops run in a shader.
+The capture pool allows three buffers per surface, with a 512 MiB estimated total
+budget. Before allocating under pressure, it reclaims unused cached buffers from
+other surfaces while preserving every leased frame. High-density windows can
+continue updating instead of retaining a frozen first frame behind idle caches.
+Borders, focus highlights, fades and scrolling popup crops run in a shader.
 CPU-rendered shell chrome retains its upload path.
 
 `dome-xr --transport cpu` selects the RGBA compatibility path;

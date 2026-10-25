@@ -32,6 +32,8 @@ use std::{
 };
 
 type Signature = Vec<(Id, CommitCounter, Rectangle<i32, Physical>)>;
+// Several 2x-density desktop windows need more than one 32 MiB image each.
+const MAX_CAPTURE_BYTES: u64 = 512 * 1024 * 1024;
 
 struct Slot {
     buffer: Dmabuf,
@@ -135,19 +137,25 @@ impl Capture {
             self.allocator = Some(GbmAllocator::new(GbmDevice::new(file)?, GbmBufferFlags::RENDERING));
             eprintln!("XR GPU capture allocator: {}", path.display());
         }
-        let used: u64 = self.slots.values().flatten().map(|s| s.bytes).sum();
-        let slots = self.slots.entry(id).or_default();
-        slots.retain(|s| {
+        self.slots.entry(id).or_default().retain(|s| {
             s.lease.strong_count() != 0
                 || (s.buffer.width() == width && s.buffer.height() == height)
         });
+        let bytes = width as u64 * height as u64 * 4;
+        let reusable = self.slots[&id].iter().any(|s| {
+            s.lease.strong_count() == 0 && s.buffer.width() == width && s.buffer.height() == height
+        });
+        if !reusable {
+            self.reclaim_idle_slots(id, bytes);
+        }
+        let used: u64 = self.slots.values().flatten().map(|s| s.bytes).sum();
+        let slots = self.slots.get_mut(&id).unwrap();
         let index = if let Some(i) = slots.iter().position(|s| {
             s.lease.strong_count() == 0 && s.buffer.width() == width && s.buffer.height() == height
         }) {
             i
         } else {
-            let bytes = width as u64 * height as u64 * 4;
-            if slots.len() >= 3 || used + bytes > 256 * 1024 * 1024 {
+            if slots.len() >= 3 || used + bytes > MAX_CAPTURE_BYTES {
                 return Ok(false);
             }
             let buffer = dome::xr_gpu::allocate_capture(
@@ -201,8 +209,59 @@ impl Capture {
         self.signatures.insert(id, (key, signature));
         Ok(true)
     }
+    fn reclaim_idle_slots(&mut self, requesting: u64, bytes: u64) {
+        let used: u64 = self.slots.values().flatten().map(|slot| slot.bytes).sum();
+        if used + bytes <= MAX_CAPTURE_BYTES { return; }
+        // Free caches must not strand an active window on its first published
+        // frame. Keep every leased image immutable until its consumer releases it.
+        for (id, slots) in &mut self.slots {
+            if *id != requesting {
+                slots.retain(|slot| slot.lease.strong_count() != 0);
+            }
+        }
+    }
     pub fn disable(&mut self, error: &dyn std::fmt::Display) {
         eprintln!("XR GPU capture unavailable; using CPU transport: {error}");
         self.disabled = true;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use smithay::backend::allocator::{dmabuf::DmabufFlags, Fourcc, Modifier};
+    fn slot(leased: bool, retained: &mut Vec<Arc<Published>>) -> Slot {
+        // Only descriptor ownership is tested here; no GPU imports are performed.
+        let mut builder = Dmabuf::builder((4096, 4096), Fourcc::Argb8888,
+            Modifier::Linear, DmabufFlags::empty());
+        builder.add_plane(std::fs::File::open("/dev/null").unwrap().into(), 0, 0, 16384);
+        let buffer = builder.build().unwrap();
+        let frame = Arc::new(Published { buffer: buffer.clone(), stamp: Instant::now(),
+            info: FrameInfo { version: 1, serial: 1, device: 0, width: 4096, height: 4096,
+                logical_width: 4096, logical_height: 4096, fourcc: Fourcc::Argb8888 as u32,
+                modifier: 0, stride: 16384, offset: 0, y_inverted: false, viewport: None } });
+        let slot = Slot { buffer, lease: Arc::downgrade(&frame), bytes: 64 * 1024 * 1024 };
+        if leased { retained.push(frame); }
+        slot
+    }
+    #[test]
+    fn pressure_reclaims_free_caches_without_overwriting_leased_frames() {
+        let mut capture = Capture::default(); let mut retained = Vec::new();
+        capture.slots.insert(1, vec![slot(true,&mut retained),slot(false,&mut retained),slot(false,&mut retained)]);
+        capture.slots.insert(2, vec![slot(true,&mut retained),slot(false,&mut retained),slot(false,&mut retained)]);
+        capture.slots.insert(3, vec![slot(true,&mut retained),slot(true,&mut retained)]);
+        assert_eq!(capture.slots.values().flatten().map(|s|s.bytes).sum::<u64>(), MAX_CAPTURE_BYTES);
+        capture.reclaim_idle_slots(3, 64*1024*1024);
+        assert_eq!(capture.slots[&1].len(),1); assert_eq!(capture.slots[&2].len(),1);
+        assert_eq!(capture.slots[&3].len(),2);
+        assert!(capture.slots.values().flatten().all(|s|s.lease.strong_count()!=0));
+        assert!(capture.slots.values().flatten().map(|s|s.bytes).sum::<u64>()+64*1024*1024<=MAX_CAPTURE_BYTES);
+    }
+    #[test]
+    fn available_budget_retains_reusable_caches() {
+        let mut capture = Capture::default(); let mut retained = Vec::new();
+        capture.slots.insert(1, vec![slot(true,&mut retained),slot(false,&mut retained)]);
+        capture.reclaim_idle_slots(2,64*1024*1024);
+        assert_eq!(capture.slots[&1].len(),2);
     }
 }
