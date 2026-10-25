@@ -314,6 +314,13 @@ try:
                 check({p['id'] for p in app_popups()}==family, Path(program).name+' keeps popup after cursor leaves for parent content')
                 post('/api/xr-input', {'actions':[], 'events':[{'kind':'leave'}]});time.sleep(1)
                 check({p['id'] for p in app_popups()}==family, Path(program).name+' keeps popup after cursor leaves into empty XR space')
+                # Hand off to the actual compositor mouse path, then move well
+                # away from the menu without pressing or releasing any button.
+                if program.endswith('/fsvr'): # physical ownership persists for this realm
+                    post('/api/xr-input', {'actions':[], 'events':[{'kind':'motion','id':menu_popup['id'],'uv':[.5,.3]}]})
+                    time.sleep(.2)
+                    motion(300,500); motion(650,750);time.sleep(1)
+                    check({p['id'] for p in app_popups()}==family, Path(program).name+' keeps popup through physical mouse takeover and movement away')
                 key('Escape');wait(lambda:not app_popups())
                 app.terminate();app.wait(timeout=5)
         xd.close()
