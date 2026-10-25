@@ -52,7 +52,7 @@ fn placements() -> HashMap<String, bool> {
         .and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
 }
 fn managed_item(settings: &HashMap<String, bool>, id: &str) -> bool {
-    settings.get(id).copied().unwrap_or(id == "dome.translator" || id == "wivrn.pro")
+    settings.get(id).copied().unwrap_or(id == "dome.translator" || id == "wivrn.pro" || id == "dome-identities")
 }
 fn loading_rows() -> Vec<Row> {
     vec![Row {
@@ -836,6 +836,15 @@ mod tests {
         tray.keyboard();
         assert!(tray.state().menu.is_none());
         assert!(tray.state().rows.is_empty());
+    }
+    #[test]
+    fn identities_default_to_manager_and_preserve_explicit_placement() {
+        let mut settings = HashMap::new();
+        assert!(managed_item(&settings, "dome-identities"));
+        settings.insert("dome-identities".into(), false);
+        assert!(!managed_item(&settings, "dome-identities"));
+        settings.insert("dome-identities".into(), true);
+        assert!(managed_item(&settings, "dome-identities"));
     }
     #[test]
     fn wivrn_defaults_to_manager_and_respects_placement_override() {
