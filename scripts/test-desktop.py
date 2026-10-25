@@ -150,6 +150,20 @@ try:
     action({'op':'close','id':cid});wait(lambda:state()['focused']==eid)
     action({'op':'close','id':eid});wait(lambda:state()['focused']==bid and len(state()['windows'])==2)
     check(True,'Consecutive closes walk recent focus history and restore the original application')
+    # Close-window chords must not consume the application's close-tab chord.
+    (out/'close-shortcuts.jsonl').unlink(missing_ok=True)
+    before={w['id'] for w in state()['windows']}
+    start([sys.executable,'scripts/desktop-client.py','--name','close-shortcuts','--journal',str(out/'close-shortcuts.jsonl')],'close-shortcuts',client_env)
+    close_id=wait(lambda:next((w['id'] for w in state()['windows'] if w['id'] not in before),None))
+    action({'op':'focus','id':close_id})
+    xr_shortcut(['Control_L'],'w')
+    check(wait(lambda:any(e['kind']=='key_press' and e.get('key')==ord('W') for e in events('close-shortcuts')))
+          and any(w['id']==close_id for w in state()['windows']), 'Ctrl+W reaches the application without closing its window')
+    xr_shortcut(['Alt_L'],'F4')
+    check(wait(lambda:any(e['kind']=='key_press' and e.get('key')==0x01000033 for e in events('close-shortcuts')))
+          and any(w['id']==close_id for w in state()['windows']), 'Alt+F4 is forwarded instead of closing the window')
+    xr_shortcut(['Super_L'],'w')
+    check(wait(lambda:all(w['id']!=close_id for w in state()['windows'])), 'Super+W closes the focused Wayland window')
     if os.environ.get('DOME_FOCUS_TEST_ONLY')=='1':
         raise SystemExit(0)
     # Workbench gadgets: depth is independent of keyboard focus and survives repaints.

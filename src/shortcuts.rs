@@ -118,14 +118,7 @@ pub fn defaults() -> Vec<Binding> {
             enabled: true,
         })
     };
-    add(
-        Close,
-        0xffc1,
-        Mods {
-            alt: true,
-            ..Default::default()
-        },
-    );
+    add(Close, 'w' as u32, logo);
     add(Screenshot, 0xff61, Mods::default());
     add(Menu, 0xffc7, logo);
     add(PullOut, 'p' as u32, logo);
@@ -290,15 +283,7 @@ pub fn validate(bindings: &[Binding]) -> Result<(), String> {
             return Err("Choose a non-modifier key".into());
         }
         // Application function keys (including Ghostty's F12 / Super+F12) stay available.
-        if ((0xffbe..=0xffe0).contains(&b.key)
-            && !b.mods.logo
-            && !(b.key == 0xffc1
-                && b.mods
-                    == Mods {
-                        alt: true,
-                        ..Default::default()
-                    }))
-            || b.key == 0xffc9
+        if ((0xffbe..=0xffe0).contains(&b.key) && !b.mods.logo) || b.key == 0xffc9
         {
             return Err("Function keys belong to applications; use a Super chord (F12 is reserved for Ghostty XR)".into());
         }
@@ -356,6 +341,7 @@ pub fn action_label(command: Command) -> String {
         .into(),
         HideApp => "Hide application".into(),
         HideOthers => "Hide other applications".into(),
+        Close => "Close window".into(),
         QuitApp => "Quit application".into(),
         SelectAll => "Select all".into(),
         _ => format!("{command:?}"),
@@ -411,8 +397,8 @@ mod tests {
             logo: true,
             ..Mods::default()
         };
-        assert_eq!(resolve('w' as u32, m), None);
-        assert_eq!(resolve(0xffc1, Mods { alt: true, ..Default::default() }), Some(Command::Close));
+        assert_eq!(resolve('w' as u32, m), Some(Command::Close));
+        assert_eq!(resolve(0xffc1, Mods { alt: true, ..Default::default() }), None);
         assert_eq!(resolve('e' as u32, m), Some(Command::FileManager));
         assert_eq!(resolve('3' as u32, m), Some(Command::Workspace(2)));
         assert_eq!(
@@ -561,7 +547,7 @@ pub fn deserialize_bindings<'de, D: serde::Deserializer<'de>>(
     let canonical = defaults();
     let disabled: Vec<_> = bindings.iter().filter(|b| !bindings.iter().any(|other| other.command == b.command && other.enabled)).map(|b| b.command).collect();
     bindings.retain(|b| !(
-        (b.command == Command::Close && b.key == 'w' as u32 && b.mods == logo)
+        (b.command == Command::Close && b.key == 0xffc1 && b.mods == Mods { alt: true, ..Default::default() })
         || (matches!(b.command, Command::Cycle(_)) && b.key == 0xff09 && b.mods.logo && !b.mods.ctrl && !b.mods.alt)
         || (matches!(b.command, Command::MoveLane(_)) && b.mods == ctrl && [0xff52, 0xff54].contains(&b.key))
         || (matches!(b.id.as_deref(), Some("window-grow" | "window-shrink")) && b.mods == alt && [0xff51, 0xff53].contains(&b.key))
@@ -576,7 +562,7 @@ pub fn deserialize_bindings<'de, D: serde::Deserializer<'de>>(
         } else { unique.push(binding); }
     }
     let mut bindings = unique;
-    for mut binding in defaults().into_iter().filter(|b| b.id.is_some() || matches!(b.command, Command::PullOut | Command::SendToOtherRealm | Command::SwitchInputRealm | Command::Screenshot)) {
+    for mut binding in defaults().into_iter().filter(|b| b.id.is_some() || matches!(b.command, Command::Close | Command::PullOut | Command::SendToOtherRealm | Command::SwitchInputRealm | Command::Screenshot)) {
         let present = bindings.iter().any(|b| match &binding.id {
             Some(id) => b.id.as_ref() == Some(id),
             None => b.command == binding.command,
@@ -651,8 +637,8 @@ mod retired_alias_tests {
         for i in 0..old.len() { assert!(!old[..i].iter().any(|b| b.command == old[i].command)); }
         old.push(Binding { id: Some("window-grow".into()), command: Command::Scale(1.1),
             key: 0xff53, mods: Mods { logo: true, alt: true, ..Default::default() }, enabled: true });
-        old.push(Binding { id: None, command: Command::Close, key: 'w' as u32,
-            mods: Mods { logo: true, ..Default::default() }, enabled: true });
+        old.push(Binding { id: None, command: Command::Close, key: 0xffc1,
+            mods: Mods { alt: true, ..Default::default() }, enabled: true });
         let config: crate::Config = serde_json::from_value(serde_json::json!({"keybindings":old})).unwrap();
         validate(&config.keybindings).unwrap();
         assert_eq!(config.keybindings, defaults());
@@ -706,5 +692,45 @@ mod screenshot_tests {
         assert_eq!(p.keybindings.iter().filter(|b|b.command==Command::Screenshot).count(),1);
         let shot=p.keybindings.iter().find(|b|b.command==Command::Screenshot).unwrap();
         assert!(!shot.enabled&&shot.key=='s' as u32&&shot.mods.logo);
+    }
+}
+
+#[cfg(test)]
+mod close_binding_tests {
+    use super::*;
+    fn restored(bindings: Vec<Binding>) -> Vec<Binding> {
+        let config: crate::Config = serde_json::from_value(serde_json::json!({"keybindings": bindings})).unwrap();
+        validate(&config.keybindings).unwrap();
+        config.keybindings
+    }
+    #[test]
+    fn window_close_leaves_control_w_and_alt_f4_to_clients() {
+        assert_eq!(resolve('w' as u32, Mods { ctrl: true, ..Default::default() }), None);
+        assert_eq!(resolve('w' as u32, Mods { logo: true, ..Default::default() }), Some(Command::Close));
+        assert_eq!(resolve(0xffc1, Mods { alt: true, ..Default::default() }), None);
+    }
+    #[test]
+    fn stock_close_migrates_idempotently_and_preserves_disabled_state() {
+        for enabled in [true, false] {
+            let mut old = defaults();
+            let close = old.iter_mut().find(|b| b.command == Command::Close).unwrap();
+            close.key = 0xffc1; close.mods = Mods { alt: true, ..Default::default() }; close.enabled = enabled;
+            let migrated = restored(old);
+            let close = migrated.iter().find(|b| b.command == Command::Close).unwrap();
+            assert_eq!(close.key, 'w' as u32); assert!(close.mods.logo); assert_eq!(close.enabled, enabled);
+            assert_eq!(restored(migrated.clone()), migrated);
+        }
+    }
+    #[test]
+    fn close_migration_keeps_custom_chords_and_avoids_conflicts() {
+        let mut custom = defaults();
+        custom.iter_mut().find(|b| b.command == Command::Close).unwrap().key = 'k' as u32;
+        assert_eq!(restored(custom.clone()), custom);
+        let mut old = defaults();
+        old.retain(|b| b.command != Command::Close);
+        old.iter_mut().find(|b| b.command == Command::Terminal).unwrap().key = 'w' as u32;
+        let migrated = restored(old);
+        assert_eq!(resolve_with(&migrated, 'w' as u32, Mods { logo: true, ..Default::default() }), Some(Command::Terminal));
+        assert!(!migrated.iter().find(|b| b.command == Command::Close).unwrap().enabled);
     }
 }

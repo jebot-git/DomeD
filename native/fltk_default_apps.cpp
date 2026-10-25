@@ -9,6 +9,7 @@
 using J = nlohmann::json;
 struct FileType {
   const char *mime, *label;
+  bool archive = false;
 };
 static const FileType types[] = {
     {"inode/directory", "Folders"},
@@ -44,13 +45,49 @@ static const FileType types[] = {
     {"video/mp4", "MP4 video"},
     {"video/webm", "WebM video"},
     {"video/x-matroska", "Matroska video"},
-    {"application/zip", "ZIP archives"},
-    {"application/x-7z-compressed", "7-Zip archives"},
-    {"application/x-compressed-tar", "Compressed tar archives"},
+    {"application/zip", "ZIP archives", true},
+    {"application/x-7z-compressed", "7-Zip archives", true},
+    {"application/x-tar", "Tar archives", true},
+    {"application/x-compressed-tar", "Tar + gzip archives", true},
+    {"application/x-bzip-compressed-tar", "Tar + bzip2 archives", true},
+    {"application/x-xz-compressed-tar", "Tar + xz archives", true},
+    {"application/x-lzma-compressed-tar", "Tar + LZMA archives", true},
+    {"application/x-lzip-compressed-tar", "Tar + lzip archives", true},
+    {"application/x-lz4-compressed-tar", "Tar + LZ4 archives", true},
+    {"application/x-zstd-compressed-tar", "Tar + Zstandard archives", true},
+    {"application/x-lzop-compressed-tar", "Tar + lzop archives", true},
+    {"application/x-cpio", "CPIO archives", true},
+    {"application/x-cpio-compressed", "Compressed CPIO archives", true},
+    {"application/x-archive", "ar archives", true},
+    {"application/x-cd-image", "ISO disc images", true},
+    {"application/x-xar", "XAR archives", true},
+    {"application/warc", "WARC archives", true},
+    {"application/x-mtree", "mtree metadata manifests", true},
+    {"application/vnd.rar", "RAR archives", true},
+    {"application/vnd.ms-cab-compressed", "CAB archives", true},
+    {"application/x-lha", "LHA / LZH archives", true},
+    {"application/x-rpm", "RPM packages", true},
+    {"application/vnd.debian.binary-package", "Debian packages", true},
+    {"application/gzip", "gzip streams", true},
+    {"application/x-bzip2", "bzip2 streams", true},
+    {"application/x-xz", "xz streams", true},
+    {"application/x-lzma", "LZMA streams", true},
+    {"application/x-lzip", "lzip streams", true},
+    {"application/x-lz4", "LZ4 streams", true},
+    {"application/zstd", "Zstandard streams", true},
+    {"application/x-compress", "compress streams", true},
+    {"application/x-lzop", "lzop streams", true},
+    {"application/x-bittorrent", "BitTorrent files (.torrent)"},
+    {"x-scheme-handler/magnet", "Magnet links"},
     {"x-scheme-handler/https", "Web links (https)"},
     {"x-scheme-handler/http", "Web links (http)"},
     {"x-scheme-handler/mailto", "Email links"},
 };
+static bool archiveType(const char *mime) {
+  for (auto type : types)
+    if (type.archive && g_str_equal(type.mime, mime)) return true;
+  return false;
+}
 static std::string configPath() {
   return std::string(g_get_user_config_dir()) + "/dome-mimeapps.list";
 }
@@ -151,6 +188,17 @@ static std::string seed(GKeyFile *file, const char *mime) {
       if (base == "miro-pdf")
         candidate =
             g_str_equal(g_app_info_get_id(app), "miro-pdf.desktop") ? 0 : 1;
+    } else if (g_str_equal(mime, "application/x-bittorrent") ||
+               g_str_equal(mime, "x-scheme-handler/magnet")) {
+      // The canonical desktop entry may launch through dome-link. Its ID is
+      // stable across routing wrappers; TryExec checks the actual client.
+      if (g_str_equal(g_app_info_get_id(app), "org.domed.Torrent.desktop"))
+        candidate = 0;
+      else if (base == "dome-torrent")
+        candidate = 1;
+    } else if (archiveType(mime)) {
+      if (g_str_equal(g_app_info_get_id(app), "org.fsvxr.fsvr.desktop")) candidate = 0;
+      else if (base == "fsvr") candidate = 1;
     } else if (base == "fsvr")
       candidate = 0;
     else if (base == "fsx-vr")
@@ -185,6 +233,12 @@ extern "C" const char *dome_default_apps_list() {
     error = seed(file, "inode/directory");
   if (error.empty())
     error = seed(file, "application/pdf");
+  if (error.empty())
+    error = seed(file, "application/x-bittorrent");
+  if (error.empty())
+    error = seed(file, "x-scheme-handler/magnet");
+  for (auto type : types)
+    if (error.empty() && type.archive) error = seed(file, type.mime);
   J rows = J::array();
   for (auto type : types) {
     auto apps = g_app_info_get_all_for_type(type.mime);

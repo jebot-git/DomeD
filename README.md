@@ -882,7 +882,7 @@ GTK introspection and Xvfb. Its report and screenshot go to that same directory.
 
 **Default Applications…** is available from the system menu and the Appearance
 pane. It covers folders, text/Markdown/JSON, PDF and Office documents, common
-image/audio/video formats, archives, and web/email links. Select a file type,
+image/audio/video formats, archives, BitTorrent files, magnet links, and web/email links. Select a file type,
 choose a registered application, and confirm **Use selected application**.
 Arrow keys navigate, Enter opens/applies, Escape goes back, and the mouse wheel
 browses the list. Refresh reloads the available handlers. Missing handlers and
@@ -896,11 +896,30 @@ an explicit Dome folder choice takes precedence. **Open Files**, Super+E and
 the FileManager1 service use that choice with the requesting Wayland realm.
 `DOME_FILE_MANAGER` remains an explicit launch override.
 
+The native FLTK fsvr archive frontend is the recommended handler for ZIP, 7-Zip,
+tar/compressed tar, CPIO, ar/deb, RPM, ISO, XAR, WARC, RAR, CAB, LHA and compressed
+streams. Default Applications offers these archive categories separately and
+seeds fsvr only where no explicit Dome choice exists. fsvr's native desktop entry
+receives literal file URLs through `dome-link`; archives open in its browser
+rather than recursing through an external archive handler. Existing folder and
+non-archive choices are preserved. `fsvr-dome-default --archives-only` explicitly
+selects fsvr for archive categories in the current user's Dome preferences.
+
 [Miro PDF for DomeD](https://github.com/jebot-git/miro) is the recommended optional PDF
 viewer. When installed, Dome selects `miro-pdf` for PDF files unless a Dome PDF
 choice already exists. Without Miro, choose and install a viewer yourself in
 Default Applications; Dome does not select a replacement. Other desktops' PDF
 preferences are preserved.
+
+[Dome Torrent](https://github.com/jebot-git/dome-torrent) is the optional native FLTK BitTorrent
+client. Default Applications includes separate **BitTorrent files (.torrent)**
+and **Magnet links** choices. When installed, its canonical
+`org.domed.Torrent.desktop` entry seeds both Dome preferences unless a choice
+already exists. Explicit alternatives remain selected independently. Its
+`TryExec` hides an unavailable client, including behind the mode-routing helper.
+The launcher passes full file/magnet arguments through `dome-link`, presents an
+existing client window in the active desktop/XR realm, and forwards new input
+to that instance. Generic user MIME preferences and other desktops are preserved.
 
 `scripts/install-miro.sh` builds and installs the native FLTK Miro fork into
 `~/.local`, preserving the previous binary in a dated backup. Its base is upstream
@@ -1184,7 +1203,9 @@ cancels; Backspace disables that binding. Changes persist in `dome/xr.json`.
 Duplicate chords are rejected. Bare function keys pass to qimgvr, mpvr, fsv-xr
 and Ghostty XR: Dome’s menu uses Super+F10. Super+F12 shows the independent
 terminal overlay from either view; bare F12 also shows it in XR overlay mode.
-Its own F12 handler hides it while it owns the keyboard. Alt+F4 retains the standard window-close behavior.
+Its own F12 handler hides it while it owns the keyboard. Super+W closes the focused window; Ctrl+W remains available to applications for closing tabs.
+Alt+F4 is no longer a DomeD window-close shortcut. Saved stock Alt+F4 bindings
+migrate to Super+W without replacing custom remaps or reviving disabled actions.
 
 | Shortcut | Action |
 | --- | --- |
@@ -1192,7 +1213,8 @@ Its own F12 handler hides it while it owns the keyboard. Alt+F4 retains the stan
 | Super+Shift+Space | Search and launch apps |
 | Super+T | Open terminal in the active desktop/XR realm |
 | Alt+Tab / Shift+Alt+Tab | XR: next / previous window in the same lane, recentered; desktop: next / previous window |
-| Alt+F4 | Close window |
+| Super+W | Close window |
+| Ctrl+W | Close tab (handled by the application) |
 | Super+Q | Close windows of active application |
 | Super+X | Switch physical input focus between desktop and the running XR session |
 | Shift+Super+X | Send focused window and its dialogs to the other desktop / XR view |

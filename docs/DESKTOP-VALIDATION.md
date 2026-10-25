@@ -249,7 +249,8 @@ Screenshots and reports are in `artifacts/gtk-menus`, `artifacts/vivaldi-menus`,
 
 `scripts/test-default-apps.py` uses private XDG directories and registered fixture
 applications to check Dome-specific MIME defaults, real `gio open` dispatch,
-fsvr/fsx-vr detection, explicit folder overrides, incompatible/removed handlers,
+fsvr/fsx-vr detection, explicit folder overrides, torrent-file/magnet defaults,
+wrapped Dome Torrent recognition and literal URI dispatch, incompatible/removed handlers,
 malformed preferences and write errors. It preserves other desktop defaults and
 unrelated MIME entries. With `--compositor`, it additionally starts a private
 D-Bus/Xvfb compositor, verifies chooser confirmation through real pointer input,
@@ -260,7 +261,7 @@ DOME_XVFB=/path/to/Xvfb uv run --no-project --with python-xlib --with pillow pyt
 ```
 
 Backend checks can run with `python3 scripts/test-default-apps.py` alone. The
-fixture requires a C++ compiler, Qt6 and GIO development files, and
+fixture requires a C++ compiler, de-xr FLTK and GIO development files, and
 `update-desktop-database`. Screenshots and the report are saved under
 `artifacts/default-apps/`.
 

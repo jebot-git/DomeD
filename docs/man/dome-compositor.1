@@ -62,6 +62,10 @@ be enabled at runtime. Use --check-backend to inspect these build settings.
 XR uses cylindrical dome windows. Super+P pulls the focused window in front of the user or returns it to the dome; at most two windows can be pulled out. The default distance is 2 metres. Settings configure distance, dome height and bindings. Mouse and keyboard are the only input methods. Alt+Tab and Alt+Shift+Tab switch windows in the same lane.
 .PP
 Super+Alt+Up/Down moves the focused window between lanes. Super+Alt+Left/Right reorders it horizontally within its lane, stopping at either edge. Moving a pulled-out window returns it to the dome. Super+Equals/Minus multiplies/divides the focused XR window size by 1.1, within 0.25\(en4 times scale. The View menu exposes lane and size actions; Settings allows rebinding.
+.PP
+Super+W closes the focused window. Ctrl+W is left to applications for closing tabs;
+Super+Q closes the active application. Alt+F4 is not a default window-close shortcut.
+Saved stock Alt+F4 bindings migrate to Super+W; custom remaps and disabled actions are preserved.
 .SH UNIVERSAL MENUS
 File, Edit and Window are always present, including for Electron, Vivaldi and other
 applications without exported menus. File and Edit follow the application menu; Window

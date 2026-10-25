@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 """Check launcher routing, field-code preservation and explicit-mode exceptions."""
 import importlib.util
+import json
 from pathlib import Path
 import subprocess
 import tempfile
@@ -18,6 +19,14 @@ class Packaging(unittest.TestCase):
         self.assertIn('Exec=gmsh-dome-xr %F',result)
         self.assertIn('DBusActivatable=false',result)
         self.assertEqual(module.desktop(result,{'reuse':True,'app_id':'org.domed.Fixture'}),result)
+    def test_torrent_handler_routes_reused_window_and_preserves_mime_fields(self):
+        options=json.loads((ROOT/'packaging/link-handlers.json').read_text())['applications']['org.domed.Torrent.desktop']
+        source='[Desktop Entry]\nType=Application\nName=Dome Torrent\nExec=dome-torrent %U\nTryExec=dome-torrent\nMimeType=application/x-bittorrent;x-scheme-handler/magnet;\n'
+        result=module.desktop(source,options)
+        self.assertIn('Exec=/usr/local/bin/dome-link --app-id org.domed.Torrent -- dome-torrent %U',result)
+        self.assertIn('MimeType=application/x-bittorrent;x-scheme-handler/magnet;',result)
+        self.assertIn('TryExec=dome-torrent',result)
+        self.assertEqual(module.desktop(result,options),result)
     def test_mime_video_default_does_not_force_xr(self):
         result=module.desktop('[Desktop Entry]\nExec=mpvr --domed %f\n',{'automatic':True})
         self.assertEqual(result,'[Desktop Entry]\nExec=/usr/local/bin/dome-link -- mpvr %f\n')

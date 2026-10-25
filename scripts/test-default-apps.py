@@ -30,10 +30,45 @@ with tempfile.TemporaryDirectory(prefix='dome-default-apps-')as directory:
     (apps.parent/'mime').symlink_to('/usr/share/mime',target_is_directory=True)
     env={**os.environ,'HOME':str(base),'XDG_CONFIG_HOME':str(config),'XDG_DATA_HOME':str(base/'data'),'XDG_DATA_DIRS':str(empty),'XDG_CONFIG_DIRS':str(empty),'XDG_CURRENT_DESKTOP':'Dome','PATH':str(bin_dir)+':'+os.environ['PATH']}
     journal=base/'opened'
+    # Keep fixture expectations local: DomeD tests run from a standalone checkout.
+    archive_types = [
+        'application/zip',
+        'application/x-7z-compressed',
+        'application/x-tar',
+        'application/x-compressed-tar',
+        'application/x-bzip-compressed-tar',
+        'application/x-xz-compressed-tar',
+        'application/x-lzma-compressed-tar',
+        'application/x-lzip-compressed-tar',
+        'application/x-lz4-compressed-tar',
+        'application/x-zstd-compressed-tar',
+        'application/x-lzop-compressed-tar',
+        'application/x-cpio',
+        'application/x-cpio-compressed',
+        'application/x-archive',
+        'application/x-cd-image',
+        'application/x-xar',
+        'application/warc',
+        'application/x-mtree',
+        'application/vnd.rar',
+        'application/vnd.ms-cab-compressed',
+        'application/x-lha',
+        'application/x-rpm',
+        'application/vnd.debian.binary-package',
+        'application/gzip',
+        'application/x-bzip2',
+        'application/x-xz',
+        'application/x-lzma',
+        'application/x-lzip',
+        'application/x-lz4',
+        'application/zstd',
+        'application/x-compress',
+        'application/x-lzop',
+    ]
     for executable,label in [('alpha','Alpha editor'),('beta','Beta editor'),('fsvr','fsvr'),('audio','Audio player')]:
         path=bin_dir/executable
         path.write_text('#!/bin/sh\nprintf "%s\\n" '+executable+' "$@" >> '+str(journal)+'\n');path.chmod(0o700)
-        mime='inode/directory;x-scheme-handler/trash;'if executable=='fsvr'else'audio/mpeg;'if executable=='audio'else'text/plain;image/png;application/pdf;inode/directory;'
+        mime='inode/directory;x-scheme-handler/trash;'+';'.join(archive_types)+';'if executable=='fsvr'else'audio/mpeg;'if executable=='audio'else'text/plain;image/png;application/pdf;inode/directory;'
         desktop='org.fsvxr.fsvr.desktop'if executable=='fsvr'else executable+'.desktop'
         (apps/desktop).write_text(f'[Desktop Entry]\nType=Application\nName={label}\nExec={executable} %U\nTryExec={executable}\nMimeType={mime}\n')
     subprocess.run(['update-desktop-database',str(apps)],env=env,check=True)
@@ -44,6 +79,20 @@ with tempfile.TemporaryDirectory(prefix='dome-default-apps-')as directory:
     def set_default(mime,app):return subprocess.run([str(client),'set',mime,app],env=env,capture_output=True,text=True)
     check(row('inode/directory')['current']['id']=='org.fsvxr.fsvr.desktop','Installed fsvr becomes the initial Dome folder handler')
     check(row('application/pdf')['current'] is None,'Absent Miro leaves Dome PDF choice unset even when other viewers are installed')
+    check(all(row(mime)['current']['id']=='org.fsvxr.fsvr.desktop' for mime in archive_types),'Installed fsvr becomes the Dome archive handler across registered libarchive types')
+    archive_other=apps/'other-archives.desktop';archive_other.write_text('[Desktop Entry]\nType=Application\nName=Other Archives\nExec=alpha %U\nMimeType=application/zip;\n')
+    subprocess.run(['update-desktop-database',str(apps)],env=env,check=True)
+    check(set_default('application/zip','other-archives.desktop').returncode==0 and row('application/zip')['current']['id']=='other-archives.desktop' and row('application/x-cpio')['current']['id']=='org.fsvxr.fsvr.desktop','An explicit ZIP choice is preserved independently of other archive formats')
+    before=scoped.read_bytes()
+    check(set_default('application/x-cpio','audio.desktop').returncode!=0 and scoped.read_bytes()==before,'Non-archive handlers are rejected for archives')
+    check(set_default('application/zip','org.fsvxr.fsvr.desktop').returncode==0,'User can explicitly choose the native fsvr archive handler')
+    import zipfile
+    archive_file=base/'archive with spaces $ ü.zip'
+    with zipfile.ZipFile(archive_file,'w') as fixture:fixture.writestr('entry.txt','archive fixture')
+    subprocess.run(['gio','open',archive_file.as_uri()],env=env,check=True)
+    wait(lambda:journal.exists() and (str(archive_file) in journal.read_text() or archive_file.as_uri() in journal.read_text()))
+    check(True,'gio open dispatches archive file URLs literally to fsvr')
+
     miro_dir=bin_dir/'PDF viewers';miro_dir.mkdir()
     miro=miro_dir/'miro-pdf';miro.write_text('#!/bin/sh\nprintf "%s\\n" miro-pdf "$@" >> '+str(journal)+'\n');miro.chmod(0o700)
     miro_entry=apps/'miro-pdf.desktop'
@@ -60,6 +109,34 @@ with tempfile.TemporaryDirectory(prefix='dome-default-apps-')as directory:
     miro.unlink();miro_entry.unlink();subprocess.run(['update-desktop-database',str(apps)],env=env,check=True)
     check(row('application/pdf')['current'] is None and 'application/pdf=miro-pdf.desktop;'in scoped.read_text(),'Removed Miro preserves the user choice without choosing another PDF viewer')
     check(set_default('application/pdf','beta.desktop').returncode==0 and row('application/pdf')['current']['id']=='beta.desktop','Without Miro the user can select another registered PDF handler')
+    check(not row('application/x-bittorrent')['apps'] and not row('x-scheme-handler/magnet')['apps'],'Torrent files and magnet links are available categories without an installed handler')
+    torrent=bin_dir/'dome-torrent';torrent.write_text('#!/bin/sh\nprintf "%s\\n" dome-torrent "$@" >> '+str(journal)+'\n');torrent.chmod(0o700)
+    torrent_entry=apps/'org.domed.Torrent.desktop'
+    torrent_entry.write_text('[Desktop Entry]\nType=Application\nName=Dome Torrent\nExec=dome-torrent %U\nTryExec=dome-torrent\nMimeType=application/x-bittorrent;x-scheme-handler/magnet;\n')
+    torrent_entry.write_text(torrent_entry.read_text().replace('TryExec=dome-torrent','TryExec='+str(torrent)))
+    alternative=apps/'torrent-other.desktop'
+    alternative.write_text('[Desktop Entry]\nType=Application\nName=Other Torrent\nExec=alpha %U\nMimeType=application/x-bittorrent;x-scheme-handler/magnet;\n')
+    subprocess.run(['update-desktop-database',str(apps)],env=env,check=True)
+    check(all(row(mime)['current']['id']=='org.domed.Torrent.desktop' for mime in ('application/x-bittorrent','x-scheme-handler/magnet')),'Installed Dome Torrent seeds separate torrent-file and magnet defaults')
+    torrent_file=base/'sample with spaces $literal ü.torrent'
+    torrent_file.write_bytes(b'd4:infod6:lengthi4e4:name4:test12:piece lengthi16384e6:pieces20:'+b'x'*20+b'ee')
+    magnet='magnet:?xt=urn:btih:0123456789012345678901234567890123456789&dn=literal%20name&tr=https%3A%2F%2Ftracker.invalid%2Fa'
+    journal.unlink(missing_ok=True)
+    for target in (torrent_file.as_uri(),magnet):subprocess.run(['gio','open',target],env=env,check=True)
+    wait(lambda:journal.exists() and magnet in journal.read_text() and (str(torrent_file) in journal.read_text() or torrent_file.as_uri() in journal.read_text()))
+    check(True,'gio open sends torrent paths and complete magnet arguments literally to the selected handler')
+    check(set_default('application/x-bittorrent','torrent-other.desktop').returncode==0 and row('application/x-bittorrent')['current']['id']=='torrent-other.desktop' and row('x-scheme-handler/magnet')['current']['id']=='org.domed.Torrent.desktop','Explicit torrent-file choices are preserved independently of magnet defaults')
+    before=scoped.read_bytes()
+    check(set_default('application/x-bittorrent','audio.desktop').returncode!=0 and scoped.read_bytes()==before,'Handlers without torrent MIME support are rejected')
+    check(generic.read_bytes()==original,'Torrent recommendations preserve global user defaults')
+    # Canonical desktop identity survives the active-realm launch wrapper.
+    router=bin_dir/'fixture-router';router.write_text('#!/bin/sh\nexec "$@"\n');router.chmod(0o700)
+    torrent_entry.write_text(torrent_entry.read_text().replace('Exec=dome-torrent %U','Exec=fixture-router dome-torrent %U'))
+    scoped.write_text(scoped.read_text().replace('application/x-bittorrent=torrent-other.desktop;\n','').replace('x-scheme-handler/magnet=org.domed.Torrent.desktop;\n',''))
+    subprocess.run(['update-desktop-database',str(apps)],env=env,check=True)
+    check(all(row(mime)['current']['id']=='org.domed.Torrent.desktop' for mime in ('application/x-bittorrent','x-scheme-handler/magnet')),'Dome Torrent recommendation recognizes its desktop ID after realm routing')
+    torrent.unlink();subprocess.run(['update-desktop-database',str(apps)],env=env,check=True)
+    check(all(all(app['id']!='org.domed.Torrent.desktop' for app in row(mime)['apps']) for mime in ('application/x-bittorrent','x-scheme-handler/magnet')),'TryExec hides a removed torrent client even when its routing helper remains')
     check(generic.read_bytes()==original,'Automatic file-manager preference preserves other desktops’ defaults')
     check({a['id']for a in row('text/plain')['apps']}=={'alpha.desktop','beta.desktop'},'Only registered handlers are offered for text files')
     check(not row('video/x-matroska')['apps'],'File types without installed handlers report an empty choice list')
@@ -99,6 +176,7 @@ with tempfile.TemporaryDirectory(prefix='dome-default-apps-')as directory:
         try:
             # Remove only these fixture choices to exercise automatic seeding in the compositor.
             scoped.unlink();journal.unlink(missing_ok=True)
+            torrent.write_text('#!/bin/sh\nprintf "%s\\n" dome-torrent "$@" >> '+str(journal)+'\n');torrent.chmod(0o700)
             runtime=base/'runtime';runtime.mkdir(mode=0o700)
             rd,wr=os.pipe();start([os.environ.get('DOME_XVFB',shutil.which('Xvfb')or''),'-displayfd',str(wr),'-screen','0','1600x1000x24','-nolisten','tcp'],'xvfb',env,pass_fds=(wr,));os.close(wr)
             with os.fdopen(rd)as pipe:display_name=':'+pipe.readline().strip()
@@ -119,13 +197,27 @@ with tempfile.TemporaryDirectory(prefix='dome-default-apps-')as directory:
                 g=host.get_geometry();raw=host.get_image(0,0,g.width,g.height,X.ZPixmap,0xffffffff);Image.frombytes('RGB',(g.width,g.height),raw.data,'raw','BGRX').save(out/name)
             key('Super_L',True);key('e');key('Super_L',False)
             wait(lambda:journal.exists()and'fsvr'in journal.read_text());check(True,'Open Files launches the detected fsvr executable in the running compositor')
-            click(20,18);click(100,222);click(500,620);time.sleep(.4);shot('default-applications.png')
+            def open_defaults():
+                # Settings moved into a hierarchy; use its public key navigation.
+                key('Super_L',True);key('comma');key('Super_L',False)
+                time.sleep(.2);key('Home');key('Return');time.sleep(.2)
+                click(500,650);time.sleep(.4)
+            open_defaults();shot('default-applications.png')
             click(800,172);time.sleep(.2);shot('choose-text-handler.png')
             check('text/plain=beta.desktop;'not in scoped.read_text(),'Opening the chooser makes no change before confirmation')
             click(600,172);click(800,656)
             wait(lambda:'text/plain=beta.desktop;'in scoped.read_text())
             check(row('text/plain')['current']['id']=='beta.desktop','Appearance settings picker applies the confirmed text handler')
-            key('Escape');click(20,18);click(100,558);time.sleep(.2);click(800,128);time.sleep(.2);click(600,128);click(800,656)
+            # Scroll to the added category with the same keys as a user.
+            key('Home')
+            torrent_index=next(i for i,r in enumerate(listing()['rows']) if r['mime']=='application/x-bittorrent')
+            for _ in range(torrent_index//5):key('Next')
+            for _ in range(torrent_index%5):key('Down')
+            key('Return');time.sleep(.3);shot('choose-torrent-handler.png')
+            click(600,172);click(800,656)
+            wait(lambda:'application/x-bittorrent=torrent-other.desktop;'in scoped.read_text())
+            check(row('x-scheme-handler/magnet')['current']['id']=='org.domed.Torrent.desktop','Torrent picker applies an alternative without changing the magnet handler')
+            key('Escape');open_defaults();click(800,128);time.sleep(.2);click(600,128);click(800,656)
             wait(lambda:'inode/directory=alpha.desktop;'in scoped.read_text())
             key('Escape');journal.unlink(missing_ok=True)
             key('Super_L',True);key('e');key('Super_L',False)

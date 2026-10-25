@@ -16,6 +16,10 @@
     "org.fsvxr.fsvr.desktop": {},
     "info.gmsh.gmsh.desktop": {},
     "miro-pdf.desktop": {},
+    "org.domed.Torrent.desktop": {
+      "app_id": "org.domed.Torrent",
+      "reuse": true
+    },
     "org.domed.XNEdit.desktop": {},
     "org.domed.FLTube.desktop": {},
     "org.domed.Htop.desktop": {},
