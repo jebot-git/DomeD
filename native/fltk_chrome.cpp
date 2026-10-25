@@ -633,15 +633,32 @@ extern "C" int dome_qt_paint(const char *json, unsigned char *pixels,
     cairo_rectangle(c, 0, 0, std::max(0, w - reserve - int(extras.size()) * 28),
                     36);
     cairo_clip(c);
+    auto headerViewport = obj(o, "menu_header_viewport");
+    const int headerLeft = num(headerViewport, "left", 230);
+    const int headerRight = num(headerViewport, "right", w - reserve - int(extras.size()) * 28);
+    const int headerBand = num(headerViewport, "band");
     for (auto &header : headers) {
       int x = num(header, "x"), width = num(header, "width");
+      cairo_save(c);
+      if (!headerViewport.empty()) {
+        const int left = i < 2 ? 0 : headerLeft + headerBand;
+        const int right = i < 2 ? headerLeft : headerRight - headerBand;
+        cairo_rectangle(c, left, 0, std::max(0, right - left), 36);
+        cairo_clip(c);
+      }
       if (num(o, "menu", -1) == i)
         p.rect(x, 0, width, 35, p.sel);
       const auto icon = str(header, "icon");
       const int inset = icon.empty() ? 7 : 36;
       if (!icon.empty()) p.icon(x + 5, 6, 24, icon, p.fg);
       p.text(x + inset, 0, width - inset - 7, 35, str(header, "text"), p.fg);
+      cairo_restore(c);
       ++i;
+    }
+    if (headerBand > 0) {
+      p.text(headerLeft + 4, 0, headerBand - 8, 35, "‹", num(headerViewport, "offset") > 0 ? p.fg : p.muted);
+      p.text(headerRight - headerBand + 4, 0, headerBand - 8, 35, "›",
+             num(headerViewport, "offset") < num(headerViewport, "maximum") ? p.fg : p.muted);
     }
     cairo_restore(c);
     if (clock.empty()) {

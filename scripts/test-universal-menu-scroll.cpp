@@ -29,5 +29,25 @@ int main(int argc, char **argv) try {
     throw std::runtime_error("Last selected remote action is not revealed");
   cairo_surface_write_to_png(surface, argv[2]);
   cairo_destroy(cr); cairo_surface_destroy(surface);
-  std::cout << "Long menu clipping, selection visibility and clip restoration passed\n";
+  // Shifted headings must never paint over the fixed app button, controls or tray.
+  J bar = {{"kind", "shell"}, {"width", 640}, {"height", 160}, {"menu", -1},
+      {"menu_headers", J::array({{{"text", "System"}, {"x", 0}, {"width", 46}},
+          {{"text", "Application"}, {"x", 46}, {"width", 184}},
+          {{"text", "Hidden heading"}, {"x", -100}, {"width", 900}}})},
+      {"menu_header_viewport", {{"left", 230}, {"right", 400}, {"band", 24}, {"offset", 500}, {"maximum", 600}}}};
+  std::vector<uint32_t> before(640 * 160), after(before.size());
+  auto paint = [&](std::vector<uint32_t> &out) {
+    if (!dome_qt_paint(bar.dump().c_str(), reinterpret_cast<unsigned char *>(out.data()), out.size() * 4))
+      throw std::runtime_error("Header painting failed");
+  };
+  paint(before); bar["menu"] = 2; paint(after);
+  bool selected = false;
+  for (int y = 0; y < 36; ++y) for (int x = 0; x < 640; ++x) {
+    const bool changed = before[y * 640 + x] != after[y * 640 + x];
+    if ((x < 254 || x >= 376) && changed)
+      throw std::runtime_error("Scrolled header escaped into a fixed button, scroll control or tray");
+    selected |= changed;
+  }
+  if (!selected) throw std::runtime_error("Selected heading disappeared inside its viewport");
+  std::cout << "Dropdown and horizontal header clipping, selection visibility and clip restoration passed\n";
 } catch (const std::exception &error) { std::cerr << error.what() << '\n'; return 1; }

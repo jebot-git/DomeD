@@ -9,6 +9,40 @@ pub struct Header {
     pub enabled: bool,
     pub icon: String,
 }
+/// Horizontal application headings have their own viewport, before the tray.
+/// The application/system buttons stay fixed; edge controls never hit a heading.
+#[derive(Clone, Copy, Debug, Serialize)]
+pub struct HeaderViewport {
+    pub left: i32,
+    pub right: i32,
+    pub band: i32,
+    pub offset: i32,
+    pub maximum: i32,
+}
+impl HeaderViewport {
+    fn new(right: i32, content: i32, offset: i32) -> Self {
+        let left = 230.min(right.max(0));
+        let right = right.max(left);
+        let band = if content > right - left { 24.min((right - left) / 2) } else { 0 };
+        let maximum = (content - (right - left - 2 * band)).max(0);
+        Self { left, right, band, offset: offset.clamp(0, maximum), maximum }
+    }
+    pub fn contains(&self, x: f64) -> bool {
+        x >= (self.left + self.band) as f64 && x < (self.right - self.band) as f64
+    }
+    fn control(&self, x: f64) -> Option<i32> {
+        if self.band == 0 || x < self.left as f64 || x >= self.right as f64 { return None; }
+        if x < (self.left + self.band) as f64 && self.offset > 0 { Some(-1) }
+        else if x >= (self.right - self.band) as f64 && self.offset < self.maximum { Some(1) }
+        else { None }
+    }
+    fn reveal(&mut self, start: i32, width: i32) {
+        let visible = self.right - self.left - self.band * 2;
+        if start < self.offset { self.offset = start; }
+        else if start + width > self.offset + visible { self.offset = start + width - visible; }
+        self.offset = self.offset.clamp(0, self.maximum);
+    }
+}
 #[derive(Serialize)]
 pub struct Panel {
     pub x: i32,
@@ -145,6 +179,13 @@ impl Dome {
     }
     /// Wheel and edge controls retain absolute source rows and remote action IDs.
     pub fn menu_scroll(&mut self, x: f64, y: f64, delta: f64, width: i32, height: i32) -> bool {
+        if y >= 0. && y < 36. {
+            let viewport = self.menu_header_viewport(width);
+            if x >= viewport.left as f64 && x < viewport.right as f64 && viewport.band > 0 {
+                self.menu_header_offset = (viewport.offset + delta.round() as i32).clamp(0, viewport.maximum);
+                return true;
+            }
+        }
         let tray = self.visible_tray(width);
         if tray.menu.is_some() {
             let x0 = self.tray_menu_x(&tray, width);
@@ -175,6 +216,7 @@ impl Dome {
         true
     }
     fn menu_edge(&self, x: f64, y: f64, width: i32, height: i32) -> Option<i32> {
+        if y >= 0. && y < 36. { return self.menu_header_control(x, y, width); }
         let tray = self.visible_tray(width);
         if tray.menu.is_some() {
             let x0 = self.tray_menu_x(&tray, width);
@@ -235,7 +277,7 @@ impl Dome {
         else if let Some(address) = address { self.appmenus.activate(address, node.id); }
     }
 
-    pub fn menu_headers(&self) -> Vec<Header> {
+    fn raw_menu_headers(&self) -> Vec<Header> {
         let scene = self.shell_scene();
         let focused = scene.focused.and_then(|id| scene.window(id));
         let mut headers = vec![
@@ -259,6 +301,34 @@ impl Dome {
         }
         headers
     }
+    pub fn menu_header_viewport(&self, width: i32) -> HeaderViewport {
+        let right = width - self.clock_reserve() - self.visible_tray(width).items.len() as i32 * 28;
+        let headers = self.raw_menu_headers();
+        let content = headers.last().map_or(0, |h| h.x + h.width - 230);
+        HeaderViewport::new(right, content, self.menu_header_offset)
+    }
+    pub fn menu_headers_at(&self, width: i32) -> Vec<Header> {
+        let mut headers = self.raw_menu_headers();
+        let viewport = self.menu_header_viewport(width);
+        for header in headers.iter_mut().skip(2) { header.x += viewport.band - viewport.offset; }
+        headers
+    }
+    pub fn menu_headers(&self) -> Vec<Header> {
+        self.menu_headers_at(self.shell_geometry().size.w)
+    }
+    pub fn menu_header_control(&self, x: f64, y: f64, width: i32) -> Option<i32> {
+        if y < 0. || y >= 36. { return None; }
+        self.menu_header_viewport(width).control(x)
+    }
+    pub fn scroll_menu_header_control(&mut self, x: f64, y: f64, width: i32) -> bool {
+        let viewport = self.menu_header_viewport(width);
+        if y < 0. || y >= 36. || viewport.band == 0
+            || x < viewport.left as f64 || x >= viewport.right as f64 || viewport.contains(x) { return false; }
+        if let Some(direction) = viewport.control(x) {
+            self.menu_header_offset = (viewport.offset + direction * 28).clamp(0, viewport.maximum);
+        }
+        true
+    }
     pub fn menu_x(&self, index: usize) -> f64 {
         self.menu_headers().get(index).map_or(0., |h| h.x as f64)
     }
@@ -274,6 +344,12 @@ impl Dome {
             self.dismiss_wayland_popups();
         }
         self.menu = index;
+        if let Some(header) = index.and_then(|i| self.raw_menu_headers().get(i).map(|h| (i, h.x, h.width))) {
+            let mut viewport = self.menu_header_viewport(self.shell_geometry().size.w);
+            if header.0 >= 2 { viewport.reveal(header.1 - 230, header.2); }
+            else { viewport.offset = 0; }
+            self.menu_header_offset = viewport.offset;
+        }
         if index.is_none() { self.menu_has_ui_origin=false; }
         self.menu_hover = -1;
         self.appmenu_path.clear();
@@ -318,7 +394,7 @@ impl Dome {
         let menus = self.universal_menus();
         let Some(root) = menus.get(index - 2) else { return vec![]; };
         let pw = 380.min(width.max(1));
-        let mut x = (self.menu_x(index) as i32).clamp(0, (width - pw).max(0));
+        let mut x = self.menu_headers_at(width).get(index).map_or(0, |h| h.x).clamp(0, (width - pw).max(0));
         let mut y = 36;
         let mut node = root;
         let mut panels = Vec::new();
@@ -506,6 +582,37 @@ impl Dome {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn horizontal_headers_reveal_each_heading_and_protect_fixed_regions() {
+        let widths = [50, 52, 200, 200, 112, 58, 80, 58];
+        for right in [484, 664, 804, 1500] {
+            let mut view = HeaderViewport::new(right, widths.iter().sum(), 0);
+            let mut start = 0;
+            for width in widths {
+                view.reveal(start, width);
+                let x = view.left + view.band + start - view.offset;
+                assert!(x >= view.left + view.band);
+                assert!(x + width <= view.right - view.band);
+                assert!(view.contains((x + width / 2) as f64));
+                assert!(!view.contains(229.));
+                assert!(!view.contains(right as f64));
+                start += width;
+            }
+            if view.band > 0 {
+                assert_eq!(view.offset, view.maximum);
+                assert_eq!(view.control((view.right - 1) as f64), None);
+                assert_eq!(view.control(view.left as f64), Some(-1));
+                assert!(!view.contains(view.left as f64));
+                view.reveal(0, widths[0]);
+                assert_eq!(view.offset, 0);
+                assert_eq!(view.control(view.left as f64), None);
+                assert_eq!(view.control((view.right - 1) as f64), Some(1));
+            } else { assert_eq!(view.offset, 0); }
+        }
+        assert_eq!(HeaderViewport::new(804, 200, 500).offset, 0);
+        let tiny = HeaderViewport::new(200, 500, 9999);
+        assert_eq!(tiny.offset, tiny.maximum);
+    }
     #[test]
     fn application_header_uses_desktop_name_and_icon_for_client_alias() {
         let app = dome::desktop_entries::parse(

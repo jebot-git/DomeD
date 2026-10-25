@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Real long StatusNotifier menus: XR bounds, keys, edge hover, wheel and remote IDs."""
+"""Real overflowing menu bars and dropdowns: desktop/XR input and remote IDs."""
 import json, os, re, signal, socket, subprocess, sys, tempfile, threading, time, urllib.request
 from pathlib import Path
 from PIL import Image
@@ -9,7 +9,7 @@ signal.pthread_sigmask(signal.SIG_SETMASK, [])
 if os.environ.get('DOME_SYSTEM_MENU_TEST_BUS') != '1':
     os.execvpe('dbus-run-session', ['dbus-run-session','--',sys.executable,*sys.argv], {**os.environ,'DOME_SYSTEM_MENU_TEST_BUS':'1'})
 root=Path(__file__).resolve().parents[1]
-out=root/'artifacts/tray-scroll';out.mkdir(parents=True,exist_ok=True)
+out=Path(os.environ.get('DOME_MENU_SCROLL_OUTPUT',str(root/'artifacts/tray-scroll')));out.mkdir(parents=True,exist_ok=True)
 children=[];logs=[];stop=threading.Event();checks=[]
 for stale in out.glob('*.png'):stale.unlink()
 (out/'failure-state.json').unlink(missing_ok=True)
@@ -41,7 +41,7 @@ try:
 static const char* marker;
 static void activated(Fl_Widget*,void* value){std::ofstream(marker)<<reinterpret_cast<long>(value);}
 int main(int argc,char**argv){marker=argv[1];Fl_Window w(480,320,"XR menu fixture");w.xclass("org.domed.SystemMenuFixture");
-Fl_Menu_Bar m(0,0,480,28);for(long i=0;i<80;++i){std::string name="File/Action "+std::to_string(i);m.add(name.c_str(),0,activated,reinterpret_cast<void*>(i));}m.add("View/Application View",0,activated);m.add("Window/Application Window",0,activated);
+Fl_Menu_Bar m(0,0,480,28);for(long i=0;i<80;++i){std::string name="File/Action "+std::to_string(i);m.add(name.c_str(),0,activated,reinterpret_cast<void*>(i));}for(long i=0;i<20;++i){std::string name="Category "+std::to_string(i)+"/Activate";m.add(name.c_str(),0,activated,reinterpret_cast<void*>(200+i));}m.add("View/Application View",0,activated);m.add("Window/Application Window",0,activated);m.add("Help/Application Help",0,activated);
 w.end();DesktopMenu exported(w,m);w.show();return Fl::run();}
 ''')
         protocol=root/'native/tray/appmenu.xml'
@@ -86,10 +86,10 @@ w.end();DesktopMenu exported(w,m);w.show();return Fl::run();}
             ident = 2**64-6 if panel else 0
             uv = [x/shell['width'],(y-36)/(min(shell['top'],shell['height']-60)-36)] if panel else [x/shell['width'],y/36]
             request('/api/xr-input',{'actions':[],'events':[{'kind':'motion','id':ident,'uv':uv},{'kind':'button','button':272,'pressed':True},{'kind':'button','button':272,'pressed':False}]}).close();time.sleep(.25)
-        def capture(name):
+        def capture(name,bar=False):
             def frame():
                 try:
-                    with request('/api/xr-frame/'+str(2**64-6 if layout().get('pullout') else 0)) as response:
+                    with request('/api/xr-frame/'+str(2**64-6 if not bar and layout().get('pullout') else 0)) as response:
                         w=int(response.headers['X-Dome-Width']);h=int(response.headers['X-Dome-Height']);data=response.read()
                     return Image.frombytes('RGBA',(w,h),data)
                 except OSError:return None
@@ -105,7 +105,9 @@ w.end();DesktopMenu exported(w,m);w.show();return Fl::run();}
             assert layout()['top']<=428, layout()
         def motion(x,y):
             shell=layout()
-            request('/api/xr-input',{'actions':[],'events':[{'kind':'motion','id':2**64-6,'uv':[x/shell['width'],(y-36)/(shell['top']-36)]}]}).close();time.sleep(.1)
+            ident=0 if y<36 else 2**64-6
+            uv=[x/shell['width'],y/36 if y<36 else (y-36)/(shell['top']-36)]
+            request('/api/xr-input',{'actions':[],'events':[{'kind':'motion','id':ident,'uv':uv}]}).close();time.sleep(.1)
         def hold_edge(x, seconds):
             end=time.monotonic()+seconds
             while time.monotonic()<end:motion(x,layout()['top']-8)
@@ -136,7 +138,7 @@ w.end();DesktopMenu exported(w,m);w.show();return Fl::run();}
         # The same checks apply to actual exported universal-menu items.
         marker=runtime/'native-marker'
         def open_file():
-            click(250,18);wait(lambda:layout()['top']>36)
+            click(275,18);wait(lambda:layout()['top']>36)
         open_file();key('End');key('Up');time.sleep(.3);capture('05-universal-keyboard-end')
         click(300,layout()['top']-98);wait(lambda:marker.exists())
         check(marker.read_text()=='79','Universal menu End reveals final exported action and maps pointer click correctly')
@@ -146,6 +148,27 @@ w.end();DesktopMenu exported(w,m);w.show();return Fl::run();}
         hold_edge(300,10.5)
         capture('06-universal-edge-end');click(300,layout()['top']-98);wait(lambda:marker.exists())
         check(marker.read_text()=='79','Stationary pointer edge scrolling reaches final universal-menu action')
+        # Overflowing horizontal headings must reveal themselves before the tray.
+        marker.unlink();open_file();before=capture('08-header-keyboard-start',bar=True)
+        for _ in range(21):key('Right') # File, Edit, then twenty exported categories.
+        after=capture('08-header-keyboard-end',bar=True)
+        check(before.tobytes()!=after.tobytes(),'XR Right navigation repaints horizontal menu positions')
+        tray_start=layout()['width']-220-5*28 # Four builtins plus the fixture tray item.
+        right=tray_start-24
+        selected=before.getpixel((275,2))
+        check(all(after.getpixel((x,2))==selected for x in range(right-112,right)),
+              'XR keyboard reveals the entire selected heading before the tray')
+        key('Return');wait(lambda:marker.exists())
+        check(marker.read_text()=='219','XR keyboard reaches and activates a heading initially hidden behind the tray')
+        marker.unlink();click(20,18);key('Escape') # Fixed system button resets the strip.
+        motion(tray_start-12,18);before=capture('09-header-edge-start',bar=True)
+        time.sleep(.8);after=capture('09-header-edge-progress',bar=True)
+        check(before.tobytes()!=after.tobytes(),'Stationary XR pointer scrolls the horizontal bar with no dropdown open')
+        # Identical rays keep the timer alive; stop exactly at the final heading.
+        for _ in range(100):motion(tray_start-12,18)
+        capture('09-header-edge-end',bar=True)
+        click(tray_start-24-196-56,18);key('Return');wait(lambda:marker.exists())
+        check(marker.read_text()=='219','XR pointer reveals the final headings and clicks the correct exported category')
         # Desktop uses the same menu viewport and actual X11 host input.
         stop.set();thread.join(timeout=2)
         request('/api/xr-session',{'id':9182,'visible':False,'focused':False,'head':tracking}).close()
@@ -161,6 +184,10 @@ w.end();DesktopMenu exported(w,m);w.show();return Fl::run();}
         desktop_click(g.width-260,g.height-98)
         wait(lambda:len(events())==5)
         check(events()[-1]['id']==1553,'Desktop tray End reveals final action and preserves source-row hit testing')
+        marker.unlink();desktop_click(20,18);key('Escape');desktop_click(275,18)
+        for _ in range(21):key('Right')
+        key('Return');wait(lambda:marker.exists())
+        check(marker.read_text()=='219','Desktop keyboard reveals and activates the same overflowing exported heading')
         xd.close();(out/'checks.json').write_text(json.dumps(checks,indent=2)+'\n')
 except Exception:
     try:

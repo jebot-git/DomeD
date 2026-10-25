@@ -26,3 +26,20 @@ a private bus, Xvfb, a private nested compositor, an 80-row DBusMenu and an
 80-action native FLTK universal menu. It checks End/Home/arrows, actual pointer
 hit testing against sparse remote action IDs, repeated identical XR rays,
 continuous repainting and wheel scrolling. It does not touch a running session.
+
+Horizontal menu-bar overflow is independent of dropdown scrolling. Exported
+headings previously kept their original positions and were simply clipped at
+the tray boundary. The application/system buttons now stay fixed while the
+headings use a horizontal viewport ending before the visible tray icons. Left
+and right controls support clicks and stationary pointer hover; wheel input
+also moves the strip. Opening a heading, including Left/Right keyboard menu
+navigation, reveals its entire allocated width. Focus changes reset the strip.
+Painting, dropdown anchors, hit testing and the shell redraw cache share the
+same header offset and viewport, including the 1024-pixel XR shell.
+
+The integration fixture also exports twenty additional menu headings. It
+checks horizontal keyboard reveal and action dispatch on desktop and XR, then
+holds an XR pointer at the right edge with no dropdown open and clicks an
+initially hidden category. `scripts/test-universal-menu-scroll.cpp` checks that
+shifted header selection never paints over fixed buttons, controls or the tray.
+Set `DOME_MENU_SCROLL_OUTPUT` to retain captures in a separate output directory.

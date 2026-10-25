@@ -10,9 +10,11 @@ impl Dome {
         if x < 0. {
             return None;
         }
-        self.menu_headers()
-            .iter()
-            .position(|h| x >= h.x as f64 && x < (h.x + h.width) as f64 && h.enabled)
+        let viewport = self.menu_header_viewport(self.shell_geometry().size.w);
+        self.menu_headers().iter().enumerate()
+            .find(|(i, h)| (*i < 2 && x < viewport.left as f64 || *i >= 2 && viewport.contains(x))
+                && x >= h.x as f64 && x < (h.x + h.width) as f64 && h.enabled)
+            .map(|(i, _)| i)
     }
     pub fn menu_items(&self, m: usize) -> Vec<(String, &'static str, Command)> {
         if self.panel_menu(m) {

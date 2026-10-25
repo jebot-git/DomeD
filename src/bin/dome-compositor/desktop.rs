@@ -98,7 +98,7 @@ impl DesktopRenderer {
             state.desktop_manager,
             state.launch_query,
             size,
-            (state.menu, &state.menu_offsets),
+            (state.menu, &state.menu_offsets, state.menu_header_offset),
             state.menu_hover,
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)

@@ -480,6 +480,7 @@ impl Dome {
                 eprintln!("menu target: focus={focused:?} address={address:?}");
             }
             self.appmenu_target = (focused, address.clone());
+            self.menu_header_offset = 0;
             self.menu = None;
             self.appmenu_path.clear();
             self.menu_hover = -1;
