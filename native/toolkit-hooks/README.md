@@ -125,3 +125,12 @@ a zero-width offscreen surface for empty reader lines or zero-advance strings.
 Empty strings return before caching; remaining zero-width glyph runs receive a
 minimal allocation. Penguin Mail's native reader and composer smoke checks cover
 the original crash.
+
+`fltk-1.4.5-primary-selection.patch` adds the native Wayland PRIMARY protocol to
+the shared FLTK toolkit. Selection 0 is published system-wide; selection 1 stays
+the explicit Copy/Paste clipboard. Receives run asynchronously with widget
+lifetime tracking, and outgoing writes retain their own byte snapshot, handle
+partial writes and tolerate receiver disconnects without SIGPIPE termination.
+The FLTerm-XR private integration test exercises separate FLTK processes, external
+ownership changes and independence from the explicit clipboard. Reopen clients
+normally after installing the shared release; never restart the desktop session.

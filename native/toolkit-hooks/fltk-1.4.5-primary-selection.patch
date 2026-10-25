@@ -1,0 +1,268 @@
+--- a/src/drivers/Wayland/fl_wayland_clipboard_dnd.cxx
++++ b/src/drivers/Wayland/fl_wayland_clipboard_dnd.cxx
+@@ -27,6 +27,11 @@
+ #  include "Fl_Wayland_Graphics_Driver.H"
+ #  include "../../flstring.h" // includes <string.h>
+ 
++#  include "primary-selection-client-protocol.h"
++#  include <vector>
++#  include <signal.h>
++#  include <pthread.h>
++#  include <fcntl.h>
+ #  include <errno.h>
+ #  include <stdio.h>
+ #  include <stdlib.h>
+@@ -55,20 +60,41 @@
+ struct data_source_write_struct {
+   size_t rest;
+   char *from;
++  char *owned;
+ };
+ 
++// A destination can disappear during a large transfer. Do not let its closed
++// pipe terminate the application, and preserve the caller's signal disposition.
++static ssize_t selection_write(int fd, const char *bytes, size_t count) {
++  sigset_t blocked, previous, pending;
++  sigemptyset(&blocked); sigaddset(&blocked, SIGPIPE);
++  pthread_sigmask(SIG_BLOCK, &blocked, &previous);
++  sigpending(&pending);
++  ssize_t n = write(fd, bytes, count);
++  int saved_errno = errno;
++  if (n < 0 && saved_errno == EPIPE && !sigismember(&pending, SIGPIPE)) {
++    struct timespec zero = {0, 0};
++    while (sigtimedwait(&blocked, NULL, &zero) < 0 && errno == EINTR) {}
++  }
++  pthread_sigmask(SIG_SETMASK, &previous, NULL);
++  errno = saved_errno;
++  return n;
++}
+ void write_data_source_cb(FL_SOCKET fd, data_source_write_struct *data) {
+   while (data->rest) {
+-    ssize_t n = write(fd, data->from, data->rest);
++    ssize_t n = selection_write(fd, data->from, data->rest);
+     if (n == -1) {
+-      if (errno == EAGAIN) return;
+-      Fl::error("write_data_source_cb: error while writing clipboard data\n");
++      if (errno == EINTR) continue;
++      if (errno == EAGAIN || errno == EWOULDBLOCK) return;
++      // EPIPE is a normal receiver disconnect; release the transfer.
+       break;
+     }
++    if (n == 0) break;
+     data->from += n;
+     data->rest -= n;
+   }
+   Fl::remove_fd(fd, FL_WRITE);
++  delete[] data->owned;
+   delete data;
+   close(fd);
+ }
+@@ -84,7 +110,10 @@
+     (!strcmp(mime_type, "image/bmp") && fl_selection_type[rank] == Fl::clipboard_image) ) {
+     data_source_write_struct *write_data = new data_source_write_struct;
+     write_data->rest = fl_selection_length[rank];
+-    write_data->from = fl_selection_buffer[rank];
++    write_data->owned = new char[write_data->rest];
++    memcpy(write_data->owned, fl_selection_buffer[rank], write_data->rest);
++    write_data->from = write_data->owned;
++    fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK);
+     Fl::add_fd(fd, FL_WRITE, (Fl_FD_Handler)write_data_source_cb, write_data);
+   } else {
+     //Fl::error("Destination client requested unsupported MIME type: %s\n", mime_type);
+@@ -92,6 +121,88 @@
+   }
+ }
+ 
++
++// Native PRIMARY is separate from wl_data_device's Copy/Paste clipboard.
++static zwp_primary_selection_device_manager_v1 *primary_manager = NULL;
++static zwp_primary_selection_device_v1 *primary_device = NULL;
++static zwp_primary_selection_source_v1 *primary_source = NULL;
++static zwp_primary_selection_offer_v1 *primary_offer = NULL;
++static const char *primary_mime = NULL;
++
++static void primary_offer_type(void *, zwp_primary_selection_offer_v1 *, const char *mime) {
++  if (!strcmp(mime, wld_plain_text_clipboard)) primary_mime = wld_plain_text_clipboard;
++  else if (!primary_mime && !strcmp(mime, "text/plain")) primary_mime = "text/plain";
++}
++static const zwp_primary_selection_offer_v1_listener primary_offer_listener = {primary_offer_type};
++static void primary_data_offer(void *, zwp_primary_selection_device_v1 *, zwp_primary_selection_offer_v1 *offer) {
++  primary_mime = NULL;
++  zwp_primary_selection_offer_v1_add_listener(offer, &primary_offer_listener, NULL);
++}
++static void primary_selection(void *, zwp_primary_selection_device_v1 *, zwp_primary_selection_offer_v1 *offer) {
++  if (primary_offer && primary_offer != offer) zwp_primary_selection_offer_v1_destroy(primary_offer);
++  primary_offer = offer;
++  if (!offer) primary_mime = NULL;
++  // Ownership is established by copy(), and cancelled by the source event.
++}
++static const zwp_primary_selection_device_v1_listener primary_device_listener = {primary_data_offer, primary_selection};
++static void primary_send(void *, zwp_primary_selection_source_v1 *, const char *mime, int fd) {
++  data_source_handle_send(NULL, NULL, mime, fd);
++}
++static void primary_cancel(void *, zwp_primary_selection_source_v1 *source) {
++  if (primary_source == source) { primary_source = NULL; fl_i_own_selection[0] = 0; }
++  zwp_primary_selection_source_v1_destroy(source);
++}
++static const zwp_primary_selection_source_v1_listener primary_source_listener = {primary_send, primary_cancel};
++
++void Fl_Wayland_Screen_Driver::init_primary(struct wl_registry *registry, uint32_t id) {
++  if (id) primary_manager = (zwp_primary_selection_device_manager_v1 *)
++    wl_registry_bind(registry, id, &zwp_primary_selection_device_manager_v1_interface, 1);
++  if (primary_manager && seat && seat->wl_seat && !primary_device) {
++    primary_device = zwp_primary_selection_device_manager_v1_get_device(primary_manager, seat->wl_seat);
++    zwp_primary_selection_device_v1_add_listener(primary_device, &primary_device_listener, NULL);
++  }
++}
++void Fl_Wayland_Screen_Driver::destroy_primary() {
++  if (primary_offer) zwp_primary_selection_offer_v1_destroy(primary_offer);
++  if (primary_source) zwp_primary_selection_source_v1_destroy(primary_source);
++  if (primary_device) zwp_primary_selection_device_v1_destroy(primary_device);
++  if (primary_manager) zwp_primary_selection_device_manager_v1_destroy(primary_manager);
++  primary_offer = NULL; primary_source = NULL; primary_device = NULL; primary_manager = NULL;
++  primary_mime = NULL; fl_i_own_selection[0] = 0;
++}
++
++// A nonblocking receive lets the source run even when both windows are FLTK
++// clients on the same connection. Track the widget across asynchronous delivery.
++struct PrimaryRead {
++  Fl_Widget_Tracker receiver;
++  std::vector<char> bytes;
++  explicit PrimaryRead(Fl_Widget &w) : receiver(&w) {}
++};
++static void primary_read(FL_SOCKET fd, void *opaque) {
++  PrimaryRead *transfer = (PrimaryRead *)opaque;
++  char chunk[16384];
++  bool failed = false;
++  for (;;) {
++    ssize_t n = read(fd, chunk, sizeof chunk);
++    if (n < 0 && errno == EINTR) continue;
++    if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) return;
++    if (n <= 0) { failed = n < 0; break; }
++    if (transfer->bytes.size() + n > 64 * 1024 * 1024) { failed = true; break; }
++    transfer->bytes.insert(transfer->bytes.end(), chunk, chunk + n);
++  }
++  Fl::remove_fd(fd); close(fd);
++  if (!failed && transfer->receiver.exists()) {
++    transfer->bytes.push_back(0);
++    Fl::e_text = transfer->bytes.data();
++    Fl::e_length = transfer->bytes.size() - 1;
++    Fl::e_clipboard_type = Fl::clipboard_plain_text;
++    int previous = Fl::e_number;
++    transfer->receiver.widget()->handle(Fl::e_number = FL_PASTE);
++    Fl::e_number = previous;
++    Fl::e_text = (char *)""; Fl::e_length = 0;
++  }
++  delete transfer;
++}
+ 
+ static Fl_Window *fl_dnd_target_window = 0;
+ static wl_surface *fl_dnd_target_surface = 0;
+@@ -615,6 +726,24 @@
+ 
+ 
+ void Fl_Wayland_Screen_Driver::paste(Fl_Widget &receiver, int clipboard, const char *type) {
++  if (clipboard == 0) {
++    if (type != Fl::clipboard_plain_text) return;
++    if (fl_i_own_selection[0]) {
++      Fl::e_text = fl_selection_buffer[0] ? fl_selection_buffer[0] : (char *)"";
++      Fl::e_length = fl_selection_length[0];
++      Fl::e_clipboard_type = Fl::clipboard_plain_text;
++      receiver.handle(FL_PASTE);
++    } else if (primary_offer && primary_mime) {
++      int fds[2];
++      if (pipe2(fds, O_CLOEXEC)) return;
++      fcntl(fds[0], F_SETFL, O_NONBLOCK);
++      zwp_primary_selection_offer_v1_receive(primary_offer, primary_mime, fds[1]);
++      close(fds[1]);
++      Fl::add_fd(fds[0], FL_READ, primary_read, new PrimaryRead(receiver));
++      wl_display_flush(wl_display);
++    }
++    return;
++  }
+   if (clipboard != 1) return;
+   if (fl_i_own_selection[1]) {
+     // We already have it, do it quickly without compositor.
+@@ -658,7 +787,7 @@
+ 
+ void Fl_Wayland_Screen_Driver::copy(const char *stuff, int len, int clipboard,
+                                     const char *type) {
+-  if (!stuff || len < 0) return;
++  if (!stuff || len < 0 || clipboard < 0) return;
+ 
+   if (clipboard >= 2)
+     clipboard = 1; // Only on X11 do multiple clipboards make sense.
+@@ -673,6 +802,14 @@
+   fl_selection_length[clipboard] = len;
+   fl_i_own_selection[clipboard] = 1;
+   fl_selection_type[clipboard] = Fl::clipboard_plain_text;
++  if (clipboard == 0 && primary_device) {
++    if (primary_source) zwp_primary_selection_source_v1_destroy(primary_source);
++    primary_source = zwp_primary_selection_device_manager_v1_create_source(primary_manager);
++    zwp_primary_selection_source_v1_add_listener(primary_source, &primary_source_listener, NULL);
++    zwp_primary_selection_source_v1_offer(primary_source, wld_plain_text_clipboard);
++    zwp_primary_selection_source_v1_offer(primary_source, "text/plain");
++    zwp_primary_selection_device_v1_set_selection(primary_device, primary_source, seat->serial);
++  }
+   if (clipboard == 1) {
+     if (seat->data_source) wl_data_source_destroy(seat->data_source);
+     seat->data_source = wl_data_device_manager_create_data_source(seat->data_device_manager);
+--- a/src/drivers/Wayland/Fl_Wayland_Screen_Driver.cxx
++++ b/src/drivers/Wayland/Fl_Wayland_Screen_Driver.cxx
+@@ -1233,6 +1233,7 @@
+       }
+     }
+     wl_seat_add_listener(scr_driver->seat->wl_seat, &seat_listener, scr_driver->seat);
++    scr_driver->init_primary(wl_registry);
+     if (scr_driver->seat->data_device_manager) {
+       scr_driver->seat->data_device =
+         wl_data_device_manager_get_data_device(scr_driver->seat->data_device_manager,
+@@ -1241,6 +1242,8 @@
+                                   Fl_Wayland_Screen_Driver::p_data_device_listener, NULL);
+     }
+ 
++  } else if (strcmp(interface, "zwp_primary_selection_device_manager_v1") == 0) {
++    scr_driver->init_primary(wl_registry, id);
+   } else if (strcmp(interface, wl_data_device_manager_interface.name) == 0) {
+     if (!scr_driver->seat) scr_driver->seat =
+       (struct Fl_Wayland_Screen_Driver::seat*)calloc(1,
+@@ -1516,6 +1519,7 @@
+   wl_data_device_destroy(seat->data_device); seat->data_device = NULL;
+   wl_data_device_manager_destroy(seat->data_device_manager);
+   seat->data_device_manager = NULL;
++  destroy_primary();
+   wl_seat_destroy(seat->wl_seat); seat->wl_seat = NULL;
+   if (seat->name) free(seat->name);
+   free(seat); seat = NULL;
+--- a/src/drivers/Wayland/Fl_Wayland_Screen_Driver.H
++++ b/src/drivers/Wayland/Fl_Wayland_Screen_Driver.H
+@@ -141,6 +141,8 @@
+   // --- compute dimensions of an Fl_Offscreen
+   void offscreen_size(Fl_Offscreen o, int &width, int &height) FL_OVERRIDE;
+   int has_marked_text() const FL_OVERRIDE;
++  void init_primary(struct wl_registry *, uint32_t id = 0);
++  void destroy_primary();
+   // --- clipboard operations
+   // this one is in fl_wayland_clipboard_dnd.cxx
+   void copy(const char *stuff, int len, int clipboard, const char *type) FL_OVERRIDE;
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -798,6 +798,18 @@
+   list(APPEND STATIC_FILES "text-input-protocol.c")
+   list(APPEND SHARED_FILES "text-input-protocol.c")
+ 
++  set(INFILE ${PROTOCOLS}/unstable/primary-selection/primary-selection-unstable-v1.xml)
++  fl_check_required_file(STOP_REQUIRED ${INFILE})
++  add_custom_command(
++    OUTPUT primary-selection-protocol.c primary-selection-client-protocol.h
++    COMMAND wayland-scanner private-code ${INFILE} primary-selection-protocol.c
++    COMMAND wayland-scanner client-header ${INFILE} primary-selection-client-protocol.h
++    DEPENDS ${INFILE}
++    VERBATIM
++  )
++  list(APPEND STATIC_FILES "primary-selection-protocol.c")
++  list(APPEND SHARED_FILES "primary-selection-protocol.c")
++
+   if(STOP_REQUIRED)
+     message(FATAL_ERROR "*** Terminating: one or more required file(s) were not found. ***")
+   endif()
