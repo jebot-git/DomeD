@@ -10,7 +10,7 @@ unsafe extern "C" {
 }
 pub fn resolved_font(appearance: &dome::appearance::Appearance) -> Result<Value, String> {
     bitmap_fonts();
-    let id = CString::new(appearance.font.as_str()).map_err(|e| e.to_string())?;
+    let id = CString::new(dome::font_picker::migrated_id(&appearance.font)).map_err(|e| e.to_string())?;
     let data = unsafe { std::ffi::CStr::from_ptr(dome_bdf_font_resolve(id.as_ptr(), appearance.font_size as i32, appearance.font_scale as i32)) };
     let value: Value = serde_json::from_slice(data.to_bytes()).map_err(|e| e.to_string())?;
     if let Some(error) = value["error"].as_str() { return Err(error.to_owned()); }
@@ -18,6 +18,7 @@ pub fn resolved_font(appearance: &dome::appearance::Appearance) -> Result<Value,
 }
 pub fn normalize_appearance(appearance: &mut dome::appearance::Appearance) {
     let fonts = bitmap_fonts();
+    appearance.font = dome::font_picker::migrated_id(&appearance.font);
     let chosen = fonts.iter().find(|font| font.id == appearance.font)
         .or_else(|| fonts.iter().find(|font| font.id == "Unifont / Sans-Serif"))
         .or_else(|| fonts.first());

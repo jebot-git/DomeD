@@ -1,0 +1,11 @@
+{
+  "unicode": "17.0.0",
+  "han_default": "zh_hans",
+  "generator": "scripts/merge-script-fonts.py",
+  "files": {
+    "ark-pixel-10px-monospaced-mixed.bdf": "4abec431f6bce5399b4bb2bfad60ccacd16d8d74fcbcb3e45d91991d04157992",
+    "ark-pixel-10px-proportional-mixed.bdf": "aa819c466ff861dfda2c3df9450cc58609859cceca9617372acca14bf7e920ca",
+    "ark-pixel-12px-monospaced-mixed.bdf": "cd6c2d53692cc0d0e29a45ee8c81f006ded453c6f77cebf5427cc5ab45d38b82",
+    "ark-pixel-12px-proportional-mixed.bdf": "299da73fe9f28297cfcf653ceefad692b955a680ff9fe8ff4a8e253f327c0cd6"
+  }
+}

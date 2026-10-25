@@ -1,0 +1,9 @@
+{
+  "unicode": "17.0.0",
+  "han_default": "zh_hans",
+  "generator": "scripts/merge-script-fonts.py",
+  "files": {
+    "jelly-pixel-12px-monospaced-mixed.bdf": "df5d686409faf11dac5bba47e447c4495d4e4b04d74a33748213bbe14ebc19ba",
+    "jelly-pixel-12px-proportional-mixed.bdf": "622a8ba8cfacf485a4a25a07c239f45900a813118c4aedadc29a10261e791fa0"
+  }
+}

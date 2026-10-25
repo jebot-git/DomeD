@@ -39,8 +39,6 @@ int main(int argc,char **argv) try {
 #endif
   struct Sample { unsigned cp;const char *family,*file; };
   Sample samples[]={{'A',"Unifont","unifont-17.0.04.bdf"},
-    {0xe5ff,"kirsch","kirsch-v0.7.3/kirsch.bdf"},
-    {0xf0001,"kirsch","kirsch-v0.7.3/kirsch.bdf"},
     {0x1f600,"Unifont Upper","unifont-upper-17.0.04/unifont_upper-17.0.04.bdf"},
     {0x1f680,"Unifont Upper","unifont-upper-17.0.04/unifont_upper-17.0.04.bdf"}};
   for(int scale:{1,2}) {

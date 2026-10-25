@@ -28,6 +28,7 @@ done
 for source in "$font_runtime"/share/pango-bdf-source/*; do
     install -D -m 0644 "$source" "$stage/usr/local/share/doc/domed/pango-bdf/$(basename -- "$source")"
 done
+install -D -m 0644 "$root/docs/FONT_COLLECTIONS.md" "$stage/usr/local/share/doc/domed/FONT_COLLECTIONS.md"
 for name in README.md LICENSE THIRD-PARTY.md dome.example.json; do
     install -D -m 0644 "$root/$name" "$stage/usr/local/share/doc/domed/$name"
 done

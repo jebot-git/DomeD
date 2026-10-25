@@ -188,7 +188,7 @@ impl crate::Dome {
         dome::font_picker::describe(&crate::qt::bitmap_fonts(), &self.appearance)
     }
     pub fn appearance_row_count(&self) -> usize {
-        8 + usize::from(self.appearance_font_description().has_scripts)
+        8
     }
     pub fn appearance_click(&mut self, x: f64, y: f64, width: f64, height: f64) {
         let rows = self.appearance_row_count();
@@ -230,10 +230,10 @@ impl crate::Dome {
                     &dome::appearance::CHROME_OPACITIES, &self.appearance.opacity, direction,
                 ).unwrap();
             }
-            3 | 4 | 5 | 7 => {
+            3 | 4 | 5 => {
                 use dome::font_picker::Control;
                 let control = match row { 3 => Control::Family, 4 => Control::Face,
-                    5 => Control::Size, _ => Control::Script };
+                    _ => Control::Size };
                 dome::font_picker::adjust(&crate::qt::bitmap_fonts(), &mut self.appearance, control, direction);
             }
             6 => self.appearance.font_scale = if self.appearance.font_scale == 1 { 2 } else { 1 },

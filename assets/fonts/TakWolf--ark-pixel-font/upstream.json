@@ -1,0 +1,56 @@
+{
+  "repository": "https://github.com/TakWolf/ark-pixel-font",
+  "version": "2026.10.25",
+  "archives": [
+    {
+      "url": "https://github.com/TakWolf/ark-pixel-font/releases/download/2026.10.25/ark-pixel-font-10px-monospaced-bdf-v2026.10.25.zip",
+      "sha256": "237930570470cd6464a6273e3b04e938ab0d8695045520d0cb91f2332e523f3b"
+    },
+    {
+      "url": "https://github.com/TakWolf/ark-pixel-font/releases/download/2026.10.25/ark-pixel-font-10px-proportional-bdf-v2026.10.25.zip",
+      "sha256": "b71e8f5ba2b8a111fef09c09eb0ef1c516e2d38baf1aebd786a59b865741fe94"
+    },
+    {
+      "url": "https://github.com/TakWolf/ark-pixel-font/releases/download/2026.10.25/ark-pixel-font-12px-monospaced-bdf-v2026.10.25.zip",
+      "sha256": "6e3d56d72c312f868d0ff7000be5e453f2ca95384ab5f4f061a38ce52849f7d9"
+    },
+    {
+      "url": "https://github.com/TakWolf/ark-pixel-font/releases/download/2026.10.25/ark-pixel-font-12px-proportional-bdf-v2026.10.25.zip",
+      "sha256": "3c0e62c401075ac66d98b07a2bb415c2b1005c60203f77c748f540bb4a525735"
+    }
+  ],
+  "files": {
+    "OFL.txt": "3ab41567e68e3988ba1ef16dd2644eca95ca5648ea12e7d46e6287fc0bbe5aee",
+    "upstream-scripts.zip": "ca97cb210bd4836c821e64b952fd6ceed18abfda9ff0dd546cf9484cc98a37b0"
+  },
+  "source_files": {
+    "ark-pixel-10px-monospaced-ja.bdf": "d32ca150c94c536f1e2952d1fe525beed043bf6b9831a866b833d497f16f001a",
+    "ark-pixel-10px-monospaced-ko.bdf": "ef400ff283d75ebfea36ed3cf5fbb4795800d5904c032ba6b8cafb31b6884ee0",
+    "ark-pixel-10px-monospaced-latin.bdf": "027cbc7ae3bed42e0b180e70cbb97a3d43e44ebaeedf1cfb843297b782bc7090",
+    "ark-pixel-10px-monospaced-zh_hans.bdf": "56a4859afd484a77de90c39f5c6ecd6bfd9a7b1226432c3ab9e63676946912a7",
+    "ark-pixel-10px-monospaced-zh_hant.bdf": "186238e65058bda454a9998f465ebdcbeb4df150380424c3c34ffdd42980ca2b",
+    "ark-pixel-10px-monospaced-zh_hk.bdf": "062ddb0f643ba44565e62b6abd6ace341e6a8f7ff9da84123bfc5a317c8977c9",
+    "ark-pixel-10px-monospaced-zh_tw.bdf": "1fe64b2edb4a0a50c2efd9d7e5932de7444a6ce17ccfadc6e70db41899fb58b0",
+    "ark-pixel-10px-proportional-ja.bdf": "dade97e3bb73f85b26c104bfa96c0c9b82e7852700a5c4cf095321978f38d1c7",
+    "ark-pixel-10px-proportional-ko.bdf": "5a9b5651d7c1706a5dff8b8f37d56b6febbbf03272b8f1f06d85233cbbecda93",
+    "ark-pixel-10px-proportional-latin.bdf": "67f1c056ec4d7040c1d2cec9111cc6f257a3ed70cebb416c60461b27416e27e7",
+    "ark-pixel-10px-proportional-zh_hans.bdf": "2c4008ee045d1171a2c7e186dfb4fc19467ce7e9150c447f319d071a14247f1e",
+    "ark-pixel-10px-proportional-zh_hant.bdf": "8c62f14f490becf71637bc172f4716ef50c8ccb1fc6c2c93fbcfca097eb92ed2",
+    "ark-pixel-10px-proportional-zh_hk.bdf": "22889f4242699ff3998f50e6cef37b8df58320a14f7e52aef118ccc29952800a",
+    "ark-pixel-10px-proportional-zh_tw.bdf": "7446741f84077e1f37bd49b301964a3f16de9b7c71d94d80ebee0824ecfa00bb",
+    "ark-pixel-12px-monospaced-ja.bdf": "86257a054b7bb444669c3974be5c814f385cb467cea82410cca2485568a49516",
+    "ark-pixel-12px-monospaced-ko.bdf": "5ac406209980017f59773e80da0abe13d033f7c625661c89f72fd4509da242c9",
+    "ark-pixel-12px-monospaced-latin.bdf": "8bba11da925b270ec50fe186ea8fa041f9da2875049049cf1e392055b9c9a0a4",
+    "ark-pixel-12px-monospaced-zh_hans.bdf": "b807622996be1716b6e0754849b4bf5ebe214d029ce29e6a5f9a073bfb767493",
+    "ark-pixel-12px-monospaced-zh_hant.bdf": "31d7003d1d2b61d79ae0c3e8a6ab95edc3d451f8fc234e350f7bac77c8b233a8",
+    "ark-pixel-12px-monospaced-zh_hk.bdf": "c10f102af82258b6da5d807f9cbe9a4f7f8053536a117c3f89a4557777eceeba",
+    "ark-pixel-12px-monospaced-zh_tw.bdf": "3fbc06870e11f4c32ba0e24aa28e0de60a29bbb43fafa02001720e3299186649",
+    "ark-pixel-12px-proportional-ja.bdf": "fbce60939e426d9109d8df5f67725d2ceac9c8a0e3a906d79984590c4bf088f1",
+    "ark-pixel-12px-proportional-ko.bdf": "5d46e783f5bf1b5f5adced979bbc91232672679ca89b8ab1ac6e293d905c9aea",
+    "ark-pixel-12px-proportional-latin.bdf": "7fbe3a65b070ec79a65159fb2ea438170594c663ffe855ba1f8d60fcceb51b3d",
+    "ark-pixel-12px-proportional-zh_hans.bdf": "d1fb9a67920cd29f81d8d24c89b2fed6841f3d3e44271d8a09d9162bc424bb15",
+    "ark-pixel-12px-proportional-zh_hant.bdf": "9cc07710938b95114274432b726d8bb1baf6a333390b6fb2410a74954526e193",
+    "ark-pixel-12px-proportional-zh_hk.bdf": "c963cb81625a2ef9d0a0de0f7ff78477f5036728745aa27d23ae10d1e63ad0c0",
+    "ark-pixel-12px-proportional-zh_tw.bdf": "5d804eb97106be089089f7f84fbb30892f3eaa3e164e8c2d79675f77ca8addee"
+  }
+}

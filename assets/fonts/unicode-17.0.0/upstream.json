@@ -1,0 +1,7 @@
+{
+  "repository": "https://www.unicode.org/Public/17.0.0/ucd/Scripts.txt",
+  "files": {
+    "Scripts.txt": "9f5e50d3abaee7d6ce09480f325c706f485ae3240912527e651954d2d6b035bf",
+    "LICENSE.txt": "e7a93b009565cfce55919a381437ac4db883e9da2126fa28b91d12732bc53d96"
+  }
+}

@@ -102,12 +102,18 @@ try:
                     xd.sync()
 
                 def settings(): return json.loads(appearance.read_text())
-                def panel_height(): return 608 if settings()['font'].startswith(('Fusion Pixel ', 'Neep')) else 560
+                def panel_height(): return 560
                 def row(n):
                     g=host.get_geometry()
                     click(g.width//2+100,(g.height-panel_height())//2+60+n*48+24)
-                click(20, 18)
-                click(100, 250)  # Dome > Appearance (including the separator row)
+                # Settings now owns the Appearance entry. Use its standard shortcut
+                # and first keyboard-selected row rather than an obsolete menu offset.
+                super_code = xd.keysym_to_keycode(XK.string_to_keysym('Super_L'))
+                xtest.fake_input(xd, X.KeyPress, super_code)
+                key('comma')
+                xtest.fake_input(xd, X.KeyRelease, super_code); xd.sync()
+                time.sleep(.3)
+                key('Return'); time.sleep(.3)
                 g = host.get_geometry()
                 for expected in ['Galmuri11 / Regular','Galmuri14 / Regular','Galmuri7 / Regular','Galmuri9 / Regular']:
                     row(5);wait(lambda:settings()['font'].split(' [')[0]==expected)
@@ -122,26 +128,17 @@ try:
                     wait(lambda: settings()['font'] != before_font)
                 assert settings()['font'].startswith('Fusion Pixel '), (settings(), visited)
                 for family in ['Tekuplus', 'x12y12pxMaruMinyaHangul', 'x5y8pxNegaTape',
-                               'x5y8pxNegaClip', 'DomeD Shijimi', 'x14y24pxHeadUpDaisy']:
-                    assert family in visited, f'New font family absent from picker: {family}'
-                for _ in range(7):
-                    if ' ja / ' in settings()['font']: break
-                    before_font = settings()['font']
-                    row(7)
-                    wait(lambda: settings()['font'] != before_font)
-                assert ' ja / ' in settings()['font'], settings()
+                               'x5y8pxNegaClip', 'DomeD Shijimi', 'x14y24pxHeadUpDaisy',
+                               'Ark Pixel 12px Mono', 'Jelly Pixel 12px Mono', 'Retro Pixel Cute Mono', 'x12y12pxMaruMinya']:
+                    assert any(v == family or (family.split(' Pixel')[0]+' Pixel' in v if ' Pixel' in family else False) for v in visited), f'New font family absent from picker: {family}'
                 old=settings();native=old['font_size']
                 row(5);wait(lambda:settings()['font_size']!=native)
-                assert ' ja / ' in settings()['font'],'Size change lost the selected script'
-                before=settings()['font_size'];row(7)
-                wait(lambda:' ja / ' not in settings()['font'])
-                assert settings()['font_size']==before,'Script change lost the selected native size'
-                row(7);time.sleep(.2)
+                assert settings()['font'].split(' / ')[0].endswith(('Mono','Prop')), settings()
                 from PIL import Image
                 g=host.get_geometry();raw=host.get_image(0,0,g.width,g.height,X.ZPixmap,0xffffffff)
                 artifact=root/'artifacts/bitmap-fonts';artifact.mkdir(parents=True,exist_ok=True)
-                Image.frombytes('RGB',(g.width,g.height),raw.data,'raw','BGRX').save(artifact/'script-selection.png')
-                print('PASS: Galmuri strike cycling/wrap, conditional Fusion Pixel script selection, size/script preservation',flush=True)
+                Image.frombytes('RGB',(g.width,g.height),raw.data,'raw','BGRX').save(artifact/'mixed-script-selection.png')
+                print('PASS: Galmuri strike cycling/wrap, combined Fusion Pixel strikes and fixed eight-row panel',flush=True)
                 changes = set()
                 for index in range(160):
                     before = appearance.read_text()

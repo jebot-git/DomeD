@@ -109,7 +109,9 @@ mod tests {
         let config = export(&root, "/etc/fonts/fonts.conf", &["A&B".into()]).unwrap();
         let data = std::fs::read_to_string(&config).unwrap();
         assert!(!data.contains("A&amp;B"), "Family aliases must not admit outline fonts with the same name");
-        assert!(data.contains("kissinger2-dev5/kissinger2.bdf"));
+        assert!(data.contains("TakWolf--jelly-pixel-font/jelly-pixel-12px-monospaced-mixed.bdf"));
+        assert!(!data.contains("kissinger2"));
+        assert!(!data.contains("kirsch"));
         for (name, bytes) in crate::bundled_fonts::FONTS {
             assert_eq!(
                 std::fs::read(root.join("fonts").join(name)).unwrap(),
@@ -119,11 +121,11 @@ mod tests {
         let matched = std::process::Command::new("fc-match")
             .env("FONTCONFIG_FILE", &config)
             .args(["-f", "%{family}|%{pixelsize}|%{scalable}",
-                   "Fusion Pixel 12px Mono latin:pixelsize=12"])
+                   "Fusion Pixel 12px Mono:pixelsize=12"])
             .output().expect("Fontconfig is required for session font exports");
         assert!(matched.status.success());
         assert_eq!(String::from_utf8_lossy(&matched.stdout),
-                   "Fusion Pixel 12px Mono latin|12|False");
+                   "Fusion Pixel 12px Mono|12|False");
         let formats = std::process::Command::new("fc-list")
             .env("FONTCONFIG_FILE", &config)
             .args(["-f", "%{fontformat}\n"])
@@ -149,7 +151,7 @@ mod tests {
         assert_eq!(stable, root.join("dome-fonts/fonts.conf"));
         assert!(std::fs::read_to_string(legacy.join("fonts.conf"))
             .unwrap()
-            .contains("kissinger2.bdf"));
+            .contains("jelly-pixel-12px-monospaced-mixed.bdf"));
         assert_eq!(
             refresh_session(&root, "/etc/fonts/fonts.conf", &[]).unwrap(),
             stable

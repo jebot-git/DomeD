@@ -11,8 +11,8 @@ and claiming authorship, and retain the author’s copyright. The author disclai
 warranty and responsibility. The upstream license migration notice explicitly
 places these older downloads below the original-license section.
 
-Both MaruMinya and MaruMinyaM are intentionally excluded: DomeD includes the
-MaruMinyaHangul derivative separately. NegaTape, NegaClip and DenkiChip are
+MaruMinya is packaged separately from its upstream OFL repository, alongside
+the MaruMinyaHangul derivative. MaruMinyaM remains excluded. NegaTape, NegaClip and DenkiChip are
 packaged separately under their own upstream OFL notices.
 
 Only BDF files are shipped. See upstream.json for source hashes, native pixel

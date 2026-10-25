@@ -1,0 +1,2 @@
+# Preserve the checksum-pinned upstream CRLF author notice byte-for-byte.
+assets/fonts/hicchicc--maruminya/AUTHORS.txt -text whitespace=cr-at-eol

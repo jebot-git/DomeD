@@ -110,19 +110,21 @@ and a faint second pixel. It also applies to client-decorated and maximized
 windows. The effect follows the Appearance accent without changing window
 geometry or input regions. XR stereo windows receive an edge in each eye.
 .SH BITMAP FONTS
-The font picker offers native bitmap strikes from 12 through 24 pixels.
-Smaller installed fonts are excluded. The distribution includes GNU Unifont,
-Cozette, kirsch, UW ttyp0, Tamzen for Powerline, Spleen, Fusion Pixel,
-DungGeunMo + Fixedsys, DenkiChip Hangul and Galmuri.
+The font picker offers native BDF strikes with separate family, face, size and
+integer scale controls. The distribution includes GNU Unifont, Unifont Upper,
+Galmuri, Fusion Pixel, Ark Pixel, Jelly Pixel, Retro Pixel, MaruMinya,
+MaruMinyaHangul and the curated hicc pixel fonts. Kirsch and Kissinger2 are
+retired. Powerline and emoji coverage remains face-dependent; the retired
+Kirsch private-use Nerd Font glyphs are no longer bundled.
 .PP
-DungGeunMo is provided as a reproducible 16-pixel monochrome bitmap conversion
-and covers all 11,172 modern Hangul syllables. Cozette and kirsch provide partial
-Nerd Font coverage; several other faces provide Powerline symbols. Coverage
-varies by face. GNU Unifont covers the tested Arabic, Thai, CJK, Cyrillic and
-European samples. The actual default family name is Unifont.
+Fusion Pixel, Ark Pixel and Jelly Pixel combine their regional source strikes
+into one mixed-script BDF per size and spacing mode. Unicode 17 Script selects
+Kana from Japanese, Hangul from Korean and Bopomofo from Taiwanese sources.
+Unified Han code points cannot identify regional forms; they use the
+Simplified Chinese source with a stable missing-glyph fallback order.
+Existing Fusion Pixel language selections migrate to the combined strike.
+There is no separate script control.
 .PP
-Galmuri7's 10-pixel strike is removed. Existing smaller saved selections
-migrate to Unifont at 16 pixels without resetting colours and opacity.
 Font licenses and provenance are installed under
 /usr/local/share/doc/domed/fonts.
 .SH GMSH STEREO VIEW

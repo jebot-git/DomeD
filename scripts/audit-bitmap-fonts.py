@@ -54,7 +54,7 @@ for manifest in assets.glob('*/upstream.json'):
 info = json.loads((assets / 'upstream.json').read_text())
 assert hashlib.sha256((assets / 'unifont-17.0.04.bdf').read_bytes()).hexdigest() == info['sha256_uncompressed']
 for sample in samples:
-    if sample == 'Nerd Font extended sample': continue
+    if sample.startswith('Nerd Font'): continue # Kirsch's private-use icons were retired with the font
     assert any(r['samples'][sample] for r in records), f'No bundled face covers {sample}'
 distributed = {str(p.relative_to(assets)) for p in assets.rglob('*')
                if p.suffix == '.bdf' and p.name != 'upstream.bdf'}
@@ -69,13 +69,15 @@ allowed=set(json.loads((assets/'collections.json').read_text())['families'])
 def family(name):
     name=name.split(' [')[0]
     if name.startswith('Galmuri'):return 'Galmuri'
-    if name.startswith('Fusion Pixel'):return 'Fusion Pixel'
+    for prefix in ['Fusion Pixel', 'Jelly Pixel', 'Ark Pixel', 'Retro Pixel']:
+        if name.startswith(prefix):return prefix
     if name.startswith('Neep'):return 'Neep'
     if name.startswith('Kissinger 2'):return 'Kissinger2'
     return re.sub(r'^x\d+y\d+px', '', {'qub':'QUB'}.get(name,name))
 assert {family(r['family']) for r in records} == allowed, 'Only the requested default families may be bundled'
 assert all(r['file'].endswith('.bdf') for r in records)
-assert not any(r['family'] in {'x12y12pxMaruMinya', 'x12y12pxMaruMinyaM'} for r in records)
+assert any(r['family'] == 'x12y12pxMaruMinya' for r in records)
+assert not any(r['family'] == 'x12y12pxMaruMinyaM' for r in records)
 assert {r['style'] for r in records if r['family'] == 'Tekuplus'} == {'Regular', 'Bold'}
 # The upper-plane BDF must preserve every native source bitmap exactly.
 upper = assets / 'unifont-upper-17.0.04'
@@ -86,7 +88,7 @@ for block in (upper/'unifont_upper-17.0.04.bdf').read_text().split('STARTCHAR ')
     cp = int(re.search(r'^ENCODING (\d+)$', block, re.M)[1])
     packaged[cp] = re.split(r'BITMAP[ \t]*\n', block)[1].split('ENDCHAR')[0].replace('\n','').upper()
 assert source == packaged, 'Unifont Upper must retain every native HEX glyph pixel'
-assert not any(family(r['family']) in {'QUB','Neep','Cozette','uni16m','Zpix'} for r in records)
+assert not any(family(r['family']) in {'QUB','Neep','Cozette','uni16m','Zpix','kirsch','Kissinger2'} for r in records)
 out = root / 'artifacts/bitmap-fonts'
 out.mkdir(parents=True, exist_ok=True)
 (out / 'coverage.json').write_text(json.dumps({'samples': samples, 'fonts': records}, ensure_ascii=False, indent=2) + '\n')

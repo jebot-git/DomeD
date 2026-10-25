@@ -903,8 +903,7 @@ extern "C" int dome_qt_paint(const char *json, unsigned char *pixels,
       bool keyboard =
           o.contains("keyboard_settings") && o["keyboard_settings"].is_object();
       auto fontChoice = obj(o, "appearance_font");
-      bool scripts = yes(fontChoice, "has_scripts");
-      int panelHeight = keyboard ? 400 : 560 + (scripts ? 48 : 0);
+      int panelHeight = keyboard ? 400 : 560;
       int x = (w - 600) / 2, y = (h - panelHeight) / 2;
       p.rect(x, y, 600, panelHeight, p.bg);
       p.text(x + 24, y + 18, 552, 32,
@@ -933,7 +932,6 @@ extern "C" int dome_qt_paint(const char *json, unsigned char *pixels,
         if (!fontChoice.empty()) {
           values[3] = str(fontChoice, "family"); values[4] = str(fontChoice, "face"); values[5] = str(fontChoice, "size");
         }
-        if (scripts) { labels.insert(labels.begin() + 7, "Font script"); values.insert(values.begin() + 7, str(fontChoice, "script")); }
         for (int n = 0; n < int(labels.size()); ++n) {
           p.text(x + 24, y + 60 + n * 48, 270, 40, labels[n], p.fg);
           p.button(x + 300, y + 60 + n * 48, 276, 40, values[n],

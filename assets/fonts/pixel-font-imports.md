@@ -54,6 +54,6 @@ FreeType and zlib to check application discovery and exact 2x replication.
 
 The website’s older nine fonts use its **original license**, retained verbatim
 in `hicchicc--00ff/LICENSE-upstream.html`; they are not relabeled OFL. NegaTape,
-NegaClip and DenkiChip have separate upstream OFL notices. MaruMinya and
-MaruMinyaM TTFs are deliberately excluded in favor of MaruMinyaHangul. Original
+NegaClip and DenkiChip have separate upstream OFL notices. MaruMinya is now imported separately from its OFL repository alongside
+MaruMinyaHangul; MaruMinyaM remains excluded. Original
 README/license files and font copyright properties accompany the collection.

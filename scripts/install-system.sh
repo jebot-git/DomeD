@@ -39,6 +39,7 @@ files=(
     usr/share/xdg-desktop-portal/portals/dome-screencast.portal
     usr/share/wayland-sessions/dome.desktop
     usr/local/share/applications/org.domed.Compositor.desktop
+    usr/local/share/doc/domed/FONT_COLLECTIONS.md
     usr/local/share/doc/domed/README.md
     usr/local/share/doc/domed/LICENSE
     usr/local/share/doc/domed/THIRD-PARTY.md

@@ -1,0 +1,25 @@
+{
+  "repository": "https://github.com/TakWolf/retro-pixel-font",
+  "version": "2026.09.18",
+  "archives": [
+    {
+      "url": "https://github.com/TakWolf/retro-pixel-font/releases/download/2026.09.18/retro-pixel-font-bdf-v2026.09.18.zip",
+      "sha256": "a819d526c83f77e9fd5d49ce6b0f32ead1ec2591cbd8d39d5d00b88b66e8cceb"
+    }
+  ],
+  "files": {
+    "OFL.txt": "fef832d4651226c082ff6164463662e8e97b674396d276bd4a1db1e3e8f70f01",
+    "arcade/retro-pixel-arcade.bdf": "0c313b9145651948a9d525b659cfba2ccafba56cece504acf9457cab60d52f37",
+    "arcade/preview.png": "fb8509b9f3be0e95ba2bd1e5cfd28ebe1e8c9d5a54aa9d585a8c7c99a1d3658e",
+    "cute-mono/retro-pixel-cute-mono.bdf": "01e186835d8c7c9d14a4fab4b5d43973a1907e6ce6129979340a2b0960725297",
+    "cute-mono/preview.png": "1f0ceebb3842fc0f751d5e97217d87b4fb129369b05eb46a133ca040b8821cff",
+    "cute-prop/retro-pixel-cute-prop.bdf": "cfe46e6c9fc73392f998931b69e25facd2607ccd695aa09ce5e1be055d1d77a4",
+    "cute-prop/preview.png": "64ed91bae9c77780f841c960f0cef0f6abea71d335f0f8d612918b8164b065df",
+    "petty-5h/retro-pixel-petty-5h.bdf": "27ef682a54f55c8ff74c46a7d7f6df9f320672ee40316f2db7c8d3c143c3cf49",
+    "petty-5h/preview.png": "f53864bbf5bd721d8002ce1b5744f67bf3d8bc3a47d18fe7f22e07b4d5d212ef",
+    "petty-5x5/retro-pixel-petty-5x5.bdf": "b240b9c398d8ee0187891c85a3b80473e8a17f35ce62945ae676023bf4d49c69",
+    "petty-5x5/preview.png": "b9d6715f12f55a1298e9ab5bb0325e015ee4001768589e913041d48976071381",
+    "thick/retro-pixel-thick.bdf": "86332ed3dd51d82fdcd42481cc6c0d7173c02caad81f5719d519a196b5277090",
+    "thick/preview.png": "09f6068a39f17ca0936f8e19dbed7d790e55e0e413a443e09dd63d2d13aeadfd"
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "repository": "https://github.com/TakWolf/jelly-pixel-font",
+  "version": "2026.10.25",
+  "archives": [
+    {
+      "url": "https://github.com/TakWolf/jelly-pixel-font/releases/download/2026.10.25/jelly-pixel-font-12px-monospaced-bdf-v2026.10.25.zip",
+      "sha256": "30e43799816ca415ebb1a82a6b92198f73b18b7a325096423a1287fbc8101617"
+    },
+    {
+      "url": "https://github.com/TakWolf/jelly-pixel-font/releases/download/2026.10.25/jelly-pixel-font-12px-proportional-bdf-v2026.10.25.zip",
+      "sha256": "5597c1ee9de1364158fb1f54a550dd694e183405aa23573461c0e2fe28fdd04f"
+    }
+  ],
+  "files": {
+    "OFL.txt": "44de2cc9f9a5b596060bc313f72d79ca065523985c8bfc37e46db81e78c38b6f",
+    "upstream-scripts.zip": "8032026a887c1cb91192b6fe47f38c83ca7f71db39cee0a4d698f90d0e2d8c0f"
+  },
+  "source_files": {
+    "jelly-pixel-12px-monospaced-ja.bdf": "2e807c40cdf65bd955824fcc495efd6d5fd7b3f3c00c8e064cd9599c79399dd5",
+    "jelly-pixel-12px-monospaced-ko.bdf": "998b61090cabd3e56fa028b515169d2a4a2c284a17b2777c9fd9ef4e808953f9",
+    "jelly-pixel-12px-monospaced-latin.bdf": "326e2ec5670b9ffcd4b70005a8ed0290c15524a932d89c16b4a7a13fba771946",
+    "jelly-pixel-12px-monospaced-zh_hans.bdf": "f7ba28c64614c07cd1a1ec232a6c8c7e67af0b55f383c40fe0c398fd236764db",
+    "jelly-pixel-12px-monospaced-zh_hant.bdf": "96bc43715d7f767965f0572ae37faaa8bb4b31581b2d79cdc602e2fbaea5f27d",
+    "jelly-pixel-12px-monospaced-zh_hk.bdf": "3b9df9594d907890dadb5a845634f8c89deaf2e0a108182c9a99b85b0f4fe5b6",
+    "jelly-pixel-12px-monospaced-zh_tw.bdf": "740f9a2d63471a1000ff0989c3fbeb0393cd30b650b0d0719626bb28a6f1948c",
+    "jelly-pixel-12px-proportional-ja.bdf": "34fabfdfe4f0b5521c5bc92da35dd910eb9a92c6c9c001c967c334a6758bb809",
+    "jelly-pixel-12px-proportional-ko.bdf": "3b4dda77248b45875c025ddd4a0a362a1e25c9fc72a6bd7ee9094185e46392fb",
+    "jelly-pixel-12px-proportional-latin.bdf": "42261764f6a1fa5adc53449306e55c4f2c208e97d174b6864e63be2257804141",
+    "jelly-pixel-12px-proportional-zh_hans.bdf": "82789daebe061c1ca02fc8ccec105357712abd578f44b8aad9b8867d52e9aaa1",
+    "jelly-pixel-12px-proportional-zh_hant.bdf": "3f78855d5cf7e321d7f3aedeec7546afced0379139ace729c4a5baa964330ee5",
+    "jelly-pixel-12px-proportional-zh_hk.bdf": "cb7050badff20ba5d496d052e86b3804b0a6c337c5ab4f50a9e415eec574ee85",
+    "jelly-pixel-12px-proportional-zh_tw.bdf": "e0c496da80d33734bb3cd0907053d4e72c5937db584ee1a65709b0905c5f86ac"
+  }
+}

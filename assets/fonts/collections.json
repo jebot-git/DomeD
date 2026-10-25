@@ -7,16 +7,6 @@
       "directory": "akahuku--ufo"
     },
     {
-      "name": "Kissinger2",
-      "url": "https://typedesign.replit.app/kissinger2.html",
-      "directory": "kissinger2-dev5"
-    },
-    {
-      "name": "kirsch",
-      "url": "https://github.com/molarmanful/kirsch",
-      "directory": "kirsch-v0.7.3"
-    },
-    {
       "name": "Unifont Upper",
       "url": "https://unifoundry.com/unifont/",
       "directory": "unifont-upper-17.0.04"
@@ -55,6 +45,26 @@
       "name": "00ff original-license collection",
       "url": "https://github.com/hicchicc/hicchicc.github.io",
       "directory": "hicchicc--00ff"
+    },
+    {
+      "name": "Jelly Pixel",
+      "url": "https://github.com/TakWolf/jelly-pixel-font",
+      "directory": "TakWolf--jelly-pixel-font"
+    },
+    {
+      "name": "Retro Pixel",
+      "url": "https://github.com/TakWolf/retro-pixel-font",
+      "directory": "TakWolf--retro-pixel-font"
+    },
+    {
+      "name": "Ark Pixel",
+      "url": "https://github.com/TakWolf/ark-pixel-font",
+      "directory": "TakWolf--ark-pixel-font"
+    },
+    {
+      "name": "MaruMinya",
+      "url": "https://github.com/hicchicc/x12y12pxMaruMinya",
+      "directory": "hicchicc--maruminya"
     }
   ],
   "families": [
@@ -63,8 +73,6 @@
     "Galmuri",
     "Fusion Pixel",
     "UFO16",
-    "Kissinger2",
-    "kirsch",
     "Unifont Upper",
     "Tekuplus",
     "MaruMinyaHangul",
@@ -80,6 +88,10 @@
     "ScoreDozer",
     "HeadUpDaisy",
     "GridGazer",
-    "TheStrongGamer"
+    "TheStrongGamer",
+    "Jelly Pixel",
+    "Retro Pixel",
+    "Ark Pixel",
+    "MaruMinya"
   ]
 }
