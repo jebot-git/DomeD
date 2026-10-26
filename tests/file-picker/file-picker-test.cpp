@@ -6,6 +6,8 @@
 #include <FL/Fl_File_Browser.H>
 #include <FL/Fl_File_Chooser.H>
 #include <FL/Fl_File_Input.H>
+#include <FL/Fl_Hold_Browser.H>
+#include <FL/Fl_Menu_Button.H>
 #include <FL/Fl_Native_File_Chooser.H>
 #include <FL/Fl_RGB_Image.H>
 #include <FL/Fl_Window.H>
@@ -55,16 +57,19 @@ struct Picker {
   Fl_Window &window;
   Fl_File_Chooser &chooser;
   Fl_File_Browser *files = nullptr;
+  Fl_Hold_Browser *places = nullptr;
   Fl_File_Input *filename = nullptr;
   Fl_Choice *sort = nullptr, *direction = nullptr;
-  Fl_Check_Button *folders = nullptr, *details = nullptr, *hidden = nullptr;
-  Fl_Button *refresh = nullptr, *okay = nullptr;
+  Fl_Check_Button *folders = nullptr, *details = nullptr, *hidden = nullptr, *showPlaces = nullptr;
+  Fl_Button *refresh = nullptr, *okay = nullptr, *addPlace = nullptr, *managePlaces = nullptr;
   Picker(Fl_Window &w, Fl_File_Chooser &c) : window(w), chooser(c) {
     for (auto p : widgets(w)) {
       if (auto b = dynamic_cast<Fl_File_Browser *>(p))
         files = b;
       if (auto b = dynamic_cast<Fl_File_Input *>(p))
         filename = b;
+      if (auto b = dynamic_cast<Fl_Hold_Browser *>(p))
+        if (b->label() && std::string(b->label()) == "Places") places = b;
       if (auto b = dynamic_cast<Fl_Choice *>(p)) {
         if (b->find_item("Modified"))
           sort = b;
@@ -79,6 +84,7 @@ struct Picker {
           details = b;
         if (label == "Show hidden files")
           hidden = b;
+        if (label == "Places") showPlaces = b;
       }
       if (auto b = dynamic_cast<Fl_Button *>(p)) {
         std::string label = b->label() ? b->label() : "";
@@ -86,11 +92,21 @@ struct Picker {
           refresh = b;
         if (label == "OK" || label == "Save")
           okay = b;
+        if (label == "Add") addPlace = b;
+        if (label == "Manage") managePlaces = b;
       }
     }
     require(files && filename && sort && direction && folders && details && refresh && okay &&
-                hidden,
+                hidden && places && showPlaces && addPlace && managePlaces,
             "Enhanced shared file-picker controls missing");
+  }
+  int placeRow(const std::string &name) {
+    for (int i=1;i<=places->size();++i) if (name == places->text(i)) return i;
+    return 0;
+  }
+  void place(const std::string &name) {
+    int row=placeRow(name); require(row != 0, ("Missing place: "+name).c_str());
+    places->value(row); places->do_callback(); settle();
   }
   int row(const std::string &name) {
     for (int i = 1; i <= files->size(); ++i)
@@ -140,9 +156,18 @@ struct NativeCase {
     auto c = static_cast<Fl_File_Chooser *>(w->user_data());
     try {
       Picker p(*w, *c);
+      p.place("Documents");
+      require(fs::path(c->directory()) == test.root / "書類 テスト", "Native picker navigates Places");
+      p.place("Home");
       if (test.mode == Fl_Native_File_Chooser::BROWSE_SAVE_FILE) {
         auto wanted = (test.root / "new output 日本語.txt").string();
         c->value(wanted.c_str());
+        p.place("Documents");
+        require(fs::path(c->directory()) == test.root / "書類 テスト" &&
+                fs::path(p.filename->value()) == test.root / "書類 テスト/new output 日本語.txt",
+                "Places preserves a save basename even when a destination folder has that name");
+        p.place("Home");
+        require(wanted == p.filename->value(), "Places preserves Unicode save filename");
         p.order(1, true);
         require(wanted == p.filename->value(), "Sorting changed a typed save filename");
       } else if (test.mode == Fl_Native_File_Chooser::BROWSE_DIRECTORY) {
@@ -179,6 +204,44 @@ int main(int argc, char **argv) try {
   } cleanup{root};
   setenv("HOME", temporary, 1);
   setenv("XDG_CONFIG_HOME", (root / "config").c_str(), 1);
+  if (std::string(getenv("FLTK_BACKEND") ? getenv("FLTK_BACKEND") : "") != "wayland")
+    setenv("XDG_RUNTIME_DIR", (root / "runtime").c_str(), 1);
+  else require(getenv("DOME_PICKER_PRIVATE_RUNTIME") && std::string(getenv("DOME_PICKER_PRIVATE_RUNTIME"))=="1",
+               "Use the private Wayland fixture driver");
+  fs::create_directories(root / "config/gtk-3.0");
+  fs::create_directories(root / "config/fsvr");
+  fs::create_directories(root / "書類 テスト/new output 日本語.txt");
+  fs::create_directories(root / "Desk top");
+  fs::create_directories(root / "Native favorite");
+  fs::create_directories(root / "Bookmarked folder");
+  std::ofstream(root / "config/user-dirs.dirs")
+    << "XDG_DOCUMENTS_DIR=\"$HOME/書類 テスト\"\n"
+       "XDG_DESKTOP_DIR=\"${HOME}/Desk top\"\n"
+       "XDG_DOWNLOAD_DIR=\"$HOME\"\n"
+       "XDG_MUSIC_DIR=\"$(touch " << (root/"must-not-execute").string() << ")\"\n";
+  auto uri = [](const fs::path &path) {
+    std::string result="file://";
+    for (unsigned char c : path.string()) {
+      if (c == ' ' || c == '%' || c >= 128) {
+        char encoded[4]; snprintf(encoded,sizeof(encoded),"%%%02X",unsigned(c)); result+=encoded;
+      } else result+=char(c);
+    }
+    return result;
+  };
+  std::ofstream(root / "config/gtk-3.0/bookmarks")
+    << uri(root/"Bookmarked folder") << " @b日本語 bookmark\n"
+    << uri(root/"Bookmarked folder") << " Duplicate bookmark\n"
+    << "file://other-host/remote Remote bookmark\n"
+       "file:///broken%00path NUL bookmark\n"
+       "file:///broken%xxpath Invalid bookmark\n"
+       "smb://unmounted/share Unmounted share\n";
+  std::ofstream(root / "config/fsvr/places") << uri(root/"Unavailable folder") << " Offline bookmark\n";
+  fs::path connected=fs::path(getenv("XDG_RUNTIME_DIR"))/"gvfs/smb-share:server=fixture,share=demo";
+  fs::create_directories(connected);
+  {
+    Fl_Preferences prefs(Fl_Preferences::CORE_USER,"fltk.org","filechooser");
+    prefs.set("favorite00",(root/"Native favorite").c_str()); prefs.flush();
+  }
   fs::create_directories(root / "folder2");
   fs::create_directories(root / "folder10");
   std::ofstream(root / "file2.txt") << std::string(30, 'x');
@@ -204,6 +267,41 @@ int main(int argc, char **argv) try {
     auto w = window("Shared file picker test");
     require(w, "Chooser window");
     Picker p(*w, c);
+    require(p.places->visible_r() && p.showPlaces->value(), "Places is visible by default");
+    require(p.placeRow("Home") && p.placeRow("File System") && p.placeRow("Documents") &&
+            p.placeRow("Desktop") && p.placeRow("Native favorite") && p.placeRow("@b日本語 bookmark") &&
+            p.placeRow("Offline bookmark") && p.placeRow("demo on fixture"), "Places sources and Unicode labels");
+    require(!p.placeRow("Downloads") && !p.placeRow("Duplicate bookmark") && !p.placeRow("Remote bookmark") &&
+            !p.placeRow("NUL bookmark") && !p.placeRow("Invalid bookmark") && !p.placeRow("Unmounted share") &&
+            !fs::exists(root/"must-not-execute"), "Places deduplicates, rejects malformed URLs and never executes XDG values");
+    p.place("@b日本語 bookmark"); require(fs::path(c.directory()) == root/"Bookmarked folder", "Imported bookmark navigation");
+    p.place("demo on fixture"); require(fs::path(c.directory()) == connected, "Already-connected network location navigation");
+    p.place("Home");
+    c.directory((root/"folder2").c_str()); p.addPlace->do_callback();
+    require(p.placeRow("folder2") && !p.addPlace->active(), "Add synchronizes native Favorites and prevents duplicates");
+    p.managePlaces->do_callback(); settle();
+    auto manage=window("Manage Favorites"); require(manage, "Existing Favorites manager opens");
+    Fl_File_Browser *favorites=nullptr; Fl_Button *remove=nullptr,*save=nullptr;
+    for (auto widget : widgets(*manage)) {
+      if (auto b=dynamic_cast<Fl_File_Browser *>(widget)) favorites=b;
+      if (auto b=dynamic_cast<Fl_Button *>(widget)) {
+        std::string label=b->label() ? b->label() : "";
+        if (label=="X") remove=b;
+        if (label=="Save") save=b;
+      }
+    }
+    require(favorites && remove && save,"Native Favorites management controls");
+    for (int i=1;i<=favorites->size();++i)
+      if (fs::path(favorites->text(i))==root/"folder2") { favorites->value(i); favorites->do_callback(); break; }
+    remove->do_callback(); save->do_callback(); settle();
+    require(!p.placeRow("folder2"), "Removing a native Favorite refreshes Places");
+    p.place("Home");
+    c.directory((root/"missing-folder").c_str()); settle();
+    require(p.places->visible_r(), "Places remains usable when the file listing fails");
+    p.place("Home"); require(p.files->visible_r() && p.row("file2.txt"), "Places recovers from an unavailable directory");
+    p.showPlaces->value(0); p.showPlaces->do_callback(); settle();
+    require(!p.places->visible_r(), "Places can be hidden");
+    p.showPlaces->value(1); p.showPlaces->do_callback(); settle();
     p.order(0);
     p.checkParent();
     require(p.row("folder2/") < p.row("folder10/") && p.row("file2.txt") < p.row("file10.bin"),
@@ -249,9 +347,12 @@ int main(int argc, char **argv) try {
     w->size(720, 420);
     settle();
     require(p.refresh->x() + p.refresh->w() <= w->w(), "Controls must fit minimum width");
+    require(p.showPlaces->x()+p.showPlaces->w() <= p.refresh->x(), "Places toggle fits the toolbar");
     c.preview(1);
     settle();
     require(p.files->x() + p.files->w() <= w->w(), "Preview and details must resize together");
+    require(p.places->visible_r() && p.places->x()+p.places->w() < p.files->x(),
+            "Places and file details do not overlap at minimum width with preview");
     capture(*w, out / "picker-narrow.ppm");
     c.preview(0);
     w->size(960, 600);
@@ -259,6 +360,7 @@ int main(int argc, char **argv) try {
     p.folders->do_callback();
     p.order(1, true);
     capture(*w, out / "picker-details.ppm");
+    p.showPlaces->value(0); p.showPlaces->do_callback();
     c.hide();
   }
   {
@@ -269,6 +371,8 @@ int main(int argc, char **argv) try {
     require(p.sort->value() == 1 && p.direction->value() == 1 && p.folders->value() == 1 &&
                 p.details->value() == 1,
             "Sort and details preferences must survive chooser destruction");
+    require(!p.showPlaces->value() && !p.places->visible_r(), "Places visibility persists across chooser instances");
+    p.showPlaces->value(1); p.showPlaces->do_callback();
     c.hide();
   }
   for (int mode :
@@ -300,6 +404,7 @@ int main(int argc, char **argv) try {
   std::cout
       << "PASS shared chooser natural/size/type/date sorting, direction, parent/folder order, "
          "hidden files, persistent settings, selection/filename preservation, preview/resizing "
+         "Places/XDG/Favorites/bookmarks/connected locations, safe parsing, error recovery "
          "and native open/multiple/save/directory results; ABI size="
       << sizeof(Fl_File_Chooser) << '\n';
 } catch (const std::exception &e) {

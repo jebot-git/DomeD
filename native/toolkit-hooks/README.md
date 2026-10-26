@@ -146,6 +146,28 @@ windows hide secondary columns. The Details toggle provides a compact name list.
 Refresh/F5 reloads the current directory. Existing filtering, hidden files,
 favorites, previews and folder creation remain available.
 
+`fltk-1.4.5-file-picker-places.patch` adds the optional **Places** sidebar to
+that shared picker. It shows Home, existing XDG user folders, File System,
+native Favorites, local FSVR/GTK bookmarks and mounted user volumes. Connected
+GVfs locations appear as devices and use their existing filesystem exports;
+the picker does not mount shares or request network credentials. Remote URL
+bookmarks without a local path are omitted. Duplicate paths are shown once.
+
+Click a place to navigate; use the keyboard arrows and Enter to open it.
+**Add** saves the current folder through FLTK's existing Favorites mechanism;
+**Manage** opens its existing reorder/remove dialog. Imported bookmarks remain
+managed by their originating applications. Refresh/F5 reloads the Places list
+along with the file listing. Missing bookmarks stay listed and report an error
+only when opened. XDG user-directory values are parsed without executing shell
+commands. Import size and row counts are bounded.
+
+The Places toggle persists with the picker preferences. A save dialog retains
+the typed basename when switching folders; an open dialog clears its previous
+file selection. The sidebar remains usable when a directory listing fails,
+fits beside the optional preview, and hides if the file pane becomes too narrow.
+Both the generated chooser code and FLUID source retain the hooks. The patch
+preserves public headers, class layouts and existing shared-library exports.
+
 Sorting and details preferences use FLTK's existing user filechooser preferences.
 Reordering preserves the selected file set and the filename field, including a
 new save filename. Metadata is collected once per directory reload, not during
@@ -177,3 +199,6 @@ the active desktop. Tests cover natural numeric ordering, size/type/date and
 reverse ordering, folder/parent placement, hidden-file reloads, saved settings,
 multiselection and save-name preservation, preview toggling, minimum-size layout,
 and native single-file, multiple-file, save-file and directory return values.
+They also cover Places sources, Unicode and escaped bookmarks, duplicate and
+malformed entries, Favorites add/remove synchronization, save-name preservation
+across Places, error recovery and persistent sidebar visibility.

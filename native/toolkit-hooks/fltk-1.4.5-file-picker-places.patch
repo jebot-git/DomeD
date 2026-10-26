@@ -1,0 +1,615 @@
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index 602307e..3d8d077 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -52,6 +52,7 @@ set(CPPFILES
+   Fl_File_Chooser.cxx
+   Fl_File_Chooser2.cxx
+   Fl_File_Chooser_Details.cxx
++  Fl_File_Chooser_Places.cxx
+   Fl_File_Icon.cxx
+   Fl_File_Input.cxx
+   Fl_Flex.cxx
+diff --git a/src/Fl_File_Chooser.cxx b/src/Fl_File_Chooser.cxx
+index 0cab98f..88d1c42 100644
+--- a/src/Fl_File_Chooser.cxx
++++ b/src/Fl_File_Chooser.cxx
+@@ -316,6 +316,7 @@ Fl_File_Chooser::Fl_File_Chooser(const char *pathname, const char *pattern, int
+   directory_[0] = 0;
+   window->size_range(window->w(), window->h());
+   fl_file_chooser_details_init(fileList, this, window, prefs_);
++  fl_file_chooser_details_places_init(fileList, favoritesButton, errorBox, fileName, okButton);
+   type(type_val);
+   filter(pattern);
+   update_favorites();
+diff --git a/src/Fl_File_Chooser.fl b/src/Fl_File_Chooser.fl
+index 222d3be..098e352 100644
+--- a/src/Fl_File_Chooser.fl
++++ b/src/Fl_File_Chooser.fl
+@@ -247,6 +247,7 @@ data_ = 0;
+ directory_[0] = 0;
+ window->size_range(window->w(), window->h());
+ fl_file_chooser_details_init(fileList, this, window, prefs_);
++  fl_file_chooser_details_places_init(fileList, favoritesButton, errorBox, fileName, okButton);
+ type(type_val);
+ filter(pattern);
+ update_favorites();
+diff --git a/src/Fl_File_Chooser2.cxx b/src/Fl_File_Chooser2.cxx
+index 974dab5..3018924 100644
+--- a/src/Fl_File_Chooser2.cxx
++++ b/src/Fl_File_Chooser2.cxx
+@@ -1048,7 +1048,7 @@ void Fl_File_Chooser::preview(int e)
+     int w = p->w() * 2 / 3;
+     panel->resize(panel->x(), panel->y(), w, panel->h());
+     errorBox->resize(errorBox->x(), errorBox->y(), w, errorBox->h());
+-    previewBox->resize(fileList->x()+w, previewBox->y(), p->w()-w, previewBox->h());
++    previewBox->resize(panel->x()+w, previewBox->y(), p->w()-w, previewBox->h());
+     previewBox->show();
+     update_preview();
+   } else {
+@@ -1237,6 +1237,7 @@ Fl_File_Chooser::update_favorites()
+   }
+ 
+   if (i == 100) ((Fl_Menu_Item *)favoritesButton->menu())[0].deactivate();
++  fl_file_chooser_details_places_refresh(fileList);
+ }
+ 
+ 
+diff --git a/src/Fl_File_Chooser_Details.H b/src/Fl_File_Chooser_Details.H
+index 71358c0..7103fb1 100644
+--- a/src/Fl_File_Chooser_Details.H
++++ b/src/Fl_File_Chooser_Details.H
+@@ -6,8 +6,15 @@ class Fl_File_Browser;
+ class Fl_File_Chooser;
+ class Fl_Window;
+ class Fl_Preferences;
++class Fl_Menu_Button;
++class Fl_Box;
++class Fl_File_Input;
++class Fl_Return_Button;
+ Fl_File_Browser *fl_file_chooser_details_browser(Fl_File_Browser *);
+ void fl_file_chooser_details_init(Fl_File_Browser *, Fl_File_Chooser *, Fl_Window *,
+                                   Fl_Preferences *);
++void fl_file_chooser_details_places_init(Fl_File_Browser *, Fl_Menu_Button *, Fl_Box *,
++                                         Fl_File_Input *, Fl_Return_Button *);
+ void fl_file_chooser_details_refresh(Fl_File_Browser *, const char *);
++void fl_file_chooser_details_places_refresh(Fl_File_Browser *);
+ #endif
+diff --git a/src/Fl_File_Chooser_Details.cxx b/src/Fl_File_Chooser_Details.cxx
+index 759846d..6e6fa4e 100644
+--- a/src/Fl_File_Chooser_Details.cxx
++++ b/src/Fl_File_Chooser_Details.cxx
+@@ -1,5 +1,6 @@
+ // Sortable native file chooser, distributed under FLTK's COPYING terms.
+ #include "Fl_File_Chooser_Details.H"
++#include "Fl_File_Chooser_Places.H"
+ #include <FL/Fl.H>
+ #include <FL/Fl_Button.H>
+ #include <FL/Fl_Check_Button.H>
+@@ -70,6 +71,8 @@ class DetailsPanel : public Fl_Group {
+ public:
+   DetailsBrowser *browser;
+   Fl_Button *headers[4];
++  Fl_Chooser_Places *places;
++  Fl_Box *error = 0;
+   DetailsPanel(int, int, int, int);
+   void layout();
+   void resize(int, int, int, int) FL_OVERRIDE;
+@@ -81,12 +84,12 @@ public:
+ class DetailsToolbar : public Fl_Group {
+ public:
+   Fl_Choice key, direction;
+-  Fl_Check_Button folders, details;
++  Fl_Check_Button folders, details, places;
+   Fl_Button refresh;
+   DetailsToolbar(int X, int Y, int W)
+-      : Fl_Group(X, Y, W, 30), key(X + 60, Y, 140, 30, "Sort by:"), direction(X + 210, Y, 120, 30),
+-        folders(X + 340, Y, 130, 30, "Folders first"), details(X + 480, Y, 90, 30, "Details"),
+-        refresh(X + W - 90, Y, 90, 30, "Refresh") {
++      : Fl_Group(X, Y, W, 30), key(X + 65, Y, 110, 30, "Sort by:"), direction(X + 185, Y, 110, 30),
++        folders(X + 305, Y, 125, 30, "Folders first"), details(X + 435, Y, 80, 30, "Details"),
++        places(X + 520, Y, 85, 30, "Places"), refresh(X + W - 85, Y, 85, 30, "Refresh") {
+     end();
+     key.add("Name|Size|Type|Modified");
+     direction.add("Ascending|Descending");
+@@ -94,16 +97,18 @@ public:
+     direction.tooltip("Reverse file ordering; parent directory stays first");
+     folders.tooltip("Keep folders before files in either direction");
+     details.tooltip("Show file size, type and last modification time");
++    places.tooltip("Show common folders, Favorites, bookmarks and mounted devices");
+     refresh.shortcut(FL_F + 5);
+     refresh.tooltip("Reload this directory (F5)");
+   }
+   void resize(int X, int Y, int W, int H) FL_OVERRIDE {
+     Fl_Group::resize(X, Y, W, H);
+-    key.resize(X + 60, Y, 140, 30);
+-    direction.resize(X + 210, Y, 120, 30);
+-    folders.resize(X + 340, Y, 130, 30);
+-    details.resize(X + 480, Y, 90, 30);
+-    refresh.resize(X + W - 90, Y, 90, 30);
++    key.resize(X + 65, Y, 110, 30);
++    direction.resize(X + 185, Y, 110, 30);
++    folders.resize(X + 305, Y, 125, 30);
++    details.resize(X + 435, Y, 80, 30);
++    places.resize(X + 520, Y, 85, 30);
++    refresh.resize(X + W - 85, Y, 85, 30);
+   }
+ };
+ class DetailsBrowser : public Fl_File_Browser {
+@@ -113,7 +118,7 @@ public:
+   Fl_File_Chooser *chooser = 0;
+   Fl_Preferences *prefs = 0;
+   int key = 0;
+-  bool descending = false, foldersFirst = true, details = true;
++  bool descending = false, foldersFirst = true, details = true, places = true;
+   std::map<std::string, File> files;
+   DetailsBrowser(int X, int Y, int W, int H, DetailsPanel *p)
+       : Fl_File_Browser(X, Y, W, H), panel(p) {
+@@ -220,6 +225,7 @@ public:
+       }
+       files[f.name] = f;
+     }
++    panel->places->refresh();
+     sortRows();
+   }
+   void sync() {
+@@ -227,11 +233,13 @@ public:
+     toolbar->direction.value(descending);
+     toolbar->folders.value(foldersFirst);
+     toolbar->details.value(details);
++    toolbar->places.value(places);
+     if (prefs) {
+       prefs->set("sort_key", key);
+       prefs->set("sort_descending", int(descending));
+       prefs->set("sort_folders_first", int(foldersFirst));
+       prefs->set("file_details", int(details));
++      prefs->set("file_places", int(places));
+       prefs->flush();
+     }
+     sortRows();
+@@ -242,6 +250,7 @@ public:
+     b.descending = b.toolbar->direction.value();
+     b.foldersFirst = b.toolbar->folders.value();
+     b.details = b.toolbar->details.value();
++    b.places = b.toolbar->places.value();
+     b.sync();
+   }
+   static void header(Fl_Widget *widget, void *data) {
+@@ -307,6 +316,7 @@ public:
+   int item_width(void *) const FL_OVERRIDE { return 0; }
+ };
+ DetailsPanel::DetailsPanel(int X, int Y, int W, int H) : Fl_Group(X, Y, W, H) {
++  places = new Fl_Chooser_Places(X,Y,180,H);
+   browser = new DetailsBrowser(X, Y + 26, W, H - 26, this);
+   const char *labels[] = {"Name", "Size", "Type", "Modified"};
+   for (int i = 0; i < 4; ++i) {
+@@ -322,8 +332,14 @@ DetailsPanel::DetailsPanel(int X, int Y, int W, int H) : Fl_Group(X, Y, W, H) {
+ void DetailsPanel::layout() {
+   const char *labels[] = {"Name", "Size", "Type", "Modified"};
+   int widths[4];
+-  browser->widths(w() - Fl::box_dw(browser->box()) - Fl::scrollbar_size(), widths);
+-  int X = x() + Fl::box_dx(browser->box());
++  int sidebar = browser->places && w() >= 340 ? std::min(200,std::max(140,w()/4)) : 0;
++  if (sidebar) { places->show(); places->resize(x(),y(),sidebar,h()); }
++  else places->hide();
++  int offset = sidebar ? sidebar + 6 : 0;
++  browser->resize(x()+offset,y()+26,std::max(1,w()-offset),std::max(1,h()-26));
++  if (error) error->resize(browser->x(),browser->y(),browser->w(),browser->h());
++  browser->widths(browser->w() - Fl::box_dw(browser->box()) - Fl::scrollbar_size(), widths);
++  int X = browser->x() + Fl::box_dx(browser->box());
+   for (int i = 0; i < 4; ++i) {
+     if (widths[i]) {
+       headers[i]->show();
+@@ -340,7 +356,6 @@ void DetailsPanel::layout() {
+ }
+ void DetailsPanel::resize(int X, int Y, int W, int H) {
+   Fl_Group::resize(X, Y, W, H);
+-  browser->resize(X, Y + 26, W, std::max(1, H - 26));
+   layout();
+ }
+ } // namespace
+@@ -373,6 +388,8 @@ void fl_file_chooser_details_init(Fl_File_Browser *file, Fl_File_Chooser *choose
+   b->foldersFirst = value != 0;
+   prefs->get("file_details", value, 1);
+   b->details = value != 0;
++  prefs->get("file_places", value, 1);
++  b->places = value != 0;
+   Fl_Group *tile = b->panel->parent();
+   // Keep FLUID-generated file-list callbacks valid through the details panel.
+   tile->user_data(chooser);
+@@ -384,6 +401,7 @@ void fl_file_chooser_details_init(Fl_File_Browser *file, Fl_File_Chooser *choose
+   b->toolbar->direction.callback(DetailsBrowser::changed, b);
+   b->toolbar->folders.callback(DetailsBrowser::changed, b);
+   b->toolbar->details.callback(DetailsBrowser::changed, b);
++  b->toolbar->places.callback(DetailsBrowser::changed, b);
+   b->toolbar->refresh.callback(
+       [](Fl_Widget *, void *data) {
+         DetailsBrowser *b = static_cast<DetailsBrowser *>(data);
+@@ -401,6 +419,7 @@ void fl_file_chooser_details_init(Fl_File_Browser *file, Fl_File_Chooser *choose
+   b->toolbar->direction.value(b->descending);
+   b->toolbar->folders.value(b->foldersFirst);
+   b->toolbar->details.value(b->details);
++  b->toolbar->places.value(b->places);
+   window->init_sizes();
+   window->size_range(720, 420);
+   window->size(960, 600);
+@@ -408,3 +427,17 @@ void fl_file_chooser_details_init(Fl_File_Browser *file, Fl_File_Chooser *choose
+ void fl_file_chooser_details_refresh(Fl_File_Browser *file, const char *directory) {
+   static_cast<DetailsBrowser *>(file)->refresh(directory);
+ }
++
++void fl_file_chooser_details_places_refresh(Fl_File_Browser *file) {
++  static_cast<DetailsBrowser *>(file)->panel->places->refresh();
++}
++
++void fl_file_chooser_details_places_init(Fl_File_Browser *file, Fl_Menu_Button *favorites,
++                                        Fl_Box *error, Fl_File_Input *filename, Fl_Return_Button *okay) {
++  DetailsBrowser *b = static_cast<DetailsBrowser *>(file);
++  b->panel->places->configure(b->chooser,b->prefs,favorites,filename,okay,file);
++  error->parent()->remove(error);
++  b->panel->add(error);
++  b->panel->error = error;
++  b->panel->layout();
++}
+diff --git a/src/Fl_File_Chooser_Places.H b/src/Fl_File_Chooser_Places.H
+new file mode 100644
+index 0000000..00527db
+--- /dev/null
++++ b/src/Fl_File_Chooser_Places.H
+@@ -0,0 +1,22 @@
++// Internal file chooser sidebar; distributed under FLTK's COPYING terms.
++#ifndef Fl_File_Chooser_Places_H
++#define Fl_File_Chooser_Places_H
++#include <FL/Fl_Group.H>
++class Fl_File_Chooser;
++class Fl_Preferences;
++class Fl_Menu_Button;
++class Fl_File_Input;
++class Fl_Return_Button;
++class Fl_File_Browser;
++class Fl_Chooser_Places : public Fl_Group {
++  struct Impl;
++  Impl *impl_;
++public:
++  Fl_Chooser_Places(int, int, int, int);
++  ~Fl_Chooser_Places();
++  void configure(Fl_File_Chooser *, Fl_Preferences *, Fl_Menu_Button *,
++                 Fl_File_Input *, Fl_Return_Button *, Fl_File_Browser *);
++  void refresh();
++  void resize(int, int, int, int) FL_OVERRIDE;
++};
++#endif
+diff --git a/src/Fl_File_Chooser_Places.cxx b/src/Fl_File_Chooser_Places.cxx
+new file mode 100644
+index 0000000..bc23511
+--- /dev/null
++++ b/src/Fl_File_Chooser_Places.cxx
+@@ -0,0 +1,328 @@
++// Shared file chooser Places, distributed under FLTK's COPYING terms.
++#include "Fl_File_Chooser_Places.H"
++#include <FL/Fl.H>
++#include <FL/Fl_Button.H>
++#include <FL/Fl_File_Browser.H>
++#include <FL/Fl_File_Chooser.H>
++#include <FL/Fl_File_Input.H>
++#include <FL/Fl_Hold_Browser.H>
++#include <FL/Fl_Menu_Button.H>
++#include <FL/Fl_Preferences.H>
++#include <FL/Fl_Return_Button.H>
++#include <FL/filename.H>
++#include <FL/fl_ask.H>
++#include <FL/fl_draw.H>
++#include <algorithm>
++#include <cstdio>
++#include <cstdlib>
++#include <fstream>
++#include <set>
++#include <sstream>
++#include <string>
++#include <utility>
++#include <vector>
++#ifdef __linux__
++#include <dirent.h>
++#endif
++
++namespace {
++#if defined(__GNUC__)
++// Retain the GNU-unique STL constant exported by the previous shared build.
++const void *const keep_piecewise __attribute__((used)) = &std::piecewise_construct;
++#endif
++struct Place {
++  std::string name, path;
++  bool section;
++};
++std::string clean_label(std::string value) {
++  for (size_t i = 0; i < value.size(); ++i)
++    if (static_cast<unsigned char>(value[i]) < 32 || value[i] == 127) value[i] = ' ';
++  return value;
++}
++std::string normal_path(const std::string &path) {
++  if (path.empty() || path[0] != '/' || path.size() >= FL_PATH_MAX || path.find('\0') != std::string::npos)
++    return std::string();
++  std::vector<std::string> parts;
++  std::istringstream input(path);
++  std::string part;
++  while (std::getline(input, part, '/')) {
++    if (part.empty() || part == ".") continue;
++    if (part == "..") { if (!parts.empty()) parts.pop_back(); }
++    else parts.push_back(part);
++  }
++  std::string result;
++  for (size_t i = 0; i < parts.size(); ++i) result += "/" + parts[i];
++  return result.empty() ? "/" : result;
++}
++std::string base_name(const std::string &path) {
++  return path == "/" ? "File System" : path.substr(path.find_last_of('/') + 1);
++}
++bool within(const std::string &path, const std::string &root) {
++  return path == root || (path.size() > root.size() && path.compare(0, root.size(), root) == 0 &&
++                          (root == "/" || path[root.size()] == '/'));
++}
++std::string read_small(const std::string &path, size_t limit = 65536) {
++  std::ifstream file(path.c_str(), std::ios::binary);
++  if (!file) return std::string();
++  std::vector<char> bytes(limit + 1);
++  file.read(&bytes[0], bytes.size());
++  return size_t(file.gcount()) > limit ? std::string() : std::string(&bytes[0], size_t(file.gcount()));
++}
++int hex(char c) {
++  return c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 :
++         c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1;
++}
++std::string local_uri(const std::string &uri) {
++  if (uri.compare(0, 7, "file://")) return std::string();
++  size_t slash = uri.find('/', 7);
++  if (slash == std::string::npos) return std::string();
++  std::string host = uri.substr(7, slash - 7);
++  if (!host.empty() && host != "localhost") return std::string();
++  std::string path;
++  for (size_t i = slash; i < uri.size(); ++i) {
++    char c = uri[i];
++    if (c == '?' || c == '#') return std::string();
++    if (c == '%') {
++      if (i + 2 >= uri.size() || hex(uri[i+1]) < 0 || hex(uri[i+2]) < 0) return std::string();
++      c = char(hex(uri[i+1]) * 16 + hex(uri[i+2])); i += 2;
++      if (!c) return std::string();
++    }
++    path += c;
++  }
++  return normal_path(path);
++}
++std::string user_directory(const std::string &text, const std::string &home) {
++  size_t begin = text.find_first_not_of(" \t");
++  if (begin == std::string::npos || text[begin] != '"') return std::string();
++  std::string path;
++  size_t i = begin + 1;
++  for (; i < text.size() && text[i] != '"'; ++i) {
++    if (text[i] == '\\') {
++      if (++i >= text.size()) return std::string();
++      path += text[i];
++    } else if (text[i] == '$') {
++      if (text.compare(i, 7, "${HOME}") == 0) { path += home; i += 6; }
++      else if (text.compare(i, 5, "$HOME") == 0 &&
++               (i + 5 == text.size() || text[i+5] == '/' || text[i+5] == '"')) { path += home; i += 4; }
++      else return std::string();
++    } else path += text[i];
++  }
++  if (i == text.size()) return std::string();
++  size_t tail = text.find_first_not_of(" \t\r", i + 1);
++  if (tail != std::string::npos && text[tail] != '#') return std::string();
++  return normal_path(path);
++}
++class PlacesList : public Fl_Hold_Browser {
++public:
++  std::vector<Place> rows;
++  PlacesList(int X, int Y, int W, int H) : Fl_Hold_Browser(X,Y,W,H,"Places") {
++    align(FL_ALIGN_TOP_LEFT); format_char(0); column_char(0);
++    tooltip("Open a folder; Favorites can be managed with the buttons below");
++  }
++  void item_draw(void *item, int X, int Y, int W, int H) const FL_OVERRIDE {
++    int row = lineno(item) - 1;
++    if (row < 0 || row >= int(rows.size())) return;
++    bool section = rows[row].section;
++    fl_font(section ? Fl_Font(textfont() | FL_BOLD) : textfont(), textsize());
++    fl_color(item_selected(item) ? fl_contrast(textcolor(), selection_color()) : textcolor());
++    fl_push_clip(X,Y,W,H);
++    fl_draw(rows[row].name.c_str(), X + (section ? 4 : 12), Y, std::max(1,W-16), H,
++            FL_ALIGN_LEFT | FL_ALIGN_INSIDE, 0, 0);
++    fl_pop_clip();
++  }
++  int item_height(void *) const FL_OVERRIDE {
++    fl_font(textfont(),textsize()); return fl_height() + 8;
++  }
++  int item_width(void *) const FL_OVERRIDE { return 0; }
++  int handle(int event) FL_OVERRIDE {
++    if (event == FL_KEYBOARD && (Fl::event_key() == FL_Enter || Fl::event_key() == FL_KP_Enter ||
++                                 Fl::event_key() == ' ')) { do_callback(); return 1; }
++    return Fl_Hold_Browser::handle(event);
++  }
++};
++}
++
++struct Fl_Chooser_Places::Impl {
++  PlacesList *list;
++  Fl_Button *add, *manage;
++  Fl_File_Chooser *chooser = 0;
++  Fl_Preferences *prefs = 0;
++  Fl_Menu_Button *favorites = 0;
++  Fl_File_Input *filename = 0;
++  Fl_Return_Button *okay = 0;
++  Fl_File_Browser *files = 0;
++  std::set<std::string> seen;
++  Impl(int X,int Y,int W,int H) {
++    list = new PlacesList(X,Y+26,W,H-62);
++    add = new Fl_Button(X,Y+H-28,W/2-2,28,"Add");
++    manage = new Fl_Button(X+W/2+2,Y+H-28,W-W/2-2,28,"Manage");
++    add->tooltip("Add the current folder to native Favorites");
++    manage->tooltip("Reorder or remove native Favorites");
++    list->callback([](Fl_Widget *,void *p) { static_cast<Impl *>(p)->open(); },this);
++    add->callback([](Fl_Widget *,void *p) {
++      Impl &s = *static_cast<Impl *>(p);
++      if (s.favorites && s.add->active()) { s.favorites->value(0); s.favorites->do_callback(); }
++    },this);
++    manage->callback([](Fl_Widget *,void *p) {
++      Impl &s = *static_cast<Impl *>(p);
++      if (s.favorites && s.manage->active()) { s.favorites->value(1); s.favorites->do_callback(); }
++    },this);
++  }
++  void section(const char *name) { list->rows.push_back(Place{name,std::string(),true}); }
++  bool place(const std::string &name,const std::string &path) {
++    std::string p = normal_path(path);
++    if (p.empty() || list->rows.size() >= 256 || !seen.insert(p).second) return false;
++    list->rows.push_back(Place{clean_label(name.empty() ? base_name(p) : name),p,false});
++    return true;
++  }
++  void bookmarks(const std::string &path) {
++    std::istringstream input(read_small(path)); std::string line;
++    while (std::getline(input,line)) {
++      if (!line.empty() && line[line.size()-1] == '\r') line.resize(line.size()-1);
++      size_t split = line.find(' ');
++      std::string p = local_uri(line.substr(0,split));
++      if (!p.empty()) place(split == std::string::npos ? std::string() : line.substr(split+1),p);
++    }
++  }
++  void refresh() {
++    if (!chooser || !prefs) return;
++    std::string current = normal_path(chooser->directory());
++    int scroll = list->vposition(); seen.clear(); list->rows.clear();
++    const char *h = std::getenv("HOME"); std::string home = h ? normal_path(h) : std::string();
++    const char *c = std::getenv("XDG_CONFIG_HOME");
++    std::string config = c && *c == '/' ? normal_path(c) : home + "/.config";
++    section("Folders"); place("Home",home);
++    const char *keys[] = {"DESKTOP","DOCUMENTS","DOWNLOAD","MUSIC","PICTURES","VIDEOS"};
++    const char *names[] = {"Desktop","Documents","Downloads","Music","Pictures","Videos"};
++    std::string directories[6]; bool configured[6] = {};
++    std::istringstream input(read_small(config+"/user-dirs.dirs")); std::string line;
++    while (std::getline(input,line)) {
++      size_t start = line.find_first_not_of(" \t"), equal = line.find('=');
++      if (start == std::string::npos || equal == std::string::npos || line[start] == '#') continue;
++      std::string key = line.substr(start,equal-start);
++      while (!key.empty() && (key[key.size()-1] == ' ' || key[key.size()-1] == '\t')) key.resize(key.size()-1);
++      for (int i=0;i<6;++i) if (key == std::string("XDG_")+keys[i]+"_DIR") {
++        configured[i] = true; directories[i] = user_directory(line.substr(equal+1),home);
++      }
++    }
++    for (int i=0;i<6;++i) {
++      std::string path = configured[i] ? directories[i] : home.empty() ? std::string() : home+"/"+names[i];
++      if (!path.empty() && fl_filename_isdir(path.c_str())) place(names[i],path);
++    }
++    place("File System","/");
++    size_t group = list->rows.size(); section("Favorites");
++    bool currentFavorite = false; int count = 0;
++    for (int i=0;i<100;++i) {
++      char key[32], path[FL_PATH_MAX]; std::snprintf(key,sizeof(key),"favorite%02d",i);
++      prefs->get(key,path,"",sizeof(path)); if (!*path) break;
++      ++count; currentFavorite |= normal_path(path) == current;
++      place(std::string(),path);
++    }
++    if (list->rows.size() == group+1) list->rows.resize(group);
++    group = list->rows.size(); section("Bookmarks");
++    bookmarks(config+"/fsvr/places"); bookmarks(config+"/gtk-3.0/bookmarks");
++    bookmarks(config+"/gtk-4.0/bookmarks"); if (!home.empty()) bookmarks(home+"/.gtk-bookmarks");
++    if (list->rows.size() == group+1) list->rows.resize(group);
++#ifdef __linux__
++    group = list->rows.size(); section("Devices");
++    std::istringstream mounts(read_small("/proc/self/mountinfo",512*1024));
++    while (std::getline(mounts,line)) {
++      std::istringstream fields(line); std::string id,parent,device,root,path;
++      if (!(fields>>id>>parent>>device>>root>>path)) continue;
++      std::string decoded;
++      for (size_t i=0;i<path.size();++i) {
++        if (path[i]=='\\' && i+3<path.size() && path[i+1]>='0' && path[i+1]<='7' &&
++            path[i+2]>='0' && path[i+2]<='7' && path[i+3]>='0' && path[i+3]<='7') {
++          decoded+=char((path[i+1]-'0')*64+(path[i+2]-'0')*8+path[i+3]-'0'); i+=3;
++        } else decoded+=path[i];
++      }
++      if (within(decoded,"/run/media") || within(decoded,"/media") || within(decoded,"/mnt"))
++        place(std::string(),decoded);
++    }
++    const char *runtime = std::getenv("XDG_RUNTIME_DIR");
++    std::string gvfs = runtime && *runtime=='/' ? normal_path(runtime)+"/gvfs" : std::string();
++    DIR *dir = gvfs.empty() ? 0 : opendir(gvfs.c_str());
++    if (dir) {
++      while (struct dirent *entry = readdir(dir)) {
++        std::string name=entry->d_name;
++        if (name=="." || name=="..") continue;
++        std::string server,share;
++        size_t start=name.find(':');
++        if (start!=std::string::npos) {
++          std::istringstream attributes(name.substr(start+1)); std::string attribute;
++          while (std::getline(attributes,attribute,',')) {
++            size_t equal=attribute.find('='); if (equal==std::string::npos) continue;
++            std::string key=attribute.substr(0,equal), value=attribute.substr(equal+1);
++            if (key=="server" || key=="host") server=value;
++            if (key=="share") share=value;
++          }
++        }
++        std::string label=!share.empty() ? share+(server.empty() ? "" : " on "+server) :
++                          !server.empty() ? server : "Connected device";
++        place(label,gvfs+"/"+name);
++      }
++      closedir(dir);
++    }
++    if (list->rows.size() == group+1) list->rows.resize(group);
++#endif
++    list->clear(); int selected=0; size_t length=0;
++    for (size_t i=0;i<list->rows.size();++i) {
++      const Place &p=list->rows[i]; list->add(p.name.c_str());
++      if (!p.section && within(current,p.path) && p.path.size()>=length) { selected=int(i)+1; length=p.path.size(); }
++    }
++    if (selected) list->value(selected);
++    list->vposition(scroll);
++    if (!current.empty() && !currentFavorite && count<100) add->activate(); else add->deactivate();
++    if (count) manage->activate(); else manage->deactivate();
++    list->redraw();
++  }
++  void open() {
++    if (Fl::event() == FL_KEYBOARD && Fl::event_key() != FL_Enter &&
++        Fl::event_key() != FL_KP_Enter && Fl::event_key() != ' ') return;
++    int row=list->value()-1;
++    if (!chooser || row<0 || row>=int(list->rows.size())) return;
++    Place p=list->rows[row];
++    if (p.section) { refresh(); return; }
++    // Only the chosen target is inspected. Offline bookmarks never stall the
++    // sidebar refresh, and no share is mounted or authenticated implicitly.
++    if (!fl_filename_isdir(p.path.c_str())) {
++      refresh(); fl_alert("This place is unavailable or is not a folder:\n%s",p.path.c_str()); return;
++    }
++    std::string name;
++    if ((chooser->type() & Fl_File_Chooser::CREATE) && !(chooser->type() & Fl_File_Chooser::DIRECTORY)) {
++      std::string value=filename->value();
++      if (!value.empty() && value[value.size()-1]!='/' && normal_path(value)!=normal_path(chooser->directory()))
++        name=value.substr(value.find_last_of('/')+1);
++    }
++    chooser->directory(p.path.c_str());
++    if (!name.empty()) {
++      std::string target=p.path+(p.path=="/" ? "" : "/")+name;
++      filename->value(target.c_str()); filename->position(int(target.size())); okay->activate();
++    }
++    refresh(); files->take_focus();
++  }
++};
++Fl_Chooser_Places::Fl_Chooser_Places(int X,int Y,int W,int H) : Fl_Group(X,Y,W,H) {
++  impl_=new Impl(X,Y,W,H); end(); resizable(impl_->list);
++}
++Fl_Chooser_Places::~Fl_Chooser_Places() { delete impl_; }
++void Fl_Chooser_Places::configure(Fl_File_Chooser *chooser,Fl_Preferences *prefs,Fl_Menu_Button *favorites,
++    Fl_File_Input *filename,Fl_Return_Button *okay,Fl_File_Browser *files) {
++  impl_->chooser=chooser; impl_->prefs=prefs; impl_->favorites=favorites;
++  impl_->filename=filename; impl_->okay=okay; impl_->files=files; refresh();
++}
++void Fl_Chooser_Places::refresh() { impl_->refresh(); }
++void Fl_Chooser_Places::resize(int X,int Y,int W,int H) {
++  Fl_Group::resize(X,Y,W,H);
++  Impl &s=*impl_;
++  s.list->resize(X,Y+26,W,std::max(1,H-62));
++  s.add->resize(X,Y+H-28,W/2-2,28); s.manage->resize(X+W/2+2,Y+H-28,W-W/2-2,28);
++  if (s.files) {
++    if (s.list->textfont()!=s.files->textfont()) s.list->textfont(s.files->textfont());
++    if (s.list->textsize()!=s.files->textsize()) s.list->textsize(s.files->textsize());
++    if (s.list->textcolor()!=s.files->textcolor()) s.list->textcolor(s.files->textcolor());
++    if (s.list->color()!=s.files->color()) s.list->color(s.files->color());
++    if (s.list->selection_color()!=s.files->selection_color()) s.list->selection_color(s.files->selection_color());
++    if (s.list->labelcolor()!=s.files->textcolor()) s.list->labelcolor(s.files->textcolor());
++  }
++}

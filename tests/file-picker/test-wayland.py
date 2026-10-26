@@ -52,6 +52,7 @@ try:
         env = {
             **os.environ,
             "DISPLAY": display,
+            "HOME": tmp,
             "XDG_RUNTIME_DIR": tmp,
             "XDG_CONFIG_HOME": tmp + "/config",
             "XDG_DATA_HOME": tmp + "/data",
@@ -67,9 +68,14 @@ try:
             "LIBGL_ALWAYS_SOFTWARE": "1",
             "DBUS_SYSTEM_BUS_ADDRESS": "unix:path=/nonexistent/dome-picker-test-bus",
             "XR_RUNTIME_JSON": "/nonexistent/dome-picker-test-runtime.json",
+            "GIO_USE_VFS": "local",
+            "DOME_PICKER_PRIVATE_RUNTIME": "1",
         }
         for key in ("WAYLAND_DISPLAY", "WAYLAND_SOCKET", "FLTK_BACKEND"):
             env.pop(key, None)
+        subprocess.run(["dbus-update-activation-environment", "HOME", "XDG_RUNTIME_DIR",
+                        "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME",
+                        "DBUS_SYSTEM_BUS_ADDRESS", "GIO_USE_VFS"], env=env, check=True)
         with (out / "compositor.log").open("w") as log:
             compositor = subprocess.Popen(
                 [
