@@ -75,6 +75,17 @@ impl Dome {
                             }
                             return FilterResult::Intercept(());
                         }
+                        let native_active=state.scene.lock().unwrap().native_owner().is_some();
+                        if native_active {
+                            if pressed && mods.alt && !mods.logo && !mods.ctrl && sym.raw()==0xff09 {
+                                state.scene.lock().unwrap().native_suspend();
+                                state.shell_keys.insert(code);
+                                return FilterResult::Intercept(());
+                            }
+                            // Global Super shortcuts stay available; ordinary game
+                            // input bypasses shell menus and hidden-desktop filtering.
+                            if !mods.logo { return FilterResult::Forward; }
+                        }
                         if pressed && sym.raw()==0xff1b && state.menu.is_none() && state.dismiss_selection_tooltips() {
                             state.shell_keys.insert(code);return FilterResult::Intercept(());
                         }
@@ -346,6 +357,12 @@ impl Dome {
                     self.ignored_buttons.remove(&code);
                     self.physical_buttons.insert(code);
                 }
+                if self.native_pointer(event.time_msec()) {
+                    let pointer=self.seat.get_pointer().unwrap();
+                    if event.state()==ButtonState::Pressed {self.desktop_buttons.insert(code);}else{self.desktop_buttons.remove(&code);}
+                    pointer.button(self,&ButtonEvent{button:code,state:event.state(),serial:SERIAL_COUNTER.next_serial(),time:event.time_msec()});
+                    pointer.frame(self);return;
+                }
                 let xr_mouse = self.mouse_takeover();
                 if self.super_mmb_button(code,event.state()==ButtonState::Pressed,xr_mouse) {return;}
                 let realm = if xr_mouse { dome::Realm::Xr } else { dome::Realm::Desktop };
@@ -560,6 +577,32 @@ impl Dome {
                 let horizontal_amount_discrete = event.amount_v120(Axis::Horizontal);
                 let vertical_amount_discrete = event.amount_v120(Axis::Vertical);
 
+                let mut frame = AxisFrame::new(event.time_msec()).source(source);
+                if horizontal_amount != 0.0 {
+                    frame = frame.value(Axis::Horizontal, horizontal_amount);
+                    if let Some(discrete) = horizontal_amount_discrete {
+                        frame = frame.v120(Axis::Horizontal, discrete as i32);
+                    }
+                }
+                if vertical_amount != 0.0 {
+                    frame = frame.value(Axis::Vertical, vertical_amount);
+                    if let Some(discrete) = vertical_amount_discrete {
+                        frame = frame.v120(Axis::Vertical, discrete as i32);
+                    }
+                }
+
+                if source == AxisSource::Finger {
+                    if event.amount(Axis::Horizontal) == Some(0.0) {
+                        frame = frame.stop(Axis::Horizontal);
+                    }
+                    if event.amount(Axis::Vertical) == Some(0.0) {
+                        frame = frame.stop(Axis::Vertical);
+                    }
+                }
+
+                if self.native_pointer(event.time_msec()) {
+                    let pointer=self.seat.get_pointer().unwrap();pointer.axis(self,frame);pointer.frame(self);return;
+                }
                 if self.mouse_takeover() {
                     self.xr_mouse_motion(0., 0.);
                     self.dispatch_xr(dome::xr_input::Packet {
@@ -606,29 +649,6 @@ impl Dome {
                 if self.task_scroll(vertical_amount) {
                     return;
                 }
-                let mut frame = AxisFrame::new(event.time_msec()).source(source);
-                if horizontal_amount != 0.0 {
-                    frame = frame.value(Axis::Horizontal, horizontal_amount);
-                    if let Some(discrete) = horizontal_amount_discrete {
-                        frame = frame.v120(Axis::Horizontal, discrete as i32);
-                    }
-                }
-                if vertical_amount != 0.0 {
-                    frame = frame.value(Axis::Vertical, vertical_amount);
-                    if let Some(discrete) = vertical_amount_discrete {
-                        frame = frame.v120(Axis::Vertical, discrete as i32);
-                    }
-                }
-
-                if source == AxisSource::Finger {
-                    if event.amount(Axis::Horizontal) == Some(0.0) {
-                        frame = frame.stop(Axis::Horizontal);
-                    }
-                    if event.amount(Axis::Vertical) == Some(0.0) {
-                        frame = frame.stop(Axis::Vertical);
-                    }
-                }
-
                 let pointer = self.seat.get_pointer().unwrap();
                 pointer.axis(self, frame);
                 pointer.frame(self);
@@ -636,11 +656,40 @@ impl Dome {
             _ => {}
         }
     }
+    pub fn sync_native_capture(&mut self) {
+        let owner=self.scene.lock().unwrap().native_owner();
+        if owner==self.native_capture_applied {return;}
+        self.native_capture_applied=owner;
+        let pointer=self.seat.get_pointer().unwrap();
+        let time=self.start_time.elapsed().as_millis() as u32;
+        for button in self.desktop_buttons.drain().collect::<Vec<_>>() {
+            self.ignored_buttons.insert(button);
+            pointer.button(self,&ButtonEvent{button,state:ButtonState::Released,serial:SERIAL_COUNTER.next_serial(),time});
+        }
+        pointer.unset_grab(self,SERIAL_COUNTER.next_serial(),time);
+        pointer.motion(self,None,&MotionEvent{location:pointer.current_location(),serial:SERIAL_COUNTER.next_serial(),time});
+        pointer.frame(self);
+        if owner.is_some(){self.native_pointer(time);}
+    }
+
+    /// Route physical pointer events to the native experience's host surface,
+    /// independent of shell geometry, hidden XR panels or the monitor cursor.
+    pub fn native_pointer(&mut self,time:u32)->bool {
+        let owner=self.scene.lock().unwrap().native_owner();
+        let target=owner.and_then(|id|self.registry.iter().find(|(i,_)|*i==id))
+            .map(|(_,w)|(w.toplevel().unwrap().wl_surface().clone(),w.geometry()));
+        let Some((surface,geometry))=target else{return false;};
+        let pointer=self.seat.get_pointer().unwrap();
+        pointer.motion(self,Some((surface,(-geometry.loc.x as f64,-geometry.loc.y as f64).into())),
+            &MotionEvent{location:(geometry.size.w as f64/2.,geometry.size.h as f64/2.).into(),serial:SERIAL_COUNTER.next_serial(),time});
+        pointer.frame(self);true
+    }
     pub fn desktop_mouse_motion(
         &mut self,
         pos: smithay::utils::Point<f64, smithay::utils::Logical>,
         time: u32,
     ) {
+        if self.native_pointer(time) { return; }
         let pos = self.clamp_desktop_pointer(pos);
         self.desktop_pointer = Some([pos.x, pos.y]);
         if self.screenshot_motion(pos) {

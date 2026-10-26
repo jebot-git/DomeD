@@ -7,6 +7,7 @@ use smithay::{
 };
 impl Dome {
     pub fn xr_owns_input(&self) -> bool {
+        if self.scene.lock().unwrap().native_owner().is_some() { return false; }
         let healthy = self.xr_bridge.lock().unwrap().visible();
         let scene = self.scene.lock().unwrap();
         let panels = scene
@@ -18,6 +19,8 @@ impl Dome {
         )
     }
     pub fn sync_input_route(&mut self) {
+        let desktop_requested = std::mem::take(&mut self.scene.lock().unwrap().native_xr.desktop_requested);
+        if desktop_requested { self.input_focus_xr=Some(false); }
         let desired = self.xr_owns_input();
         let mut scene = self.scene.lock().unwrap().clone();
         // Closing, minimizing or transferring must leave focus in the active view.
@@ -59,7 +62,7 @@ impl Dome {
         } else {
             self.focus_history[usize::from(desired)]
         };
-        let focus = dome::input_routing::restore_focus(&scene, remembered, realm);
+        let focus = scene.native_owner().or_else(||dome::input_routing::restore_focus(&scene, remembered, realm));
         let pointer = self.seat.get_pointer().unwrap();
         let time = self.start_time.elapsed().as_millis() as u32;
         self.ignored_buttons.extend(self.physical_buttons.drain());

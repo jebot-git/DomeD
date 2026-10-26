@@ -30,7 +30,7 @@ impl Layout {
             .windows
             .iter()
             .filter(|w| !excluded.contains(&w.id))
-            .cloned()
+            .map(|w|scene.native_saved_window(w))
             .collect();
         let ids: HashSet<_> = windows.iter().map(|w| w.id).collect();
         let mut workspaces = scene.workspaces.clone();
@@ -39,13 +39,14 @@ impl Layout {
                 lane.windows.retain(|id| ids.contains(id));
             }
         }
+        let (presentation,active_workspace,focused)=scene.native_saved_context();
         Self {
             workspaces,
             windows,
-            active_workspace: scene.active_workspace,
-            focused: scene.focused.filter(|id| ids.contains(id)),
+            active_workspace,
+            focused: focused.filter(|id| ids.contains(id)),
             pullout_anchor: scene.pullout_anchor,
-            presentation: scene.presentation,
+            presentation,
         }
     }
     pub fn prepare(&self, scene: &mut Scene) {

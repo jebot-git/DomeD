@@ -418,6 +418,8 @@ pub struct RayHit {
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Scene {
+    #[serde(skip)]
+    pub native_xr: crate::native_xr::Coordinator,
     /// Controlled by the compositor session authority, never by scene actions.
     #[serde(default)]
     pub locked: bool,
@@ -563,6 +565,7 @@ impl Scene {
             next_id: 1,
             focus_order: vec![],
             pullout_anchor: None,
+            native_xr: Default::default(),
         }
     }
     pub fn demo() -> Self {
@@ -733,6 +736,9 @@ impl Scene {
         self.focused = self.recent_focus(None);
     }
     pub fn apply(&mut self, action: Action) -> Result<(), String> {
+        if let Action::Focus{id}=&action {
+            if self.native_owner().is_some_and(|owner|owner!=*id) { self.native_suspend(); }
+        }
         self.remember_focus();
         match action {
             Action::SendToRealm { id, realm } => {

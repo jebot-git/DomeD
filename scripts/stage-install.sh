@@ -54,4 +54,9 @@ for page in "$root"/docs/man/*.1; do
     install -D -m 0644 "$page" "$stage/usr/local/share/man/man1/$(basename -- "$page")"
 done
 /usr/bin/python3 "$root/scripts/stage-link-handlers.py" "$stage"
+# Native bundled experiences are part of the default de-xr distribution.
+# Minimal compositor-only packagers may opt out explicitly.
+if [[ "${DOME_BUNDLED_EXPERIENCES:-1}" != 0 ]]; then
+    /usr/bin/python3 "$root/scripts/stage-experiences.py" "$stage"
+fi
 echo "Staged DomeD installation: $stage"

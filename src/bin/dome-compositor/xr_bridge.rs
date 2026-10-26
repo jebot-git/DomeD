@@ -170,7 +170,8 @@ impl Dome {
             let head = self.xr_bridge.lock().unwrap().session.head;
             self.scene.lock().unwrap().view_pose = head;
         }
-        if self.xr_was_visible && !visible {
+        let native_lease=self.scene.lock().unwrap().native_xr.lease.is_some();
+        if self.xr_was_visible && !visible && !native_lease {
             let geo = self.primary_output_geometry();
             let promoted: Vec<_> = self
                 .scene
@@ -205,7 +206,7 @@ impl Dome {
                 actions: vec![],
             });
         }
-        self.xr_was_visible = visible;
+        if !native_lease {self.xr_was_visible=visible;} else {self.xr_was_visible|=visible;}
         self.sync_input_route();
         let packets = {
             let mut b = self.xr_bridge.lock().unwrap();

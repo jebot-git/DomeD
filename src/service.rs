@@ -84,6 +84,24 @@ pub fn serve_native(
                 let _ = request.respond(Response::from_string(serde_json::to_string(&crate::shortcuts::defaults()).unwrap()).with_header(Header::from_bytes("Content-Type", "application/json").unwrap()));
                 continue;
             }
+            if request.url() == "/api/native-xr" {
+                let result = if request.method() == &Method::Get {
+                    Ok(serde_json::to_value(scene.lock().unwrap().native_status()).unwrap())
+                } else if request.method() == &Method::Post {
+                    let mut body=String::new();
+                    request.as_reader().take(4097).read_to_string(&mut body)
+                        .map_err(|e|e.to_string()).and_then(|_| {
+                            if body.len()>4096 {return Err("Native XR request too large".into());}
+                            let r=serde_json::from_str::<crate::native_xr::Request>(&body).map_err(|e|e.to_string())?;
+                            scene.lock().unwrap().native_request(r).map(|s|serde_json::to_value(s).unwrap())
+                        })
+                } else {Err("Unsupported native XR operation".into())};
+                let (code,value)=match result {Ok(v)=>(200,v),Err(e)=>(400,serde_json::json!({"error":e}))};
+                let _=request.respond(Response::from_string(value.to_string()).with_status_code(code)
+                    .with_header(Header::from_bytes("Content-Type","application/json").unwrap())
+                    .with_header(Header::from_bytes("Cache-Control","no-store").unwrap()));
+                continue;
+            }
             if request.method() == &Method::Get && request.url() == "/api/xr-control" {
                 let control = bridge
                     .as_ref()

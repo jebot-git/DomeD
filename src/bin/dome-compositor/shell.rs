@@ -38,6 +38,7 @@ impl Dome {
             self.focus_history[1] = Some(Some(id));
             scene.focused = previous_focus;
         }
+        scene.native_record_launch(id,previous_focus);
         drop(scene);
         self.notification_windows.previous_focus.insert(id, previous_focus);
         self.registry.push((id, window));
@@ -104,6 +105,8 @@ impl Dome {
         }
     }
     pub fn sync_scene(&mut self) {
+        self.scene.lock().unwrap().native_tick();
+        self.sync_native_capture();
         self.persist_geometry();
         let scene = {
             let mut scene = self.scene.lock().unwrap();
