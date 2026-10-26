@@ -115,17 +115,39 @@ enum Request {
     Back,
 }
 pub struct Tray {
+    pub integration: dome::wivrn::Shared,
     snapshot: Arc<Mutex<Snapshot>>,
     send: mpsc::SyncSender<(u64, Request)>,
     screenshot: Arc<AtomicBool>,
 }
 // Queue capture on the compositor thread; D-Bus never touches renderer state.
 struct SuiteControl {
+    integration: dome::wivrn::Shared,
     screenshot: Arc<AtomicBool>,
 }
 #[zbus::interface(name = "org.domed.Compositor")]
 impl SuiteControl {
     fn screenshot(&self) { self.screenshot.store(true, Ordering::Release); }
+    fn forward_notification(&self,id:&str,title:&str,body:&str,timeout:i32)->bool {
+        if id.is_empty()||id.len()>256||title.len()+body.len()>60000||!(100..=120000).contains(&timeout){return false;}
+        let mut c=self.integration.lock().unwrap();if c.notices.len()>=32{return false;}
+        c.notices.push_back(dome::wivrn::Notice{id:id.into(),title:title.into(),body:body.into(),timeout});true
+    }
+    fn get_integration_state(&self)->String {self.integration.lock().unwrap().status.to_string()}
+    fn activate(&self, action:&str)->bool {
+        let Some(command)=dome::wivrn::Command::parse(action) else{return false;};
+        let accepted=self.integration.lock().unwrap().enqueue(command);
+        if accepted&&command==dome::wivrn::Command::Stop{dome::wivrn::explicit_stop();}
+        accepted
+    }
+    fn submit_pointers(&self,frame:&str,#[zbus(header)] header:Header<'_>)->zbus::fdo::Result<String>{
+        if frame.len()>4096{return Err(zbus::fdo::Error::InvalidArgs("Pointer frame too large".into()));}
+        let frame: dome::wivrn::Frame=serde_json::from_str(frame).map_err(|e|zbus::fdo::Error::InvalidArgs(e.to_string()))?;
+        let owner=header.sender().ok_or_else(||zbus::fdo::Error::AccessDenied("Missing sender".into()))?.to_string();
+        let mut control=self.integration.lock().unwrap();
+        if !control.submit(owner,frame,dome::wivrn::monotonic_ns()){return Err(zbus::fdo::Error::LimitsExceeded("Stale, invalid or busy pointer frame".into()));}
+        Ok(control.feedback())
+    }
 }
 struct Watcher {
     items: Arc<Mutex<Vec<String>>>,
@@ -198,12 +220,14 @@ impl Tray {
         let state = snapshot.clone();
         let screenshot = Arc::new(AtomicBool::new(false));
         let capture = screenshot.clone();
+        let integration=dome::wivrn::Shared::default();
+        let integration_thread=integration.clone();
         std::thread::spawn(move || {
-            if let Err(e) = run(state.clone(), receive, capture) {
+            if let Err(e) = run(state.clone(), receive, capture, integration_thread) {
                 state.lock().unwrap().error = e.to_string();
             }
         });
-        Self { snapshot, send, screenshot }
+        Self { snapshot, send, screenshot, integration }
     }
     pub fn take_screenshot_request(&self) -> bool {
         self.screenshot.swap(false, Ordering::AcqRel)
@@ -373,13 +397,16 @@ fn run(
     state: Arc<Mutex<Snapshot>>,
     receive: mpsc::Receiver<(u64, Request)>,
     screenshot: Arc<AtomicBool>,
+    integration: dome::wivrn::Shared,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let connection = zbus::blocking::connection::Builder::session()?
         .method_timeout(Duration::from_millis(500))
         .build()?;
     // A second diagnostic compositor on this bus must not take session control.
     if connection.request_name("org.domed.Compositor").is_ok() {
-        connection.object_server().at("/org/domed/Compositor", SuiteControl { screenshot })?;
+        integration.lock().unwrap().owns_bus=true;
+        dome::wivrn::resumed();
+        connection.object_server().at("/org/domed/Compositor", SuiteControl { screenshot, integration })?;
     }
     let dbus = uncached_proxy(
         &connection,
@@ -773,7 +800,7 @@ mod tests {
             enabled: i != 10, separator: i == 11, checked: false, checkable: false,
             submenu: false, icon: String::new(), radio: false }).collect();
         let (send, _receive) = mpsc::sync_channel(32);
-        Tray { snapshot: Arc::new(Mutex::new(Snapshot { menu: Some(0), rows,
+        Tray { integration:Default::default(), snapshot: Arc::new(Mutex::new(Snapshot { menu: Some(0), rows,
             selected: Some(0), ..Default::default() })), send,
             screenshot: Arc::new(AtomicBool::new(false)) }
     }
@@ -816,7 +843,7 @@ mod tests {
         }));
         let (send, receive) = mpsc::sync_channel(1);
         assert!(send.try_send((0, Request::Keyboard)).is_ok());
-        let tray = Tray { snapshot, send, screenshot: Arc::new(AtomicBool::new(false)) };
+        let tray = Tray { integration:Default::default(), snapshot, send, screenshot: Arc::new(AtomicBool::new(false)) };
         assert!(tray.key(0xff1b));
         let state = tray.state();
         assert!(state.menu.is_none() && state.rows.is_empty() && state.selected.is_none());
@@ -831,7 +858,7 @@ mod tests {
     fn full_worker_queue_does_not_leave_a_loading_popup() {
         let (send, _receive) = mpsc::sync_channel(1);
         assert!(send.try_send((0, Request::Keyboard)).is_ok());
-        let tray = Tray { snapshot: Arc::new(Mutex::new(Snapshot::default())),
+        let tray = Tray { integration:Default::default(), snapshot: Arc::new(Mutex::new(Snapshot::default())),
             send, screenshot: Arc::new(AtomicBool::new(false)) };
         tray.keyboard();
         assert!(tray.state().menu.is_none());

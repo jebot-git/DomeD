@@ -227,3 +227,11 @@ mod tests {
         }));
     }
 }
+
+/// Toggle the overlay without creating additional terminal tabs.
+pub fn toggle(socket:&str)->io::Result<()> {
+ if let Some(dir)=std::env::var_os("XDG_RUNTIME_DIR") {
+  if overlay_socket(&std::path::PathBuf::from(dir).join(Backend::configured().socket_name())).and_then(|s|s.send(b"toggle")).is_ok(){return Ok(());}
+ }
+ show(socket)
+}

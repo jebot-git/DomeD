@@ -152,6 +152,7 @@ impl crate::Dome {
                 self.save_session_on_exit();
             }
             if action == SessionAction::Logout {
+                self.mark_explicit_stop();
                 self.xr_bridge.lock().unwrap().exit_requested = true;
                 self.loop_signal.stop();
             } else {

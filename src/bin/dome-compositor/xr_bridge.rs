@@ -582,6 +582,7 @@ impl Dome {
     }
     /// Physical devices retain ownership until input leaves the XR realm.
     pub fn mouse_takeover(&mut self) -> bool {
+        self.release_wivrn_pointer();
         let (visible, owned) = {
             let b = self.xr_bridge.lock().unwrap();
             (b.visible(), b.mouse_owned())

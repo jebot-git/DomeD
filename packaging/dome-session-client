@@ -7,9 +7,12 @@ import sys
 import time
 
 child = None
+terminating = False
 
 
 def terminate(_signum, _frame):
+    global terminating
+    terminating = True
     if child is not None:
         try:
             os.killpg(child.pid, signal.SIGTERM)
@@ -31,9 +34,29 @@ try:
         status = subprocess.run(["systemctl", "--user", "daemon-reload"], check=False)
         if status.returncode:
             print("Could not refresh login applications", file=sys.stderr, flush=True)
-    child = subprocess.Popen(args, start_new_session=True)
-    print(f"DomeD compositor PID: {child.pid}", flush=True)
-    result = child.wait()
+    delay = .5
+    while True:
+        started = time.monotonic()
+        child = subprocess.Popen(args, start_new_session=True)
+        print(f"DomeD compositor PID: {child.pid}", flush=True)
+        result = child.wait()
+        stopped = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/nonexistent"), "dome/explicit-stop")
+        if terminating or os.path.exists(stopped):
+            break
+        # Keep the login and native seat context while WiVRn owns the recovery
+        # policy. SIGKILL/GPU failures must not become an implicit logout.
+        active = subprocess.run(["systemctl", "--user", "--quiet", "is-active", "wivrn-pro.service"], check=False).returncode == 0
+        if not active:
+            break
+        try:
+            os.killpg(child.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        print(f"DomeD crashed ({result}); recovering in {delay}s", flush=True)
+        time.sleep(delay)
+        if terminating or os.path.exists(stopped):
+            break
+        delay = .5 if time.monotonic() - started > 30 else min(8, delay * 2)
 finally:
     # Only a real Dome login owns this target; nested/test sessions never do.
     subprocess.run(["systemctl", "--user", "stop", "dome-session.target"], check=False)

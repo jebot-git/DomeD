@@ -46,6 +46,7 @@ mod tasks;
 mod task_previews;
 mod toolkit_appearance;
 mod tray;
+mod wivrn;
 mod winit;
 mod xr_bridge;
 mod xr_refresh;
@@ -136,6 +137,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         tracing_subscriber::fmt().init();
     }
 
+    // A recovery unit and the login wrapper can notice a crash together. Claim
+    // the native compositor before opening a DRM seat or initializing graphics.
+    let _native_owner = if backend == "drm" {
+        use std::os::unix::fs::{OpenOptionsExt, MetadataExt};
+        let directory=std::path::PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR").ok_or("XDG_RUNTIME_DIR is required")?).join("dome");
+        std::fs::create_dir_all(&directory)?;
+        let file=std::fs::OpenOptions::new().read(true).write(true).create(true).mode(0o600).custom_flags(nix::libc::O_NOFOLLOW).open(directory.join("native-owner.lock"))?;
+        let info=file.metadata()?;
+        if !info.is_file() || info.uid()!=nix::unistd::getuid().as_raw() {return Err("Unsafe native compositor lock".into());}
+        file.try_lock().map_err(|_|"A native DomeD compositor already owns this user session")?;
+        Some(file)
+    } else {None};
     let mut event_loop: EventLoop<CalloopData> = EventLoop::try_new()?;
     // Register before creating worker threads so they inherit the blocked mask.
     #[cfg(feature = "standalone")]
@@ -144,6 +157,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         event_loop.handle().insert_source(
             Signals::new(&[Signal::SIGTERM, Signal::SIGINT, Signal::SIGHUP])?,
             |_, _, data| {
+                data.state.mark_explicit_stop();
                 data.state.loop_signal.stop();
             },
         )?;
@@ -159,11 +173,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let display: Display<Dome> = Display::new()?;
     let display_handle = display.handle();
     let mut state = Dome::new(&mut event_loop, display);
+    state.tray.integration.lock().unwrap().status["backend"]=serde_json::json!(backend);
     state.appearance = appearance;
     state.toolkit_appearance = toolkit_appearance;
     event_loop.handle().insert_source(
         smithay::reexports::calloop::timer::Timer::from_duration(std::time::Duration::from_millis(20)),
         |_, _, data| {
+            data.state.poll_wivrn();
             data.state.repeat_launcher_key();
             data.state.repeat_menu_scroll();
             data.state.update_session_restore();

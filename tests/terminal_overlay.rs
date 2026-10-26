@@ -24,6 +24,7 @@ fn wayland_launch_mode_keeps_overlay_shortcut_and_cold_start_independent() {
     std::env::set_var("XDG_RUNTIME_DIR", &runtime);
     std::env::set_var("DOME_TERMINAL", &binary);
     std::env::set_var("DOME_TERMINAL_MODE", "wayland");
+    std::env::set_var("DOME_TERMINAL_BACKEND", "ghostty");
     let command = dome::terminal::command("test-desktop", dome::Realm::Desktop);
     assert_eq!(command.get_args().collect::<Vec<_>>(), ["--wayland"]);
     let path = runtime.join("ghostty-xr/control.sock");
@@ -35,6 +36,9 @@ fn wayland_launch_mode_keeps_overlay_shortcut_and_cold_start_independent() {
     let mut message = [0; 64];
     let len = receiver.recv(&mut message).unwrap();
     assert_eq!(&message[..len], b"show");
+    dome::terminal::toggle("test-desktop").unwrap();
+    let len=receiver.recv(&mut message).unwrap();
+    assert_eq!(&message[..len], b"toggle");
     assert!(
         receiver.recv(&mut message).is_err(),
         "shortcut must not create a tab"

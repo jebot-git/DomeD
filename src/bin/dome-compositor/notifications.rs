@@ -34,6 +34,8 @@ pub struct NoticeImage {
 }
 #[derive(Default)]
 struct State {
+    owns_bus: bool,
+    forwarded: std::collections::VecDeque<(String,u32)>,
     revision: u64,
     next: u32,
     notices: Vec<Notice>,
@@ -92,7 +94,9 @@ impl Server {
                 "Notification is too large or actions are not pairs".into(),
             ));
         }
+        let delivery=hints.get("x-dome-event-id").and_then(|v|<&str>::try_from(v).ok().map(str::to_owned)).filter(|s|!s.is_empty()&&s.len()<=256&&app_name=="WayVR");
         let mut s = self.0.lock().unwrap();
+        if let Some(key)=&delivery {if let Some((_,id))=s.forwarded.iter().find(|(k,_)|k==key){return Ok(*id);}}
         let index = s.notices.iter().position(|n| n.id == replaces_id);
         if index.is_none() && s.notices.len() >= 128 {
             return Err(zbus::fdo::Error::LimitsExceeded(
@@ -109,6 +113,7 @@ impl Server {
                 }
             }
         };
+        if let Some(key)=delivery{s.forwarded.push_back((key,id));while s.forwarded.len()>512{s.forwarded.pop_front();}}
         let critical = hints.get("urgency").and_then(|v| u8::try_from(v).ok()) == Some(2);
         let resident = hints
             .get("resident")
@@ -199,6 +204,11 @@ pub struct Notifications {
     send: mpsc::Sender<Request>,
 }
 impl Notifications {
+    pub fn forward(&self,notice:dome::wivrn::Notice) {
+        let mut hints=HashMap::new();hints.insert("x-dome-event-id".into(),zbus::zvariant::OwnedValue::from(zbus::zvariant::Str::from(notice.id)));
+        let _=Server(self.state.clone()).notify("WayVR".into(),0,String::new(),notice.title,notice.body,vec![],hints,notice.timeout);
+    }
+    pub fn owns_bus(&self)->bool {self.state.lock().unwrap().owns_bus}
     pub fn screenshot(&self,title:&str,body:&str) {
         let _=Server(self.state.clone()).notify("Dome Screenshot".into(),0,"camera-photo".into(),
             title.into(),body.into(),vec![],HashMap::new(),5000);
@@ -209,9 +219,10 @@ impl Notifications {
         let (send, receive) = mpsc::channel();
         let shared = state.clone();
         std::thread::spawn(move || {
-            if let Err(e) = run(shared, receive) {
+            if let Err(e) = run(shared.clone(), receive) {
                 eprintln!("Notification service unavailable (another desktop may own it): {e}");
             }
+            shared.lock().unwrap().owns_bus=false;
         });
         Self { state, send }
     }
@@ -408,8 +419,9 @@ fn run(state: Arc<Mutex<State>>, receive: mpsc::Receiver<Request>) -> zbus::Resu
     // Never replace the host desktop's notification daemon.
     let connection = Connection::session()?;
     connection.object_server().at(PATH, Server(state.clone()))?;
-    connection
-        .request_name_with_flags(INTERFACE, zbus::fdo::RequestNameFlags::DoNotQueue.into())?;
+    let owner=connection.request_name_with_flags(INTERFACE, zbus::fdo::RequestNameFlags::DoNotQueue.into())?;
+    if !matches!(owner,zbus::fdo::RequestNameReply::PrimaryOwner|zbus::fdo::RequestNameReply::AlreadyOwner){return Err(zbus::Error::Failure("Notification service already owned".into()));}
+    state.lock().unwrap().owns_bus=true;
     loop {
         while let Ok(request) = receive.try_recv() {
             match request {
@@ -479,6 +491,22 @@ fn run(state: Arc<Mutex<State>>, receive: mpsc::Receiver<Request>) -> zbus::Resu
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn forwarded_wayvr_notices_have_one_popup_and_history_entry() {
+        let state=Arc::new(Mutex::new(State::default()));
+        let server=Server(state.clone());
+        let notify=|key:&str| {
+            let mut hints=HashMap::new();
+            hints.insert("x-dome-event-id".into(),zbus::zvariant::OwnedValue::from(zbus::zvariant::Str::from(key)));
+            server.notify("WayVR".into(),0,String::new(),"one".into(),"body".into(),vec![],hints,5000).unwrap()
+        };
+        let id=notify("one");assert_eq!(notify("one"),id);
+        assert_eq!(state.lock().unwrap().notices.len(),1);
+        assert_eq!(state.lock().unwrap().history.len(),1);
+        assert!(remove(&state,id));assert_eq!(notify("one"),id);
+        assert_eq!(state.lock().unwrap().notices.len(),0);
+        assert_ne!(notify("two"),id);
+    }
     #[test]
     fn surface_notifications_replace_dismiss_and_bound_image_history() {
         let (send, _) = mpsc::channel();

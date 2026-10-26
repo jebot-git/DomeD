@@ -1513,3 +1513,5 @@ Penguin Mail activation also present reused windows in that mode. Automatic mpvr
 and image presentation respect this selection; explicit XR actions remain
 available. See [the working-mode audit](docs/WORKING_MODE_AUDIT.md) for coverage,
 packaging and verification.
+
+WiVRn-Pro interoperability and control protocol: [docs/WIVRN.md](docs/WIVRN.md).

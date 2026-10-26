@@ -72,3 +72,4 @@ pub mod super_mmb;
 pub mod quick_launch;
 
 pub mod xr_window_size;
+pub mod wivrn;

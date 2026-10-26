@@ -16,7 +16,7 @@ multi-gpu = ["standalone"]
 
 [dependencies]
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
-nix = { version = "0.31", features = ["socket", "uio", "user", "fs"] }
+nix = { version = "0.31", features = ["socket", "uio", "user", "fs", "time"] }
 async-channel = { version = "2", optional = true }
 wayland-server = { version = "0.31", optional = true }
 wayland-scanner = { version = "0.31", optional = true }

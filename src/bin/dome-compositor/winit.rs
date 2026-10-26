@@ -248,6 +248,7 @@ pub fn init_winit(
                     let _ = display.flush_clients();
                 }
                 WinitEvent::CloseRequested => {
+                    state.mark_explicit_stop();
                     state.loop_signal.stop();
                 }
                 _ => (),
