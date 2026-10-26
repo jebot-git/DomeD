@@ -430,6 +430,14 @@ fn run(
     }
 }
 impl Dome {
+    /// Direct per-window identity, without inheriting a parent dialog's menu.
+    pub fn window_menu_address(&self, id: u64) -> Option<Address> {
+        let surface = self.registry.iter().find(|(window, _)| *window == id)?.1.toplevel()?.wl_surface();
+        smithay::wayland::compositor::with_states(surface, |s| {
+            s.data_map.get::<SurfaceMenu>()
+                .and_then(|m| m.0.lock().unwrap().as_ref().map(|(_, a)| a.clone()))
+        })
+    }
     pub fn focused_menu_address(&self) -> Option<Address> {
         let scene = self.shell_scene();
         let mut window = scene.focused?;

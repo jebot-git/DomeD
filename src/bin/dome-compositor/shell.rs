@@ -367,7 +367,7 @@ impl Dome {
             .filter(|_| !self.shell_modal_open())
             .find(|n| n.contains(x, y))
         {
-            self.notifications.click(&toast, x, y);
+            self.notifications.click(&toast, x, y, self.notification_destination());
             return;
         }
         if self.appearance_open && self.keyboard_draft.is_some() {

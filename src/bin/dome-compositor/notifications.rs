@@ -5,7 +5,7 @@ use std::{
     sync::{mpsc, Arc, Mutex},
     time::{Duration, Instant},
 };
-use zbus::{blocking::Connection, object_server::SignalEmitter, zvariant::OwnedValue};
+use zbus::{blocking::Connection, message::Header, object_server::SignalEmitter, zvariant::OwnedValue};
 const PATH: &str = "/org/freedesktop/Notifications";
 const INTERFACE: &str = "org.freedesktop.Notifications";
 #[derive(Clone, Serialize)]
@@ -25,6 +25,75 @@ pub struct Notice {
     resident: bool,
     #[serde(skip)]
     deadline: Option<Instant>,
+    #[serde(skip)]
+    activation: Option<(String, String)>,
+}
+impl Notice {
+    pub fn actionable(&self) -> bool {
+        self.source.is_none() && self.actions.iter().any(|a| a[0] == "default")
+    }
+}
+#[derive(Clone, Copy)]
+pub struct Destination {
+    pub workspace: usize,
+    pub realm: dome::Realm,
+    pub output: dome::Rect,
+}
+#[derive(Clone)]
+pub struct Presentation {
+    sequence: u64,
+    owner: String,
+    path: String,
+    destination: Destination,
+    deadline: Instant,
+}
+impl Destination {
+    fn actions(&self, scene: &dome::Scene, id: u64) -> Option<Vec<dome::Action>> {
+        let window = scene.window(id)?;
+        if self.workspace >= scene.workspaces.len() { return None; }
+        let mut actions = vec![
+            dome::Action::Move { id, lane: window.lane, workspace: self.workspace },
+            dome::Action::WindowVisibility { id,
+                desktop: window.desktop_visible || self.realm == dome::Realm::Desktop,
+                xr: window.xr_visible || self.realm == dome::Realm::Xr },
+        ];
+        if self.realm == dome::Realm::Desktop {
+            let cx = window.desktop.x + window.desktop.w / 2.;
+            let cy = window.desktop.y + window.desktop.h / 2.;
+            let o = self.output;
+            if cx < o.x || cx >= o.x + o.w || cy < o.y || cy >= o.y + o.h {
+                actions.push(dome::Action::DesktopMove { id,
+                    x: o.x + ((o.w - window.desktop.w) / 2.).max(0.),
+                    y: o.y + 36. + ((o.h - 96. - window.desktop.h) / 2.).max(0.) });
+            }
+        }
+        actions.push(dome::Action::Focus { id });
+        Some(actions)
+    }
+}
+impl crate::Dome {
+    pub fn notification_destination(&self) -> Destination {
+        let output = self.shell_geometry();
+        Destination { workspace: self.scene.lock().unwrap().active_workspace,
+            realm: self.input_realm, output: dome::Rect { x: output.loc.x as f32,
+                y: output.loc.y as f32, w: output.size.w as f32, h: output.size.h as f32 } }
+    }
+    pub fn present_notification_windows(&mut self) {
+        for presentation in self.notifications.presentations() {
+            // Bind the exact surface to the notification caller's unique bus
+            // name and exported menu. A composer/settings window cannot match.
+            let id = self.registry.iter().find_map(|(id, _)| {
+                self.window_menu_address(*id).filter(|a|
+                    a.service == presentation.owner && a.path == presentation.path).map(|_| *id)
+            });
+            let Some(id) = id else { continue; }; // Hidden clients remap asynchronously.
+            let actions = presentation.destination.actions(&self.scene.lock().unwrap(), id);
+            if let Some(actions) = actions {
+                for action in actions { self.action(action); }
+            }
+            self.notifications.presented(presentation.sequence);
+        }
+    }
 }
 #[derive(Clone, Serialize)]
 pub struct NoticeImage {
@@ -43,6 +112,8 @@ struct State {
     unread: bool,
     dismissed_surfaces: std::collections::HashSet<u64>,
     surface_clicks: Vec<(u64, [f64; 2])>,
+    presentation_sequence: u64,
+    presentations: Vec<Presentation>,
 }
 #[derive(Clone, Serialize)]
 pub struct Toast {
@@ -81,7 +152,48 @@ impl Server {
         actions: Vec<String>,
         hints: HashMap<String, OwnedValue>,
         expire_timeout: i32,
+        #[zbus(header)] header: Header<'_>,
     ) -> zbus::fdo::Result<u32> {
+        self.add_notice(header.sender().map(|s| s.as_str()).unwrap_or(""), app_name,
+            replaces_id, _app_icon, summary, body, actions, hints, expire_timeout)
+    }
+    async fn close_notification(
+        &self,
+        id: u32,
+        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
+    ) -> zbus::fdo::Result<()> {
+        let history = {
+            let mut s = self.0.lock().unwrap();
+            let found = s.history.iter_mut().find(|n| n.id == id);
+            if let Some(n) = found { n.actions.clear(); }
+            let exists = s.history.iter().any(|n| n.id == id);
+            s.revision = s.revision.wrapping_add(1);
+            exists
+        };
+        if !remove(&self.0, id) && !history {
+            return Err(zbus::fdo::Error::InvalidArgs("Unknown notification".into()));
+        }
+        Self::notification_closed(&emitter, id, 3).await?;
+        Ok(())
+    }
+    #[zbus(signal)]
+    async fn notification_closed(
+        emitter: &SignalEmitter<'_>,
+        id: u32,
+        reason: u32,
+    ) -> zbus::Result<()>;
+    #[zbus(signal)]
+    async fn action_invoked(
+        emitter: &SignalEmitter<'_>,
+        id: u32,
+        action_key: &str,
+    ) -> zbus::Result<()>;
+}
+impl Server {
+    #[allow(clippy::too_many_arguments)]
+    fn add_notice(&self, owner: &str, app_name: String, replaces_id: u32,
+        _app_icon: String, summary: String, body: String, actions: Vec<String>,
+        hints: HashMap<String, OwnedValue>, expire_timeout: i32) -> zbus::fdo::Result<u32> {
         if actions.len() % 2 != 0
             || actions.len() > 32
             || summary.len()
@@ -143,6 +255,11 @@ impl Server {
             critical,
             resident,
             deadline: timeout.map(|d| Instant::now() + d),
+            activation: hints.get("x-dome-activation-menu")
+                .and_then(|v| <&str>::try_from(v).ok())
+                .filter(|p| !owner.is_empty() && *p != "/" && p.len() <= 1024
+                    && zbus::zvariant::ObjectPath::try_from(*p).is_ok())
+                .map(|p| (owner.to_owned(), p.to_owned())),
         };
         s.history.retain(|n| n.id != id);
         s.history.push(notice.clone());
@@ -158,29 +275,6 @@ impl Server {
         s.revision = s.revision.wrapping_add(1);
         Ok(id)
     }
-    async fn close_notification(
-        &self,
-        id: u32,
-        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
-    ) -> zbus::fdo::Result<()> {
-        if !remove(&self.0, id) {
-            return Err(zbus::fdo::Error::InvalidArgs("Unknown notification".into()));
-        }
-        Self::notification_closed(&emitter, id, 3).await?;
-        Ok(())
-    }
-    #[zbus(signal)]
-    async fn notification_closed(
-        emitter: &SignalEmitter<'_>,
-        id: u32,
-        reason: u32,
-    ) -> zbus::Result<()>;
-    #[zbus(signal)]
-    async fn action_invoked(
-        emitter: &SignalEmitter<'_>,
-        id: u32,
-        action_key: &str,
-    ) -> zbus::Result<()>;
 }
 fn remove(state: &Mutex<State>, id: u32) -> bool {
     let mut s = state.lock().unwrap();
@@ -197,7 +291,7 @@ fn remove(state: &Mutex<State>, id: u32) -> bool {
 }
 enum Request {
     Dismiss(u32),
-    Action(u32, String),
+    Action(u32, String, Destination),
 }
 pub struct Notifications {
     state: Arc<Mutex<State>>,
@@ -206,11 +300,11 @@ pub struct Notifications {
 impl Notifications {
     pub fn forward(&self,notice:dome::wivrn::Notice) {
         let mut hints=HashMap::new();hints.insert("x-dome-event-id".into(),zbus::zvariant::OwnedValue::from(zbus::zvariant::Str::from(notice.id)));
-        let _=Server(self.state.clone()).notify("WayVR".into(),0,String::new(),notice.title,notice.body,vec![],hints,notice.timeout);
+        let _=Server(self.state.clone()).add_notice("", "WayVR".into(),0,String::new(),notice.title,notice.body,vec![],hints,notice.timeout);
     }
     pub fn owns_bus(&self)->bool {self.state.lock().unwrap().owns_bus}
     pub fn screenshot(&self,title:&str,body:&str) {
-        let _=Server(self.state.clone()).notify("Dome Screenshot".into(),0,"camera-photo".into(),
+        let _=Server(self.state.clone()).add_notice("", "Dome Screenshot".into(),0,"camera-photo".into(),
             title.into(),body.into(),vec![],HashMap::new(),5000);
     }
 
@@ -278,6 +372,7 @@ impl Notifications {
                 critical: false,
                 resident: true,
                 deadline: None,
+                activation: None,
             }
         };
         s.notices.retain(|n| n.id != notice.id);
@@ -324,6 +419,19 @@ impl Notifications {
             .rev()
             .cloned()
             .collect()
+    }
+    pub fn activate_history(&self, id: u32, destination: Destination) -> bool {
+        let actionable = self.state.lock().unwrap().history.iter()
+            .any(|n| n.id == id && n.actionable());
+        actionable && self.send.send(Request::Action(id, "default".into(), destination)).is_ok()
+    }
+    fn presentations(&self) -> Vec<Presentation> {
+        let mut s = self.state.lock().unwrap();
+        s.presentations.retain(|p| p.deadline > Instant::now());
+        s.presentations.clone()
+    }
+    fn presented(&self, sequence: u64) {
+        self.state.lock().unwrap().presentations.retain(|p| p.sequence != sequence);
     }
     pub fn unread(&self) -> bool {
         self.state.lock().unwrap().unread
@@ -375,7 +483,7 @@ impl Notifications {
         }
         result
     }
-    pub fn click(&self, toast: &Toast, x: f64, y: f64) {
+    pub fn click(&self, toast: &Toast, x: f64, y: f64, destination: Destination) {
         let n = &toast.notice;
         if let Some(source) = n.source {
             if x >= (toast.x + toast.w - 32) as f64 && y < (toast.y + 32) as f64 {
@@ -405,9 +513,9 @@ impl Notifications {
             else {
                 return;
             };
-            Request::Action(n.id, a[0].clone())
+            Request::Action(n.id, a[0].clone(), destination)
         } else if n.actions.iter().any(|a| a[0] == "default") {
-            Request::Action(n.id, "default".into())
+            Request::Action(n.id, "default".into(), destination)
         } else {
             Request::Dismiss(n.id)
         };
@@ -436,15 +544,24 @@ fn run(state: Arc<Mutex<State>>, receive: mpsc::Receiver<Request>) -> zbus::Resu
                         )?;
                     }
                 }
-                Request::Action(id, key) => {
-                    let notice = state
-                        .lock()
-                        .unwrap()
-                        .notices
-                        .iter()
-                        .find(|n| n.id == id)
-                        .cloned();
+                Request::Action(id, key, destination) => {
+                    let notice = {
+                        let s = state.lock().unwrap();
+                        s.notices.iter().chain(s.history.iter()).find(|n| n.id == id).cloned()
+                    };
                     if let Some(n) = notice.filter(|n| n.actions.iter().any(|a| a[0] == key)) {
+                        if key == "default" {
+                            if let Some((owner, path)) = &n.activation {
+                                let mut s = state.lock().unwrap();
+                                s.presentation_sequence = s.presentation_sequence.wrapping_add(1);
+                                let sequence = s.presentation_sequence;
+                                s.presentations.retain(|p| (&p.owner, &p.path) != (owner, path));
+                                if s.presentations.len() >= 32 { s.presentations.remove(0); }
+                                s.presentations.push(Presentation { sequence, owner: owner.clone(),
+                                    path: path.clone(), destination,
+                                    deadline: Instant::now() + Duration::from_secs(5) });
+                            }
+                        }
                         connection.emit_signal(
                             None::<&str>,
                             PATH,
@@ -491,6 +608,50 @@ fn run(state: Arc<Mutex<State>>, receive: mpsc::Receiver<Request>) -> zbus::Resu
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn destination() -> Destination {
+        Destination { workspace: 1, realm: dome::Realm::Desktop,
+            output: dome::Rect { x: 1920., y: 0., w: 1600., h: 1000. } }
+    }
+    #[test]
+    fn notification_activation_preserves_clicked_desktop_output_and_exact_window() {
+        let mut scene = dome::Scene::new("test");
+        scene.apply(dome::Action::AddWorkspace { name: "Other".into() }).unwrap();
+        let mail = scene.add("Mail", "same.app");
+        let composer = scene.add("Compose", "same.app");
+        let composer_before = scene.window(composer).unwrap().desktop;
+        scene.apply(dome::Action::Minimize { id: mail }).unwrap();
+        for action in destination().actions(&scene, mail).unwrap() { scene.apply(action).unwrap(); }
+        let window = scene.window(mail).unwrap();
+        assert_eq!(window.workspace, 1);
+        assert!(!window.minimized && window.desktop_visible);
+        assert!(window.desktop.x >= 1920. && window.desktop.x < 3520.);
+        assert_eq!(scene.focused, Some(mail));
+        assert_eq!(scene.window(composer).unwrap().workspace, 0);
+        assert_eq!(scene.window(composer).unwrap().desktop, composer_before);
+        let mut missing = destination(); missing.workspace = 99;
+        assert!(missing.actions(&scene, mail).is_none());
+    }
+    #[test]
+    fn expired_history_keeps_only_offered_actions_and_caller_bound_window_identity() {
+        let state = Arc::new(Mutex::new(State::default()));
+        let server = Server(state.clone());
+        let mut hints = HashMap::new();
+        hints.insert("x-dome-activation-menu".into(),
+            OwnedValue::from(zbus::zvariant::Str::from("/org/de_xr/FLTK/Menu1")));
+        let id = server.add_notice(":1.42", "Mail".into(), 0, String::new(),
+            "New mail".into(), String::new(), vec!["default".into(), "Open".into()], hints, 1).unwrap();
+        assert!(remove(&state, id));
+        assert_eq!(state.lock().unwrap().history[0].activation,
+            Some((":1.42".into(), "/org/de_xr/FLTK/Menu1".into())));
+        let (send, receive) = mpsc::channel();
+        let notices = Notifications { state, send };
+        assert!(notices.activate_history(id, destination()));
+        assert!(matches!(receive.try_recv().unwrap(), Request::Action(i, key, d)
+            if i == id && key == "default" && d.workspace == 1));
+        assert!(!notices.activate_history(id + 1, destination()));
+        notices.remove_history(id);
+        assert!(!notices.activate_history(id, destination()));
+    }
     #[test]
     fn forwarded_wayvr_notices_have_one_popup_and_history_entry() {
         let state=Arc::new(Mutex::new(State::default()));
@@ -498,7 +659,7 @@ mod tests {
         let notify=|key:&str| {
             let mut hints=HashMap::new();
             hints.insert("x-dome-event-id".into(),zbus::zvariant::OwnedValue::from(zbus::zvariant::Str::from(key)));
-            server.notify("WayVR".into(),0,String::new(),"one".into(),"body".into(),vec![],hints,5000).unwrap()
+            server.add_notice("", "WayVR".into(),0,String::new(),"one".into(),"body".into(),vec![],hints,5000).unwrap()
         };
         let id=notify("one");assert_eq!(notify("one"),id);
         assert_eq!(state.lock().unwrap().notices.len(),1);
@@ -535,7 +696,8 @@ mod tests {
         let server = Server(state.clone());
         let notify = |replaces, summary: &str| {
             server
-                .notify(
+                .add_notice(
+                    "",
                     "app".into(),
                     replaces,
                     String::new(),

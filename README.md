@@ -1192,7 +1192,22 @@ Escape closes, and **Clear history** empties the list.
 
 Notification history retains the latest 200 notices after expiry or dismissal,
 with replacement notices updating their existing entry. The bell marks unread
-notifications. Clipboard history keeps up to 50 items, including text, images,
+notifications. Click an entry offering **Open**, or select it and press Enter,
+to invoke its default action even after the popup has expired. Applications
+must keep their notification ID/action targets until they withdraw them.
+Penguin Mail retains these targets and selects the stored mail conversation or
+calendar occurrence when activated from history.
+
+Applications may supply the `x-dome-activation-menu` string hint with the object
+path of their target window's exported FLTK menu. DomeD pairs it with the
+notification caller's unique bus name and the surface's native appmenu metadata;
+it never selects a window by its title or a shared app ID. Clicking a default
+action captures the workspace, output and desktop/XR realm. The matching window
+is restored and brought there, including after a tray-hidden window remaps.
+Other application windows retain their locations. This is an optional placement
+extension; normal freedesktop action signals remain unchanged.
+
+Clipboard history keeps up to 50 items, including text, images,
 file lists and other offered formats. Select an item to restore it to the
 clipboard, then paste normally. Transfers run off the compositor thread and
 preserve MIME types and bytes. Capture is bounded to 8 MiB per item and 32 MiB

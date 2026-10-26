@@ -40,6 +40,7 @@ impl DesktopRenderer {
         }
         state.poll_screenshots();
         state.notification_surface_clicks();
+        state.present_notification_windows();
         state.update_keyboard();
         state.sync_spatial_popups();
         state.xr_input();

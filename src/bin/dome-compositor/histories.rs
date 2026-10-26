@@ -10,7 +10,7 @@ impl Dome {
     fn history_rows(&self) -> Vec<serde_json::Value> {
         match self.history_panel {
             Some(Kind::Clipboard)=>self.clipboard.entries.iter().map(|e|serde_json::json!({"id":e.id,"text":e.text(),"detail":e.description(),"timestamp":e.timestamp})).collect(),
-            Some(Kind::Notifications)=>self.notifications.history().iter().map(|e|serde_json::json!({"id":e.id,"text":format!("{}\n{}",e.summary,e.body),"detail":e.app,"timestamp":e.timestamp,"image":e.image})).collect(),
+            Some(Kind::Notifications)=>self.notifications.history().iter().map(|e|serde_json::json!({"id":e.id,"text":format!("{}\n{}",e.summary,e.body),"detail":e.app,"timestamp":e.timestamp,"image":e.image,"actionable":e.actionable()})).collect(),
             None=>vec![],
         }
     }
@@ -63,6 +63,12 @@ impl Dome {
             if let Some(id) = id {
                 self.restore_clipboard(id);
                 self.history_panel = None;
+            }
+        } else if self.history_panel == Some(Kind::Notifications) {
+            if let Some(id) = self.history_rows().get(self.history_selected).and_then(|r| r["id"].as_u64()) {
+                if self.notifications.activate_history(id as u32, self.notification_destination()) {
+                    self.history_panel = None;
+                }
             }
         }
     }

@@ -430,7 +430,7 @@ impl Dome {
                     {
                         self.context_scroll_buttons.insert(button);
                         if button == 0x110 {
-                            self.notifications.click(&toast, local.x, local.y);
+                            self.notifications.click(&toast, local.x, local.y, self.notification_destination());
                         }
                         return;
                     }

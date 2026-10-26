@@ -824,7 +824,8 @@ extern "C" int dome_qt_paint(const char *json, unsigned char *pixels,
                text.substr(0, newline), p.fg);
         if (newline != std::string::npos)
           p.text(x + 18, ry + 22, pw - 70, 20, text.substr(newline + 1), p.fg);
-        p.text(x + 18, ry + 42, pw - 70, 20, str(rows[i], "detail"), p.muted);
+        p.text(x + 18, ry + 42, pw - 70, 20,
+               str(rows[i], "detail") + (yes(rows[i], "actionable") ? " · Open" : ""), p.muted);
         // Match history_click's remove area without depending on a font glyph.
         p.button(x + pw - 38, ry + 14, 28, 32, "X");
       }
