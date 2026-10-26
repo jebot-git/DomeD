@@ -87,6 +87,11 @@ impl Dome {
                 w.title = title.unwrap_or("Untitled".into());
                 w.app_id = app.unwrap_or("Application".into());
                 w.stereo = dome::stereo::Stereo::for_app_id(&w.app_id);
+                if crate::x11_bridge::is_vr_mirror(&w.app_id) {
+                    w.origin = dome::Realm::Desktop;
+                    w.desktop_visible = true;
+                    w.xr_visible = false;
+                }
                 // Gmsh's live mesh view shares its GUI's Wayland connection,
                 // but is a dedicated XR-only top level. Apply this on the
                 // identity transition, preserving later user presentation edits.

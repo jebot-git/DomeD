@@ -541,6 +541,8 @@ void walletAction(const std::string &action, int handle,
 std::string frontend(const std::string &identity) {
   auto name = identity;
   std::transform(name.begin(), name.end(), name.begin(), ::tolower);
+  if (name.find("dome.network") != std::string::npos)return "network";
+  if (name.find("dome.backup") != std::string::npos)return "backup";
   if (name.find("dome.bluetooth") != std::string::npos)return "bluetooth";
   if (name.find("kdeconnect") != std::string::npos ||
       name.find("kde connect") != std::string::npos)
@@ -611,11 +613,13 @@ Json trayItems() {
   g_free(identities);
   out.push_back(suiteItem("dome.screenshot", "Screenshot (PrintScreen)"));
   out.push_back(suiteItem("dome.bluetooth", "Bluetooth"));
+  out.push_back(suiteItem("dome.network", "Network"));
+  out.push_back(suiteItem("dome.backup", "Backups"));
   const auto settings = placements();
   auto annotate = [&](Json &item) {
     auto id = item.value("Id", std::string());
     item["movable"] = movable(item);
-    item["managed"] = id == "dome.bluetooth" || settings.value(id, id == "dome.translator" || id == "wivrn.pro" || id == "dome-identities");
+    item["managed"] = id == "dome.bluetooth" || settings.value(id, id == "dome.translator" || id == "wivrn.pro" || id == "dome-identities" || id == "dome.network" || id == "dome.backup");
   };
   for (auto &item : out) annotate(item);
   if (!owned("org.kde.StatusNotifierWatcher")) return out;
@@ -639,10 +643,10 @@ Json trayItems() {
       if (item.value("Id", "") == "dome.translator") continue;
       item["service"] = service;
       item["path"] = path;
-      if (item.value("Id", "") == "dome-identities") {
-        item["suite"] = "dome-identities";
+      if (item.value("Id", "") == "dome-identities" || item.value("Id", "") == "dome.network" || item.value("Id", "") == "dome.backup") {
+        item["suite"] = item.at("Id");
         annotate(item);
-        auto found = std::find_if(out.begin(), out.end(), [](const Json &row) { return row.value("Id", "") == "dome-identities"; });
+        auto found = std::find_if(out.begin(), out.end(), [&](const Json &row) { return row.value("Id", "") == item.value("Id", ""); });
         if (found != out.end()) *found = item; else out.push_back(item);
         continue;
       }

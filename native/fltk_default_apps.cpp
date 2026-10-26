@@ -79,6 +79,7 @@ static const FileType types[] = {
     {"x-scheme-handler/https", "Web links (https)"},
     {"x-scheme-handler/http", "Web links (http)"},
     {"x-scheme-handler/mailto", "Email links"},
+    {"x-scheme-handler/misfin", "Misfin mail links"},
 };
 static bool archiveType(const char *mime) {
   for (auto type : types)

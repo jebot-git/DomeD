@@ -44,13 +44,23 @@ def desktop(text, options):
 def wrapper(text, options):
     lines = text.splitlines()
     if 'dome-link' in text:
+        # Upgrade already routed browser wrappers as well as fresh installations.
+        if options.get('activation_realm') == 'caller' and '--realm caller' not in text:
+            routed = 'exec ' + prefix(options)
+            if not lines[-1].startswith(routed):
+                raise ValueError('Expected the canonical routed browser launcher')
+            command = lines[-1][len(routed):]
+            lines[-1:-1] = ['if [ "$#" -eq 0 ]; then',
+                '  exec ' + prefix({**options, 'realm': 'caller'}) + command, 'fi']
+            return '\n'.join(lines) + '\n'
         return text
     if not lines or not lines[0].startswith('#!/bin/sh') or not lines[-1].startswith('exec '):
         raise ValueError('Expected an installed POSIX shell launcher')
     original = lines[-1]
     lines[-1:] = ['case "${1-}" in', '  --help|--version|--xr-probe|--dome-present|--sbs-present|--model-xr|--openxr|--xr) ' + original + ' ;;', 'esac',
                   'exec ' + prefix(options) + original[5:]]
-    return '\n'.join(lines) + '\n'
+    result = '\n'.join(lines) + '\n'
+    return wrapper(result, options) if options.get('activation_realm') == 'caller' else result
 
 
 def stage(destination, installed=Path('/')):

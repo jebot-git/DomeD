@@ -9,3 +9,19 @@ impl Dome {
         })
     }
 }
+
+/// Native VR games keep their ordinary mirror on the desktop, just like X11.
+pub fn is_vr_mirror(app_id: &str) -> bool {
+    app_id.eq_ignore_ascii_case("vrchat.exe")
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn vrchat_mirror_is_desktop_only_without_matching_its_launcher() {
+        assert!(super::is_vr_mirror("vrchat.exe"));
+        assert!(super::is_vr_mirror("VRChat.exe"));
+        assert!(!super::is_vr_mirror("vrchat-launcher"));
+        assert!(!super::is_vr_mirror("org.domed.FLTerm"));
+    }
+}

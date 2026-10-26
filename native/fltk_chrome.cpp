@@ -896,6 +896,33 @@ extern "C" int dome_qt_paint(const char *json, unsigned char *pixels,
       p.border(x, y, pw, ph, p.muted);
       p.text(x + 16, y + 4, pw - 60, 32, "Audio", p.fg);
       p.text(x + pw - 36, y, 36, 36, "×", p.fg);
+      bool mixer = yes(audio, "mixer_page");
+      p.button(x + 96, y + 6, 110, 26, "Volume", !mixer);
+      p.button(x + 216, y + 6, 110, 26, "Mixer", mixer);
+      if (mixer) {
+        auto item = obj(audio, "item"), level = obj(audio, "level");
+        double volume = level.value("volume", 0.);
+        bool available = !level.empty();
+        p.text(x + 16, y + 36, pw - 32, 24, item.empty() ? "No audio streams or devices" : str(item, "label"), p.fg);
+        p.button(x + 16, y + 64, 32, 30, "−");
+        p.button(x + pw - 140, y + 64, 32, 30, "+");
+        p.button(x + pw - 96, y + 64, 80, 30, yes(level, "muted") ? "Unmute" : "Mute");
+        p.rect(x + 60, y + 75, pw - 216, 8, p.muted);
+        if (available) p.rect(x + 60, y + 75, std::clamp(int(volume * (pw - 216)), 0, std::max(0, pw - 216)), 8, yes(level, "muted") ? p.muted : p.accent);
+        p.button(x + 16, y + 108, 32, 30, "‹");
+        p.button(x + pw - 48, y + 108, 32, 30, "›");
+        p.text(x + 60, y + 108, pw - 120, 30, str(audio, "channel") + (available ? " · " + std::to_string(int(std::lround(volume * 100))) + "%" : ""), available ? p.fg : p.muted);
+        p.button(x + 16, y + 154, 32, 30, "‹");
+        p.button(x + pw - 48, y + 154, 32, 30, "›");
+        std::string kind = str(item, "kind"), caption = kind == "card" ? "Profile" : (kind == "output" || kind == "input") ? "Port" : "Route";
+        p.text(x + 60, y + 154, pw - 120, 30, caption + " · " + str(audio, "choice"), p.fg);
+        p.text(x + 16, y + 186, pw - 32, 24, "Devices and applications", p.muted);
+        auto rows = arr(audio, "rows"); int first = num(audio, "first"), visible = num(audio, "visible");
+        for (int n = first; n < std::min(int(rows.size()), first + visible); ++n) {
+          int ry = y + 214 + (n - first) * 32;
+          p.button(x + 10, ry, pw - 20, 30, str(rows[n], "label"), selected == n);
+        }
+      } else {
       for (int n = 0; n < 2; ++n) {
         int offset = n ? 136 : 64;
         auto level = obj(audio, n ? "input" : "output");
@@ -934,9 +961,10 @@ extern "C" int dome_qt_paint(const char *json, unsigned char *pixels,
         if (active) p.rect(x + 21, ry + 12, 6, 6, p.accent);
         p.text(x + 40, ry, pw - 56, 30, str(row, "label"), active ? p.accent : p.fg);
       }
+      }
       auto error = str(audio, "error");
       p.text(x + 16, y + ph - 30, pw - 32, 24,
-             error.empty() ? "Click selects · Arrows navigate · Esc closes" : error,
+             error.empty() ? (mixer ? "↑↓ select · ←→ volume · Enter mute · C channel · R route" : "Click selects · Arrows navigate · Tab switches page") : error,
              error.empty() ? p.muted : p.accent);
       cairo_restore(c);
     }

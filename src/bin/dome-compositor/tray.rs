@@ -52,7 +52,7 @@ fn placements() -> HashMap<String, bool> {
         .and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
 }
 fn managed_item(settings: &HashMap<String, bool>, id: &str) -> bool {
-    settings.get(id).copied().unwrap_or(id == "dome.translator" || id == "wivrn.pro" || id == "dome-identities")
+    settings.get(id).copied().unwrap_or(id == "dome.translator" || id == "wivrn.pro" || id == "dome-identities" || id == "dome.network" || id == "dome.backup")
 }
 fn loading_rows() -> Vec<Row> {
     vec![Row {

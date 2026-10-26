@@ -39,4 +39,20 @@ class Packaging(unittest.TestCase):
         self.assertEqual(module.wrapper(result,{}),result)
         with tempfile.NamedTemporaryFile(mode='w')as script:
             script.write(result);script.flush();subprocess.run(['sh','-n',script.name],check=True)
+    def test_browser_menu_activation_preserves_caller_and_uri_dispatch_stays_automatic(self):
+        options=json.loads((ROOT/'packaging/link-handlers.json').read_text())['wrappers']['dome-browser']
+        source='#!/bin/sh\nexport TEST=value\nexec browser "$@"\n'
+        routed=module.wrapper(source,{'app_id':'org.domed.Browser'})
+        result=module.wrapper(routed,options)
+        self.assertEqual(module.wrapper(source,options),result)
+        self.assertEqual(module.wrapper(result,options),result)
+        with tempfile.TemporaryDirectory() as folder:
+            folder=Path(folder);recorder=folder/'record';script=folder/'browser'
+            recorder.write_text('#!/bin/sh\nprintf "%s\\n" "$@"\n');recorder.chmod(0o755)
+            script.write_text(result.replace('/usr/local/bin/dome-link',str(recorder)))
+            no_args=subprocess.check_output(['sh',str(script)],text=True).splitlines()
+            self.assertEqual(no_args,['--realm','caller','--app-id','org.domed.Browser','--','browser'])
+            uri='https://example.invalid/a b?x=$(false)&v=ü#fragment'
+            with_uri=subprocess.check_output(['sh',str(script),uri],text=True).splitlines()
+            self.assertEqual(with_uri,['--app-id','org.domed.Browser','--','browser',uri])
 if __name__=='__main__':unittest.main()

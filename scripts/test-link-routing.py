@@ -94,6 +94,16 @@ try:
             player.terminate();player.wait(timeout=10)
             wait(lambda:all(w['id']!=window['id']for w in state()['windows']))
         # Explicit per-launch placement still wins over the current mode.
+        # A browser menu activation has no URI; preserve its verified launch
+        # socket even when input ownership is in the other realm.
+        for mode in ['desktop','xr']:
+            request('/api/action',{'op':'xr_presentation','desktop':mode=='xr'})
+            wait(lambda:request('/api/xr-control')['input_realm']==mode)
+            source='xr' if mode=='desktop' else 'desktop'
+            subprocess.run([sys.executable,str(root/'packaging/dome-link'),'--realm','caller','--app-id',app_ids[0],'--',sys.executable,str(recorder),str(recorded)],env={**env,'WAYLAND_DISPLAY':contexts[source],'WAYLAND_SOCKET':'123'},check=True,timeout=10)
+            value=json.loads(recorded.read_text());window=next(w for w in state()['windows']if w['app_id']==app_ids[0])
+            check(value['socket']==contexts[source] and value['fd']is None,'Caller activation preserves '+source+' launch socket despite '+mode+' input ownership')
+            check(window['desktop_visible']==(source=='desktop') and window['xr_visible']==(source=='xr'),'Caller activation presents reused browser on '+source)
         subprocess.run([sys.executable,str(root/'packaging/dome-link'),'--realm','desktop','--',sys.executable,str(recorder),str(recorded),*urls],env={**env,'WAYLAND_DISPLAY':contexts['xr']},check=True)
         check(json.loads(recorded.read_text())['socket']==contexts['desktop'],'Explicit desktop presentation overrides XR working mode')
         # An unrelated compositor/context must receive the original environment.

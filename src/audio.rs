@@ -42,6 +42,8 @@ pub struct Snapshot {
     pub output: Option<Level>,
     pub input: Option<Level>,
     pub error: String,
+    pub mixer: Vec<crate::audio_mixer::Item>,
+    pub mixer_error: String,
 }
 /// Visual device rows share their index mapping with pointer hit testing.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -90,9 +92,12 @@ impl DeviceList {
         }
     }
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub enum Request {
     Open(bool),
+    MixerPage(bool),
+    MixerVolumeWake,
+    Mixer(crate::audio_mixer::Request),
     Volume(Target, f32),
     Step(Target, i8),
     Mute(Target),
@@ -106,6 +111,7 @@ pub struct Audio {
     state: Arc<Mutex<Snapshot>>,
     send: mpsc::SyncSender<Request>,
     volumes: Arc<Mutex<[Option<f32>; 2]>>,
+    mixer_volume: Arc<Mutex<Option<crate::audio_mixer::Request>>>,
 }
 impl Audio {
     pub fn new() -> Self {
@@ -114,17 +120,27 @@ impl Audio {
         let shared = state.clone();
         let volumes = Arc::new(Mutex::new([None, None]));
         let pending = volumes.clone();
-        std::thread::spawn(move || worker(shared, receive, pending));
+        let mixer_volume = Arc::new(Mutex::new(None));
+        let pending_mixer = mixer_volume.clone();
+        std::thread::spawn(move || worker(shared, receive, pending, pending_mixer));
         Self {
             state,
             send,
             volumes,
+            mixer_volume,
         }
     }
     pub fn state(&self) -> Snapshot {
         self.state.lock().unwrap().clone()
     }
     pub fn request(&self, request: Request) {
+        if let Request::Mixer(ref value) = request {
+            if matches!(&value.action, crate::audio_mixer::Action::Volume { .. }) {
+                *self.mixer_volume.lock().unwrap() = Some(value.clone());
+                let _ = self.send.try_send(Request::MixerVolumeWake);
+                return;
+            }
+        }
         if let Request::Volume(target, volume) = request {
             self.volumes.lock().unwrap()[usize::from(target == Target::Input)] = Some(volume);
         }
@@ -136,7 +152,7 @@ impl Default for Audio {
         Self::new()
     }
 }
-fn run(program: &str, args: &[&str]) -> Result<Vec<u8>, String> {
+pub(crate) fn run(program: &str, args: &[&str]) -> Result<Vec<u8>, String> {
     let mut child = Command::new(program)
         .args(args)
         .env("LC_ALL", "C")
@@ -343,7 +359,8 @@ fn query() -> Result<Snapshot, String> {
 }
 fn apply(request: Request) -> Result<(), String> {
     match request {
-        Request::Open(_) => (),
+        Request::Open(_) | Request::MixerPage(_) | Request::MixerVolumeWake => (),
+        Request::Mixer(request) => crate::audio_mixer::apply(request)?,
         Request::Volume(target, volume) => {
             if !volume.is_finite() {
                 return Err("Invalid audio volume".into());
@@ -404,24 +421,37 @@ fn flush_volumes(volumes: &Mutex<[Option<f32>; 2]>) -> Result<(), String> {
     }
     Ok(())
 }
+fn flush_mixer(pending: &Mutex<Option<crate::audio_mixer::Request>>) -> Result<(), String> {
+    let request = pending.lock().unwrap().take();
+    request.map(crate::audio_mixer::apply).unwrap_or(Ok(()))
+}
 fn worker(
     state: Arc<Mutex<Snapshot>>,
     receive: mpsc::Receiver<Request>,
     volumes: Arc<Mutex<[Option<f32>; 2]>>,
+    mixer_volume: Arc<Mutex<Option<crate::audio_mixer::Request>>>,
 ) {
     let mut open = false;
+    let mut mixer = false;
     let mut failure: Option<(Instant, String)> = None;
     loop {
-        if let Err(error) = flush_volumes(&volumes) {
+        if let Err(error) = flush_volumes(&volumes).and_then(|_| flush_mixer(&mixer_volume)) {
             failure = Some((Instant::now(), error));
         }
         let mut next = query().unwrap_or_else(|error| Snapshot {
             error,
             ..Default::default()
         });
+        if mixer {
+            match crate::audio_mixer::query() {
+                Ok(items) => next.mixer = items,
+                Err(error) => next.mixer_error = error,
+            }
+        }
         if let Some((time, error)) = &failure {
             if time.elapsed() < Duration::from_secs(4) {
                 next.error = error.clone();
+                next.mixer_error = error.clone();
             } else {
                 failure = None;
             }
@@ -442,9 +472,16 @@ fn worker(
             Ok(request) => {
                 if let Request::Open(value) = request {
                     open = value;
+                    if !open {
+                        mixer = false;
+                    }
+                }
+                if let Request::MixerPage(value) = request {
+                    mixer = value && open;
                 }
                 if !matches!(request, Request::Volume(..)) {
                     failure = flush_volumes(&volumes)
+                        .and_then(|_| flush_mixer(&mixer_volume))
                         .and_then(|_| apply(request))
                         .err()
                         .map(|e| (Instant::now(), e));
@@ -455,9 +492,16 @@ fn worker(
                     };
                     if let Request::Open(value) = request {
                         open = value;
+                        if !open {
+                            mixer = false;
+                        }
+                    }
+                    if let Request::MixerPage(value) = request {
+                        mixer = value && open;
                     }
                     if !matches!(request, Request::Volume(..)) {
                         failure = flush_volumes(&volumes)
+                            .and_then(|_| flush_mixer(&mixer_volume))
                             .and_then(|_| apply(request))
                             .err()
                             .map(|e| (Instant::now(), e));

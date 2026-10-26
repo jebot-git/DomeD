@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+NoDisplay=true
+Name=Network (FLTK)
+Comment=Manage network connections in DomeD
+Exec=dome-tray --network
+TryExec=dome-tray
+Icon=org.domed.Network
+Terminal=false
+Categories=Settings;
+StartupWMClass=org.domed.Tray

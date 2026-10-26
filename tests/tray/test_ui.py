@@ -16,7 +16,7 @@ with tempfile.TemporaryDirectory(prefix='dome-tray-ui-') as directory:
  def start(cmd,env,name,**kwargs):
   p=subprocess.Popen(cmd,env=env,stdout=(out/name).open('w'),stderr=subprocess.STDOUT,**kwargs);processes.append(p);return p
  def wait(fn):
-  for _ in range(150):
+  for _ in range(750):
    try:
     value=fn()
     if value:return value
@@ -26,12 +26,20 @@ with tempfile.TemporaryDirectory(prefix='dome-tray-ui-') as directory:
  try:
   rd,wr=os.pipe();start(['Xvfb','-displayfd',str(wr),'-screen','0','1280x800x24','-nolisten','tcp'],os.environ.copy(),'ui-xvfb.log',pass_fds=(wr,));os.close(wr)
   with os.fdopen(rd) as pipe:disp=':'+pipe.readline().strip()
-  env={**os.environ,'DISPLAY':disp,'XDG_RUNTIME_DIR':directory,'XDG_CONFIG_HOME':str(runtime/'config'),'XDG_STATE_HOME':str(runtime/'state'),'XDG_CURRENT_DESKTOP':'Dome','DE_XR_GL_TRACE':'1','FLTK_BACKEND':'x11','LIBGL_ALWAYS_SOFTWARE':'1','TRAY_FIXTURE_READY':str(runtime/'ready')}
+  env={**os.environ,'HOME':directory,'DISPLAY':disp,'XDG_RUNTIME_DIR':directory,'XDG_CONFIG_HOME':str(runtime/'config'),'XDG_STATE_HOME':str(runtime/'state'),'XDG_CURRENT_DESKTOP':'Dome','DE_XR_GL_TRACE':'1','FLTK_BACKEND':'x11','LIBGL_ALWAYS_SOFTWARE':'1','TRAY_FIXTURE_READY':str(runtime/'ready')}
   for key in ['WAYLAND_DISPLAY','WAYLAND_SOCKET']:env.pop(key,None)
   env['DBUS_SYSTEM_BUS_ADDRESS']=env['DBUS_SESSION_BUS_ADDRESS']
   env['BLUETOOTH_FIXTURE_READY']=str(runtime/'bluetooth-ready')
   env['BLUETOOTH_FIXTURE_LOG']=str(runtime/'bluetooth-events.json')
   start([sys.executable,str(ROOT/'tests/tray/mock_bluetooth.py')],env,'ui-bluetooth.log');wait(lambda:(runtime/'bluetooth-ready').exists())
+  env['NETWORK_FIXTURE_READY']=str(runtime/'network-ready');env['NETWORK_FIXTURE_LOG']=str(runtime/'network-events.json')
+  start([sys.executable,str(ROOT/'tests/tray/mock_network.py')],env,'ui-network.log');wait(lambda:(runtime/'network-ready').exists())
+  backup_source=runtime/'source 日本語';backup_target=runtime/'backup';backup_source.mkdir();backup_target.mkdir()
+  (backup_source/'hello.txt').write_text('native backup UI fixture')
+  profile_folder=runtime/'config/dome/backups';profile_folder.mkdir(parents=True)
+  profile_id='c5d3ecae-6cb9-4d29-bd60-ec10a8c2793c'
+  profile=profile_folder/(profile_id+'.json')
+  profile.write_text(json.dumps({'id':profile_id,'name':'UI fixture','source':str(backup_source),'destination':str(backup_target),'schedule':'off'}));profile.chmod(0o600)
   env['TRAY_FIXTURE_CONFIG_REQUESTS']=str(runtime/'config-requests')
   start([sys.executable,str(ROOT/'tests/tray/mock_services.py')],env,'ui-services.log');wait(lambda:(runtime/'ready').exists())
   manager=start([str(BUILD/'dome-tray')],env,'ui-frontend.log')
@@ -57,10 +65,16 @@ with tempfile.TemporaryDirectory(prefix='dome-tray-ui-') as directory:
     for w,h,data in images:
      assert len(data)==w*h*4
      assert any(data[0::4]) and 0 in data[0::4],'Icon must retain transparency'
+    for path,identity in [('/Network','dome.network'),('/Backups','dome.backup')]:
+     node=await bus.introspect('org.domed.Tray',path)
+     props=bus.get_proxy_object('org.domed.Tray',path,node).get_interface('org.freedesktop.DBus.Properties')
+     native=await props.call_get_all('org.kde.StatusNotifierItem')
+     assert native['Id'].value==identity
+     assert native['IconPixmap'].value!=images,'Utility icons must be distinguishable from the manager'
     node=await bus.introspect('org.kde.StatusNotifierWatcher','/StatusNotifierWatcher')
     props=bus.get_proxy_object('org.kde.StatusNotifierWatcher','/StatusNotifierWatcher',node).get_interface('org.freedesktop.DBus.Properties')
     items=(await props.call_get('org.kde.StatusNotifierWatcher','RegisteredStatusNotifierItems')).value
-    assert [i for i in items if i.startswith('org.domed.Tray')]==['org.domed.Tray/TrayApplications'],items
+    assert [i for i in items if i.startswith('org.domed.Tray')]==['org.domed.Tray/TrayApplications','org.domed.Tray/Network','org.domed.Tray/Backups'],items
    finally:bus.disconnect()
   asyncio.run(check_notifier())
   def key(name,ctrl=False):
@@ -73,10 +87,10 @@ with tempfile.TemporaryDirectory(prefix='dome-tray-ui-') as directory:
    xtest.fake_input(d,X.ButtonPress,1);xtest.fake_input(d,X.ButtonRelease,1);d.sync();time.sleep(.3)
   menu='/TrayApplications/Menu'
   layout=dbus(menu,'com.canonical.dbusmenu.GetLayout','0','1','[]')
-  for label in ['Tray applications','KDE Connect','Input methods','Wallets','Translator','Screenshot','Bluetooth']:assert label in layout,layout
+  for label in ['Tray applications','KDE Connect','Input methods','Wallets','Translator','Screenshot','Bluetooth','Network','Backups']:assert label in layout,layout
   dbus(menu,'com.canonical.dbusmenu.Event','99','clicked','<0>','0')
   assert window() is None,'Unknown menu events must not open a page'
-  for row,page in enumerate(['tray','devices','input','wallets','translator','screenshot','bluetooth'],1):
+  for row,page in enumerate(['tray','devices','input','wallets','translator','screenshot','bluetooth','network','backup'],1):
    dbus(menu,'com.canonical.dbusmenu.Event',str(row),'clicked','<0>','0');w=wait(window);w.set_input_focus(X.RevertToParent,X.CurrentTime);d.sync();time.sleep(.6)
    assert w.get_geometry().height==632, 'DomeD manager must reclaim the local menu bar space'
    geo=w.get_geometry();raw=w.get_image(0,0,geo.width,geo.height,X.ZPixmap,0xffffffff)
@@ -100,6 +114,19 @@ with tempfile.TemporaryDirectory(prefix='dome-tray-ui-') as directory:
     click(w,775,102)
     wait(lambda:any(e.get('op')=='StartDiscovery' for e in events()))
    if page=='devices':click(w,80,110)
+   if page=='network':
+    assert not (runtime/'network-events.json').exists(),'Opening Network must not change networking or scan'
+    click(w,250,102)
+    wait(lambda:any(e.get('key')=='WirelessEnabled' and not e['value'] for e in json.loads((runtime/'network-events.json').read_text())))
+   if page=='backup':
+    # Empty form errors stay inside the manager instead of escaping a widget callback.
+    click(w,650,98);time.sleep(.2);assert manager.poll() is None
+    click(w,465,98);key('Down');key('Return');time.sleep(.3)
+    geo=w.get_geometry();raw=w.get_image(0,0,geo.width,geo.height,X.ZPixmap,0xffffffff)
+    Image.frombytes('RGB',(geo.width,geo.height),raw.data,'raw','BGRX').save(out/'ui-backup-selected.png')
+    click(w,220,408)
+    wait(lambda:(backup_target/'hello.txt').exists())
+    assert (backup_target/'hello.txt').read_text()=='native backup UI fixture'
    if page=='input':click(w,390,424)
    if page=='wallets':click(w,470,95);click(w,80,160)
    if page=='devices':
@@ -206,7 +233,7 @@ with tempfile.TemporaryDirectory(prefix='dome-tray-ui-') as directory:
   w.set_input_focus(X.RevertToParent,X.CurrentTime);d.sync();time.sleep(.3);key('q',ctrl=True);assert fallback.poll() is None
   fallback.terminate();assert fallback.wait(timeout=4)==-15
   print('PASS: DomeD hides the local menu, exports its commands, preserves shortcuts, and other desktops retain the fallback')
-  print('PASS: one tray entry, five pages, Bluetooth pairing/discovery, two utility shortcuts, flags, Fcitx method/group/configuration submenus, fcitx5-configuration-fltk URI routing, GPU presentation, close/restore and permanent service')
+  print('PASS: managed service icons, seven pages, network controls, real rsync backup, Bluetooth pairing/discovery, utility shortcuts, flags, Fcitx configuration, GPU presentation, close/restore and permanent service')
  finally:
   for p in reversed(processes):p.terminate()
   for p in reversed(processes):

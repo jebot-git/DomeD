@@ -71,10 +71,30 @@ try:
                 (out / 'state.json').write_text(json.dumps(data))
                 return any(w['title'] == 'Dome X11 bridge fixture' and w['origin'] == 'desktop' and w['desktop_visible'] and not w['xr_visible'] for w in data['scene']['windows'])
         wait(mapped)
+        # The native game mirror follows the same rule even when launched from XR.
+        xr_socket = wait(lambda: re.search(r'Dome XR Wayland socket: (\S+)', (out / 'compositor.log').read_text()))[1]
+        protocol = '/usr/share/wayland-protocols/stable/xdg-shell/xdg-shell.xml'
+        subprocess.run(['wayland-scanner', 'client-header', protocol, str(runtime / 'xdg-shell-client-protocol.h')], check=True)
+        subprocess.run(['wayland-scanner', 'private-code', protocol, str(runtime / 'xdg-shell-protocol.c')], check=True)
+        fixture = (ROOT / 'scripts/refresh-client.c').read_text().replace('"dome-refresh-probe"', '"vrchat.exe"')
+        (runtime / 'mirror.c').write_text(fixture)
+        subprocess.run(['cc', '-O2', '-I' + directory, str(runtime / 'mirror.c'),
+            str(runtime / 'xdg-shell-protocol.c'), '-lwayland-client', '-o', str(runtime / 'mirror')], check=True)
+        with (out / 'mirror-client.log').open('w') as log:
+            mirror = subprocess.Popen([str(runtime / 'mirror')],
+                env={**env, 'WAYLAND_DISPLAY': xr_socket}, stdout=log, stderr=log)
+        children.append(mirror)
+        def mirror_mapped():
+            with urllib.request.urlopen(f'http://127.0.0.1:{port}/api/state', timeout=2) as response:
+                data = json.load(response)
+                (out / 'mirror-state.json').write_text(json.dumps(data))
+                return any(w['app_id'] == 'vrchat.exe' and w['origin'] == 'desktop'
+                    and w['desktop_visible'] and not w['xr_visible'] for w in data['scene']['windows'])
+        wait(mirror_mapped)
         compositor.send_signal(signal.SIGTERM)
         compositor.wait(timeout=10)
         wait(lambda: not Path('/tmp/.X11-unix/X' + bridge_display[1:]).exists())
-        print('PASS: session-owned Xwayland maps an X11 client desktop-only and stops on logout')
+        print('PASS: X11 and native VRChat mirror clients stay desktop-only; Xwayland stops on logout')
 finally:
     for child in reversed(children):
         if child.poll() is None:

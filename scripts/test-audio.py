@@ -83,6 +83,11 @@ def main(directory):
     def packet(events):
         request=urllib.request.Request(base+'/api/xr-input',data=json.dumps({'events':events,'actions':[]}).encode(),headers={'Content-Type':'application/json'})
         with urllib.request.urlopen(request,timeout=2)as r:assert r.status==200
+    def xr_click(x,y):
+        layout=get('/api/xr-shell');panel=layout.get('pullout') is not None and y>=36
+        first,rows=(36,min(layout['top'],layout['height']-60)-36) if panel else (0,min(layout['top'],36))
+        packet([{'kind':'motion','id':2**64-6 if panel else 0,'uv':[x/layout['width'],(y-first)/rows]},
+                {'kind':'button','button':272,'pressed':True},{'kind':'button','button':272,'pressed':False}])
     click(962,18);wait(lambda:get('/api/xr-shell')['top']==768);capture('opened-pane');wait(lambda:pixel(930,121)==(107,171,255));capture('desktop-audio')
     check(True,'Speaker tray icon opens the shared desktop/XR audio pane')
     key('Right');check(wait(lambda:level()==(.45,False)),'Keyboard adjusts the default output volume by five percent')
@@ -115,10 +120,10 @@ def main(directory):
     command('wpctl','set-volume','@DEFAULT_AUDIO_SINK@','.5');time.sleep(.4);motion(962,18);button(True,4);button(False,4)
     check(wait(lambda:level()==(.60,False)),'Wheel over the closed speaker tray icon adjusts output volume')
     # XR pointer opens the same controls and operates its output slider.
-    packet([{'kind':'motion','id':0,'uv':[706/1024,.5]},{'kind':'button','button':272,'pressed':True},{'kind':'button','button':272,'pressed':False}]);wait(lambda:get('/api/xr-shell')['top']==768)
-    packet([{'kind':'motion','id':0,'uv':[800/1024,121/768]},{'kind':'button','button':272,'pressed':True},{'kind':'button','button':272,'pressed':False}])
+    xr_click(706,18);wait(lambda:get('/api/xr-shell')['top']==768)
+    xr_click(800,121)
     check(wait(lambda:level()==(.75,False)),'XR hand/mouse input controls PipeWire through the same audio pane')
-    packet([{'kind':'motion','id':0,'uv':[650/1024,400/768]},{'kind':'button','button':272,'pressed':True},{'kind':'button','button':272,'pressed':False}])
+    xr_click(650,400)
     check(wait(lambda:defaults().get('default.audio.source')=='dome.test.mic'),'XR pointer selects a microphone using the grouped device rows')
     key('Escape');motion(980,18);click(962,18);wait(lambda:get('/api/xr-shell')['top']==768)
     headset=nodes()['dome.test.headset']['id'];command('pw-cli','destroy',str(headset));wait(lambda:'dome.test.headset'not in nodes())
@@ -132,7 +137,53 @@ def main(directory):
     finally:capture('recovery-state')
     key('Home');key('Right')
     check(wait(lambda:level()==(.45,False)),'Audio controls reconnect after PipeWire and WirePlumber restart')
-    capture('service-restored');key('Escape');xd.close()
+    capture('service-restored')
+    # The mixer talks only to this private Pulse service and virtual PipeWire graph.
+    pulse=start(['pipewire-pulse'],'pulse',env)
+    wait(lambda:Path(directory+'/pulse/native').is_socket())
+    def pulse_list(kind):return json.loads(command('pactl','--format=json','list',kind))
+    def stream():return next((v for v in pulse_list('sink-inputs') if v['properties'].get('application.name')=='Dome mixer fixture'),None)
+    player=start(['pacat','--playback','--raw','--rate=48000','--channels=2','--client-name=Dome mixer fixture','/dev/zero'],'mixer-player',env)
+    playing=wait(stream);stream_id=str(playing['index'])
+    command('pactl','set-sink-input-volume',stream_id,'40%','80%')
+    def volumes():
+        current=stream()
+        return [current['volume'][name.strip()]['value']/65536 for name in current['channel_map'].split(',')]
+    def near(expected):return all(abs(a-b)<.012 for a,b in zip(volumes(),expected))
+    def muted():return stream()['mute']
+    click(1100,60);time.sleep(1);key('End');capture('mixer-applications')
+    key('Right');check(wait(lambda:near([.425,.85])),'Mixer changes application volume while preserving stereo balance')
+    key('Return');check(wait(muted),'Mixer mutes the selected playback stream')
+    key('Return');check(wait(lambda:not muted()),'Mixer unmutes the selected playback stream')
+    xr_click(960,120);check(wait(muted),'XR pointer operates the same application mixer')
+    xr_click(960,120);wait(lambda:not muted())
+    key('c');key('Right');check(wait(lambda:near([.475,.85])),'Individual channel adjustment leaves the other channel unchanged')
+    key('c');key('c') # return to all channels
+    click(960,120);check(wait(lambda:near([.28,.50])),'Mixer slider controls the selected application with proportional channels')
+    old_sink=stream()['sink'];key('r')
+    check(wait(lambda:stream()['sink']!=old_sink),'Mixer routes a live application to another output')
+    capture('mixer-routed')
+    recorder=start(['pacat','--record','--raw','--rate=48000','--channels=1','--client-name=Dome recorder fixture','/dev/null'],'mixer-recorder',env)
+    def recording():return next((v for v in pulse_list('source-outputs') if v['properties'].get('application.name')=='Dome recorder fixture'),None)
+    rec=wait(recording);command('pactl','set-source-output-volume',str(rec['index']),'60%')
+    time.sleep(.7);key('End');key('Left')
+    check(wait(lambda:abs(next(iter(recording()['volume'].values()))['value']/65536-.55)<.012),'Mixer independently adjusts a recording application')
+    key('Return');check(wait(lambda:recording()['mute']),'Mixer mutes the selected recording stream')
+    old_source=recording()['source'];key('r')
+    check(wait(lambda:recording()['source']!=old_source),'Mixer routes a recording application to another input')
+    capture('mixer-recording')
+    recorder.terminate();recorder.wait(timeout=4);wait(lambda:recording()is None);time.sleep(.7)
+    sink=pulse_list('sinks')[0];command('pactl','set-sink-volume',str(sink['index']),'35%');key('Home');key('Right')
+    check(wait(lambda:abs(next(iter(pulse_list('sinks')[0]['volume'].values()))['value']/65536-.40)<.012),'Mixer adjusts device volume independently of application volume')
+    key('End')
+    player.terminate();player.wait(timeout=4);wait(lambda:stream()is None);time.sleep(.7)
+    key('Right');capture('mixer-stream-closed')
+    key('Tab');wait(lambda:pixel(930,121)==(107,171,255))
+    check(True,'Mixer survives stream removal and returns to the standard volume page')
+    key('Tab');pulse.terminate();pulse.wait(timeout=4);time.sleep(.8)
+    capture('mixer-service-unavailable');key('Escape')
+    check(wait(lambda:get('/api/xr-shell')['top']==36),'Mixer remains dismissible when Pulse service is unavailable')
+    xd.close()
     check(compositor.poll()is None,'Compositor survives audio hotplug and service recovery')
 
 try:

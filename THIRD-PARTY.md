@@ -113,3 +113,6 @@ are retained in the installed worker's `vendor/` directory. These are fetched at
 build time rather than copied into this source tree. The worker also calls the
 system ICU library (Unicode license) for Korean and other script transliteration.
 The FLTK application, worker and tray implementation in this repository are MIT.
+
+Smithay 0.7.0 is retained under its MIT license in `third_party/smithay`.
+`DOME-PATCH.md` describes the EGL explicit LINEAR import fix.

@@ -26,6 +26,9 @@ with tempfile.TemporaryDirectory(prefix='tray-gpu-') as directory:
     assert app.poll() is None;time.sleep(.05)
   renderer=next(line for line in text.splitlines() if 'FLTK GPU widgets:' in line)
   assert 'llvmpipe' not in renderer.lower() and 'softpipe' not in renderer.lower(),renderer
+  for page in ['--network','--backup']:
+   subprocess.run([str(ROOT/'build/tray/dome-tray'),page],env=env,check=True,timeout=4)
+   time.sleep(.3);assert app.poll() is None
   print('PASS',renderer)
  finally:
   for p in [app,fixture]:

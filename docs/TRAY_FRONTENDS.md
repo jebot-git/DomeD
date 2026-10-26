@@ -6,7 +6,7 @@ its universal DBusMenu application-menu export. It does not link Qt.
 
 The default tray contains one **DomeD tray applications** entry. Its menu opens
 **Tray applications…**, **KDE Connect…**, **Input methods…**, **Wallets…**,
-**Translator…**, **Screenshot…**, or **Bluetooth…** in
+**Translator…**, **Screenshot…**, **Bluetooth…**, **Network…**, or **Backups…** in
 one shared manager window. All FLTK service frontends are pages of this manager;
 their compatibility desktop launchers are hidden from the applications menu.
 The compact three-applications-in-a-tray icon is maintained in
@@ -14,10 +14,13 @@ The compact three-applications-in-a-tray icon is maintained in
 are embedded in the companion and supplied as SNI ARGB pixmaps, so the entry
 does not depend on an installed icon theme.
 
-`dome-tray` (or `--daemon`) registers this single tray entry without showing a
-window. `--tray`, `--devices`, `--input`, `--wallets`, `--bluetooth` open the relevant page.
+`dome-tray` (or `--daemon`) registers its tray entries without showing a
+window. Network and Backups are collected inside the manager by default; moving
+them to the tray exposes their own icons without starting extra processes.
+`--tray`, `--devices`, `--input`, `--wallets`, `--bluetooth`, `--network`, `--backup`
+open the relevant page.
 Additional invocations route to the existing instance. Ctrl+R refreshes, Ctrl+W/Escape closes
-the window, Alt+1..5 selects a page, and normal Tab /
+the window, Alt+1..7 selects a page, and normal Tab /
 arrow navigation uses the native widgets. Closing the window always clears the
 password field and keeps the tray entry available, including when started with
 a page option. There is no Quit action: the manager is a permanent session service.
@@ -29,6 +32,10 @@ diagnostic sessions can still disable service startup.
   visibility, PIN/passkey pairing and confirmation, cancel, connect/disconnect,
   trust/block/remove, live battery/signal details, and adapter hotplug. Uses BlueZ
   directly on the system bus with native pairing controls and explicit approval.
+* [Network and Backups](NETWORK_BACKUPS_MIXER.md): libnm connection management,
+  Wi-Fi and saved VPN activation, plus rsync preview/backup/restore, changed-file
+  history and per-user scheduling. The same guide describes the speaker widget's
+  second-page general audio mixer and runtime requirements.
 * KDE Connect: discovery, pairing/accept/cancel/unpair, verification/battery state,
   ping, find-phone, file/URL/text sharing and plugin enable/disable.
 * Fcitx5: active input/group selection, group creation/removal, method ordering,

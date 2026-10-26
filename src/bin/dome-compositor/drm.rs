@@ -476,7 +476,8 @@ pub fn init(event_loop: &mut EventLoop<CalloopData>, data: &mut CalloopData) -> 
     data.state.active_gpu_device = devices.borrow().first()
         .map(|gpu| gpu.borrow().path.to_string_lossy().into_owned());
     relayout(&devices, &mut data.state)?;
-    // Multi-GPU builds advertise only formats importable on every GPU.
+    // Only GPUs rendering outputs constrain client imports. An idle GPU may
+    // reject another GPU's local memory even when all desktop outputs can use it.
     let formats = {
         let devices = devices.borrow();
         let formats = devices[0]
@@ -488,7 +489,7 @@ pub fn init(event_loop: &mut EventLoop<CalloopData>, data: &mut CalloopData) -> 
         #[cfg(feature = "multi-gpu")]
         let mut formats = formats;
         #[cfg(feature = "multi-gpu")]
-        for device in devices.iter().skip(1) {
+        for device in devices.iter().skip(1).filter(|g| !g.borrow().outputs.is_empty()) {
             let gpu = device.borrow();
             formats = formats
                 .intersection(gpu.renderer.egl_context().dmabuf_texture_formats())
@@ -516,7 +517,7 @@ pub fn init(event_loop: &mut EventLoop<CalloopData>, data: &mut CalloopData) -> 
             good
         };
         #[cfg(feature = "multi-gpu")]
-        { devices.iter().all(import) }
+        { devices.iter().filter(|g| !g.borrow().outputs.is_empty()).all(import) }
         #[cfg(not(feature = "multi-gpu"))]
         { devices.first().is_some_and(import) }
     }));

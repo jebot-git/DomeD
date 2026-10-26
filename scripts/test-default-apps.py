@@ -7,7 +7,7 @@ root=Path(__file__).resolve().parents[1]
 parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--compositor',type=Path);args=parser.parse_args()
 if args.compositor and os.environ.get('DOME_DEFAULT_APPS_TEST_BUS')!='1':
     os.execvpe('dbus-run-session',['dbus-run-session','--',sys.executable,*sys.argv],{**os.environ,'DOME_DEFAULT_APPS_TEST_BUS':'1'})
-out=root/'artifacts/default-apps';out.mkdir(parents=True,exist_ok=True)
+out=Path(os.environ.get('DOME_DEFAULT_APPS_TEST_OUTPUT',root/'artifacts/default-apps'));out.mkdir(parents=True,exist_ok=True)
 fltk=Path(os.environ.get('DOME_FLTK_PREFIX','/opt/fltk-vr/toolkit'))
 flags=shlex.split(subprocess.check_output([str(fltk/'bin/fltk-config'),'--cxxflags','--use-gl','--use-images','--ldflags'],text=True))+shlex.split(subprocess.check_output(['pkg-config','--cflags','--libs','gio-unix-2.0','fontconfig','zlib'],text=True))+['-Wl,-rpath,'+str(fltk/'lib')]
 client=out/'default-apps-client'
@@ -77,6 +77,17 @@ with tempfile.TemporaryDirectory(prefix='dome-default-apps-')as directory:
     def listing():return json.loads(subprocess.check_output([str(client),'list'],env=env))
     def row(mime):return next(r for r in listing()['rows']if r['mime']==mime)
     def set_default(mime,app):return subprocess.run([str(client),'set',mime,app],env=env,capture_output=True,text=True)
+    check(row('x-scheme-handler/misfin')['current'] is None,'Misfin default remains unset without a capable mail client')
+    misfin_app=apps/'misfin-fixture.desktop'
+    misfin_app.write_text('[Desktop Entry]\nType=Application\nName=Misfin fixture\nExec=alpha %u\nMimeType=x-scheme-handler/misfin;\n')
+    subprocess.run(['update-desktop-database',str(apps)],env=env,check=True)
+    check(any(app['id']=='misfin-fixture.desktop' for app in row('x-scheme-handler/misfin')['apps']),'Default Applications lists a client that supports Misfin')
+    check(set_default('x-scheme-handler/misfin','misfin-fixture.desktop').returncode==0,'Misfin handler can be selected independently of ordinary email')
+    check(row('x-scheme-handler/misfin')['current']['id']=='misfin-fixture.desktop','Selected Misfin handler persists in DomeD defaults')
+    target='misfin://Mailbox@localhost:1959'
+    subprocess.run(['gio','open',target],env=env,check=True)
+    wait(lambda:journal.exists() and target in journal.read_text())
+    check(target in journal.read_text().splitlines(),'Selected Misfin handler receives the complete address')
     check(row('inode/directory')['current']['id']=='org.fsvxr.fsvr.desktop','Installed fsvr becomes the initial Dome folder handler')
     check(row('application/pdf')['current'] is None,'Absent Miro leaves Dome PDF choice unset even when other viewers are installed')
     check(all(row(mime)['current']['id']=='org.fsvxr.fsvr.desktop' for mime in archive_types),'Installed fsvr becomes the Dome archive handler across registered libarchive types')

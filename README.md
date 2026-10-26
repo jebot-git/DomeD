@@ -49,7 +49,8 @@ It is never a DomeD widget frontend and is not required by the FLTK build.
 ## Native tray applications and rendering audit
 
 DomeD starts one native FLTK/OpenGL tray applications manager. Its single tray
-entry opens a menu for tray applications, KDE Connect, Fcitx5 and KWallet in a
+entry opens a menu for tray applications, KDE Connect, Fcitx5, KWallet, Bluetooth,
+Network and Backups in a
 shared window. Closing the window keeps the tray entry running.
 Other StatusNotifier applications keep native tray menus; X11 windows translated
 by the session-owned bridge start on the desktop side. See
@@ -227,7 +228,9 @@ bars; windows, cursors and popups use global desktop coordinates, and maximizati
 reserves the containing monitor's bars. Unplugging a monitor recovers stranded
 windows; reconnecting it restores scanout without restarting the session. GPUs can
 also be added or removed while other outputs remain active. Each GPU has its own
-GBM/EGL renderer; advertised DMA-BUF formats are supported by every initial GPU.
+GBM/EGL renderer; advertised DMA-BUF formats are supported by every initial GPU
+with an active output. GPUs without outputs do not veto desktop buffer imports.
+The pinned Smithay patch preserves explicit LINEAR DMA-BUF layouts for Zink.
 Single-GPU builds import client buffers only on the selected GPU and ignore other
 GPUs during hotplug, while retaining monitor hotplug on the selected card.
 To pin a single-GPU binary to the Arc A770 in this system, build with:
@@ -1160,6 +1163,12 @@ selection. The current device names appear above the volume controls, and audio
 service errors appear at the bottom of the panel. Changes made by other applications and device hotplug are
 reflected automatically; controls reconnect when the audio service returns.
 
+The second page, **Mixer**, controls individual playback/recording applications
+and devices, channel balance, application routing, ports and device profiles.
+Use the page buttons or Tab to switch. The mixer additionally requires `pactl`
+and `pipewire-pulse`; see [network, backups and mixer controls](docs/NETWORK_BACKUPS_MIXER.md)
+for keyboard controls, build requirements and implementation limits.
+
 Wheel over the speaker icon to adjust output volume without opening the pane.
 Within the pane, Up/Down selects a control or device, Left/Right changes the
 selected volume, Enter/Space toggles mute or selects a device, and Escape closes.
@@ -1515,3 +1524,6 @@ available. See [the working-mode audit](docs/WORKING_MODE_AUDIT.md) for coverage
 packaging and verification.
 
 WiVRn-Pro interoperability and control protocol: [docs/WIVRN.md](docs/WIVRN.md).
+VRChat native Wayland mirror windows (`vrchat.exe`) stay desktop-only, following
+the session-owned Xwayland bridge rule. Their headset view is supplied through
+OpenVR/OpenXR, independently of Dome window presentation.

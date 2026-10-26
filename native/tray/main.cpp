@@ -4,6 +4,8 @@
 #include "notifier.h"
 #include "services.h"
 #include "bluetooth.h"
+#include "network-page.h"
+#include "backup-page.h"
 #include "keyboard-flags.h"
 #include <FL/Fl_Box.H>
 #include <FL/Fl_Button.H>
@@ -56,6 +58,8 @@ class Manager : public dx::GpuWindow {
   DesktopMenu exported;
   Fl_Tabs tabs{12, 38, 916, 566};
   Fl_Group *trayTab, *deviceTab, *inputTab, *walletTab, *bluetoothTab;
+  NetworkPage *networkPage;
+  BackupPage *backupPage;
   bluetooth::Client bluetoothClient;
   Fl_Choice *bluetoothAdapters;
   Fl_Hold_Browser *bluetoothDevices;
@@ -171,6 +175,8 @@ class Manager : public dx::GpuWindow {
       self->redraw();
     }
     self->updateBluetooth();
+    self->networkPage->tick();
+    self->backupPage->tick();
     while (g_main_context_pending(nullptr))
       g_main_context_iteration(nullptr, FALSE);
     if (self->pending.valid() && self->pending.wait_for(std::chrono::seconds(
@@ -835,6 +841,8 @@ public:
         this);
     menu.add("&View/&Bluetooth", FL_ALT + '5',
              [](Fl_Widget *, void *p) { ((Manager *)p)->showPage("bluetooth"); }, this);
+    menu.add("&View/&Network", FL_ALT + '6', [](Fl_Widget *, void *p) { ((Manager *)p)->showPage("network"); }, this);
+    menu.add("&View/&Backups", FL_ALT + '7', [](Fl_Widget *, void *p) { ((Manager *)p)->showPage("backup"); }, this);
     menu.add("&Input methods/&Configure…", FL_CTRL + ',',
              [](Fl_Widget *, void *p) { ((Manager *)p)->showPage("input"); }, this);
     menu.add("&Input methods/&Global options…", 0,
@@ -1218,6 +1226,8 @@ public:
     bluetoothStatus = new Fl_Box(28, 552, 880, 44);
     bluetoothStatus->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE | FL_ALIGN_WRAP);
     bluetoothTab->end();
+    networkPage = new NetworkPage(12,66,916,538,[this](const std::string&s){message(s);});
+    backupPage = new BackupPage(12,66,916,538,[this](const std::string&s){message(s);});
     tabs.end();
     updateBluetooth(true);
     on(&tabs, [this] {
@@ -1269,7 +1279,9 @@ public:
     const bool input = name == "input" || name.rfind("input:fcitx://config/", 0) == 0;
     if (name.rfind("input:fcitx://config/", 0) == 0)
       requestedInputConfig = name.substr(6);
-    tabs.value(name == "bluetooth" ? bluetoothTab
+    tabs.value(name == "network" ? static_cast<Fl_Group*>(networkPage)
+               : name == "backup" ? static_cast<Fl_Group*>(backupPage)
+               : name == "bluetooth" ? bluetoothTab
                : name == "devices"   ? deviceTab
                : input             ? inputTab
                : name == "wallets" ? walletTab
@@ -1278,7 +1290,9 @@ public:
     refresh();
   }
   void refresh() {
-    if (tabs.value() == bluetoothTab) { bluetoothClient.refresh(); updateBluetooth(true); }
+    if (tabs.value() == networkPage) networkPage->refresh();
+    else if (tabs.value() == backupPage) backupPage->refresh();
+    else if (tabs.value() == bluetoothTab) { bluetoothClient.refresh(); updateBluetooth(true); }
     else if (tabs.value() == deviceTab)
       refreshDevices();
     else if (tabs.value() == inputTab)
@@ -1302,14 +1316,14 @@ int main(int argc, char **argv) try {
     if (a == "--daemon")
       showWindow = false;
     else if (a == "--tray" || a == "--devices" || a == "--input" ||
-             a == "--bluetooth" || a == "--wallets" || a == "--translator" || a == "--screenshot") {
+             a == "--network" || a == "--backup" || a == "--bluetooth" || a == "--wallets" || a == "--translator" || a == "--screenshot") {
       page = a.substr(2);
       showWindow = true;
     } else if (a == "--help") {
 #ifdef DOME_FCITX_CONFIGURATION
       puts("fcitx5-configuration-fltk [fcitx://config/global|fcitx://config/inputmethod/ID|fcitx://config/addon/ID]");
 #else
-      puts("dome-tray [--daemon|--tray|--devices|--input|--wallets|--bluetooth|--translator|--screenshot]\n"
+      puts("dome-tray [--daemon|--tray|--devices|--input|--wallets|--bluetooth|--network|--backup|--translator|--screenshot]\n"
            "Close hides the permanent session tray manager.");
 #endif
       return 0;

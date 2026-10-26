@@ -49,6 +49,13 @@ with tempfile.TemporaryDirectory(prefix='tray-services-') as directory:
   bluetooth=next(i for i in items if i['Id']=='dome.bluetooth')
   assert bluetooth['managed'] and not bluetooth['movable']
   assert call('menu',item=bluetooth,parent=0)[0]['id']==-1
+  for native in ('dome.network','dome.backup'):
+   item=next(i for i in items if i['Id']==native)
+   assert item['managed'] and item['movable']
+   assert call('menu',item=item,parent=0)[0]['id']==-1
+   call('placement',item=item,managed=False)
+   assert not next(i for i in call('tray') if i['Id']==native)['managed']
+   call('placement',item=item,managed=True)
   translator=next(i for i in items if i['Id']=='dome.translator')
   screenshot=next(i for i in items if i['Id']=='dome.screenshot')
   identity=next(i for i in items if i['Id']=='dome-identities');assert identity['managed'] and identity['suite']=='dome-identities'

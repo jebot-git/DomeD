@@ -47,7 +47,8 @@
   },
   "wrappers": {
     "dome-browser": {
-      "app_id": "org.domed.Browser"
+      "app_id": "org.domed.Browser",
+      "activation_realm": "caller"
     },
     "mpvr": {},
     "qimgvr": {},

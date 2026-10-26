@@ -21,7 +21,7 @@ constexpr auto menu =
 struct Notifier::Impl {
   struct Icon {
     Impl *owner;
-    std::string path, page, title, icon;
+    std::string path, page, title, icon, identity;
   };
   GDBusConnection *bus = nullptr;
   std::vector<guint> registrations;
@@ -30,14 +30,21 @@ struct Notifier::Impl {
   std::vector<Icon> icons;
   std::function<void(const std::string &)> show;
   std::unique_ptr<InputMenu> inputMenu;
-  static GVariant *pixmaps() {
+  static GVariant *pixmaps(const std::string &page) {
     static Fl_PNG_Image small("tray-applications-24", tray_icon_24,
                               sizeof(tray_icon_24));
     static Fl_PNG_Image large("tray-applications-48", tray_icon_48,
                               sizeof(tray_icon_48));
+    static Fl_PNG_Image networkSmall("network-24", network_icon_24, sizeof(network_icon_24));
+    static Fl_PNG_Image networkLarge("network-48", network_icon_48, sizeof(network_icon_48));
+    static Fl_PNG_Image backupSmall("backup-24", backup_icon_24, sizeof(backup_icon_24));
+    static Fl_PNG_Image backupLarge("backup-48", backup_icon_48, sizeof(backup_icon_48));
+    const Fl_PNG_Image *a = &small, *b = &large;
+    if (page == "network") { a = &networkSmall; b = &networkLarge; }
+    else if (page == "backup") { a = &backupSmall; b = &backupLarge; }
     GVariantBuilder images;
     g_variant_builder_init(&images, G_VARIANT_TYPE("a(iiay)"));
-    for (const auto *image : {&small, &large}) {
+    for (const auto *image : {a, b}) {
       if (image->fail() || image->d() != 4)
         continue;
       const auto *rgba = reinterpret_cast<const unsigned char *>(image->data()[0]);
@@ -73,7 +80,7 @@ struct Notifier::Impl {
       if (!strcmp(key, "Category"))
         return g_variant_new_string("SystemServices");
       if (!strcmp(key, "Id"))
-        return g_variant_new_string(("dome." + icon->page).c_str());
+        return g_variant_new_string(icon->identity.c_str());
       if (!strcmp(key, "Title"))
         return g_variant_new_string(icon->title.c_str());
       if (!strcmp(key, "Status"))
@@ -89,7 +96,7 @@ struct Notifier::Impl {
       if (!strcmp(key, "Menu"))
         return g_variant_new_object_path((icon->path + "/Menu").c_str());
       if (!strcmp(key, "IconPixmap"))
-        return pixmaps();
+        return pixmaps(icon->page);
     }
     (void)path;
     return nullptr;
@@ -115,8 +122,8 @@ struct Notifier::Impl {
           GVariantBuilder children;
           g_variant_builder_init(&children, G_VARIANT_TYPE("av"));
           const char *labels[] = {"Tray applications…", "KDE Connect…",
-                                  "Input methods…", "Wallets…", "Translator…", "Screenshot…", "Bluetooth…"};
-          for (int i = 0; i < 7; ++i) {
+                                  "Input methods…", "Wallets…", "Translator…", "Screenshot…", "Bluetooth…", "Network…", "Backups…"};
+          for (int i = 0; i < 9; ++i) {
             GVariantBuilder p, c;
             g_variant_builder_init(&p, G_VARIANT_TYPE("a{sv}"));
             g_variant_builder_add(&p, "{sv}", "label",
@@ -144,8 +151,8 @@ struct Notifier::Impl {
           guint32 timestamp;
           g_variant_get(args, "(i&svu)", &id, &event, &value, &timestamp);
           g_variant_unref(value);
-          const char *pages[] = {"tray", "devices", "input", "wallets", "translator", "screenshot", "bluetooth"};
-          if (!strcmp(event, "clicked") && id >= 1 && id <= 7)
+          const char *pages[] = {"tray", "devices", "input", "wallets", "translator", "screenshot", "bluetooth", "network", "backup"};
+          if (!strcmp(event, "clicked") && id >= 1 && id <= 9)
             icon->owner->show(pages[id - 1]);
         }
       } else if (strcmp(method, "Scroll"))
@@ -189,7 +196,9 @@ struct Notifier::Impl {
       throw std::runtime_error("Another tray manager owns the session");
     add("/org/domed/Tray", control, this);
     inputMenu = std::make_unique<InputMenu>(bus, show);
-    icons = {{this, "/TrayApplications", "tray", "DomeD tray applications", ""}};
+    icons = {{this, "/TrayApplications", "tray", "DomeD tray applications", "", "dome.tray"},
+             {this, "/Network", "network", "DomeD Network", "network-wireless", "dome.network"},
+             {this, "/Backups", "backup", "DomeD Backups", "document-save", "dome.backup"}};
     for (auto &icon : icons) {
       add(icon.path, item, &icon);
       add(icon.path + "/Menu", menu, &icon);

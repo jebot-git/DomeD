@@ -90,7 +90,7 @@ impl DesktopRenderer {
                          state.launch_navigation.quick_offset, state.launch_navigation.quick_drag.is_some())),
                     state.audio.state().revision,
                     state.audio_open,
-                    state.audio_selected
+                    (state.audio_selected, state.audio_mixer_page, state.audio_mixer_selected, state.audio_mixer_channel)
                 ),
                 state.task_previews.revision
             ),

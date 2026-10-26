@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+NoDisplay=true
+Name=Backups (FLTK)
+Comment=Back up and restore files with rsync
+Exec=dome-tray --backup
+TryExec=dome-tray
+Icon=org.domed.Backups
+Terminal=false
+Categories=Utility;Archiving;
+StartupWMClass=org.domed.Tray

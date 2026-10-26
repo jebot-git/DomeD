@@ -3,3 +3,7 @@
 #pragma once
 inline constexpr unsigned char tray_icon_24[] = {@TRAY_ICON_24@};
 inline constexpr unsigned char tray_icon_48[] = {@TRAY_ICON_48@};
+inline constexpr unsigned char network_icon_24[] = {@network_ICON_24@};
+inline constexpr unsigned char network_icon_48[] = {@network_ICON_48@};
+inline constexpr unsigned char backup_icon_24[] = {@backup_ICON_24@};
+inline constexpr unsigned char backup_icon_48[] = {@backup_ICON_48@};

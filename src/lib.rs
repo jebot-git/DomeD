@@ -73,3 +73,5 @@ pub mod quick_launch;
 
 pub mod xr_window_size;
 pub mod wivrn;
+
+pub mod audio_mixer;

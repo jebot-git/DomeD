@@ -53,8 +53,12 @@ def prepare(app_id=None, requested="auto"):
                     data=payload, headers={'Content-Type': 'application/json'}), timeout=1) as response:
                 return json.loads(response.read(4 * 1024 * 1024 + 1))
 
-        control = request('/api/xr-control')
-        realm = control.get('input_realm') if requested == 'auto' else requested
+        if requested == 'caller':
+            realm = context.get('realm')
+        elif requested == 'auto':
+            realm = request('/api/xr-control').get('input_realm')
+        else:
+            realm = requested
         if realm not in ('desktop', 'xr'):
             return
         target = None
@@ -89,7 +93,8 @@ def prepare(app_id=None, requested="auto"):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--realm', choices=['auto','desktop','xr'], default='auto')
+    parser.add_argument('--realm', choices=['auto','caller','desktop','xr'], default='auto',
+        help='auto follows input ownership; caller preserves the verified launching socket')
     parser.add_argument('--app-id', help='Present an existing single-instance window in this realm')
     parser.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args()

@@ -11,6 +11,11 @@ It removes inherited `WAYLAND_SOCKET` only after finding a verified destination.
 Outside a verified DomeD session it preserves the environment. URI arguments
 remain separate arguments, including spaces, Unicode and shell metacharacters.
 
+Browser application-menu activation without a URI preserves the launching
+socket's verified realm (`--realm caller`). A desktop menu therefore presents
+the reused browser on the desktop even while XR owns input. Opening a URI
+continues to follow the current input realm. Explicit realm options take priority.
+
 | Tool or frontend | Finding and resulting behavior |
 | --- | --- |
 | Dome Browser | Its global D-Bus instance can retain an XR-origin connection. The installed wrapper and desktop handler first present the existing browser window in the requested realm, then retain the browser's existing URL-forwarding/profile logic. |
