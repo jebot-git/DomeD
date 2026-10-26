@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 3.21)
+project(dome-file-picker-tests LANGUAGES CXX)
+find_package(FLTK 1.4.5 EXACT CONFIG REQUIRED)
+add_executable(file-picker-test file-picker-test.cpp)
+target_compile_features(file-picker-test PRIVATE cxx_std_17)
+target_link_libraries(file-picker-test PRIVATE fltk::fltk-shared fltk::images-shared)

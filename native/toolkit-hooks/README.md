@@ -134,3 +134,46 @@ partial writes and tolerate receiver disconnects without SIGPIPE termination.
 The FLTerm-XR private integration test exercises separate FLTK processes, external
 ownership changes and independence from the explicit clipboard. Reopen clients
 normally after installing the shared release; never restart the desktop session.
+
+
+`fltk-1.4.5-file-picker.patch` improves the shared native file chooser used by
+`Fl_File_Chooser` and the FLTK backend of `Fl_Native_File_Chooser`. The dialog
+provides natural name, size, extension/type and modified-date ordering, ascending
+or descending, and an independent folders-first toggle. Click a column heading
+to select it; click again to reverse. Parent navigation stays first and missing
+metadata stays last. Details show size, type and local modification time; narrow
+windows hide secondary columns. The Details toggle provides a compact name list.
+Refresh/F5 reloads the current directory. Existing filtering, hidden files,
+favorites, previews and folder creation remain available.
+
+Sorting and details preferences use FLTK's existing user filechooser preferences.
+Reordering preserves the selected file set and the filename field, including a
+new save filename. Metadata is collected once per directory reload, not during
+comparisons or drawing. Type labels describe extensions; they do not require a
+MIME database or GTK/Qt dependency. Metadata collection, like the original
+listing, is synchronous; slow mounts can still delay a reload.
+
+The patch changes no public FLTK headers or class layouts. Its controls and
+metadata live in an internal browser subclass, so existing dynamically linked
+applications can use the new dialog without recompilation. Applications already
+running retain their mapped toolkit; reopen them normally to use the release.
+Do not restart the desktop or display manager when installing it.
+
+The generated chooser source and its FLUID source both retain the integration.
+Build/test against the isolated toolkit, explicitly overriding an installed FLTK
+path inherited from the login session:
+
+```sh
+cmake -S tests/file-picker -B build-file-picker -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_PREFIX_PATH=/path/to/isolated/toolkit
+cmake --build build-file-picker --parallel 4
+export LD_LIBRARY_PATH=/path/to/isolated/toolkit/lib:/path/to/isolated/toolkit/lib64
+FLTK_BACKEND=x11 xvfb-run -a build-file-picker/file-picker-test artifacts/picker-x11
+python3 tests/file-picker/test-wayland.py build-file-picker/file-picker-test artifacts/picker-wayland
+```
+
+The Wayland test starts a private nested compositor/session and never restarts
+the active desktop. Tests cover natural numeric ordering, size/type/date and
+reverse ordering, folder/parent placement, hidden-file reloads, saved settings,
+multiselection and save-name preservation, preview toggling, minimum-size layout,
+and native single-file, multiple-file, save-file and directory return values.
