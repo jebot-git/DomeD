@@ -11,6 +11,8 @@ use std::{
     },
     time::{Duration, Instant},
 };
+#[path = "dome-xr/backdrop.rs"]
+mod backdrop;
 #[path = "dome-xr/gpu.rs"]
 mod gpu;
 #[path = "dome-xr/screenshot.rs"]
@@ -568,6 +570,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         };
+        let mut backdrop_renderer: Option<backdrop::Renderer> = None;
+        let mut backdrop_attempted = false;
+        let mut backdrop_panels: Vec<Panel> = Vec::new();
+        let mut external_primary_visible = false;
         let mut browser_panel: Option<Panel> = None;
         let mut browser_views: Option<[dome::webxr_bridge::ProjectionView; 2]> = None;
         let mut browser_updated: Option<Instant> = None;
@@ -662,6 +668,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             _ => (),
                         }
                     }
+                    xr::Event::MainSessionVisibilityChangedEXTX(e) => {
+                        external_primary_visible = e.visible();
+                    }
                     xr::Event::ReferenceSpaceChangePending(change) => {
                         if change.reference_space_type() == reference_space_type {
                             reference_space_timeline.schedule(change.change_time().as_nanos(),
@@ -686,6 +695,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             if !active {
+                if let Some(renderer)=backdrop_renderer.as_mut(){renderer.suspend(start.elapsed().as_secs_f64());}
                 std::thread::sleep(Duration::from_millis(20));
                 continue;
             }
@@ -1158,6 +1168,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             {
                 return Err("Room dome requires XR_KHR_composition_layer_cylinder; enable cylinder layer support in the XR runtime".into());
             }
+            let runtime_visible = visible;
             let mut visible: Vec<_> = geometry
                 .iter()
                 .take(max_layers)
@@ -1170,7 +1181,57 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .is_some_and(|browser| browser.content_active(browser_updated))
                 && browser_views.is_some()
                 && browser_panel.is_some();
-            let available_layers = max_layers.saturating_sub(usize::from(browser_visible));
+            let backdrop_state = dome::xr_backdrop::Presentation {
+                runtime_visible: frame.should_render && head_valid && runtime_visible && !exiting && !music_floor_only,
+                external_primary: external_primary_visible,
+                native_active: control.native_xr_active,
+                // Include a live immersive browser lease even before its first
+                // submitted frame; otherwise the backdrop flashes on entry.
+                webxr_active: browser.as_ref().is_some_and(|b| b.immersive_active()),
+            };
+            let backdrop_visible = scene.as_ref().is_some_and(|s| backdrop::Renderer::present(s, backdrop_state));
+            if backdrop_visible && !backdrop_attempted {
+                backdrop_attempted = true;
+                if let Some(directory) = dome::xr_backdrop::directory() {
+                    match backdrop::Renderer::new(&vk_instance,&vk_device,vk_physical_device,queue_family_index,
+                                                  queue,format,&directory) {
+                        Ok(renderer) => backdrop_renderer = Some(renderer),
+                        Err(error) => eprintln!("XR backdrop unavailable at {}: {error}", directory.display()),
+                    }
+                } else {
+                    eprintln!("XR Precipice backdrop is not imported; see scripts/import-precipice.py");
+                }
+            }
+            if let Some(renderer)=backdrop_renderer.as_mut(){
+                if let Some(s)=scene.as_ref(){renderer.activity(start.elapsed().as_secs_f64(),backdrop_visible&&webxr_views.len()==2&&max_layers>1,head_pose,&s.config,s.config.xr_backdrop_sound);}
+                else {renderer.suspend(start.elapsed().as_secs_f64());}
+            }
+            let mut backdrop_submitted = false;
+            if backdrop_visible && webxr_views.len()==2 && max_layers > 1 {
+                if let Some(renderer) = backdrop_renderer.as_mut() {
+                    if backdrop_panels.is_empty() {
+                        for size in eye_sizes {
+                            // The city is secondary to desktop text: cap its
+                            // resolution separately from window render density.
+                            let scale = (1536. / size[0].max(size[1]) as f32).min(1.);
+                            backdrop_panels.push(Panel::new(&session,format,
+                                (size[0] as f32*scale).max(1.) as u32,(size[1] as f32*scale).max(1.) as u32)?);
+                        }
+                    }
+                    let mut targets = Vec::new();
+                    for (panel,view) in backdrop_panels.iter_mut().zip(&webxr_views) {
+                        let index = panel.chain.acquire_image()?;
+                        panel.chain.wait_image(xr::Duration::INFINITE)?;
+                        targets.push((panel.images[index as usize],panel.width,panel.height,pose(view.pose),
+                            [view.fov.angle_left,view.fov.angle_right,view.fov.angle_down,view.fov.angle_up]));
+                    }
+                    let result = renderer.render(queue,&targets,&scene.as_ref().unwrap().config);
+                    for panel in &mut backdrop_panels { panel.chain.release_image()?; }
+                    result?;
+                    backdrop_submitted = true;
+                }
+            }
+            let available_layers = max_layers.saturating_sub(usize::from(browser_visible)+usize::from(backdrop_submitted));
             let mut layer_budget = 0;
             visible.retain(|(q, _)| {
                 let cost = if stereo_windows.contains(&q.id) { 2 } else { 1 };
@@ -1358,8 +1419,17 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     .layer_flags(xr::CompositionLayerFlags::from_raw(browser_layer_flags))
                     .views(views)
             });
+            let backdrop_views: Vec<_> = if backdrop_submitted {
+                backdrop_panels.iter().zip(&webxr_views).map(|(panel,view)|
+                    xr::CompositionLayerProjectionView::new().pose(view.pose).fov(view.fov).sub_image(
+                        xr::SwapchainSubImage::new().swapchain(&panel.chain).image_array_index(0).image_rect(
+                            xr::Rect2Di { offset: xr::Offset2Di::default(), extent: xr::Extent2Di {
+                                width: panel.width as i32, height: panel.height as i32 } }))).collect()
+            } else { Vec::new() };
+            let backdrop_projection = xr::CompositionLayerProjection::new().space(&stage).views(&backdrop_views);
             let mut refs: Vec<&xr::CompositionLayerBase<xr::Vulkan>> = Vec::new();
             if frame.should_render {
+                if backdrop_submitted { refs.push(&*backdrop_projection); }
                 if let Some(layer) = projection.as_ref() {
                     refs.push(&**layer);
                 }
@@ -1376,12 +1446,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         running.store(false, Ordering::Relaxed);
         let _ = worker.join();
         let _ = input_worker.join();
-        let summary = serde_json::json!({"runtime":runtime,"system":properties.system_name,"overlay":environment.overlay,"environment_blend":format!("{blend:?}"),"overlay_placement":placement,"frames":count,"peak_window_layers":peak,"peak_curved_layers":peak_curved,"peak_flat_layers":peak_flat,"peak_stereo_windows":peak_stereo,"peak_shell_layers":peak_shell,"uploads":uploaded,"performance_floor_frames":performance_floor_frames,"gpu_submissions":gpu_submissions,"input_methods":if input_enabled {vec!["mouse","keyboard","tracked-controllers"]}else{vec!["mouse","keyboard"]},"webxr_input_enabled":input_enabled,"presentation_hidden_frames":hidden_frames,"presentation_fade_frames":fade_frames,"presentation_slide_frames":slide_frames,"clean_exit":true,"webxr":browser.as_ref().map(|browser| browser.stats()).unwrap_or_default()});
+        let summary = serde_json::json!({"runtime":runtime,"system":properties.system_name,"overlay":environment.overlay,"environment_blend":format!("{blend:?}"),"overlay_placement":placement,"frames":count,"peak_window_layers":peak,"peak_curved_layers":peak_curved,"peak_flat_layers":peak_flat,"peak_stereo_windows":peak_stereo,"peak_shell_layers":peak_shell,"uploads":uploaded,"performance_floor_frames":performance_floor_frames,"gpu_submissions":gpu_submissions,"backdrop_frames":backdrop_renderer.as_ref().map_or(0,|r|r.frames),"backdrop_suspended_frames":backdrop_renderer.as_ref().map_or(0,|r|r.suspended_frames),"input_methods":if input_enabled {vec!["mouse","keyboard","tracked-controllers"]}else{vec!["mouse","keyboard"]},"webxr_input_enabled":input_enabled,"presentation_hidden_frames":hidden_frames,"presentation_fade_frames":fade_frames,"presentation_slide_frames":slide_frames,"clean_exit":true,"webxr":browser.as_ref().map(|browser| browser.stats()).unwrap_or_default()});
         println!("{summary}");
         if let Some(path) = report {
             std::fs::write(path, serde_json::to_vec_pretty(&summary)?)?;
         }
         vk_device.device_wait_idle()?;
+        drop(backdrop_renderer);
+        drop(backdrop_panels);
         drop(gpu_renderer);
         drop(chains);
         drop(browser_panel);

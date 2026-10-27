@@ -26,6 +26,7 @@ smithay::backend::renderer::element::render_elements! {
 pub struct DesktopRenderer {
     decoration_buffers: std::collections::HashMap<u64, (String, MemoryRenderBuffer)>,
     shell_buffer: Option<(String, MemoryRenderBuffer)>,
+    backdrop_buffers: std::collections::HashMap<(i32,i32),(bool,MemoryRenderBuffer)>,
     cursor: Option<(bool, MemoryRenderBuffer)>,
     snap_buffer: Option<SolidColorBuffer>,
     screenshot_buffer: Option<(u64,MemoryRenderBuffer)>,
@@ -350,6 +351,22 @@ impl DesktopRenderer {
             .unwrap();
             elements.push(deco.into());
         }
+        if scene.config.desktop_backdrop {
+            let factor=(4096. / target_size.w.max(target_size.h) as f64).min(1.);
+            let raster=((target_size.w as f64*factor).max(1.) as i32,(target_size.h as f64*factor).max(1.) as i32);
+            let light=state.appearance.light;
+            if self.backdrop_buffers.get(&raster).is_none_or(|(theme,_)|*theme!=light) {
+                if self.backdrop_buffers.len()>=8 {self.backdrop_buffers.clear();}
+                let pixels=crate::qt::paint(serde_json::json!({"kind":"desktop_backdrop","width":raster.0,"height":raster.1,
+                    "svg":dome::desktop_backdrop::svg(light),"base":dome::desktop_backdrop::background(light),"appearance":state.appearance}));
+                self.backdrop_buffers.insert(raster,(light,MemoryRenderBuffer::from_slice(&pixels,
+                    smithay::backend::allocator::Fourcc::Argb8888,raster,1,Transform::Normal,None)));
+            }
+            if let Some((_,buffer))=self.backdrop_buffers.get(&raster) {
+                elements.push(MemoryRenderBufferRenderElement::from_buffer(renderer,(origin.x as f64,origin.y as f64),buffer,
+                    None,None,Some((target_size.w,target_size.h).into()),Kind::Unspecified)?.into());
+            }
+        } else {self.backdrop_buffers.clear();}
         let capture_output = state.space.outputs().find(|o|
             state.space.output_geometry(o).is_some_and(|g| g == output_geometry)).cloned();
         let [r, g, b] = state.appearance.desktop_background();

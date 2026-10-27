@@ -518,6 +518,7 @@ impl Dome {
                     if self.xr_shell_pos.is_some() && self.history_scroll(vertical) {
                         continue;
                     }
+                    if self.xr_shell_pos.is_some() && self.appearance_scroll(vertical) {continue;}
                     if self.xr_shell_pos.is_some() && self.xr_settings_scroll(vertical) {
                         continue;
                     }

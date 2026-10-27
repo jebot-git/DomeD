@@ -664,6 +664,7 @@ impl Dome {
                 if self.history_scroll(vertical_amount) {
                     return;
                 }
+                if self.appearance_scroll(vertical_amount) {return;}
                 if self.xr_settings_scroll(vertical_amount) {
                     return;
                 }

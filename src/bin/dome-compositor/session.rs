@@ -189,26 +189,25 @@ impl crate::Dome {
         dome::font_picker::describe(&crate::qt::bitmap_fonts(), &self.appearance)
     }
     pub fn appearance_row_count(&self) -> usize {
-        8
+        dome::appearance_panel::row_count(&self.scene.lock().unwrap().config)
+    }
+    pub fn appearance_scroll(&mut self,delta:f64)->bool {
+        if !self.appearance_open || self.keyboard_draft.is_some() {return false;}
+        if delta.abs()<=f64::EPSILON {return true;}
+        let last=self.appearance_row_count().saturating_sub(1);
+        self.shell_selection=if delta>0. {(self.shell_selection+1).min(last)} else {self.shell_selection.saturating_sub(1)};
+        true
     }
     pub fn appearance_click(&mut self, x: f64, y: f64, width: f64, height: f64) {
         let rows = self.appearance_row_count();
-        let panel_height = 560. + (rows - 8) as f64 * 48.;
-        let (left, top) = ((width - 600.) / 2., (height - panel_height) / 2.);
-        if x < left || x > left + 600. || y < top || y > top + panel_height {
-            self.appearance_open = false;
-            return;
+        let panel=dome::appearance_panel::Layout::new(width,height,rows,self.shell_selection);
+        if x<panel.x || x>panel.x+panel.width || y<panel.y || y>panel.y+panel.height {
+            self.appearance_open=false;return;
         }
-        if y >= top + panel_height - 48. {
-            self.appearance_activate(if x < left+300. { rows } else { rows + 1 }, 1);
-            return;
-        }
-        if x < left + 300. || y < top + 60. {
-            return;
-        }
-        let row = ((y - top - 60.) / 48.) as usize;
-        if row < rows {
-            self.appearance_activate(row, 1);
+        if let Some(row)=panel.hit(x,y,rows) {
+            let numeric={let scene=self.scene.lock().unwrap();matches!(dome::appearance_panel::backdrop_row(&scene.config,row),
+                Some(dome::appearance_panel::BackdropRow::Volume|dome::appearance_panel::BackdropRow::Rotation))};
+            self.appearance_activate(row,if numeric && x<panel.x+panel.width*0.75 {-1}else{1});
         }
     }
     pub fn appearance_activate(&mut self, row: usize, direction: i32) {
@@ -217,7 +216,20 @@ impl crate::Dome {
         let rows = self.appearance_row_count();
         if row == rows { self.default_apps_open(); return; }
         if row == rows + 1 { self.appearance_open = false; return; }
-        if row == rows - 1 { self.appearance = Default::default(); }
+        let config=self.scene.lock().unwrap().config.clone();
+        if let Some(control)=dome::appearance_panel::backdrop_row(&config,row) {
+            match dome::appearance_panel::adjust(&config,control,direction) {
+                Ok(config)=>{self.action(dome::Action::Configure{config});self.persist_geometry();
+                    if !self.geometry_error.is_empty(){self.shell_error=self.geometry_error.clone();}}
+                Err(error)=>self.shell_error=error,
+            }
+            return;
+        }
+        if row == rows - 1 {
+            self.appearance = Default::default();
+            self.action(dome::Action::Configure{config:dome::appearance_panel::reset(&config)});
+            self.persist_geometry();self.shell_selection=self.appearance_row_count()-1;
+        }
         else { match row {
             0 => self.appearance.light = !self.appearance.light,
             1 => {

@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <title>LinuXR — spatial desktop</title>
+  <desc>Muted geometric headset, dome arcs and a path-drawn LinuXR wordmark. Original de-xr artwork.</desc>
+  <rect width="1920" height="1080" fill="#2b3138"/>
+  <!-- Quiet projection field, deliberately leaving the desktop edges clear. -->
+  <path d="M190 900 C430 685 1510 685 1760 900 L1690 954 C1415 800 555 800 260 954Z" fill="#303a43"/>
+  <g fill="none" stroke="#414e58" stroke-width="2">
+    <path d="M156 884 C466 636 1490 636 1798 884"/>
+    <path d="M228 934 C518 724 1440 724 1728 934"/>
+    <path d="M470 996 C650 830 1290 830 1470 996"/>
+    <path d="M867 1017 C890 814 1000 720 1126 660"/>
+    <path d="M1193 1017 C1160 840 1210 730 1275 672"/>
+  </g>
+  <path d="M952 427 C936 245 1072 166 1287 180 C1504 194 1670 300 1663 451" fill="none" stroke="#37424c" stroke-width="39"/>
+  <path d="M953 420 C942 257 1072 184 1287 198 C1498 212 1648 309 1643 444" fill="none" stroke="#53656d" stroke-width="3"/>
+  <!-- Head strap, hinges and sensor rails. -->
+  <path d="M1000 440 L1055 407 L1100 461 L1077 582 L1005 551Z" fill="#414e58"/>
+  <path d="M1590 410 L1656 440 L1646 548 L1576 573 L1552 469Z" fill="#414e58"/>
+  <path d="M1043 430 L1080 454 M1045 540 L1073 551 M1604 438 L1634 452 M1593 547 L1623 536" stroke="#758b93" stroke-width="3"/>
+  <!-- The visor is an open, chamfered shape with a bridge cutout. -->
+  <path d="M1125 356 L1502 356 C1540 356 1560 373 1571 408 L1611 535 C1621 571 1602 601 1565 607 L1430 630 C1393 636 1373 613 1351 593 C1338 582 1323 582 1310 594 C1285 617 1267 634 1232 629 L1093 607 C1057 601 1039 571 1048 537 L1081 409 C1090 375 1101 356 1125 356Z" fill="#4b5a64"/>
+  <path d="M1127 376 L1498 376 C1523 376 1537 389 1545 415 L1582 532 C1589 556 1579 575 1554 579 L1430 602 C1400 607 1384 588 1360 571 C1339 556 1318 557 1297 574 C1274 594 1264 607 1234 602 L1102 580 C1078 576 1068 558 1074 535 L1107 414 C1113 392 1117 376 1127 376Z" fill="#34414b"/>
+  <path d="M1128 377 L1497 377 C1522 377 1535 389 1543 412" fill="none" stroke="#8b9fa5" stroke-width="3"/>
+  <path d="M1103 580 L1235 602 C1265 606 1276 590 1297 574 M1432 602 L1553 579" fill="none" stroke="#758b93" stroke-width="2"/>
+  <!-- Two lenses echo curved desktop panels, without a literal face. -->
+  <path d="M1153 417 L1251 417 C1271 417 1285 431 1285 452 L1285 509 C1285 531 1271 544 1251 541 L1149 526 C1132 524 1125 514 1129 497 L1141 435 C1143 425 1146 417 1153 417Z" fill="#3c4d57"/>
+  <path d="M1417 417 L1492 417 C1506 417 1514 424 1519 438 L1535 496 C1539 514 1531 525 1516 527 L1419 542 C1398 545 1383 531 1383 510 L1383 453 C1383 432 1396 417 1417 417Z" fill="#3c4d57"/>
+  <path d="M1152 435 L1248 435 M1420 435 L1493 435" stroke="#758b93" stroke-width="2"/>
+  <g fill="#819d99">
+    <circle cx="1123" cy="400" r="5"/><circle cx="1530" cy="400" r="5"/>
+    <circle cx="1101" cy="553" r="4"/><circle cx="1559" cy="553" r="4"/>
+  </g>
+  <path d="M1302 397 H1367" stroke="#819d99" stroke-width="4"/>
+  <path d="M1313 405 H1356" stroke="#53656d" stroke-width="2"/>
+  <!-- Wordmark: no installed typeface or raster asset is required. -->
+  <g transform="translate(220 453) scale(1.62)" fill="none" stroke="#aab8bf" stroke-width="6" stroke-linecap="square" stroke-linejoin="round">
+    <path d="M0 0 V68 H39"/>
+    <path d="M62 25 V68"/><path d="M62 3 V5" stroke-width="8"/>
+    <path d="M85 68 V25 M85 35 C94 17 124 17 124 40 V68"/>
+    <path d="M149 25 V52 C149 77 190 77 190 52 V25"/>
+    <g stroke="#819d99"><path d="M218 0 L265 68 M265 0 L218 68"/>
+    <path d="M289 68 V0 H313 C349 0 349 35 313 35 H289 M315 35 L343 68"/></g>
+  </g>
+  <path d="M220 605 H340 M359 605 H777" stroke="#53656d" stroke-width="2"/>
+  <path d="M220 605 H265" stroke="#819d99" stroke-width="3"/>
+  <g fill="none" stroke="#414e58" stroke-width="2"><path d="M220 397 V371 H246"/><path d="M777 589 V615 H751"/></g>
+</svg>

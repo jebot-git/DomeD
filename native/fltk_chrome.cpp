@@ -612,7 +612,23 @@ extern "C" int dome_qt_paint(const char *json, unsigned char *pixels,
   static const bool image_handlers = [] { fl_register_images(); return true; }();
   (void)image_handlers;
   Paint p(c, obj(o, "appearance"));
-  if (str(o, "kind") == "frame") {
+  if (str(o,"kind")=="desktop_backdrop") {
+    auto base=o.value("base",std::vector<int>{43,49,56});
+    p.rect(0,0,w,h,Color{base[0]/255.,base[1]/255.,base[2]/255.});
+    auto svg=str(o,"svg");
+    Fl_SVG_Image image(nullptr,svg.c_str()); image.resize(w,h); image.normalize();
+    if (!image.fail() && image.data() && image.data()[0]) {
+      int iw=image.data_w(),ih=image.data_h(),depth=image.d(),stride=image.ld()?image.ld():iw*depth;
+      std::vector<uint32_t> argb(size_t(iw)*ih);
+      auto bytes=reinterpret_cast<const unsigned char*>(image.data()[0]);
+      for(int y=0;y<ih;++y)for(int x=0;x<iw;++x){
+        auto q=bytes+y*stride+x*depth;unsigned a=depth==4?q[3]:255;
+        argb[size_t(y)*iw+x]=(a<<24)|((q[0]*a/255)<<16)|((q[1]*a/255)<<8)|(q[2]*a/255);
+      }
+      auto artwork=cairo_image_surface_create_for_data(reinterpret_cast<unsigned char*>(argb.data()),CAIRO_FORMAT_ARGB32,iw,ih,iw*4);
+      cairo_set_source_surface(c,artwork,(w-iw)/2.,(h-ih)/2.);cairo_paint(c);cairo_surface_destroy(artwork);
+    }
+  } else if (str(o, "kind") == "frame") {
     int bar_height = std::max(30, num(obj(o, "appearance"), "font_size", 16) * num(obj(o, "appearance"), "font_scale", 1) + 8);
     bool active = yes(o, "active");
     auto caption = active ? p.sel : p.bg;
@@ -1009,9 +1025,13 @@ extern "C" int dome_qt_paint(const char *json, unsigned char *pixels,
       bool keyboard =
           o.contains("keyboard_settings") && o["keyboard_settings"].is_object();
       auto fontChoice = obj(o, "appearance_font");
-      int panelHeight = keyboard ? 400 : 560;
-      int x = (w - 600) / 2, y = (h - panelHeight) / 2;
-      p.rect(x, y, 600, panelHeight, p.bg);
+      auto panel = obj(o, "appearance_layout");
+      auto backdrop = obj(o, "appearance_backdrop");
+      int panelHeight = keyboard ? 400 : num(panel, "height", 560);
+      int panelWidth = keyboard ? 600 : num(panel, "width", 600);
+      int x = keyboard ? (w-600)/2 : num(panel, "x", (w-panelWidth)/2);
+      int y = keyboard ? (h-400)/2 : num(panel, "y", (h-panelHeight)/2);
+      p.rect(x, y, panelWidth, panelHeight, p.bg);
       p.text(x + 24, y + 18, 552, 32,
              keyboard ? "Keyboard Layouts · desktop and XR"
                       : "Appearance & Input",
@@ -1038,14 +1058,25 @@ extern "C" int dome_qt_paint(const char *json, unsigned char *pixels,
         if (!fontChoice.empty()) {
           values[3] = str(fontChoice, "family"); values[4] = str(fontChoice, "face"); values[5] = str(fontChoice, "size");
         }
-        for (int n = 0; n < int(labels.size()); ++n) {
-          p.text(x + 24, y + 60 + n * 48, 270, 40, labels[n], p.fg);
-          p.button(x + 300, y + 60 + n * 48, 276, 40, values[n],
-                   num(o, "shell_selection") == n);
+        if (!backdrop.empty()) {
+          labels.insert(labels.end()-1,"Desktop backdrop"); values.insert(values.end()-1,yes(backdrop,"desktop") ? "LinuXR" : "None");
+          labels.insert(labels.end()-1, "XR backdrop"); values.insert(values.end()-1, str(backdrop, "label"));
+          if (yes(backdrop,"enabled")) {
+            labels.insert(labels.end()-1, "Backdrop volume"); values.insert(values.end()-1, str(backdrop,"volume"));
+            labels.insert(labels.end()-1, "Backdrop Y rotation"); values.insert(values.end()-1, str(backdrop,"rotation"));
+          }
         }
-        p.button(x + 24, y + panelHeight - 48, 260, 36, "Default applications...",
+        int first=num(panel,"first",0), visible=num(panel,"visible",labels.size());
+        for (int n = first; n < std::min(int(labels.size()),first+visible); ++n) {
+          int rowY=y+60+(n-first)*48;
+          p.text(x + 24, rowY, panelWidth/2-30, 40, labels[n], p.fg);
+          p.button(x + panelWidth/2, rowY, panelWidth/2-24, 40, values[n],num(o,"shell_selection")==n);
+        }
+        if (first>0 || first+visible<int(labels.size()))
+          p.text(x+24,y+panelHeight-100,panelWidth-48,28,"↑↓ or wheel to scroll · ←→ to adjust",p.muted);
+        p.button(x + 24, y + panelHeight - 48, panelWidth/2-40, 36, "Default applications...",
                  num(o, "shell_selection") == int(labels.size()));
-        p.button(x + 316, y + panelHeight - 48, 260, 36, "Close · Esc",
+        p.button(x + panelWidth/2+16, y + panelHeight - 48, panelWidth/2-40, 36, "Close · Esc",
                  num(o, "shell_selection") == int(labels.size()) + 1);
       } else {
         auto k = obj(o, "keyboard_settings");

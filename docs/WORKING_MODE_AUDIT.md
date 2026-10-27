@@ -15,6 +15,9 @@ Browser application-menu activation without a URI preserves the launching
 socket's verified realm (`--realm caller`). A desktop menu therefore presents
 the reused browser on the desktop even while XR owns input. Opening a URI
 continues to follow the current input realm. Explicit realm options take priority.
+The browser desktop entry invokes `dome-browser` directly: an outer `dome-link`
+would change the caller socket before the wrapper can distinguish menu activation
+from URI dispatch. Staging removes that obsolete outer routing layer.
 
 | Tool or frontend | Finding and resulting behavior |
 | --- | --- |

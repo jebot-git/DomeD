@@ -29,6 +29,11 @@ for source in "$font_runtime"/share/pango-bdf-source/*; do
     install -D -m 0644 "$source" "$stage/usr/local/share/doc/domed/pango-bdf/$(basename -- "$source")"
 done
 install -D -m 0644 "$root/docs/FONT_COLLECTIONS.md" "$stage/usr/local/share/doc/domed/FONT_COLLECTIONS.md"
+install -D -m 0644 "$root/assets/backgrounds/linuxr.svg" "$stage/usr/local/share/backgrounds/domed/linuxr.svg"
+install -D -m 0644 "$root/assets/backgrounds/linuxr-light.svg" "$stage/usr/local/share/backgrounds/domed/linuxr-light.svg"
+install -D -m 0644 "$root/docs/XR_BACKDROP.md" "$stage/usr/local/share/doc/domed/XR_BACKDROP.md"
+install -D -m 0755 "$root/scripts/import-precipice.py" "$stage/usr/local/share/domed/tools/import-precipice.py"
+install -D -m 0644 "$root/scripts/precipice_content.py" "$stage/usr/local/share/domed/tools/precipice_content.py"
 for name in README.md LICENSE THIRD-PARTY.md dome.example.json; do
     install -D -m 0644 "$root/$name" "$stage/usr/local/share/doc/domed/$name"
 done

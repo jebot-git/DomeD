@@ -79,3 +79,9 @@ pub mod audio_mixer;
 pub mod native_xr;
 pub mod webxr_focus;
 pub mod window_visibility;
+
+pub mod xr_backdrop;
+
+pub mod appearance_panel;
+
+pub mod desktop_backdrop;

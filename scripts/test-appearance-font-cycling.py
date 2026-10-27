@@ -102,10 +102,10 @@ try:
                     xd.sync()
 
                 def settings(): return json.loads(appearance.read_text())
-                def panel_height(): return 560
+                def panel_height(): return min(752, host.get_geometry().height-112)
                 def row(n):
                     g=host.get_geometry()
-                    click(g.width//2+100,(g.height-panel_height())//2+60+n*48+24)
+                    click(g.width//2+100,44+(g.height-112-panel_height())//2+60+n*48+24)
                 # Settings now owns the Appearance entry. Use its standard shortcut
                 # and first keyboard-selected row rather than an obsolete menu offset.
                 super_code = xd.keysym_to_keycode(XK.string_to_keysym('Super_L'))
@@ -138,7 +138,7 @@ try:
                 g=host.get_geometry();raw=host.get_image(0,0,g.width,g.height,X.ZPixmap,0xffffffff)
                 artifact=root/'artifacts/bitmap-fonts';artifact.mkdir(parents=True,exist_ok=True)
                 Image.frombytes('RGB',(g.width,g.height),raw.data,'raw','BGRX').save(artifact/'mixed-script-selection.png')
-                print('PASS: Galmuri strike cycling/wrap, combined Fusion Pixel strikes and fixed eight-row panel',flush=True)
+                print('PASS: Galmuri strike cycling/wrap, combined Fusion Pixel strikes and adaptive Appearance panel',flush=True)
                 changes = set()
                 for index in range(160):
                     before = appearance.read_text()

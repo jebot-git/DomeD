@@ -1544,3 +1544,7 @@ WiVRn-Pro interoperability and control protocol: [docs/WIVRN.md](docs/WIVRN.md).
 VRChat native Wayland mirror windows (`vrchat.exe`) stay desktop-only, following
 the session-owned Xwayland bridge rule. Their headset view is supplied through
 OpenVR/OpenXR, independently of Dome window presentation.
+
+The native XR session can use the original **L.A.2097 – Precipice** city as a room-anchored stereo backdrop. See [local import, fullscreen suspension and settings](docs/XR_BACKDROP.md).
+
+Appearance provides independent Desktop and XR backdrop toggles: a theme-aware LinuXR vector desktop and the native Precipice XR environment.

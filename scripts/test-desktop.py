@@ -103,6 +103,7 @@ try:
     assert display_name!=':'
     env={**os.environ,'DOME_LOGIN_SESSION':'0','DOME_START_XR':'0','DISPLAY':display_name,'XDG_RUNTIME_DIR':directory,'XDG_SESSION_TYPE':'x11','XDG_CONFIG_HOME':str(runtime/'config'),'XDG_CURRENT_DESKTOP':'Dome','XDG_DATA_HOME':str(data),'XDG_DATA_DIRS':str(runtime/'empty'),'DOME_PREVIEW_PORT':str(port),'DOME_RENDERER':'gles','LIBGL_ALWAYS_SOFTWARE':'1','RUST_LOG':'warn'}
     (runtime/'config/dome').mkdir(parents=True)
+    (runtime/'config/dome/xr.json').write_text(json.dumps({'desktop_backdrop':False}))
     (runtime/'config/dome/keyboard.json').write_text(json.dumps({'ime':False,'layout':'us,cz','switch_shortcut':'super_alt_space'}))
     for name in ['WAYLAND_DISPLAY','WAYLAND_SOCKET','QT_QPA_PLATFORM','QT_PLUGIN_PATH','QT_QPA_PLATFORM_PLUGIN_PATH']:env.pop(name,None)
     env['DBUS_SYSTEM_BUS_ADDRESS']=env['DBUS_SESSION_BUS_ADDRESS']
@@ -240,7 +241,7 @@ try:
     caption=image().crop((active['x']+32,active['y']-28,active['x']+active['w']-100,active['y']-4))
     check(sum(min(c)>180 for c in caption.getdata())>30,'Dark active titlebar keeps readable light caption text')
     click(20,18);click(100,222);capture('01-appearance-dark')
-    appearance_y=lambda row:(host.get_geometry().height-560)/2+80+row*48
+    appearance_y=lambda row:44+(host.get_geometry().height-112-min(752,host.get_geometry().height-112))/2+80+row*48
     click(800,appearance_y(0))
     settings=runtime/'config/dome/appearance.json'
     wait(lambda:settings.exists() and json.loads(settings.read_text())['light'])

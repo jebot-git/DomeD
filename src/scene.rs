@@ -153,6 +153,12 @@ pub struct Config {
     pub xr_render_scale: f32,
     /// Initial logical content size for ordinary XR-launched windows.
     pub xr_window_resolution: crate::xr_window_size::Resolution,
+    #[serde(default)]
+    pub xr_backdrop: crate::xr_backdrop::Backdrop,
+    pub desktop_backdrop: bool,
+    pub xr_backdrop_sound: bool,
+    pub xr_backdrop_volume: f32,
+    pub xr_backdrop_yaw_deg: f32,
     pub pullout_distance_m: f32,
     pub center_m: [f32; 3],
     pub yaw_deg: f32,
@@ -187,6 +193,11 @@ impl Default for Config {
             radius_m: 2.2,
             xr_render_scale: 1.5,
             xr_window_resolution: Default::default(),
+            xr_backdrop: Default::default(),
+            desktop_backdrop: true,
+            xr_backdrop_sound: true,
+            xr_backdrop_volume: 1.,
+            xr_backdrop_yaw_deg: 0.,
             pullout_distance_m: 2.0,
             center_m: [0., 1.4, 0.],
             yaw_deg: 0.,
@@ -217,6 +228,12 @@ impl Config {
             {
                 return Err("Invalid display configuration".into());
             }
+        }
+        if !self.xr_backdrop_volume.is_finite() || !(0. ..=1.).contains(&self.xr_backdrop_volume) {
+            return Err("Backdrop volume must be between 0 and 100%".into());
+        }
+        if !self.xr_backdrop_yaw_deg.is_finite() || !(0. ..360.).contains(&self.xr_backdrop_yaw_deg) {
+            return Err("Backdrop Y rotation must be within 0–360°".into());
         }
         if !self.xr_render_scale.is_finite() || !(1. ..=2.).contains(&self.xr_render_scale) {
             return Err("XR render scale must be 1–2".into());

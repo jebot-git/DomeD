@@ -527,6 +527,11 @@ impl Dome {
         model["quick_launch"] = self.quick_launch_json();
         if self.appearance_open && self.keyboard_draft.is_none() {
             model["appearance_font"] = serde_json::to_value(self.appearance_font_description()).unwrap();
+            model["appearance_layout"]=serde_json::to_value(dome::appearance_panel::Layout::new(width as f64,height as f64,
+                dome::appearance_panel::row_count(&scene.config),self.shell_selection)).unwrap();
+            model["appearance_backdrop"]=serde_json::json!({"desktop":scene.config.desktop_backdrop,"enabled":scene.config.xr_backdrop!=dome::xr_backdrop::Backdrop::None,
+                "label":scene.config.xr_backdrop.label(),"volume":format!("−  {:.0}%  +",dome::appearance_panel::volume(&scene.config)*100.),
+                "rotation":format!("−  {:.0}°  +",scene.config.xr_backdrop_yaw_deg)});
         }
         model["menu_header_viewport"] = serde_json::to_value(self.menu_header_viewport(width)).unwrap();
         model["menu_viewport"] = serde_json::to_value(self.menu_viewport(items.len(), 0, self.menu_hover, height)).unwrap();
