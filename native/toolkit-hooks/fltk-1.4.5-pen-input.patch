@@ -1,0 +1,314 @@
+--- a/FL/wayland.H
++++ b/FL/wayland.H
+@@ -63,6 +63,25 @@
+     double x, double y, int primary, void *user);
+ extern "C" FL_EXPORT int fl_wl_set_touch_handler(Fl_Wayland_Touch_Handler, void *user);
+ 
++// Version 1 optional pen callback. Actions: down=0, move=1, up=2,
++// cancel=3, hover=4, enter=5, leave=6, barrel-button change=7.
++// Coordinates use fractional FLTK window units. Axis changes are batched at
++// the tablet protocol frame. Return nonzero on down to own that contact;
++// otherwise its primary tip can drive native widgets. Null disables raw input.
++// Hover callbacks may return nonzero to suppress native UI fallback.
++// IDs are process-local and contain no hardware identity. Capabilities use a bit
++// for each tablet-v2 capability enum. Physical device interoperability is separate.
++#define FL_WAYLAND_PEN_EVENT_DEFINED 1
++struct Fl_Wayland_Pen_Event {
++  unsigned version;
++  int action, id, primary, tool_type, eraser;
++  double x, y, pressure, distance, tilt_x, tilt_y, rotation, tangential_pressure, wheel;
++  int wheel_clicks;
++  unsigned buttons, capabilities, time;
++};
++typedef int (*Fl_Wayland_Pen_Handler)(Fl_Window *, const Fl_Wayland_Pen_Event *, void *user);
++extern "C" FL_EXPORT int fl_wl_set_pen_handler(Fl_Wayland_Pen_Handler, void *user);
++
+ #ifndef FL_DOXYGEN
+ 
+ #  ifdef FLTK_USE_X11
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -812,6 +812,18 @@
+   list(APPEND STATIC_FILES "primary-selection-protocol.c")
+   list(APPEND SHARED_FILES "primary-selection-protocol.c")
+ 
++  set(INFILE ${PROTOCOLS}/unstable/tablet/tablet-unstable-v2.xml)
++  fl_check_required_file(STOP_REQUIRED ${INFILE})
++  add_custom_command(
++    OUTPUT tablet-protocol.c tablet-client-protocol.h
++    COMMAND wayland-scanner private-code ${INFILE} tablet-protocol.c
++    COMMAND wayland-scanner client-header ${INFILE} tablet-client-protocol.h
++    DEPENDS ${INFILE}
++    VERBATIM
++  )
++  list(APPEND STATIC_FILES "tablet-protocol.c")
++  list(APPEND SHARED_FILES "tablet-protocol.c")
++
+   if(STOP_REQUIRED)
+     message(FATAL_ERROR "*** Terminating: one or more required file(s) were not found. ***")
+   endif()
+--- a/src/drivers/Wayland/Fl_Wayland_Screen_Driver.cxx
++++ b/src/drivers/Wayland/Fl_Wayland_Screen_Driver.cxx
+@@ -28,6 +28,8 @@
+ #include <memory>
+ #include <vector>
+ #include <cmath>
++#include <set>
++#include "tablet-client-protocol.h"
+ #include <FL/fl_ask.H>
+ #include <FL/filename.H>
+ #if FLTK_USE_STD
+@@ -366,6 +368,217 @@
+   dome_touch_cancel_all(); dome_touch_handler = handler; dome_touch_user = user;
+   return Fl_Wayland_Screen_Driver::wl_display ? 1 : 0;
+ }
++
++// Native tablet input. Protocol objects stay private; callbacks use local IDs.
++namespace {
++struct DomePenTool;
++typedef std::shared_ptr<DomePenTool> DomePenPtr;
++static zwp_tablet_manager_v2 *dome_pen_manager = NULL;
++static zwp_tablet_seat_v2 *dome_pen_seat = NULL;
++static unsigned dome_pen_manager_id = 0, dome_pen_next_id = 1;
++static unsigned long long dome_pen_generation = 0;
++static Fl_Wayland_Pen_Handler dome_pen_handler = NULL;
++static void *dome_pen_user = NULL;
++static std::map<zwp_tablet_tool_v2 *, DomePenPtr> dome_pen_tools;
++static std::set<zwp_tablet_v2 *> dome_pen_tablets;
++struct DomePenTool {
++  zwp_tablet_tool_v2 *proxy;
++  unsigned id, type, caps, buttons;
++  bool range, primary, tip, moved, entered, left, button_changed;
++  double sx, sy, x, y, pressure, distance, tilt_x, tilt_y, rotation, slider, wheel;
++  int wheel_clicks, mode; // 0 idle, 1 raw, 2 primary native UI, 3 ignored
++  std::vector<int> actions;
++  std::unique_ptr<Fl_Widget_Tracker> source, top;
++  zwp_tablet_v2 *tablet;
++  Fl_Wayland_Pen_Handler contact_handler;
++  void *contact_user;
++  DomePenTool(zwp_tablet_tool_v2 *p, unsigned id_) : proxy(p), id(id_), type(0x140), caps(0), buttons(0),
++    range(false), primary(false), tip(false), moved(false), entered(false), left(false), button_changed(false),
++    sx(0), sy(0), x(0), y(0), pressure(0), distance(0), tilt_x(0), tilt_y(0), rotation(0), slider(0), wheel(0),
++    wheel_clicks(0), mode(0), tablet(NULL), contact_handler(NULL), contact_user(NULL) {}
++  Fl_Window *window() {
++    return !top || top->deleted() ? NULL : top->widget()->as_window();
++  }
++  bool coordinates(double &x, double &y) {
++    if (!source || source->deleted() || !window()) return false;
++    Fl_Window *win=source->widget()->as_window();
++    if (!win || !win->shown() || !win->visible_r()) return false;
++    double dx=0,dy=0;
++    while (win->parent()) {dx+=win->x();dy+=win->y();win=win->window();}
++    if (win!=window()) return false;
++    const double scale=Fl::screen_scale(win->screen_num());
++    if (!(scale>0) || !std::isfinite(scale)) return false;
++    int *offset=Fl_Window_Driver::menu_offset_y(win);
++    x=sx/scale+dx;y=sy/scale+dy-(offset?*offset:0);
++    if (!std::isfinite(x) || !std::isfinite(y)) return false;
++    this->x=x;this->y=y;return true;
++  }
++};
++static DomePenPtr dome_pen_find(zwp_tablet_tool_v2 *proxy) {
++  auto it=dome_pen_tools.find(proxy);return it==dome_pen_tools.end()?DomePenPtr():it->second;
++}
++static Fl_Wayland_Pen_Event dome_pen_event(const DomePenPtr &t,int action,unsigned time,bool tip) {
++  Fl_Wayland_Pen_Event e={};e.version=1;e.action=action;e.id=t->id;e.primary=t->primary;e.tool_type=t->type;
++  e.eraser=t->type==0x141;e.capabilities=t->caps;e.time=time;
++  e.x=t->x;e.y=t->y;t->coordinates(e.x,e.y);
++  e.buttons=t->buttons | (tip?(e.eraser?32u:1u):0u);
++  e.pressure=tip?((t->caps&(1u<<2))?t->pressure:0.5):0.;
++  e.distance=t->distance;e.tilt_x=t->tilt_x;e.tilt_y=t->tilt_y;e.rotation=t->rotation;
++  e.tangential_pressure=t->slider;e.wheel=t->wheel;e.wheel_clicks=t->wheel_clicks;
++  if(action==3){e.buttons=0;e.pressure=0;}
++  return e;
++}
++static void dome_pen_cancel(const DomePenPtr &t) {
++  const int mode=t->mode;t->mode=3;
++  Fl_Wayland_Pen_Handler handler=t->contact_handler;void *user=t->contact_user;
++  t->contact_handler=NULL;t->contact_user=NULL;
++  Fl_Window *win=t->window();if(!win)return;
++  if(mode==1 && handler){auto e=dome_pen_event(t,3,wld_event_time,false);handler(win,&e,user);}
++  else if(mode==2){
++    dome_touch_coords(win,-1000000,-1000000);Fl::e_keysym=FL_Button+1;Fl::e_is_click=0;
++    Fl::handle(FL_MOVE,win);Fl::e_state&=~FL_BUTTON1;
++    if(t->window())Fl::handle(FL_RELEASE,t->window());
++  }
++}
++static void dome_pen_reset_range(const DomePenPtr &t) {
++  t->range=false;t->tip=false;t->buttons=0;t->source.reset();t->top.reset();t->tablet=NULL;
++  t->actions.clear();t->entered=t->left=t->moved=t->button_changed=false;t->mode=0;
++}
++static int dome_pen_notify(const DomePenPtr &t,int action,unsigned time,bool tip,bool contact) {
++  Fl_Window *win=t->window();double x,y;
++  if(!win || !t->coordinates(x,y))return 0;
++  auto e=dome_pen_event(t,action,time,tip);
++  auto handler=contact?t->contact_handler:dome_pen_handler;
++  auto user=contact?t->contact_user:dome_pen_user;
++  return handler?handler(win,&e,user):0;
++}
++static void dome_pen_down(const DomePenPtr &t,unsigned time) {
++  double x,y;if(!t->coordinates(x,y))return;
++  t->contact_handler=dome_pen_handler;t->contact_user=dome_pen_user;t->mode=1;
++  const auto generation=dome_pen_generation;
++  int handled=dome_pen_notify(t,0,time,true,true);
++  if(generation!=dome_pen_generation || !t->window() || t->mode!=1)return;
++  if(handled)return;
++  t->mode=3;
++  if(t->primary && t->type!=0x141 && !(Fl::e_state&FL_BUTTON1)){
++    t->mode=2;dome_touch_coords(t->window(),x,y);Fl::e_state|=FL_BUTTON1;Fl::e_keysym=FL_Button+1;
++    checkdouble();Fl::handle(FL_PUSH,t->window());
++  }
++}
++static void dome_pen_move(const DomePenPtr &t,unsigned time,bool tip) {
++  double x,y;if(!t->coordinates(x,y)){dome_pen_cancel(t);return;}
++  if(t->mode==1)dome_pen_notify(t,1,time,tip,true);
++  else if(t->mode==2){dome_touch_coords(t->window(),x,y);Fl::e_is_click=0;Fl::handle(FL_MOVE,t->window());}
++  else if(!tip){
++    auto generation=dome_pen_generation;int handled=dome_pen_notify(t,4,time,false,false);
++    if(!handled && t->primary && generation==dome_pen_generation && t->window() && !(Fl::e_state&FL_BUTTON1)){
++      dome_touch_coords(t->window(),x,y);Fl::handle(FL_MOVE,t->window());
++    }
++  }
++}
++static void dome_pen_up(const DomePenPtr &t,unsigned time) {
++  int mode=t->mode;auto handler=t->contact_handler;void *user=t->contact_user;
++  t->mode=0;t->contact_handler=NULL;t->contact_user=NULL;
++  if(!t->window())return;
++  if(mode==1 && handler){auto e=dome_pen_event(t,2,time,false);handler(t->window(),&e,user);}
++  else if(mode==2){double x,y;if(!t->coordinates(x,y)){
++      t->mode=2;dome_pen_cancel(t);t->mode=0;return;
++    }
++    dome_touch_coords(t->window(),x,y);Fl::e_state&=~FL_BUTTON1;Fl::e_keysym=FL_Button+1;
++    Fl::handle(FL_RELEASE,t->window());
++  }
++}
++static void dome_pen_frame(void *,zwp_tablet_tool_v2 *proxy,uint32_t time) {
++  auto t=dome_pen_find(proxy);if(!t)return;
++  wld_event_time=time;const auto generation=dome_pen_generation;
++  std::vector<int> actions;actions.swap(t->actions);
++  bool entered=t->entered,left=t->left,moved=t->moved,buttons=t->button_changed;
++  t->entered=t->left=t->moved=t->button_changed=false;
++  double x,y;
++  if(!t->coordinates(x,y)){dome_pen_cancel(t);if(left)dome_pen_reset_range(t);return;}
++  if(entered)dome_pen_notify(t,5,time,false,false);
++  bool had_up=false;
++  for(int action:actions){
++    if(generation!=dome_pen_generation)break;
++    if(action==0)dome_pen_down(t,time);
++    else if(action==2){had_up=true;if(!left){if(moved){dome_pen_move(t,time,true);moved=false;}dome_pen_up(t,time);}}
++  }
++  if(generation==dome_pen_generation){
++    if(moved && !left)dome_pen_move(t,time,t->tip);
++    if(buttons && !left)dome_pen_notify(t,7,time,t->tip,t->mode==1);
++    if(left){dome_pen_cancel(t);if(generation==dome_pen_generation)dome_pen_notify(t,6,time,false,false);}
++    else if(had_up && t->mode==3)t->mode=0;
++  }
++  if(left)dome_pen_reset_range(t);
++  t->wheel=0;t->wheel_clicks=0;
++}
++static const zwp_tablet_tool_v2_listener dome_pen_tool_listener={
++  [](void*,zwp_tablet_tool_v2 *p,uint32_t type){auto t=dome_pen_find(p);if(t)t->type=type;},
++  [](void*,zwp_tablet_tool_v2*,uint32_t,uint32_t){},
++  [](void*,zwp_tablet_tool_v2*,uint32_t,uint32_t){},
++  [](void*,zwp_tablet_tool_v2 *p,uint32_t cap){auto t=dome_pen_find(p);if(t && cap<32)t->caps|=1u<<cap;},
++  [](void*,zwp_tablet_tool_v2*){},
++  [](void*,zwp_tablet_tool_v2 *p){auto t=dome_pen_find(p);if(!t)return;dome_pen_tools.erase(p);t->proxy=NULL;
++    dome_pen_cancel(t);dome_pen_reset_range(t);zwp_tablet_tool_v2_destroy(p);},
++  [](void*,zwp_tablet_tool_v2 *p,uint32_t serial,zwp_tablet_v2 *tablet,wl_surface *surface){
++    auto t=dome_pen_find(p);if(!t)return;dome_pen_cancel(t);dome_pen_reset_range(t);
++    Fl_Window *source=Fl_Wayland_Window_Driver::surface_to_window(surface);if(!source || !source->shown())return;
++    t->primary=true;for(const auto &entry:dome_pen_tools)if(entry.second!=t && entry.second->range)t->primary=false;
++    t->range=true;t->tablet=tablet;t->source.reset(new Fl_Widget_Tracker(source));t->top.reset(new Fl_Widget_Tracker(source->top_window()));t->entered=true;
++    auto seat=((Fl_Wayland_Screen_Driver*)Fl::screen_driver())->seat;if(seat)seat->serial=serial;
++  },
++  [](void*,zwp_tablet_tool_v2 *p){auto t=dome_pen_find(p);if(t)t->left=true;},
++  [](void*,zwp_tablet_tool_v2 *p,uint32_t serial){auto t=dome_pen_find(p);if(t && t->range){t->tip=true;t->actions.push_back(0);}
++    auto seat=((Fl_Wayland_Screen_Driver*)Fl::screen_driver())->seat;if(seat)seat->serial=serial;},
++  [](void*,zwp_tablet_tool_v2 *p){auto t=dome_pen_find(p);if(t && t->range){t->tip=false;t->actions.push_back(2);}},
++  [](void*,zwp_tablet_tool_v2 *p,wl_fixed_t x,wl_fixed_t y){auto t=dome_pen_find(p);if(t){t->sx=wl_fixed_to_double(x);t->sy=wl_fixed_to_double(y);t->moved=true;}},
++  [](void*,zwp_tablet_tool_v2 *p,uint32_t v){auto t=dome_pen_find(p);if(t){t->pressure=fl_min(v,65535u)/65535.;t->moved=true;}},
++  [](void*,zwp_tablet_tool_v2 *p,uint32_t v){auto t=dome_pen_find(p);if(t){t->distance=fl_min(v,65535u)/65535.;t->moved=true;}},
++  [](void*,zwp_tablet_tool_v2 *p,wl_fixed_t x,wl_fixed_t y){auto t=dome_pen_find(p);if(t){t->tilt_x=wl_fixed_to_double(x);t->tilt_y=wl_fixed_to_double(y);t->moved=true;}},
++  [](void*,zwp_tablet_tool_v2 *p,wl_fixed_t v){auto t=dome_pen_find(p);if(t){t->rotation=wl_fixed_to_double(v);t->moved=true;}},
++  [](void*,zwp_tablet_tool_v2 *p,int32_t v){auto t=dome_pen_find(p);if(t){t->slider=fl_max(-65535,fl_min(v,65535))/65535.;t->moved=true;}},
++  [](void*,zwp_tablet_tool_v2 *p,wl_fixed_t v,int32_t clicks){auto t=dome_pen_find(p);if(t){t->wheel+=wl_fixed_to_double(v);t->wheel_clicks+=clicks;t->moved=true;}},
++  [](void*,zwp_tablet_tool_v2 *p,uint32_t serial,uint32_t button,uint32_t state){auto t=dome_pen_find(p);if(t){unsigned mask=button==331?2u:(button==332?4u:0u);if(state)t->buttons|=mask;else t->buttons&=~mask;t->button_changed=true;}
++    auto seat=((Fl_Wayland_Screen_Driver*)Fl::screen_driver())->seat;if(seat)seat->serial=serial;},
++  dome_pen_frame
++};
++static const zwp_tablet_v2_listener dome_pen_tablet_listener={
++  [](void*,zwp_tablet_v2*,const char*){},[](void*,zwp_tablet_v2*,uint32_t,uint32_t){},
++  [](void*,zwp_tablet_v2*,const char*){},[](void*,zwp_tablet_v2*){},
++  [](void*,zwp_tablet_v2 *p){dome_pen_tablets.erase(p);std::vector<DomePenPtr> tools;
++    for(const auto &entry:dome_pen_tools)if(entry.second->tablet==p)tools.push_back(entry.second);
++    for(const auto &t:tools){dome_pen_cancel(t);dome_pen_reset_range(t);}zwp_tablet_v2_destroy(p);}
++};
++static const zwp_tablet_seat_v2_listener dome_pen_seat_listener={
++  [](void*,zwp_tablet_seat_v2*,zwp_tablet_v2 *p){dome_pen_tablets.insert(p);zwp_tablet_v2_add_listener(p,&dome_pen_tablet_listener,NULL);},
++  [](void*,zwp_tablet_seat_v2*,zwp_tablet_tool_v2 *p){
++    if(dome_pen_tools.size()>=64){zwp_tablet_tool_v2_destroy(p);return;}
++    if(dome_pen_next_id>0x7fffffffu)dome_pen_next_id=1;
++    auto t=std::make_shared<DomePenTool>(p,dome_pen_next_id++);dome_pen_tools[p]=t;
++    zwp_tablet_tool_v2_add_listener(p,&dome_pen_tool_listener,NULL);
++  },[](void*,zwp_tablet_seat_v2*,zwp_tablet_pad_v2 *p){zwp_tablet_pad_v2_destroy(p);}
++};
++static void dome_pen_bind(wl_seat *seat) {
++  if(dome_pen_manager && seat && !dome_pen_seat){dome_pen_seat=zwp_tablet_manager_v2_get_tablet_seat(dome_pen_manager,seat);zwp_tablet_seat_v2_add_listener(dome_pen_seat,&dome_pen_seat_listener,NULL);}
++}
++static void dome_pen_shutdown() {
++  ++dome_pen_generation;dome_pen_handler=NULL;dome_pen_user=NULL;
++  std::map<zwp_tablet_tool_v2*,DomePenPtr> tools;tools.swap(dome_pen_tools);
++  for(const auto &entry:tools){dome_pen_cancel(entry.second);if(entry.second->proxy){zwp_tablet_tool_v2_destroy(entry.second->proxy);entry.second->proxy=NULL;}}
++  for(auto tablet:dome_pen_tablets)zwp_tablet_v2_destroy(tablet);dome_pen_tablets.clear();
++  if(dome_pen_seat){zwp_tablet_seat_v2_destroy(dome_pen_seat);dome_pen_seat=NULL;}
++  if(dome_pen_manager){zwp_tablet_manager_v2_destroy(dome_pen_manager);dome_pen_manager=NULL;}
++  dome_pen_manager_id=0;
++}
++}
++extern "C" FL_EXPORT int fl_wl_set_pen_handler(Fl_Wayland_Pen_Handler handler,void *user) {
++  ++dome_pen_generation;
++  std::vector<DomePenPtr> tools;for(const auto &entry:dome_pen_tools)tools.push_back(entry.second);
++  for(const auto &t:tools)dome_pen_cancel(t);
++  dome_pen_handler=handler;dome_pen_user=user;
++  return Fl_Wayland_Screen_Driver::wl_display?1:0;
++}
++
+ 
+ static void pointer_enter(void *data, struct wl_pointer *wl_pointer, uint32_t serial,
+         struct wl_surface *surface, wl_fixed_t surface_x, wl_fixed_t surface_y) {
+@@ -1409,6 +1622,7 @@
+       }
+     }
+     wl_seat_add_listener(scr_driver->seat->wl_seat, &seat_listener, scr_driver->seat);
++    dome_pen_bind(scr_driver->seat->wl_seat);
+     scr_driver->init_primary(wl_registry);
+     if (scr_driver->seat->data_device_manager) {
+       scr_driver->seat->data_device =
+@@ -1436,6 +1650,11 @@
+                                   Fl_Wayland_Screen_Driver::p_data_device_listener, NULL);
+     }
+ //fprintf(stderr, "registry_handle_global: %s\n", interface);
++
++  } else if (strcmp(interface, "zwp_tablet_manager_v2") == 0) {
++    dome_pen_manager_id=id;
++    dome_pen_manager=(zwp_tablet_manager_v2*)wl_registry_bind(wl_registry,id,&zwp_tablet_manager_v2_interface,1);
++    if(scr_driver->seat)dome_pen_bind(scr_driver->seat->wl_seat);
+ 
+   } else if (strcmp(interface, "wl_output") == 0) {
+     if (version < 2) {
+@@ -1499,6 +1718,7 @@
+ 
+ 
+ static void registry_handle_global_remove(void *data, struct wl_registry *registry, uint32_t name) {//TODO to be tested
++  if(name==dome_pen_manager_id){dome_pen_shutdown();return;}
+   Fl_Wayland_Screen_Driver::output *output, *tmp;
+ //fprintf(stderr, "registry_handle_global_remove data=%p id=%u\n", data, name);
+   Fl_Wayland_Screen_Driver *scr_driver = (Fl_Wayland_Screen_Driver*)Fl::screen_driver();
+@@ -1625,6 +1845,7 @@
+ 
+ void Fl_Wayland_Screen_Driver::close_display() {
+   if (!Fl_Wayland_Screen_Driver::wl_display) return;
++  dome_pen_shutdown();
+   wl_display_roundtrip(Fl_Wayland_Screen_Driver::wl_display);
+   if (text_input_base) {
+     disable_im();

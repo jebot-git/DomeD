@@ -1,0 +1,39 @@
+--- a/FL/wayland.H
++++ b/FL/wayland.H
+@@ -45,6 +45,11 @@
+ extern FL_EXPORT struct wl_compositor *fl_wl_compositor();
+ /** Returns the current buffer scaling factor for \p window. */
+ extern FL_EXPORT int fl_wl_buffer_scale(Fl_Window *window);
++/** Return 1 when a decorated Wayland toplevel is suspended, 0 when it is
++    repainting, or -1 when this backend/protocol cannot report the state.
++    This query does not hide, unmap or recreate the window. */
++extern "C" FL_EXPORT int fl_wl_window_suspended(Fl_Window *window);
++
+ typedef void *EGLContext;
+ /** Returns the EGLContext corresponding to the given GLContext */
+ extern FL_EXPORT EGLContext fl_wl_glcontext(GLContext rc);
+--- a/src/drivers/Wayland/Fl_Wayland_Window_Driver.cxx
++++ b/src/drivers/Wayland/Fl_Wayland_Window_Driver.cxx
+@@ -2181,6 +2181,22 @@
+ }
+ 
+ 
++extern "C" FL_EXPORT int fl_wl_window_suspended(Fl_Window *window) {
++  if (!window || !fl_wl_display()) return -1;
++  struct wld_window *xid = fl_wl_xid(window->top_window());
++  if (!xid || xid->kind != Fl_Wayland_Window_Driver::DECORATED || !xid->frame)
++    return -1;
++#ifdef XDG_TOPLEVEL_STATE_SUSPENDED_SINCE_VERSION
++  struct xdg_toplevel *top = libdecor_frame_get_xdg_toplevel(xid->frame);
++  if (!top || wl_proxy_get_version((struct wl_proxy *)top) <
++      XDG_TOPLEVEL_STATE_SUSPENDED_SINCE_VERSION) return -1;
++  return (xid->state & LIBDECOR_WINDOW_STATE_SUSPENDED) ? 1 : 0;
++#else
++  return -1;
++#endif
++}
++
++
+ Fl_Wayland_Plugin *Fl_Wayland_Window_Driver::gl_plugin() {
+   static Fl_Wayland_Plugin *plugin = NULL;
+   if (!plugin) {

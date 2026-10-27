@@ -74,3 +74,70 @@ The optional bridge must not interrupt Dome's desktop presentation. Bind failure
 are logged and leave the existing XR session running. `--music-floor-only` does
 not expose a browser endpoint. Missing linear RGBA8 support rejects browser
 uploads, while desktop layers keep their existing format.
+
+
+## Optional tracked-input stream (development)
+
+`hello.input_stream_version` defaults to zero. Version 1 is enabled only when
+real OpenXR actions have been attached and the compositor publishes the native
+input policy. Older desktop processes retain head/stereo-only compatibility.
+The installed release does not yet expose these controller changes.
+
+A client opts in by adding `"input_after":0` to its first `wait_frame`. Responses
+then include `inputs` and
+`"input_batch":{"version":1,"through":N,"reset":false,"updates":[...]}`.
+Each update has an increasing `sequence` and a complete `frame` tracking
+snapshot, without another nested batch. The client acknowledges `through` in
+its next `input_after`. A new lease starts its own sequence and held-state
+baseline; it never inherits previous-page gestures.
+
+An input contains nonzero `id`, lowercase `handedness` (`none`, `left`, `right`),
+ordered `profiles`, `supports_grip`, nullable `aim` and `grip` poses,
+boolean `select` and `squeeze`, normalized `buttons`, `touches` and `axes`.
+There are at most two sources, eight button slots and four axis slots. Button
+slots 0/1/2/3 represent trigger, squeeze, touchpad and thumbstick. Axes 0/1
+are touchpad; 2/3 are thumbstick. Internal absent slots stay neutral; trailing
+absent slots are omitted. Touch and press are independent. Platform/system
+buttons are excluded; a supported menu binding leaves the browser lease.
+
+The bounded history retains source, focus, tracking and primary-action
+transitions; continuous pose/analog movement does not fill it. Overflow, or a
+response that would exceed the existing JSON bound, returns `reset:true` with
+no partial history. Clients must cancel pending gestures, acknowledge `through`
+and establish the current frame as a new baseline. They must not synthesize
+selection from an incomplete press/release pair. Descriptor changes replace
+the input source and its immutable Gamepad shape.
+
+Native input permission requires a matching focused peer PID in the active
+realm, no native modal/popup/launcher/lock interruption, and policy age at most
+250 ms including both native publication age and transport age. An idle or
+frozen native publisher cannot regain freshness through repeated HTTP reads.
+The Servo client additionally checks its requesting webview and FLTK page
+focus, because PID focus alone cannot distinguish tabs or address-bar input.
+
+`begin_session` also returns the cached `frame_id`; a new client waits after
+that ID for its initial post-consent baseline. Optional `monotonic_time` is the
+corresponding Linux `CLOCK_MONOTONIC` time in nanoseconds, converted by
+`XR_KHR_convert_timespec_time`. An absent field means clock conversion is
+unavailable; clients must use an estimate in their own document timeline rather
+than exposing the runtime epoch.
+
+Input samples include `select_active` and `squeeze_active` (defaulting to true
+for older senders). Deactivation cancels that action without completing it.
+Primary/squeeze changes are ordered by OpenXR `last_change_time`, and all input,
+head and eye poses in a historical frame are located at that event time. The
+host publishes the history and the current display frame under one lock. Missing
+or invalid action times cancel/rearm instead of substituting later predicted
+poses. These changes are in optimized validation; physical bindings and actual
+runtime clock conversion still require WiVRn-Pro validation. This is not a claim
+of full WebXR conformance.
+
+For the private native transport fixture (no headset):
+
+```sh
+cargo build --release --locked --features xr --example webxr_input_fixture
+```
+
+Run the Servo `ports/dome-fltk/tests/webxr-input.py` driver with the candidate
+browser, this example executable, and a new artifact directory. The driver
+requires `python-xlib` and a private Xvfb/nested Wayland compositor.

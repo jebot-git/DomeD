@@ -51,12 +51,16 @@ fn main() {
             println!("cargo:rerun-if-changed={source}");
             native.file(source);
         }
-        println!("cargo:rustc-link-search=native={prefix}/lib");
+        let libdir = ["lib", "lib64"].into_iter()
+            .map(|name| std::path::Path::new(&prefix).join(name))
+            .find(|directory| directory.join("libfltk.so").is_file())
+            .expect("FLTK shared libraries are required in the toolkit's lib or lib64 directory");
+        println!("cargo:rustc-link-search=native={}", libdir.display());
         println!("cargo:rustc-link-lib=dylib=fltk");
         println!("cargo:rustc-link-lib=dylib=fltk_images");
         println!("cargo:rustc-link-lib=dylib=fltk_gl");
         println!("cargo:rustc-link-lib=dylib=GL");
-        println!("cargo:rustc-link-arg=-Wl,-rpath,{prefix}/lib");
+        println!("cargo:rustc-link-arg=-Wl,-rpath,{}", libdir.display());
         native.compile("dome_fltk_chrome");
         return;
     }

@@ -2,7 +2,8 @@
   "applications": {
     "org.domed.Browser.desktop": {
       "app_id": "org.domed.Browser",
-      "reuse": true
+      "reuse": true,
+      "routing_wrapper": "dome-browser"
     },
     "mpvr.desktop": {},
     "mpv.desktop": {},

@@ -103,10 +103,11 @@ pub fn serve_native(
                 continue;
             }
             if request.method() == &Method::Get && request.url() == "/api/xr-control" {
-                let control = bridge
+                let mut control = bridge
                     .as_ref()
                     .map(|b| b.lock().unwrap().control())
                     .unwrap_or_default();
+                control.native_xr_active = scene.lock().unwrap().native_owner().is_some();
                 let _ = request.respond(
                     Response::from_string(serde_json::to_string(&control).unwrap()).with_header(
                         Header::from_bytes("Content-Type", "application/json").unwrap(),

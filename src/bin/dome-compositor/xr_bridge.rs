@@ -18,6 +18,22 @@ use smithay::{
     utils::{Rectangle, Transform, SERIAL_COUNTER},
 };
 impl Dome {
+    fn update_webxr_input_policy(&self) {
+        let blocked = !self.native_session_active || self.session.locked()
+            || self.shell_modal_open() || self.menu.is_some() || self.launcher
+            || self.desktop_manager || self.task_context || self.task_popup.is_some()
+            || self.tray.state().menu.is_some() || self.popup_grab.as_ref().is_some_and(|grab| !grab.has_ended())
+            || self.binding_capture.is_some() || self.chrome_drag.is_some() || self.super_mmb.is_some();
+        let policy = {
+            let scene = self.scene.lock().unwrap();
+            let mut policy = dome::webxr_focus::Policy::for_scene(&scene, self.input_realm, blocked);
+            policy.visible &= self.native_session_active;
+            policy
+        };
+        let mut bridge = self.xr_bridge.lock().unwrap();
+        bridge.webxr_input = Some(policy);
+        bridge.webxr_input_updated = Some(std::time::Instant::now());
+    }
     pub fn export_xr_shell(&self, pixels: &[u8], width: i32, height: i32) {
         use dome::xr_transport::{ShellLayout, Surface, NOTIFICATIONS, TASK_BAR, TOP_BAR, TOP_PANEL, BOTTOM_PANEL};
         let mut top = 36;
@@ -133,6 +149,7 @@ impl Dome {
     }
     pub fn xr_input(&mut self) {
         self.clipboard.poll(&self.seat);
+        self.update_webxr_input_policy();
         if !self.native_session_active {
             self.xr_task_leave.update(None, false, self.start_time.elapsed());
             self.xr_bridge.lock().unwrap().packets.clear();
@@ -236,6 +253,7 @@ impl Dome {
             self.xr_mouse_motion(0., 0.);
         }
         self.xr_task_popup_tick();
+        self.update_webxr_input_policy();
     }
     pub fn dispatch_xr(&mut self, mut p: Packet) {
         if self.session.locked() { return; }

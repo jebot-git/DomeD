@@ -134,12 +134,16 @@ impl TabletSeatHandle {
     /// Called when tablet is no longer available
     /// For example on [input::Event::DeviceRemoved](crate::backend::input::InputEvent::DeviceRemoved) event.
     pub fn remove_tablet(&self, tablet_desc: &TabletDescriptor) {
-        self.inner.lock().unwrap().tablets.remove(tablet_desc);
+        if let Some(tablet) = self.inner.lock().unwrap().tablets.remove(tablet_desc) {
+            tablet.remove();
+        }
     }
 
     /// Remove all tablet devices
     pub fn clear_tablets(&self) {
-        self.inner.lock().unwrap().tablets.clear();
+        for (_, tablet) in std::mem::take(&mut self.inner.lock().unwrap().tablets) {
+            tablet.remove();
+        }
     }
 
     /// Add a new tool to a seat.
@@ -198,12 +202,16 @@ impl TabletSeatHandle {
     ///
     /// One possible policy would be to remove a tool when all tablets the tool was used on are removed.
     pub fn remove_tool(&self, tool_desc: &TabletToolDescriptor) {
-        self.inner.lock().unwrap().tools.remove(tool_desc);
+        if let Some(tool) = self.inner.lock().unwrap().tools.remove(tool_desc) {
+            tool.remove();
+        }
     }
 
     /// Remove all tablet tool devices
     pub fn clear_tools(&self) {
-        self.inner.lock().unwrap().tools.clear();
+        for (_, tool) in std::mem::take(&mut self.inner.lock().unwrap().tools) {
+            tool.remove();
+        }
     }
 }
 

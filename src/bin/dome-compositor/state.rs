@@ -77,6 +77,7 @@ pub struct Dome {
     pub registry: Vec<(u64, Window)>,
     pub notification_windows: crate::notification_windows::Windows,
     pub applied_revision: u64,
+    pub applied_xr_visibility: bool,
     pub launcher: bool,
     pub launch_index: usize,
     pub quick_launch: dome::quick_launch::Pins,
@@ -179,6 +180,9 @@ pub struct Dome {
     pub context_scroll_buttons: std::collections::HashSet<u32>,
 
     pub seat: Seat<Self>,
+    pub touch: crate::touch::TouchState,
+    pub tablets: crate::tablet::TabletState,
+    pub _tablet_manager: smithay::wayland::tablet_manager::TabletManagerState,
 }
 
 impl Dome {
@@ -263,6 +267,8 @@ impl Dome {
         // Notify clients that we have a pointer (mouse)
         // Here we assume that there is always pointer plugged in
         seat.add_pointer();
+        // Touch can originate from libinput or the nested backend.
+        seat.add_touch();
 
         // A space represents a two-dimensional plane. Windows and Outputs can be mapped onto it.
         //
@@ -329,6 +335,7 @@ impl Dome {
             registry: vec![],
             notification_windows: Default::default(),
             applied_revision: u64::MAX,
+            applied_xr_visibility: false,
             launcher: false,
             launch_index: 0,
             quick_launch: Default::default(),
@@ -432,6 +439,9 @@ impl Dome {
             context_scroll_hover: None,
             context_scroll_buttons: Default::default(),
             seat,
+            touch: Default::default(),
+            tablets: Default::default(),
+            _tablet_manager: smithay::wayland::tablet_manager::TabletManagerState::new::<Self>(&dh),
         }
     }
 

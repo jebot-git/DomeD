@@ -1,0 +1,240 @@
+--- a/FL/wayland.H
++++ b/FL/wayland.H
+@@ -54,6 +54,15 @@
+ /** Returns the EGLContext corresponding to the given GLContext */
+ extern FL_EXPORT EGLContext fl_wl_glcontext(GLContext rc);
+ 
++/** Optional native touch callback. Actions: 0 down, 1 motion, 2 up, 3 cancel.
++    Coordinates are fractional FLTK window coordinates. Primary status is fixed
++    for the contact lifetime. Return nonzero on down to own the whole contact;
++    zero permits primary-touch mouse fallback for native UI widgets. Delivery is
++    batched at wl_touch.frame, except cancellation. A null handler disables it. */
++typedef int (*Fl_Wayland_Touch_Handler)(Fl_Window *, int action, int id,
++    double x, double y, int primary, void *user);
++extern "C" FL_EXPORT int fl_wl_set_touch_handler(Fl_Wayland_Touch_Handler, void *user);
++
+ #ifndef FL_DOXYGEN
+ 
+ #  ifdef FLTK_USE_X11
+--- a/src/drivers/Wayland/Fl_Wayland_Screen_Driver.H
++++ b/src/drivers/Wayland/Fl_Wayland_Screen_Driver.H
+@@ -42,6 +42,7 @@
+   struct seat {
+     struct wl_seat *wl_seat;
+     struct wl_pointer *wl_pointer;
++    struct wl_touch *wl_touch;
+     struct wl_keyboard *wl_keyboard;
+     uint32_t keyboard_enter_serial;
+     struct wl_surface *keyboard_surface;
+--- a/src/drivers/Wayland/Fl_Wayland_Screen_Driver.cxx
++++ b/src/drivers/Wayland/Fl_Wayland_Screen_Driver.cxx
+@@ -24,6 +24,10 @@
+ #include <FL/Fl.H>
+ #include <FL/Fl_Image_Surface.H>
+ #include <FL/platform.H>
++#include <map>
++#include <memory>
++#include <vector>
++#include <cmath>
+ #include <FL/fl_ask.H>
+ #include <FL/filename.H>
+ #if FLTK_USE_STD
+@@ -200,6 +204,168 @@
+   return win;
+ }
+ 
++
++// Optional raw touch delivery. Keep protocol contacts separate from delivered
++// contacts: down/up IDs may be reused before the next wl_touch.frame.
++namespace {
++static unsigned long long dome_touch_generation = 0;
++struct DomeTouchContact {
++  int id;
++  unsigned long long generation;
++  bool primary;
++  int mode; // 0 pending, 1 raw callback, 2 legacy UI fallback, 3 ignored
++  double x, y;
++  Fl_Wayland_Touch_Handler handler;
++  void *user;
++  Fl_Widget_Tracker source;
++  Fl_Widget_Tracker top;
++  DomeTouchContact(int id_, bool primary_, Fl_Window *source_, Fl_Window *top_,
++                   Fl_Wayland_Touch_Handler handler_, void *user_) :
++    id(id_), generation(dome_touch_generation), primary(primary_), mode(0), x(0), y(0), handler(handler_), user(user_),
++    source(source_), top(top_) {}
++  Fl_Window *window() {
++    return top.deleted() ? NULL : top.widget()->as_window();
++  }
++  bool position(wl_fixed_t sx, wl_fixed_t sy) {
++    if (source.deleted() || top.deleted()) return false;
++    Fl_Window *win = source.widget()->as_window();
++    if (!win || !win->shown() || !win->visible_r()) return false;
++    double dx = 0, dy = 0;
++    while (win->parent()) { dx += win->x(); dy += win->y(); win = win->window(); }
++    if (win != window()) return false;
++    const double scale = Fl::screen_scale(win->screen_num());
++    if (!(scale > 0) || !std::isfinite(scale)) return false;
++    int *offset = Fl_Window_Driver::menu_offset_y(win);
++    x = wl_fixed_to_double(sx) / scale + dx;
++    y = wl_fixed_to_double(sy) / scale + dy - (offset ? *offset : 0);
++    return true;
++  }
++};
++typedef std::shared_ptr<DomeTouchContact> DomeTouchPtr;
++struct DomeTouchPending { int action; DomeTouchPtr contact; double x, y; uint32_t time; };
++static Fl_Wayland_Touch_Handler dome_touch_handler = NULL;
++static void *dome_touch_user = NULL;
++static std::map<int32_t, DomeTouchPtr> dome_touch_contacts, dome_touch_delivered;
++static std::vector<DomeTouchPending> dome_touch_pending;
++static bool dome_touch_overflow = false;
++
++static void dome_touch_coords(Fl_Window *win, double x, double y) {
++  Fl::e_x = (int)x; Fl::e_y = (int)y;
++  Fl::e_x_root = Fl::e_x + win->x(); Fl::e_y_root = Fl::e_y + win->y();
++  Fl::e_dx = Fl::e_dy = 0;
++}
++static void dome_touch_cancel_contact(const DomeTouchPtr &contact) {
++  Fl_Window *win = contact->window();
++  if (!win) return;
++  if (contact->mode == 1) {
++    contact->handler(win, 3, contact->id, contact->x, contact->y, contact->primary, contact->user);
++  } else if (contact->mode == 2) {
++    // A cancellation must release a widget without activating it.
++    dome_touch_coords(win, -1000000, -1000000);
++    Fl::e_keysym = FL_Button + 1; Fl::e_is_click = 0;
++    // Buttons retain their pressed value until a drag leaves their bounds.
++    Fl::handle(FL_MOVE, win);
++    Fl::e_state &= ~FL_BUTTON1;
++    if (!contact->top.deleted()) Fl::handle(FL_RELEASE, win);
++  }
++}
++static void dome_touch_cancel_all() {
++  ++dome_touch_generation;
++  std::map<int32_t, DomeTouchPtr> delivered;
++  delivered.swap(dome_touch_delivered);
++  dome_touch_contacts.clear(); dome_touch_pending.clear();
++  for (const auto &entry : delivered) dome_touch_cancel_contact(entry.second);
++}
++static bool dome_touch_live(const DomeTouchPtr &contact) {
++  auto it = dome_touch_delivered.find(contact->id);
++  return it != dome_touch_delivered.end() && it->second == contact;
++}
++static void dome_touch_dispatch(const DomeTouchPending &event) {
++  const DomeTouchPtr contact = event.contact;
++  if (contact->generation != dome_touch_generation) return;
++  wld_event_time = event.time;
++  Fl_Window *win = contact->window();
++  if (!win) return;
++  contact->x = event.x; contact->y = event.y;
++  if (event.action == 0) {
++    if (!win->shown() || !win->visible_r()) return;
++    dome_touch_delivered[contact->id] = contact;
++    contact->mode = 1; // A callback can unregister itself reentrantly.
++    int handled = contact->handler(win, 0, contact->id, event.x, event.y, contact->primary, contact->user);
++    if (!dome_touch_live(contact) || contact->top.deleted()) return;
++    if (handled) return;
++    contact->mode = 3;
++    if (contact->primary && !(Fl::e_state & FL_BUTTON1)) {
++      contact->mode = 2;
++      dome_touch_coords(win, event.x, event.y);
++      Fl::e_state |= FL_BUTTON1; Fl::e_keysym = FL_Button + 1;
++      checkdouble(); Fl::handle(FL_PUSH, win);
++    }
++    return;
++  }
++  if (!dome_touch_live(contact)) return;
++  if (contact->mode == 1) {
++    contact->handler(win, event.action, contact->id, event.x, event.y, contact->primary, contact->user);
++  } else if (contact->mode == 2) {
++    dome_touch_coords(win, event.x, event.y);
++    Fl::e_keysym = FL_Button + 1;
++    if (event.action == 2) { Fl::e_state &= ~FL_BUTTON1; Fl::handle(FL_RELEASE, win); }
++    else { Fl::e_is_click = 0; Fl::handle(FL_MOVE, win); }
++  }
++  if (event.action == 2 && dome_touch_live(contact)) dome_touch_delivered.erase(contact->id);
++}
++static void dome_touch_queue(int action, const DomeTouchPtr &contact) {
++  if (dome_touch_pending.size() >= 2048) {
++    dome_touch_cancel_all(); dome_touch_overflow = true; return;
++  }
++  dome_touch_pending.push_back({action, contact, contact->x, contact->y, wld_event_time});
++}
++static void dome_touch_down(void *data, struct wl_touch *, uint32_t serial, uint32_t time,
++                            struct wl_surface *surface, int32_t id, wl_fixed_t x, wl_fixed_t y) {
++  if (!dome_touch_handler || dome_touch_overflow || dome_touch_contacts.size() >= 32) return;
++  Fl_Window *source = Fl_Wayland_Window_Driver::surface_to_window(surface);
++  if (!source || !source->shown()) return;
++  if (dome_touch_contacts.count(id)) { dome_touch_cancel_all(); return; }
++  auto contact = std::make_shared<DomeTouchContact>(id, dome_touch_contacts.empty(), source,
++      source->top_window(), dome_touch_handler, dome_touch_user);
++  if (!contact->position(x,y)) return;
++  dome_touch_contacts[id] = contact;
++  ((struct Fl_Wayland_Screen_Driver::seat*)data)->serial = serial;
++  wld_event_time = time;
++  dome_touch_queue(0, contact);
++}
++static void dome_touch_up(void *data, struct wl_touch *, uint32_t serial, uint32_t time, int32_t id) {
++  auto it = dome_touch_contacts.find(id);
++  if (it == dome_touch_contacts.end()) return;
++  const auto contact = it->second;
++  dome_touch_contacts.erase(it);
++  ((struct Fl_Wayland_Screen_Driver::seat*)data)->serial = serial;
++  wld_event_time = time;
++  dome_touch_queue(2, contact);
++}
++static void dome_touch_motion(void *, struct wl_touch *, uint32_t time, int32_t id, wl_fixed_t x, wl_fixed_t y) {
++  auto it = dome_touch_contacts.find(id);
++  if (it == dome_touch_contacts.end()) return;
++  const auto contact = it->second;
++  if (!contact->position(x,y)) { dome_touch_cancel_all(); return; }
++  wld_event_time = time;
++  dome_touch_queue(1, contact);
++}
++static void dome_touch_frame(void *, struct wl_touch *) {
++  std::vector<DomeTouchPending> pending;
++  pending.swap(dome_touch_pending);
++  dome_touch_overflow = false;
++  for (const auto &event : pending) dome_touch_dispatch(event);
++}
++static void dome_touch_cancel(void *, struct wl_touch *) { dome_touch_cancel_all(); }
++static struct wl_touch_listener dome_touch_listener = {
++  dome_touch_down, dome_touch_up, dome_touch_motion, dome_touch_frame, dome_touch_cancel, NULL, NULL
++};
++}
++extern "C" FL_EXPORT int fl_wl_set_touch_handler(Fl_Wayland_Touch_Handler handler, void *user) {
++  dome_touch_cancel_all(); dome_touch_handler = handler; dome_touch_user = user;
++  return Fl_Wayland_Screen_Driver::wl_display ? 1 : 0;
++}
+ 
+ static void pointer_enter(void *data, struct wl_pointer *wl_pointer, uint32_t serial,
+         struct wl_surface *surface, wl_fixed_t surface_x, wl_fixed_t surface_y) {
+@@ -1061,6 +1227,16 @@
+     seat->wl_pointer = NULL;
+   }
+ 
++  if ((capabilities & WL_SEAT_CAPABILITY_TOUCH) && !seat->wl_touch) {
++    seat->wl_touch = wl_seat_get_touch(wl_seat);
++    wl_touch_add_listener(seat->wl_touch, &dome_touch_listener, seat);
++  } else if (!(capabilities & WL_SEAT_CAPABILITY_TOUCH) && seat->wl_touch) {
++    dome_touch_cancel_all();
++    if (wl_touch_get_version(seat->wl_touch) >= WL_TOUCH_RELEASE_SINCE_VERSION) wl_touch_release(seat->wl_touch);
++    else wl_touch_destroy(seat->wl_touch);
++    seat->wl_touch = NULL;
++  }
++
+   bool have_keyboard = seat->xkb_context && (capabilities & WL_SEAT_CAPABILITY_KEYBOARD);
+   if (have_keyboard && seat->wl_keyboard == NULL) {
+           seat->wl_keyboard = wl_seat_get_keyboard(wl_seat);
+@@ -1520,6 +1696,12 @@
+   wl_data_device_manager_destroy(seat->data_device_manager);
+   seat->data_device_manager = NULL;
+   destroy_primary();
++  dome_touch_cancel_all();
++  if (seat->wl_touch) {
++    if (wl_touch_get_version(seat->wl_touch) >= WL_TOUCH_RELEASE_SINCE_VERSION) wl_touch_release(seat->wl_touch);
++    else wl_touch_destroy(seat->wl_touch);
++    seat->wl_touch = NULL;
++  }
+   wl_seat_destroy(seat->wl_seat); seat->wl_seat = NULL;
+   if (seat->name) free(seat->name);
+   free(seat); seat = NULL;

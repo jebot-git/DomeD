@@ -15,6 +15,10 @@ use std::{
 mod gpu;
 #[path = "dome-xr/screenshot.rs"]
 mod screenshot;
+#[path = "dome-xr/webxr_input.rs"]
+mod webxr_input;
+#[path = "dome-xr/webxr_time.rs"]
+mod webxr_time;
 const VIEW_TYPE: xr::ViewConfigurationType = xr::ViewConfigurationType::PRIMARY_STEREO;
 #[derive(Clone)]
 struct Image {
@@ -42,6 +46,11 @@ fn scene_border(n: &Arc<Mutex<Network>>) -> u8 {
         .as_ref()
         .map(|s| s.config.window_border_px)
         .unwrap_or(1)
+}
+fn browser_native_visible(state: &Network) -> bool {
+    state.scene.as_ref().is_some_and(|scene| !scene.locked)
+        && (state.control.webxr_input.is_none() || dome::webxr_focus::control_visible(&state.control,
+            state.control_received.map(|time| time.elapsed())))
 }
 fn main() {
     if let Err(e) = run() {
@@ -359,6 +368,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut extensions = xr::ExtensionSet::default();
     extensions.extx_overlay = available.extx_overlay && !standalone;
     extensions.khr_vulkan_enable2 = true;
+    extensions.khr_convert_timespec_time = available.khr_convert_timespec_time;
     extensions.khr_composition_layer_cylinder = available.khr_composition_layer_cylinder;
     let xr_instance = entry.create_instance(
         &xr::ApplicationInfo {
@@ -473,8 +483,28 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             environment.overlay,
             placement,
         )?;
-        let floor_stage_available = session
-            .create_reference_space(xr::ReferenceSpaceType::STAGE, xr::Posef::IDENTITY).is_ok();
+        let (stage, reference_space_type) = match session
+            .create_reference_space(xr::ReferenceSpaceType::STAGE, xr::Posef::IDENTITY) {
+            Ok(space) => (space, xr::ReferenceSpaceType::STAGE),
+            Err(_) => (session.create_reference_space(xr::ReferenceSpaceType::LOCAL, xr::Posef::IDENTITY)?, xr::ReferenceSpaceType::LOCAL),
+        };
+        let floor_stage_available = reference_space_type == xr::ReferenceSpaceType::STAGE;
+        let mut controllers = if music_floor_only { None } else {
+            match webxr_input::Controllers::new(&xr_instance, &session) {
+                Ok(actions) => Some(actions),
+                Err(error) => {
+                    eprintln!("Dome WebXR controller actions unavailable: {error}");
+                    None
+                }
+            }
+        };
+        // Older desktops retain the working head/stereo path. Controller input
+        // requires an explicit native focus policy, rather than guessing focus.
+        let input_enabled = controllers.is_some() && {
+            let state = network.lock().unwrap();
+            state.control.webxr_input.as_ref().is_some_and(|policy| policy.version == dome::webxr_focus::POLICY_VERSION)
+                && state.control.webxr_input_age_ms.is_some()
+        };
         let mut music_floor = dome::music_floor::MusicFloor::default();
         let mut performance_floor = dome::performance_floor::PerformanceFloor::default();
         let mut floor_bounds = None;
@@ -483,11 +513,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let mut performance_floor_uploaded = false;
         let mut performance_floor_frames = 0u64;
         let mut floor_bounds_read = Instant::now() - Duration::from_secs(2);
-        let stage = session
-            .create_reference_space(xr::ReferenceSpaceType::STAGE, xr::Posef::IDENTITY)
-            .or_else(|_| {
-                session.create_reference_space(xr::ReferenceSpaceType::LOCAL, xr::Posef::IDENTITY)
-            })?;
+        let mut reference_space_timeline = dome::webxr_bridge::ReferenceSpaceTimeline::default();
         let view =
             session.create_reference_space(xr::ReferenceSpaceType::VIEW, xr::Posef::IDENTITY)?;
         let recommended = xr_instance.enumerate_view_configuration_views(system, VIEW_TYPE)?;
@@ -526,6 +552,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     blend_modes: vec!["opaque".into()],
                     stage: floor_stage_available,
                     period: 0,
+                    input_stream_version: if input_enabled { dome::webxr_bridge::INPUT_STREAM_VERSION } else { 0 },
                 },
             ) {
                 Ok(server) => {
@@ -608,6 +635,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let mut peak_shell = 0;
         let mut captured = std::collections::HashSet::new();
         let mut last_screenshot_request=0;
+        let mut input_sample_error = None::<String>;
+        let mut previous_browser_focus = false;
         'main: loop {
             while let Some(e) = xr_instance.poll_event(&mut event)? {
                 match e {
@@ -631,6 +660,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                                 break 'main
                             }
                             _ => (),
+                        }
+                    }
+                    xr::Event::ReferenceSpaceChangePending(change) => {
+                        if change.reference_space_type() == reference_space_type {
+                            reference_space_timeline.schedule(change.change_time().as_nanos(),
+                                change.pose_valid().then(|| bridge_pose(change.pose_in_previous_space())))?;
                         }
                     }
                     xr::Event::InstanceLossPending(_) => break 'main,
@@ -667,15 +702,63 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let head_pose = last_head;
             let (webxr_view_flags, webxr_views) =
                 session.locate_views(VIEW_TYPE, frame.predicted_display_time, &stage)?;
+            let owner = browser.as_ref().and_then(|server| server.session_owner_pid());
+            let browser_visible = visible && browser_native_visible(&network.lock().unwrap());
+            let mut browser_focused = focused && browser_visible;
+            let mut input_events = vec![];
+            let inputs = if input_enabled {
+                let allowed = {
+                    let state = network.lock().unwrap();
+                    state.control.webxr_input.as_ref().is_some_and(|policy|
+                        policy.allows(owner, dome::webxr_focus::control_age(&state.control,
+                            state.control_received.map(|time| time.elapsed()))))
+                };
+                browser_focused &= allowed;
+                if let Some(actions) = controllers.as_mut().filter(|_| owner.is_some()) {
+                    let sampled = actions.sample(&xr_instance, &session, &stage, frame.predicted_display_time, focused);
+                    if actions.take_exit_request() {
+                        // Trusted exit remains available during native menus or
+                        // dialogs; it never becomes a page Gamepad button.
+                        if let Some(server) = &browser { server.suspend(); }
+                        let _ = actions.idle(&session);
+                        browser_focused = false;
+                        vec![]
+                    } else {
+                        match sampled {
+                            Ok(sample) => {
+                                input_sample_error = None;
+                                if browser_focused {
+                                    if previous_browser_focus { input_events = sample.events; }
+                                    sample.inputs
+                                } else { actions.neutral() }
+                            }
+                            Err(error) => {
+                                browser_focused = false;
+                                let message = error.to_string();
+                                if input_sample_error.as_ref() != Some(&message) {
+                                    eprintln!("Dome WebXR controller sampling paused: {message}");
+                                    input_sample_error = Some(message);
+                                }
+                                actions.neutral()
+                            }
+                        }
+                    }
+                } else {
+                    if focused { if let Some(actions) = controllers.as_mut() { let _ = actions.idle(&session); } }
+                    vec![]
+                }
+            } else { vec![] };
             if let Some(browser) = &browser {
                 if webxr_views.len() == 2 {
-                    browser.publish(dome::webxr_bridge::Tracking {
+                    let mut tracking = dome::webxr_bridge::Tracking {
+                        reference_space: Some(reference_space_timeline.at(frame.predicted_display_time.as_nanos())),
                         frame_id: count,
                         time: frame.predicted_display_time.as_nanos(),
+                        monotonic_time: webxr_time::monotonic(&xr_instance, frame.predicted_display_time),
                         period: frame.predicted_display_period.as_nanos(),
                         should_render: frame.should_render,
-                        visible,
-                        focused,
+                        visible: browser_visible,
+                        focused: browser_focused,
                         head_flags: head.location_flags.into_raw(),
                         view_flags: webxr_view_flags.into_raw(),
                         head: bridge_pose(head.pose),
@@ -683,8 +766,30 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             pose: bridge_pose(webxr_views[i].pose),
                             fov: bridge_fov(webxr_views[i].fov),
                         }),
-                    });
+                        inputs,
+                    };
+                    webxr_time::sanitize_poses(&mut tracking);
+                    let mut history = Vec::with_capacity(input_events.len());
+                    for event in input_events {
+                        match webxr_time::event_tracking(&xr_instance, &session, &view, &stage, &tracking, event) {
+                            Ok(event) => history.push(event),
+                            Err(error) => {
+                                // Historical tracking unavailable: cancel this sample;
+                                // do not replace action-time poses with display-time poses.
+                                tracking.focused = false;
+                                tracking.inputs = controllers.as_ref().map_or_else(Vec::new, |actions| actions.neutral());
+                                history.clear();
+                                let message = format!("event-time tracking: {error}");
+                                if input_sample_error.as_ref() != Some(&message) { eprintln!("Dome WebXR controller sampling paused: {message}"); }
+                                input_sample_error = Some(message);
+                                break;
+                            }
+                        }
+                    }
+                    previous_browser_focus = tracking.focused;
+                    browser.publish_with_history(tracking, &history);
                 } else {
+                    previous_browser_focus = false;
                     browser.suspend();
                 }
             }
@@ -1058,7 +1163,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .take(max_layers)
                 .filter_map(|q| chains.get(&q.id).map(|p| (q, p)))
                 .collect();
-            let browser_visible = browser
+            let browser_visible = browser_visible
+                && browser_native_visible(&network.lock().unwrap())
+                && browser
                 .as_ref()
                 .is_some_and(|browser| browser.content_active(browser_updated))
                 && browser_views.is_some()
@@ -1269,7 +1376,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         running.store(false, Ordering::Relaxed);
         let _ = worker.join();
         let _ = input_worker.join();
-        let summary = serde_json::json!({"runtime":runtime,"system":properties.system_name,"overlay":environment.overlay,"environment_blend":format!("{blend:?}"),"overlay_placement":placement,"frames":count,"peak_window_layers":peak,"peak_curved_layers":peak_curved,"peak_flat_layers":peak_flat,"peak_stereo_windows":peak_stereo,"peak_shell_layers":peak_shell,"uploads":uploaded,"performance_floor_frames":performance_floor_frames,"gpu_submissions":gpu_submissions,"input_methods":["mouse","keyboard"],"presentation_hidden_frames":hidden_frames,"presentation_fade_frames":fade_frames,"presentation_slide_frames":slide_frames,"clean_exit":true,"webxr":browser.as_ref().map(|browser| browser.stats()).unwrap_or_default()});
+        let summary = serde_json::json!({"runtime":runtime,"system":properties.system_name,"overlay":environment.overlay,"environment_blend":format!("{blend:?}"),"overlay_placement":placement,"frames":count,"peak_window_layers":peak,"peak_curved_layers":peak_curved,"peak_flat_layers":peak_flat,"peak_stereo_windows":peak_stereo,"peak_shell_layers":peak_shell,"uploads":uploaded,"performance_floor_frames":performance_floor_frames,"gpu_submissions":gpu_submissions,"input_methods":if input_enabled {vec!["mouse","keyboard","tracked-controllers"]}else{vec!["mouse","keyboard"]},"webxr_input_enabled":input_enabled,"presentation_hidden_frames":hidden_frames,"presentation_fade_frames":fade_frames,"presentation_slide_frames":slide_frames,"clean_exit":true,"webxr":browser.as_ref().map(|browser| browser.stats()).unwrap_or_default()});
         println!("{summary}");
         if let Some(path) = report {
             std::fs::write(path, serde_json::to_vec_pretty(&summary)?)?;
@@ -1279,6 +1386,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         drop(chains);
         drop(browser_panel);
         drop(browser);
+        // Action spaces are session children. Release them before explicitly
+        // destroying the session rather than at the surrounding scope's end.
+        drop(controllers);
         drop((stage, view, stream, waiter, session));
         vk_device.destroy_command_pool(pool, None);
         vk_device.destroy_device(None);
@@ -1513,5 +1623,37 @@ fn from_bridge_fov(f: dome::webxr_bridge::Fov) -> xr::Fovf {
         angle_right: f.right,
         angle_up: f.up,
         angle_down: f.down,
+    }
+}
+
+#[cfg(test)]
+mod webxr_visibility_tests {
+    use super::*;
+    #[test]
+    fn presentation_respects_native_lock_and_policy_freshness_independently_of_controllers() {
+        let mut state = Network::default();
+        assert!(!browser_native_visible(&state));
+        state.scene = Some(Scene::new("test"));
+        assert!(browser_native_visible(&state), "older desktop retains head/stereo compatibility");
+        state.scene.as_mut().unwrap().locked = true;
+        assert!(!browser_native_visible(&state));
+        state.scene.as_mut().unwrap().locked = false;
+        state.control.webxr_input = Some(dome::webxr_focus::Policy {
+            version: 1, blocked: false, visible: true, focused_pid: Some(42),
+        });
+        assert!(!browser_native_visible(&state));
+        state.control_received = Some(Instant::now());
+        state.control.webxr_input_age_ms = Some(0);
+        assert!(browser_native_visible(&state));
+        state.control.webxr_input.as_mut().unwrap().blocked = true;
+        assert!(browser_native_visible(&state), "menus blur page input without hiding the underlying scene");
+        state.control.webxr_input.as_mut().unwrap().visible = false;
+        assert!(!browser_native_visible(&state));
+        state.control.webxr_input.as_mut().unwrap().visible = true;
+        state.control.webxr_input_age_ms = Some(300);
+        assert!(!browser_native_visible(&state));
+        state.control.webxr_input_age_ms = Some(0);
+        state.control_received = Some(Instant::now() - Duration::from_secs(1));
+        assert!(!browser_native_visible(&state));
     }
 }

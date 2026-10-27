@@ -52,6 +52,15 @@ pub struct TabletHandle {
 }
 
 impl TabletHandle {
+    pub(super) fn remove(&self) {
+        // Protocol resources retain handles too, so dropping the seat's handle
+        // alone cannot notify their clients that the physical tablet is gone.
+        let instances = std::mem::take(&mut self.inner.lock().unwrap().instances);
+        for tablet in instances.into_iter().filter_map(|tablet| tablet.upgrade().ok()) {
+            tablet.removed();
+        }
+    }
+
     pub(super) fn new_instance<D>(
         &mut self,
         client: &Client,
@@ -63,7 +72,7 @@ impl TabletHandle {
         D: 'static,
     {
         let wl_tablet = client
-            .create_resource::<ZwpTabletV2, _, D>(dh, seat.version(), TabletUserData { handle: self.clone() })
+            .create_resource::<ZwpTabletV2, _, D>(dh, seat.version(), TabletUserData { handle: self.clone(), seat: seat.id() })
             .unwrap();
 
         seat.tablet_added(&wl_tablet);
@@ -83,7 +92,7 @@ impl TabletHandle {
         self.inner.lock().unwrap().instances.push(wl_tablet.downgrade());
     }
 
-    pub(super) fn with_focused_tablet<F>(&self, focus: &WlSurface, cb: F)
+    pub(super) fn with_focused_tablet<F>(&self, focus: &WlSurface, seat: &wayland_server::backend::ObjectId, cb: F)
     where
         F: Fn(&ZwpTabletV2),
     {
@@ -93,8 +102,9 @@ impl TabletHandle {
             .unwrap()
             .instances
             .iter()
-            .find(|i| i.id().same_client_as(&focus.id()))
-            .and_then(|t| t.upgrade().ok())
+            .filter_map(|tablet| tablet.upgrade().ok())
+            .find(|tablet| Resource::id(tablet).same_client_as(&focus.id()) &&
+                tablet.data::<TabletUserData>().is_some_and(|data| &data.seat == seat))
         {
             cb(&instance);
         }
@@ -105,6 +115,7 @@ impl TabletHandle {
 #[derive(Debug)]
 pub struct TabletUserData {
     handle: TabletHandle,
+    seat: wayland_server::backend::ObjectId,
 }
 
 impl<D> Dispatch<ZwpTabletV2, TabletUserData, D> for TabletManagerState

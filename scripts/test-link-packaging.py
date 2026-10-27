@@ -55,4 +55,12 @@ class Packaging(unittest.TestCase):
             uri='https://example.invalid/a b?x=$(false)&v=ü#fragment'
             with_uri=subprocess.check_output(['sh',str(script),uri],text=True).splitlines()
             self.assertEqual(with_uri,['--app-id','org.domed.Browser','--','browser',uri])
+    def test_browser_desktop_entry_does_not_route_before_its_wrapper(self):
+        options=json.loads((ROOT/'packaging/link-handlers.json').read_text())['applications']['org.domed.Browser.desktop']
+        for executable in ['dome-browser','/usr/local/bin/dome-browser']:
+            source='[Desktop Entry]\nType=Application\nName=Browser\nExec='+executable+' %u\nMimeType=x-scheme-handler/https;\n'
+            for previous in [source,source.replace('Exec=','Exec=/usr/local/bin/dome-link --app-id org.domed.Browser -- ')]:
+                result=module.desktop(previous,options)
+                self.assertEqual(result,source)
+                self.assertEqual(module.desktop(result,options),source)
 if __name__=='__main__':unittest.main()

@@ -1,5 +1,10 @@
 //! Same-user local browser projection transport into Dome's existing XR session.
 //! No OpenXR objects or runtime connections are created by this module.
+mod input;
+mod reference_space;
+pub use reference_space::{ReferenceSpaceState, ReferenceSpaceTimeline};
+pub use input::{InputBatch, InputHandedness, InputUpdate, TrackedInput, INPUT_STREAM_VERSION};
+use input::InputQueue;
 use serde::{Deserialize, Serialize};
 use std::{
     io::{self, Read, Write},
@@ -34,7 +39,7 @@ impl Default for Pose {
     }
 }
 impl Pose {
-    fn valid(&self) -> bool {
+    pub fn valid(&self) -> bool {
         self.position
             .iter()
             .all(|v| v.is_finite() && v.abs() < 10000.)
@@ -74,11 +79,17 @@ pub struct Capabilities {
     pub blend_modes: Vec<String>,
     pub stage: bool,
     pub period: i64,
+    /// Zero until the renderer has attached and can sample real tracked actions.
+    #[serde(default)]
+    pub input_stream_version: u32,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Tracking {
     pub frame_id: u64,
     pub time: i64,
+    /// Linux CLOCK_MONOTONIC nanoseconds, converted by the runtime extension.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub monotonic_time: Option<i64>,
     pub period: i64,
     pub should_render: bool,
     pub visible: bool,
@@ -87,6 +98,10 @@ pub struct Tracking {
     pub view_flags: u64,
     pub head: Pose,
     pub views: [View; 2],
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub inputs: Vec<TrackedInput>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reference_space: Option<ReferenceSpaceState>,
 }
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct Rect {
@@ -138,6 +153,7 @@ struct Lease {
     token: String,
     pid: u32,
     touched: Instant,
+    inputs: InputQueue,
 }
 struct State {
     caps: Capabilities,
@@ -269,10 +285,20 @@ impl Server {
         })
     }
     pub fn publish(&self, tracking: Tracking) {
+        self.publish_with_history(tracking, &[]);
+    }
+
+    /// Publish event-time samples and the newer display frame under one lock.
+    /// A waiting browser must never see a new cursor paired with an old frame.
+    pub fn publish_with_history(&self, mut tracking: Tracking, history: &[Tracking]) {
         let mut state = self.shared.state.lock().unwrap();
+        if state.caps.input_stream_version != INPUT_STREAM_VERSION || !input::valid_inputs(&tracking.inputs) {
+            // Preserve stereo presentation while cancelling malformed or
+            // unavailable inputs; never publish a partly valid controller set.
+            tracking.inputs.clear();
+        }
         state.active = true;
         state.caps.period = tracking.period;
-        state.tracking = Some(tracking);
         if state
             .lease
             .as_ref()
@@ -283,6 +309,18 @@ impl Server {
             state.content = false;
             state.generation = state.generation.wrapping_add(1);
         }
+        if state.caps.input_stream_version == INPUT_STREAM_VERSION {
+            if let Some(lease) = state.lease.as_mut() {
+                for event in history {
+                    if event.frame_id == tracking.frame_id && event.time > 0
+                        && event.time <= tracking.time && input::valid_inputs(&event.inputs) {
+                        lease.inputs.observe(event);
+                    }
+                }
+                lease.inputs.observe(&tracking);
+            }
+        }
+        state.tracking = Some(tracking);
         drop(state);
         self.shared.changed.notify_all();
     }
@@ -329,8 +367,19 @@ impl Server {
                 .is_some_and(|l| l.touched.elapsed() < LEASE_AGE)
             && last_frame.is_some_and(|t| t.elapsed() < CONTENT_AGE)
     }
+    /// A live immersive lease suppresses the desktop environment even before
+    /// its first image. Expiry/disconnect allows the environment to return.
+    pub fn immersive_active(&self) -> bool {
+        let state = self.shared.state.lock().unwrap();
+        state.active && state.lease.as_ref().is_some_and(|lease| lease.touched.elapsed() < LEASE_AGE)
+    }
     pub fn stats(&self) -> Stats {
         self.shared.state.lock().unwrap().stats.clone()
+    }
+    pub fn session_owner_pid(&self) -> Option<u32> {
+        let state = self.shared.state.lock().unwrap();
+        state.lease.as_ref().filter(|lease| state.active && lease.touched.elapsed() < LEASE_AGE)
+            .map(|lease| lease.pid)
     }
 }
 impl Drop for Server {
@@ -406,13 +455,18 @@ fn handle(stream: &mut UnixStream, shared: &Shared) -> Result<serde_json::Value,
         state.pending = None;
         state.content = false;
         state.generation = state.generation.wrapping_add(1);
+        let inputs = InputQueue::new(state.tracking.as_ref());
         state.lease = Some(Lease {
             token: token.clone(),
             pid,
             touched: Instant::now(),
+            inputs,
         });
         state.stats.sessions += 1;
-        return Ok(serde_json::json!({"ok":true,"token":token}));
+        // New clients establish their input baseline from a fresh sample after
+        // consent, rather than from a cached frame preceding this lease.
+        let frame_id = state.tracking.as_ref().map_or(0, |frame| frame.frame_id);
+        return Ok(serde_json::json!({"ok":true,"token":token,"frame_id":frame_id}));
     }
     let token = request["token"].as_str().ok_or("Missing session token")?;
     {
@@ -436,6 +490,9 @@ fn handle(stream: &mut UnixStream, shared: &Shared) -> Result<serde_json::Value,
         }
         "wait_frame" => {
             let after = request["after"].as_u64().unwrap_or(0);
+            let input_after = request.get("input_after").map(|value| {
+                value.as_u64().ok_or("Invalid input cursor")
+            }).transpose()?;
             let mut state = shared.state.lock().unwrap();
             let until = Instant::now() + Duration::from_secs(1);
             loop {
@@ -446,6 +503,20 @@ fn handle(stream: &mut UnixStream, shared: &Shared) -> Result<serde_json::Value,
                 if let Some(frame) = state.tracking.as_ref().filter(|f| f.frame_id > after) {
                     let mut reply = serde_json::to_value(frame).map_err(|e| e.to_string())?;
                     reply["ok"] = true.into();
+                    if let Some(cursor) = input_after {
+                        if state.caps.input_stream_version != INPUT_STREAM_VERSION {
+                            return Err("Tracked input extension is unavailable".into());
+                        }
+                        let mut batch = state.lease.as_ref().unwrap().inputs.batch(cursor)?;
+                        reply["input_batch"] = serde_json::to_value(&batch).map_err(|e| e.to_string())?;
+                        if serde_json::to_vec(&reply).map_err(|e| e.to_string())?.len() > MAX_JSON {
+                            // An unusually large transition burst has the same
+                            // cancellation semantics as a history overflow.
+                            batch.reset = true;
+                            batch.updates.clear();
+                            reply["input_batch"] = serde_json::to_value(batch).map_err(|e| e.to_string())?;
+                        }
+                    }
                     return Ok(reply);
                 }
                 let remaining = until.saturating_duration_since(Instant::now());
@@ -553,9 +624,10 @@ mod tests {
             blend_modes: vec!["opaque".into()],
             stage: false,
             period: 13_888_888,
+            input_stream_version: 0,
         }
     }
-    fn tracking(id: u64) -> Tracking {
+    pub(super) fn tracking(id: u64) -> Tracking {
         let view = View {
             pose: Pose::default(),
             fov: Fov {
@@ -568,6 +640,7 @@ mod tests {
         Tracking {
             frame_id: id,
             time: id as i64 * 13_888_888,
+            monotonic_time: None,
             period: 13_888_888,
             should_render: true,
             visible: true,
@@ -576,6 +649,8 @@ mod tests {
             view_flags: 15,
             head: Pose::default(),
             views: [view.clone(), view],
+            inputs: vec![],
+            reference_space: None,
         }
     }
     fn request(path: &Path, value: serde_json::Value, payload: &[u8]) -> serde_json::Value {
@@ -645,6 +720,13 @@ mod tests {
             .as_str()
             .unwrap()
             .to_string();
+        assert!(server.immersive_active(), "A lease hides the backdrop before its first frame");
+        {
+            let mut state = server.shared.state.lock().unwrap();
+            state.lease.as_mut().unwrap().touched = Instant::now()-LEASE_AGE-Duration::from_millis(1);
+        }
+        assert!(!server.immersive_active(), "An expired lease cannot keep the backdrop hidden");
+        server.shared.state.lock().unwrap().lease.as_mut().unwrap().touched = Instant::now();
         assert_eq!(
             request(&path, serde_json::json!({"op":"begin_session"}), &[])["ok"],
             false
@@ -738,6 +820,112 @@ mod tests {
             true
         );
         assert!(!server.content_active(Some(Instant::now())));
+        assert!(!server.immersive_active(), "Ending WebXR restores the backdrop");
         assert_eq!(server.stats().composed_frames, 1);
+    }
+
+    fn controller(id: u32) -> TrackedInput {
+        TrackedInput { id, handedness: if id == 1 { InputHandedness::Left } else { InputHandedness::Right },
+            profiles: vec!["generic-trigger".into()], supports_grip: true,
+            aim: Some(Pose::default()), grip: Some(Pose::default()),
+            select: false, squeeze: false, select_active: true, squeeze_active: true, buttons: vec![0.; 4], axes: vec![0.; 4], touches: vec![false; 4] }
+    }
+
+    #[test]
+    fn historical_action_poses_and_clocks_are_paired_with_the_current_display_frame() {
+        let path=std::env::temp_dir().join(format!("dome-webxr-timed-{}.sock",std::process::id()));
+        let mut capabilities=caps();capabilities.input_stream_version=1;let server=Server::bind(&path,capabilities).unwrap();
+        let mut baseline=tracking(1);baseline.inputs=vec![controller(1)];server.publish(baseline);
+        let token=request(&path,serde_json::json!({"op":"begin_session"}),&[])["token"].clone();
+        let mut display=tracking(2);display.inputs=vec![controller(1)];display.monotonic_time=Some(42_000_000);
+        let mut pressed=display.clone();pressed.time=18_000_000;pressed.monotonic_time=Some(32_000_000);pressed.inputs[0].select=true;pressed.inputs[0].buttons[0]=1.;pressed.inputs[0].aim.as_mut().unwrap().position[0]=2.;
+        let mut released=display.clone();released.time=19_000_000;released.monotonic_time=Some(33_000_000);
+        server.publish_with_history(display,&[pressed,released]);
+        let reply=request(&path,serde_json::json!({"op":"wait_frame","token":token,"after":1,"input_after":0}),&[]);
+        assert_eq!(reply["frame_id"],2);assert_eq!(reply["monotonic_time"],42_000_000);assert_eq!(reply["inputs"][0]["select"],false);
+        let batch:InputBatch=serde_json::from_value(reply["input_batch"].clone()).unwrap();assert_eq!(batch.through,2);assert_eq!(batch.updates.len(),2);
+        assert_eq!(batch.updates[0].frame.time,18_000_000);assert_eq!(batch.updates[0].frame.monotonic_time,Some(32_000_000));
+        assert_eq!(batch.updates[0].frame.inputs[0].aim.unwrap().position[0],2.);
+        assert_eq!(batch.updates[1].frame.time,19_000_000);assert_eq!(batch.updates[1].frame.monotonic_time,Some(33_000_000));
+    }
+    #[test]
+    fn opted_in_input_stream_preserves_edges_and_new_leases_get_a_clean_baseline() {
+        let path = std::env::temp_dir().join(format!("dome-webxr-input-{}.sock", std::process::id()));
+        let mut capabilities = caps(); capabilities.input_stream_version = INPUT_STREAM_VERSION;
+        let server = Server::bind(&path, capabilities).unwrap();
+        let mut f = tracking(1); f.inputs = vec![controller(1)]; server.publish(f.clone());
+        let token = request(&path, serde_json::json!({"op":"begin_session"}), &[])["token"].as_str().unwrap().to_string();
+        let legacy = request(&path, serde_json::json!({"op":"wait_frame","token":token,"after":0}), &[]);
+        assert!(legacy.get("input_batch").is_none(), "legacy clients do not opt into history");
+        for (id, select) in [(2, true), (3, false)] {
+            f.frame_id = id; f.time = id as i64 * 13_888_888;
+            f.inputs[0].select = select;
+            f.inputs[0].aim.as_mut().unwrap().position[0] = id as f32;
+            server.publish(f.clone());
+        }
+        let reply = request(&path, serde_json::json!({"op":"wait_frame","token":token,"after":1,"input_after":0}), &[]);
+        let batch: InputBatch = serde_json::from_value(reply["input_batch"].clone()).unwrap();
+        assert_eq!(batch.through, 2); assert!(!batch.reset); assert_eq!(batch.updates.len(), 2);
+        assert!(batch.updates[0].frame.inputs[0].select);
+        assert!(!batch.updates[1].frame.inputs[0].select);
+        assert_eq!(batch.updates[0].frame.inputs[0].aim.unwrap().position[0], 2.);
+        assert_eq!(batch.updates[1].frame.time, 3 * 13_888_888);
+        let again = request(&path, serde_json::json!({"op":"wait_frame","token":token,"after":1,"input_after":2}), &[]);
+        assert!(again["input_batch"]["updates"].as_array().unwrap().is_empty());
+        request(&path, serde_json::json!({"op":"end_session","token":token}), &[]);
+        f.inputs[0].select = true; f.frame_id = 4; server.publish(f);
+        let next = request(&path, serde_json::json!({"op":"begin_session"}), &[])["token"].as_str().unwrap().to_string();
+        let fresh = request(&path, serde_json::json!({"op":"wait_frame","token":next,"after":0,"input_after":0}), &[]);
+        assert_eq!(fresh["input_batch"]["through"], 0);
+        assert!(fresh["input_batch"]["updates"].as_array().unwrap().is_empty());
+        assert_eq!(fresh["inputs"][0]["select"], true);
+    }
+
+    #[test]
+    fn input_response_budget_resets_instead_of_exceeding_the_existing_message_limit() {
+        let path = std::env::temp_dir().join(format!("dome-webxr-input-budget-{}.sock", std::process::id()));
+        let mut capabilities = caps(); capabilities.input_stream_version = INPUT_STREAM_VERSION;
+        let server = Server::bind(&path, capabilities).unwrap();
+        let mut f = tracking(1); f.inputs = vec![controller(1), controller(2)];
+        for input in &mut f.inputs {
+            input.profiles = ['a', 'b', 'c', 'd'].iter().map(|c| c.to_string().repeat(96)).collect();
+        }
+        server.publish(f.clone());
+        let token = request(&path, serde_json::json!({"op":"begin_session"}), &[])["token"].as_str().unwrap().to_string();
+        for id in 2..66 {
+            f.frame_id = id; f.time = id as i64 * 13_888_888;
+            f.inputs[0].select = id % 2 == 0; server.publish(f.clone());
+        }
+        let reply = request(&path, serde_json::json!({"op":"wait_frame","token":token,"after":1,"input_after":0}), &[]);
+        assert_eq!(reply["ok"], true);
+        assert_eq!(reply["input_batch"]["through"], 64);
+        assert_eq!(reply["input_batch"]["reset"], true);
+        assert!(reply["input_batch"]["updates"].as_array().unwrap().is_empty());
+        assert!(serde_json::to_vec(&reply).unwrap().len() <= MAX_JSON);
+    }
+
+    #[test]
+    fn disabled_inputs_keep_legacy_frames_and_invalid_samples_keep_stereo_alive() {
+        for enabled in [false, true] {
+            let path = std::env::temp_dir().join(format!("dome-webxr-input-validation-{}-{enabled}.sock", std::process::id()));
+            let mut capabilities = caps();
+            capabilities.input_stream_version = if enabled { INPUT_STREAM_VERSION } else { 0 };
+            let server = Server::bind(&path, capabilities).unwrap();
+            let mut f = tracking(1); f.inputs = vec![controller(1)]; server.publish(f.clone());
+            let token = request(&path, serde_json::json!({"op":"begin_session"}), &[])["token"].as_str().unwrap().to_string();
+            if enabled {
+                f.inputs[0].axes[0] = f32::NAN; f.frame_id = 2; f.time *= 2;
+                server.publish(f);
+                let reply = request(&path, serde_json::json!({"op":"wait_frame","token":token,"after":1,"input_after":0}), &[]);
+                assert_eq!(reply["ok"], true); assert_eq!(reply["views"].as_array().unwrap().len(), 2);
+                assert!(reply.get("inputs").is_none());
+                assert_eq!(reply["input_batch"]["updates"].as_array().unwrap().len(), 1);
+                assert!(reply["input_batch"]["updates"][0]["frame"].get("inputs").is_none());
+            } else {
+                let reply = request(&path, serde_json::json!({"op":"wait_frame","token":token,"after":0}), &[]);
+                assert_eq!(reply["ok"], true);
+                assert!(reply.get("inputs").is_none()); assert!(reply.get("input_batch").is_none());
+            }
+        }
     }
 }

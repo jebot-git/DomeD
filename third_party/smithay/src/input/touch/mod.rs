@@ -620,12 +620,11 @@ impl<D: SeatHandler + 'static> TouchInternal<D> {
     }
 
     fn cancel(&mut self, data: &mut D, seat: &Seat<D>, seq: Serial) {
-        for state in self.focus.values_mut() {
-            if state.current.map(|c| c >= state.pending).unwrap_or(false) {
-                continue;
-            }
-            state.current = Some(seq);
-            if let Some((focus, _)) = state.focus.take() {
+        // Cancellation terminates the whole sequence, including contacts whose
+        // last update was already framed. A pending up still needs cancellation
+        // if its frame has not been sent. Do not retain a later frame target.
+        for (_, state) in std::mem::take(&mut self.focus) {
+            if let Some(focus) = state.focus.map(|(focus, _)| focus).or(state.frame_pending) {
                 focus.cancel(seat, data, seq);
             }
         }

@@ -8,6 +8,7 @@ import hashlib
 import os
 import tempfile
 import datetime
+import shlex
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -24,6 +25,17 @@ def desktop(text, options):
             main = line == '[Desktop Entry]'
         if line.startswith('Exec='):
             command = line[5:]
+            if main and options.get('routing_wrapper'):
+                # The wrapper distinguishes menu activation from URI dispatch.
+                # Routing before it loses the original caller realm.
+                routed = prefix(options)
+                if command.startswith(routed):
+                    command = command[len(routed):]
+                executable = shlex.split(command)[0]
+                if executable not in (options['routing_wrapper'], '/usr/local/bin/' + options['routing_wrapper']):
+                    raise ValueError('Expected the application routing wrapper')
+                output.append('Exec=' + command)
+                continue
             if options.get('automatic'):
                 command = command.replace(' --domed ', ' ')
             explicit = any(flag in command for flag in ['--xr-output=', '-dome-xr', 'gmsh-dome-xr', '--openxr', '--xr '])

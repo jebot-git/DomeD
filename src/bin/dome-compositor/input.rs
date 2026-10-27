@@ -1,7 +1,9 @@
 use smithay::{
     backend::input::{
         AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, InputBackend, InputEvent,
-        KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, PointerMotionEvent,
+        KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, PointerMotionEvent, TouchEvent,
+        Device, DeviceCapability, ProximityState, TabletToolEvent, TabletToolProximityEvent,
+        TabletToolTipEvent, TabletToolTipState, TabletToolButtonEvent,
     },
     input::{
         keyboard::FilterResult,
@@ -15,10 +17,40 @@ use crate::state::Dome;
 
 impl Dome {
     pub fn process_input_event<I: InputBackend>(&mut self, event: InputEvent<I>) {
-        if self.session.locked() { return; }
+        if let InputEvent::DeviceRemoved {ref device}=event {
+            self.tablet_remove(&smithay::wayland::tablet_manager::TabletDescriptor::from(device),self.start_time.elapsed().as_millis() as u32);
+            return;
+        }
+        if self.session.locked() { self.cancel_touches();return; }
         self.cleanup_popup_grab();
         self.sync_input_route();
         match event {
+            InputEvent::DeviceAdded {device} if device.has_capability(DeviceCapability::TabletTool) =>
+                self.tablet_add(smithay::wayland::tablet_manager::TabletDescriptor::from(&device)),
+            InputEvent::TabletToolProximity {event} => {
+                if event.state()==ProximityState::Out {self.tablet_out(&event.tool(),event.time_msec());}
+                else {
+                    self.input_focus_xr=Some(false);self.sync_input_route();self.input_realm=dome::Realm::Desktop;
+                    let geometry=self.desktop_geometry();
+                    self.tablet_in(smithay::wayland::tablet_manager::TabletDescriptor::from(&event.device()),event.tool(),
+                        event.position_transformed(geometry.size)+geometry.loc.to_f64(),crate::tablet::Axes::default(),event.time_msec());
+                    self.tablet_axes(&event);
+                }
+            },
+            InputEvent::TabletToolAxis {event} => self.tablet_axes(&event),
+            InputEvent::TabletToolTip {event} => {self.tablet_axes(&event);self.tablet_tip(&event.tool(),event.tip_state()==TabletToolTipState::Down,event.time_msec());},
+            InputEvent::TabletToolButton {event} => {self.tablet_axes(&event);self.tablet_button(&event.tool(),event.button(),event.button_state(),event.time_msec());},
+            InputEvent::TouchDown { event, .. } => {
+                let geometry=self.desktop_geometry();
+                self.touch_down(event.slot(),event.position_transformed(geometry.size)+geometry.loc.to_f64(),event.time_msec());
+            },
+            InputEvent::TouchMotion { event, .. } => {
+                let geometry=self.desktop_geometry();
+                self.touch_motion(event.slot(),event.position_transformed(geometry.size)+geometry.loc.to_f64(),event.time_msec());
+            },
+            InputEvent::TouchUp { event, .. } => self.touch_up(event.slot(),event.time_msec()),
+            InputEvent::TouchFrame { .. } => self.touch_frame(),
+            InputEvent::TouchCancel { .. } => self.cancel_touches(),
             InputEvent::Keyboard { event, .. } => {
                 if event.state() == smithay::backend::input::KeyState::Pressed {
                     self.session_interacted();

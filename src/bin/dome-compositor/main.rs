@@ -23,6 +23,10 @@ mod grabs;
 mod histories;
 mod ime;
 mod input;
+mod touch;
+mod tablet;
+#[cfg(feature="input-test-fixture")]
+mod touch_fixture;
 mod input_routing;
 mod keyboard;
 mod launcher;
@@ -66,6 +70,10 @@ pub struct CalloopData {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
+    #[cfg(feature="input-test-fixture")]
+    let touch_fixture_enabled = args.iter().any(|arg|arg=="--touch-fixture");
+    #[cfg(feature="input-test-fixture")]
+    args.retain(|arg|arg!="--touch-fixture");
     if args.as_slice() == ["--refresh-session-fonts"] {
         let runtime = std::path::PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR").ok_or("XDG_RUNTIME_DIR is required")?);
         let configuration = toolkit_appearance::refresh_session_fonts(&runtime)?;
@@ -173,12 +181,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let display: Display<Dome> = Display::new()?;
     let display_handle = display.handle();
     let mut state = Dome::new(&mut event_loop, display);
+    #[cfg(feature="input-test-fixture")]
+    if touch_fixture_enabled {
+        if backend!="nested" {return Err("Touch fixture requires the nested backend".into());}
+        event_loop.handle().insert_source(touch_fixture::receiver(),|event,_,data| {
+            if let smithay::reexports::calloop::channel::Event::Msg(command)=event {
+                command.apply(&mut data.state);
+            }
+        })?;
+    }
     state.tray.integration.lock().unwrap().status["backend"]=serde_json::json!(backend);
     state.appearance = appearance;
     state.toolkit_appearance = toolkit_appearance;
     event_loop.handle().insert_source(
         smithay::reexports::calloop::timer::Timer::from_duration(std::time::Duration::from_millis(20)),
         |_, _, data| {
+            data.state.validate_touches();
+            data.state.validate_tablets();
             data.state.poll_wivrn();
             data.state.repeat_launcher_key();
             data.state.repeat_menu_scroll();

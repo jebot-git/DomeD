@@ -120,10 +120,13 @@ impl Dome {
             }
             scene.clone()
         };
-        if scene.revision == self.applied_revision {
+        let xr_available = self.xr_bridge.lock().unwrap().visible();
+        if scene.revision == self.applied_revision && xr_available == self.applied_xr_visibility {
             return;
         }
         self.applied_revision = scene.revision;
+        self.applied_xr_visibility = xr_available;
+        let desktop_available = self.space.outputs().next().is_some();
         let popup_rects = self.desktop_popup_rects(&scene);
         let mut closed = vec![];
         for (id, window) in &self.registry {
@@ -197,6 +200,11 @@ impl Dome {
                     else { s.states.unset(State::Fullscreen); }
                     if w.maximized { s.states.set(State::Maximized); }
                     else { s.states.unset(State::Maximized); }
+                    if dome::window_visibility::suspended(&scene, *id, desktop_available, xr_available) {
+                        s.states.set(State::Suspended);
+                    } else {
+                        s.states.unset(State::Suspended);
+                    }
                 });
                 window.set_activated(scene.focused == Some(*id));
                 toplevel.send_pending_configure();

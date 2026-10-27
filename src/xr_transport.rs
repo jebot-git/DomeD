@@ -59,6 +59,8 @@ impl ShellLayout {
     }
 }
 pub struct Bridge {
+    pub webxr_input: Option<crate::webxr_focus::Policy>,
+    pub webxr_input_updated: Option<Instant>,
     pub screenshot_request: Option<u64>,
     pub screenshot_result: Option<Result<crate::screenshot::Capture,String>>,
     pub gpu_socket: Option<String>,
@@ -86,6 +88,8 @@ pub struct Bridge {
 impl Default for Bridge {
     fn default() -> Self {
         Self {
+            webxr_input: None,
+            webxr_input_updated: None,
             screenshot_request: None,
             screenshot_result: None,
             gpu_socket: None,
@@ -150,6 +154,14 @@ pub struct Cursor {
 }
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct Control {
+    /// Native XR is session-only; Scene deliberately omits its lease from JSON.
+    #[serde(default)]
+    pub native_xr_active: bool,
+    /// Absence keeps older desktops in head/stereo-only compatibility mode.
+    #[serde(default)]
+    pub webxr_input: Option<crate::webxr_focus::Policy>,
+    #[serde(default)]
+    pub webxr_input_age_ms: Option<u64>,
     /// Shared popup geometry capability; absent on an already-running older desktop.
     #[serde(default)]
     pub centered_popups: bool,
@@ -226,6 +238,10 @@ impl Bridge {
     }
     pub fn control(&self) -> Control {
         Control {
+            native_xr_active: false,
+            webxr_input: self.webxr_input.clone(),
+            webxr_input_age_ms: self.webxr_input_updated.map(|time|
+                u64::try_from(time.elapsed().as_millis()).unwrap_or(u64::MAX)),
             centered_popups: true,
             flat_rollouts: true,
             stereo_views: true,

@@ -1,4 +1,5 @@
 use std::fmt;
+use std::collections::BTreeSet;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 
@@ -28,6 +29,8 @@ pub(crate) struct TabletTool {
     pub(crate) focus: Option<WlSurface>,
 
     is_down: bool,
+    pressed_buttons: BTreeSet<u32>,
+    last_time: u32,
 
     pending_pressure: Option<f64>,
     pending_distance: Option<f64>,
@@ -38,6 +41,11 @@ pub(crate) struct TabletTool {
 }
 
 impl TabletTool {
+    fn focused_instances(&self, focus: &WlSurface) -> Vec<ZwpTabletToolV2> {
+        self.instances.iter().filter_map(|tool| tool.upgrade().ok())
+            .filter(|tool| tool.id().same_client_as(&focus.id())).collect()
+    }
+
     fn proximity_in(
         &mut self,
         loc: Point<f64, Logical>,
@@ -46,10 +54,10 @@ impl TabletTool {
         serial: Serial,
         time: u32,
     ) {
-        let wl_tool = self.instances.iter().find(|i| i.id().same_client_as(&focus.id()));
-
-        if let Some(wl_tool) = wl_tool.and_then(|tool| tool.upgrade().ok()) {
-            tablet.with_focused_tablet(&focus, |wl_tablet| {
+        self.last_time = time;
+        for wl_tool in self.focused_instances(&focus) {
+            let seat = &wl_tool.data::<TabletToolUserData>().unwrap().seat;
+            tablet.with_focused_tablet(&focus, seat, |wl_tablet| {
                 wl_tool.proximity_in(serial.into(), wl_tablet, &focus);
                 // proximity_in has to be followed by motion event (required by protocol)
                 let client_scale = wl_tool
@@ -59,6 +67,9 @@ impl TabletTool {
                     .load(Ordering::Acquire);
                 let srel_loc = (loc - sloc).to_client(client_scale);
                 wl_tool.motion(srel_loc.x, srel_loc.y);
+                for button in &self.pressed_buttons {
+                    wl_tool.button(crate::utils::SERIAL_COUNTER.next_serial().into(), *button, zwp_tablet_tool_v2::ButtonState::Pressed);
+                }
                 wl_tool.frame(time);
             });
         }
@@ -67,13 +78,18 @@ impl TabletTool {
     }
 
     fn proximity_out(&mut self, time: u32) {
-        if let Some(ref focus) = self.focus {
-            let wl_tool = self.instances.iter().find(|i| i.id().same_client_as(&focus.id()));
+        self.leave_focus(time, true);
+    }
 
-            if let Some(wl_tool) = wl_tool.and_then(|tool| tool.upgrade().ok()) {
+    fn leave_focus(&mut self, time: u32, clear_buttons: bool) {
+        self.last_time = time;
+        if let Some(ref focus) = self.focus {
+            for wl_tool in self.focused_instances(focus) {
                 if self.is_down {
                     wl_tool.up();
-                    self.is_down = false;
+                }
+                for button in &self.pressed_buttons {
+                    wl_tool.button(crate::utils::SERIAL_COUNTER.next_serial().into(), *button, zwp_tablet_tool_v2::ButtonState::Released);
                 }
                 wl_tool.proximity_out();
                 wl_tool.frame(time);
@@ -81,16 +97,14 @@ impl TabletTool {
         }
 
         self.focus = None;
+        self.is_down = false;
+        if clear_buttons { self.pressed_buttons.clear(); }
     }
 
     fn tip_down(&mut self, serial: Serial, time: u32) {
+        self.last_time = time;
         if let Some(ref focus) = self.focus {
-            if let Some(wl_tool) = self
-                .instances
-                .iter()
-                .find(|i| i.id().same_client_as(&focus.id()))
-                .and_then(|tool| tool.upgrade().ok())
-            {
+            for wl_tool in self.focused_instances(focus) {
                 if !self.is_down {
                     wl_tool.down(serial.into());
                     wl_tool.frame(time);
@@ -102,13 +116,9 @@ impl TabletTool {
     }
 
     fn tip_up(&mut self, time: u32) {
+        self.last_time = time;
         if let Some(ref focus) = self.focus {
-            if let Some(wl_tool) = self
-                .instances
-                .iter()
-                .find(|i| i.id().same_client_as(&focus.id()))
-                .and_then(|tool| tool.upgrade().ok())
-            {
+            for wl_tool in self.focused_instances(focus) {
                 if self.is_down {
                     wl_tool.up();
                     wl_tool.frame(time);
@@ -127,15 +137,17 @@ impl TabletTool {
         serial: Serial,
         time: u32,
     ) {
+        self.last_time = time;
         match (focus, self.focus.as_ref()) {
             (Some(focus), Some(prev_focus)) => {
                 if &focus.0 == prev_focus {
-                    if let Some(wl_tool) = self
-                        .instances
-                        .iter()
-                        .find(|i| i.id().same_client_as(&focus.0.id()))
-                        .and_then(|tool| tool.upgrade().ok())
-                    {
+                    let pressure = self.pending_pressure.take();
+                    let distance = self.pending_distance.take();
+                    let tilt = self.pending_tilt.take();
+                    let slider = self.pending_slider.take();
+                    let rotation = self.pending_rotation.take();
+                    let wheel = self.pending_wheel.take();
+                    for wl_tool in self.focused_instances(&focus.0) {
                         let client_scale = wl_tool
                             .data::<TabletToolUserData>()
                             .unwrap()
@@ -144,27 +156,27 @@ impl TabletTool {
                         let srel_loc = (pos - focus.1).to_client(client_scale);
                         wl_tool.motion(srel_loc.x, srel_loc.y);
 
-                        if let Some(pressure) = self.pending_pressure.take() {
+                        if let Some(pressure) = pressure {
                             wl_tool.pressure((pressure * 65535.0).round() as u32);
                         }
 
-                        if let Some(distance) = self.pending_distance.take() {
+                        if let Some(distance) = distance {
                             wl_tool.distance((distance * 65535.0).round() as u32);
                         }
 
-                        if let Some((x, y)) = self.pending_tilt.take() {
+                        if let Some((x, y)) = tilt {
                             wl_tool.tilt(x, y);
                         }
 
-                        if let Some(slider) = self.pending_slider.take() {
+                        if let Some(slider) = slider {
                             wl_tool.slider((slider * 65535.0).round() as i32);
                         }
 
-                        if let Some(rotation) = self.pending_rotation.take() {
+                        if let Some(rotation) = rotation {
                             wl_tool.rotation(rotation);
                         }
 
-                        if let Some((degrees, clicks)) = self.pending_wheel.take() {
+                        if let Some((degrees, clicks)) = wheel {
                             wl_tool.wheel(degrees, clicks)
                         }
 
@@ -174,7 +186,7 @@ impl TabletTool {
                     // If surface has changed
 
                     // Unfocus previous surface
-                    self.proximity_out(time);
+                    self.leave_focus(time, false);
                     // Focuss a new one
                     self.proximity_in(pos, focus, tablet, serial, time)
                 }
@@ -182,7 +194,7 @@ impl TabletTool {
             // New surface in focus
             (Some(focus), None) => self.proximity_in(pos, focus, tablet, serial, time),
             // No surface in focus
-            (None, _) => self.proximity_out(time),
+            (None, _) => self.leave_focus(time, false),
         }
     }
 
@@ -211,14 +223,15 @@ impl TabletTool {
     }
 
     /// Sent whenever a button on the tool is pressed or released.
-    fn button(&self, button: u32, state: ButtonState, serial: Serial, time: u32) {
+    fn button(&mut self, button: u32, state: ButtonState, serial: Serial, time: u32) {
+        self.last_time = time;
+        let changed = match state {
+            ButtonState::Pressed => self.pressed_buttons.insert(button),
+            ButtonState::Released => self.pressed_buttons.remove(&button),
+        };
+        if !changed { return; }
         if let Some(ref focus) = self.focus {
-            if let Some(wl_tool) = self
-                .instances
-                .iter()
-                .find(|i| i.id().same_client_as(&focus.id()))
-                .and_then(|tool| tool.upgrade().ok())
-            {
+            for wl_tool in self.focused_instances(focus) {
                 wl_tool.button(serial.into(), button, state.into());
                 wl_tool.frame(time);
             }
@@ -246,6 +259,15 @@ pub struct TabletToolHandle {
 }
 
 impl TabletToolHandle {
+    pub(super) fn remove(&self) {
+        let mut tool = self.inner.lock().unwrap();
+        let time = tool.last_time;
+        tool.proximity_out(time);
+        for instance in std::mem::take(&mut tool.instances).into_iter().filter_map(|tool| tool.upgrade().ok()) {
+            instance.removed();
+        }
+    }
+
     pub(super) fn new_instance<D>(
         &mut self,
         state: &mut D,
@@ -269,6 +291,7 @@ impl TabletToolHandle {
                     handle: self.clone(),
                     desc,
                     client_scale,
+                    seat: seat.id(),
                 },
             )
             .unwrap();
@@ -452,6 +475,7 @@ impl From<ButtonState> for zwp_tablet_tool_v2::ButtonState {
 /// User data of ZwpTabletToolV2 object
 pub struct TabletToolUserData {
     pub(crate) handle: TabletToolHandle,
+    seat: wayland_server::backend::ObjectId,
     pub(crate) desc: TabletToolDescriptor,
     client_scale: Arc<AtomicF64>,
 }
