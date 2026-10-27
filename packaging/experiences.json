@@ -5,7 +5,7 @@
       "name": "Tempest XR",
       "source_directory": "Tempest-XR",
       "repository": "https://github.com/jebot-git/Tempest-XR.git",
-      "revision": "7a49cf1f52a70116c44a784f559f3f9a2cec0292",
+      "revision": "c7300a908c930f9de6ca768bb16c5c2093289ba6",
       "desktop_id": "org.de_xr.TempestXR.desktop",
       "native_xr_api": 1
     }
