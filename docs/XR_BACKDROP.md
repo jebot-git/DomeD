@@ -5,7 +5,7 @@ Desktop backdrop switches between **LinuXR** and **None**; XR backdrop switches
 between **L.A.2097 – Precipice** and **None**. Each choice persists independently.
 
 The LinuXR desktop artwork is an original SVG with a path-drawn wordmark,
-abstract VR/AR visor, head strap and dome projection arcs. Dark mode uses muted
+abstract VR/AR visor and dome projection arcs. Dark mode uses muted
 slate/teal; light mode uses pale blue-grey. Changing the colour scheme updates
 it immediately. The compositor rasterises the selected vector only when output
 size or theme changes, then reuses a cached GPU texture behind all windows and
