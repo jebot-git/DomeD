@@ -33,6 +33,13 @@ finite numbers, pose normalization and bounds before allocating or importing.
   "blend_modes":["opaque"],"stage":true,"period":13888888}`.
   Actual sizes and period come from the running Dome session. No tracking is
   returned before a lease is granted.
+  Additive fields `active` (boolean) and `availability_generation` (unsigned
+  integer) describe runtime availability without granting a lease. The host
+  starts inactive, becomes active when native tracking is published, and becomes
+  inactive on suspension. The availability generation increments only across
+  these transitions, independently of frame publication and lease ownership.
+  Browsers may use these fields for WebXR device-change notifications; older
+  clients can ignore them. Older hosts omit the fields and remain compatible.
 - `{"op":"begin_session"}` returns `{"ok":true,"token":"..."}` or busy.
   The token is bound to the UID/PID, with an inactivity timeout of five seconds.
 - `{"op":"wait_frame","token":"...","after":123}` waits for a newer host

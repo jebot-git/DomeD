@@ -159,6 +159,7 @@ struct State {
     caps: Capabilities,
     tracking: Option<Tracking>,
     active: bool,
+    availability_generation: u64,
     lease: Option<Lease>,
     pending: Option<Submission>,
     content: bool,
@@ -226,6 +227,7 @@ impl Server {
                 caps,
                 tracking: None,
                 active: false,
+                availability_generation: 0,
                 lease: None,
                 pending: None,
                 content: false,
@@ -297,6 +299,7 @@ impl Server {
             // unavailable inputs; never publish a partly valid controller set.
             tracking.inputs.clear();
         }
+        if !state.active { state.availability_generation = state.availability_generation.wrapping_add(1); }
         state.active = true;
         state.caps.period = tracking.period;
         if state
@@ -326,6 +329,7 @@ impl Server {
     }
     pub fn suspend(&self) {
         let mut state = self.shared.state.lock().unwrap();
+        if state.active { state.availability_generation = state.availability_generation.wrapping_add(1); }
         state.active = false;
         state.pending = None;
         state.lease = None;
@@ -430,6 +434,8 @@ fn handle(stream: &mut UnixStream, shared: &Shared) -> Result<serde_json::Value,
         reply["ok"] = true.into();
         reply["version"] = 1.into();
         reply["transports"] = serde_json::json!(["rgba"]);
+        reply["active"] = state.active.into();
+        reply["availability_generation"] = state.availability_generation.into();
         return Ok(reply);
     }
     if op == "begin_session" {
@@ -702,6 +708,33 @@ mod tests {
         assert_eq!(std::fs::read(&path).unwrap(), b"replacement file");
         std::fs::remove_file(&path).unwrap();
     }
+    #[test]
+    fn availability_generation_tracks_runtime_activity_without_opening_a_lease() {
+        let path = std::env::temp_dir().join(format!("dome-webxr-availability-{}.sock", std::process::id()));
+        let server = Server::bind(&path, caps()).unwrap();
+        let hello = || request(&path, serde_json::json!({"op":"hello","version":1}), &[]);
+        assert_eq!(hello()["active"], false);
+        assert_eq!(hello()["availability_generation"], 0);
+        server.publish(tracking(1));
+        assert_eq!(hello()["active"], true);
+        assert_eq!(hello()["availability_generation"], 1);
+        server.publish(tracking(2));
+        assert_eq!(hello()["availability_generation"], 1);
+        let lease = request(&path, serde_json::json!({"op":"begin_session"}), &[]);
+        assert_eq!(lease["ok"], true);
+        assert_eq!(hello()["availability_generation"], 1);
+        assert_eq!(request(&path, serde_json::json!({"op":"end_session","token":lease["token"]}), &[])["ok"], true);
+        assert_eq!(hello()["availability_generation"], 1);
+        server.suspend();
+        assert_eq!(hello()["active"], false);
+        assert_eq!(hello()["availability_generation"], 2);
+        server.suspend();
+        assert_eq!(hello()["availability_generation"], 2);
+        server.publish(tracking(3));
+        assert_eq!(hello()["active"], true);
+        assert_eq!(hello()["availability_generation"], 3);
+    }
+
     #[test]
     fn actual_frame_lease_and_safe_upload_acknowledgement() {
         let path =
