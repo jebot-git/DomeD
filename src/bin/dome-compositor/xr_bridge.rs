@@ -49,7 +49,7 @@ impl Dome {
         let toasts = if self.shell_modal_open() {
             vec![]
         } else {
-            self.notifications.layout(width, height)
+            self.notifications.layout(width, height, self.notification_font_height())
         };
         let notification_rect = toasts.first().map(|first| {
             [

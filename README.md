@@ -1191,7 +1191,9 @@ and XR. Arrows, Home/End and the wheel browse entries; Delete removes an entry,
 Escape closes, and **Clear history** empties the list.
 
 Notification history retains the latest 200 notices after expiry or dismissal,
-with replacement notices updating their existing entry. The bell marks unread
+with replacement notices updating their existing entry. Each popup shows its
+local receipt time to the right of the application name; history entries show
+the local date and time on that same origin row. The bell marks unread
 notifications. Click an entry offering **Open**, or select it and press Enter,
 to invoke its default action even after the popup has expired. Applications
 must keep their notification ID/action targets until they withdraw them.

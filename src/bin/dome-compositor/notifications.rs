@@ -72,6 +72,9 @@ impl Destination {
     }
 }
 impl crate::Dome {
+    pub fn notification_font_height(&self) -> i32 {
+        i32::from(self.appearance.font_size) * i32::from(self.appearance.font_scale.clamp(1, 2))
+    }
     pub fn notification_destination(&self) -> Destination {
         let output = self.shell_geometry();
         Destination { workspace: self.scene.lock().unwrap().active_workspace,
@@ -117,6 +120,10 @@ struct State {
 }
 #[derive(Clone, Serialize)]
 pub struct Toast {
+    pub header_height: i32,
+    pub summary_height: i32,
+    pub body_height: i32,
+    pub action_height: i32,
     #[serde(flatten)]
     notice: Notice,
     pub x: i32,
@@ -455,24 +462,29 @@ impl Notifications {
     pub fn revision(&self) -> u64 {
         self.state.lock().unwrap().revision
     }
-    pub fn layout(&self, width: i32, height: i32) -> Vec<Toast> {
+    pub fn layout(&self, width: i32, height: i32, font_height: i32) -> Vec<Toast> {
         let s = self.state.lock().unwrap();
         let w = 360.min(width - 24).max(1);
+        let header_height = 32.max(font_height + 10);
+        let summary_height = 30.max(font_height + 2);
+        let body_height = 38.max(font_height + 2);
+        let action_height = 32.max(font_height + 8);
         let mut y = 48;
         let mut result = vec![];
         for n in s.notices.iter().rev().take(3) {
             let count = n.actions.iter().filter(|a| a[0] != "default").count() as i32;
             let h = if let Some(image) = &n.image {
-                36 + ((w - 16) as f64 * image.height as f64 / image.width as f64)
+                header_height + 4 + ((w - 16) as f64 * image.height as f64 / image.width as f64)
                     .round()
                     .min(256.) as i32
             } else {
-                100 + ((count + 1) / 2) * 32
+                header_height + summary_height + body_height + ((count + 1) / 2) * action_height
             };
             if y + h > height - 72 {
                 break;
             }
             result.push(Toast {
+                header_height, summary_height, body_height, action_height,
                 notice: n.clone(),
                 x: width - w - 12,
                 y,
@@ -486,12 +498,12 @@ impl Notifications {
     pub fn click(&self, toast: &Toast, x: f64, y: f64, destination: Destination) {
         let n = &toast.notice;
         if let Some(source) = n.source {
-            if x >= (toast.x + toast.w - 32) as f64 && y < (toast.y + 32) as f64 {
+            if x >= (toast.x + toast.w - 32) as f64 && y < (toast.y + toast.header_height) as f64 {
                 let _ = self.send.send(Request::Dismiss(n.id));
-            } else if y >= (toast.y + 32) as f64 {
+            } else if y >= (toast.y + toast.header_height) as f64 {
                 let uv = [
                     ((x - toast.x as f64 - 8.) / (toast.w - 16) as f64).clamp(0., 1.),
-                    ((y - toast.y as f64 - 32.) / (toast.h - 36) as f64).clamp(0., 1.),
+                    ((y - toast.y as f64 - toast.header_height as f64) / (toast.h - toast.header_height - 4) as f64).clamp(0., 1.),
                 ];
                 let mut s = self.state.lock().unwrap();
                 if s.surface_clicks.len() < 32 {
@@ -500,10 +512,11 @@ impl Notifications {
             }
             return;
         }
-        let request = if x >= (toast.x + toast.w - 32) as f64 && y < (toast.y + 32) as f64 {
+        let actions_y = toast.y + toast.header_height + toast.summary_height + toast.body_height;
+        let request = if x >= (toast.x + toast.w - 32) as f64 && y < (toast.y + toast.header_height) as f64 {
             Request::Dismiss(n.id)
-        } else if y >= (toast.y + 100) as f64 {
-            let row = ((y - toast.y as f64 - 100.) / 32.) as usize;
+        } else if y >= actions_y as f64 {
+            let row = ((y - actions_y as f64) / toast.action_height as f64) as usize;
             let col = usize::from(x >= (toast.x + toast.w / 2) as f64);
             let Some(a) = n
                 .actions
@@ -669,6 +682,31 @@ mod tests {
         assert_ne!(notify("two"),id);
     }
     #[test]
+    fn scaled_rows_keep_action_hits_and_image_coordinates_aligned() {
+        let state = Arc::new(Mutex::new(State::default()));
+        let (send, receive) = mpsc::channel();
+        let notices = Notifications { state: state.clone(), send };
+        let id = Server(state).add_notice("", "App".into(), 0, String::new(), "Summary".into(),
+            "Body".into(), vec!["reply".into(), "Reply".into()], HashMap::new(), 0).unwrap();
+        for font in [16, 32, 64] {
+            let toast = notices.layout(1024, 768, font).remove(0);
+            assert!(toast.header_height - 10 >= font);
+            let action_y = toast.y + toast.header_height + toast.summary_height + toast.body_height;
+            notices.click(&toast, (toast.x + 30) as f64, (action_y + 10) as f64, destination());
+            assert!(matches!(receive.try_recv(), Ok(Request::Action(n, key, _)) if n == id && key == "reply"));
+        }
+        notices.surface(123, 2, 1, &[255; 8]);
+        for font in [16, 32, 64] {
+            let toast = notices.layout(1024, 768, font).into_iter().find(|t| t.notice.source == Some(123)).unwrap();
+            let x = toast.x as f64 + 8. + (toast.w - 16) as f64 * 0.5;
+            let y = (toast.y + toast.header_height) as f64 + (toast.h - toast.header_height - 4) as f64 * 0.5;
+            notices.click(&toast, x, y, destination());
+            let (source, uv) = notices.next_surface_click().unwrap();
+            assert_eq!(source, 123);
+            assert_eq!(uv, [0.5, 0.5]);
+        }
+    }
+    #[test]
     fn surface_notifications_replace_dismiss_and_bound_image_history() {
         let (send, _) = mpsc::channel();
         let notices = Notifications {
@@ -681,10 +719,10 @@ mod tests {
         let id = notices.history()[0].id;
         assert!(remove(&notices.state, id));
         notices.surface(5, 2, 1, &[64; 8]);
-        assert!(notices.layout(1024, 768).is_empty());
+        assert!(notices.layout(1024, 768, 16).is_empty());
         notices.withdraw_surface(5);
         notices.surface(5, 2, 1, &[32; 8]);
-        assert_eq!(notices.layout(1024, 768).len(), 1);
+        assert_eq!(notices.layout(1024, 768, 16).len(), 1);
         for id in 10..30 {
             notices.surface(id, 2, 1, &[0; 8]);
         }

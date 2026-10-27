@@ -7,6 +7,10 @@ pub enum Kind {
     Notifications,
 }
 impl Dome {
+    fn history_line_height(&self) -> i32 {
+        if self.history_panel == Some(Kind::Notifications) { self.notification_font_height().max(20) } else { 20 }
+    }
+    fn history_row_height(&self) -> i32 { self.history_line_height() * 3 + 4 }
     fn history_rows(&self) -> Vec<serde_json::Value> {
         match self.history_panel {
             Some(Kind::Clipboard)=>self.clipboard.entries.iter().map(|e|serde_json::json!({"id":e.id,"text":e.text(),"detail":e.description(),"timestamp":e.timestamp})).collect(),
@@ -25,12 +29,12 @@ impl Dome {
         };
         let rows = self.history_rows();
         let [x, y, w, h] = self.history_rect(width, height);
-        let visible = ((h - 108.) / 64.).floor().max(1.) as usize;
+        let visible = ((h - 108.) / f64::from(self.history_row_height())).floor().max(1.) as usize;
         let selected = self.history_selected.min(rows.len().saturating_sub(1));
         let first = selected
             .saturating_sub(visible - 1)
             .min(rows.len().saturating_sub(visible));
-        serde_json::json!({"kind":kind,"title":if kind==Kind::Clipboard {"Clipboard history"}else{"Notification history"},"x":x,"y":y,"w":w,"h":h,"rows":rows,"first":first,"visible":visible,"selected":selected})
+        serde_json::json!({"kind":kind,"title":if kind==Kind::Clipboard {"Clipboard history"}else{"Notification history"},"x":x,"y":y,"w":w,"h":h,"rows":rows,"row_height":self.history_row_height(),"line_height":self.history_line_height(),"first":first,"visible":visible,"selected":selected})
     }
     pub fn open_history(&mut self, kind: Kind) {
         self.clock.open = false;
@@ -130,14 +134,14 @@ impl Dome {
             self.history_panel = None;
             return true;
         }
-        let visible = ((h - 108.) / 64.).floor().max(1.) as usize;
+        let visible = ((h - 108.) / f64::from(self.history_row_height())).floor().max(1.) as usize;
         let count = self.history_rows().len();
         let first = self
             .history_selected
             .saturating_sub(visible - 1)
             .min(count.saturating_sub(visible));
-        if y >= top + 44. && y < top + 44. + visible as f64 * 64. {
-            let index = first + ((y - top - 44.) / 64.) as usize;
+        if y >= top + 44. && y < top + 44. + visible as f64 * f64::from(self.history_row_height()) {
+            let index = first + ((y - top - 44.) / f64::from(self.history_row_height())) as usize;
             if index < count {
                 self.history_selected = index;
                 if x >= left + w - 38. {

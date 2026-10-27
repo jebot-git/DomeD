@@ -424,7 +424,7 @@ impl Dome {
                     let local = pos - geometry.loc.to_f64();
                     if let Some(toast) = self
                         .notifications
-                        .layout(geometry.size.w, geometry.size.h)
+                        .layout(geometry.size.w, geometry.size.h, self.notification_font_height())
                         .into_iter()
                         .find(|n| n.contains(local.x, local.y))
                     {

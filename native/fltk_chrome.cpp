@@ -23,6 +23,7 @@
 #include <ctime>
 #include <filesystem>
 #include <map>
+#include <limits>
 #include <nlohmann/json.hpp>
 #include <set>
 #include <string>
@@ -121,6 +122,21 @@ Color hex(std::string s, Color fallback) {
   } catch (...) {
   }
   return fallback;
+}
+// Notification receipt times are Unix seconds. Keep them absolute and local so
+// reopening history never changes the recorded time of a notification.
+std::string notificationTimestamp(const J &notice, bool date) {
+  auto found = notice.find("timestamp");
+  if (found == notice.end() || !found->is_number_integer()) return {};
+  if (!found->is_number_unsigned() && found->get<int64_t>() < 0) return {};
+  const auto seconds = found->get<uint64_t>();
+  if (seconds > uint64_t(std::numeric_limits<time_t>::max())) return {};
+  const auto value = time_t(seconds);
+  tm local{};
+  char buffer[32];
+  if (!localtime_r(&value, &local) ||
+      !strftime(buffer, sizeof(buffer), date ? "%Y-%m-%d %H:%M:%S" : "%H:%M:%S", &local)) return {};
+  return buffer;
 }
 struct Paint {
   cairo_t *c;
@@ -252,6 +268,22 @@ struct Paint {
         break;
     }
     cairo_restore(c);
+  }
+  // Timestamp labels use ASCII; measure their actual bitmap glyph advances at
+  // the selected font/scale instead of reserving a fixed character width.
+  int timestampWidth(const std::string &value) {
+    int width = 0;
+    if (face) for (unsigned char cp : value)
+      if (!FT_Load_Char(face, cp, FT_LOAD_RENDER | FT_LOAD_MONOCHROME | FT_LOAD_TARGET_MONO))
+        width += face->glyph->advance.x / 64;
+    return width;
+  }
+  void notificationOrigin(int x, int y, int w, int h, const std::string &origin,
+                          const J &notice, bool date) {
+    auto timestamp = notificationTimestamp(notice, date);
+    const int timeWidth = std::min(std::max(0, w), timestampWidth(timestamp));
+    text(x, y, timestamp.empty() ? w : w - timeWidth - 12, h, origin, muted);
+    text(x + w - timeWidth, y, timeWidth, h, timestamp, muted);
   }
   bool image(int x, int y, int w, int h, const J &object, const char *key,
              bool argb = false) {
@@ -814,20 +846,24 @@ extern "C" int dome_qt_paint(const char *json, unsigned char *pixels,
       p.text(x + 16, y + 4, pw - 32, 32, str(history, "title"), p.fg);
       auto rows = arr(history, "rows");
       int first = num(history, "first"), visible = num(history, "visible");
+      const int rowHeight = num(history, "row_height", 64), lineHeight = num(history, "line_height", 20);
       for (int i = first; i < std::min(int(rows.size()), first + visible); ++i) {
-        int ry = y + 44 + (i - first) * 64;
+        int ry = y + 44 + (i - first) * rowHeight;
         if (i == num(history, "selected", -1))
-          p.rect(x + 10, ry, pw - 20, 64, p.sel);
+          p.rect(x + 10, ry, pw - 20, rowHeight, p.sel);
         auto text = str(rows[i], "text");
         auto newline = text.find('\n');
-        p.text(x + 18, ry + 2, pw - 70, newline == std::string::npos ? 40 : 20,
+        p.text(x + 18, ry + 2, pw - 70, newline == std::string::npos ? lineHeight * 2 : lineHeight,
                text.substr(0, newline), p.fg);
         if (newline != std::string::npos)
-          p.text(x + 18, ry + 22, pw - 70, 20, text.substr(newline + 1), p.fg);
-        p.text(x + 18, ry + 42, pw - 70, 20,
-               str(rows[i], "detail") + (yes(rows[i], "actionable") ? " · Open" : ""), p.muted);
+          p.text(x + 18, ry + 2 + lineHeight, pw - 70, lineHeight, text.substr(newline + 1), p.fg);
+        const auto origin = str(rows[i], "detail") + (yes(rows[i], "actionable") ? " · Open" : "");
+        if (str(history, "kind") == "notifications")
+          p.notificationOrigin(x + 18, ry + 2 + lineHeight * 2, pw - 70, lineHeight, origin, rows[i], true);
+        else
+          p.text(x + 18, ry + 2 + lineHeight * 2, pw - 70, lineHeight, origin, p.muted);
         // Match history_click's remove area without depending on a font glyph.
-        p.button(x + pw - 38, ry + 14, 28, 32, "X");
+        p.button(x + pw - 38, ry + (rowHeight - 36) / 2, 28, 32, "X");
       }
       if (rows.empty())
         p.text(x + 18, y + 44, pw - 36, 64, "No history entries", p.muted);
@@ -1052,24 +1088,26 @@ extern "C" int dome_qt_paint(const char *json, unsigned char *pixels,
     int x = num(n, "x"), y = num(n, "y"), nw = num(n, "w"), nh = num(n, "h");
     p.rect(x, y, nw, nh, p.bg);
     p.rect(x, y, 3, nh, p.accent);
-    p.text(x + 12, y + 4, nw - 52, 22, str(n, "app"), p.muted);
-    p.text(x + 12, y + 30, nw - 24, 30, str(n, "summary"), p.fg);
+    const int headerHeight = num(n, "header_height", 32), summaryHeight = num(n, "summary_height", 30),
+              bodyHeight = num(n, "body_height", 38), actionHeight = num(n, "action_height", 32);
+    p.notificationOrigin(x + 12, y + 4, nw - 52, headerHeight - 10, str(n, "app"), n, false);
     auto image = obj(n, "image");
     if (!image.empty())
-      p.image(x + 8, y + 32, nw - 16, nh - 36, image, "rgba");
+      p.image(x + 8, y + headerHeight, nw - 16, nh - headerHeight - 4, image, "rgba");
     else {
+      p.text(x + 12, y + headerHeight - 2, nw - 24, summaryHeight, str(n, "summary"), p.fg);
       auto actions = arr(n, "actions");
       int count = 0;
       for (auto &action : actions)
         if (action.is_array() && action.size() == 2 && action[0] != "default")
           ++count;
-      p.text(x + 12, y + 60, nw - 24, 36, str(n, "body"), p.fg);
+      p.text(x + 12, y + headerHeight + summaryHeight - 2, nw - 24, bodyHeight - 2, str(n, "body"), p.fg);
       int index = 0;
       for (auto &action : actions)
         if (action.is_array() && action.size() == 2 && action[0] != "default") {
           int col = index % 2, row = index / 2;
           ++index;
-          p.button(x + 8 + col * nw / 2, y + 102 + row * 32, nw / 2 - 16, 26,
+          p.button(x + 8 + col * nw / 2, y + headerHeight + summaryHeight + bodyHeight + 2 + row * actionHeight, nw / 2 - 16, actionHeight - 6,
                    action[1].get<std::string>());
         }
     }
