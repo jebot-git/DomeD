@@ -191,6 +191,11 @@ impl Dome {
                             state.shell_keys.insert(code);
                             return FilterResult::Intercept(());
                         }
+                        if pressed && state.desktop_rename_key(sym.raw(),sym.key_char(),
+                            mods.ctrl || mods.logo || mods.alt, mods.shift) {
+                            state.shell_keys.insert(code);
+                            return FilterResult::Intercept(());
+                        }
                         // Visibility remains available from launchers and modal shell panels.
                         if pressed {
                             if let Some(command) = state

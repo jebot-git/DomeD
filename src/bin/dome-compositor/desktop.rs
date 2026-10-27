@@ -67,7 +67,7 @@ impl DesktopRenderer {
                         )
                     )
                 ),
-                (state.session_confirm, state.shell_selection),
+                (state.session_confirm, state.shell_selection, &state.desktop_rename),
                 format!("{:?}:{:?}", state.appearance, state.session.state()),
                 state.about,
                 state.task_popup,

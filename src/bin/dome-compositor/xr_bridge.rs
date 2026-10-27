@@ -57,7 +57,8 @@ impl Dome {
             top = height;
         }
         if self.desktop_manager {
-            bottom = 390.min(height);
+            let layout=dome::workspace_switcher::Layout::new(width,height,self.scene.lock().unwrap().workspaces.len());
+            bottom = (height-layout.y).min(height);
         }
         if let Some(index) = self.task_popup {
             bottom = bottom.max((height as f64 - self.popup_rect(index, width, height).1) as i32);

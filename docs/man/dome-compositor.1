@@ -93,6 +93,14 @@ mouse selection; a stationary XR mouse ray does not replace keyboard selection.
 Inactive desktops containing XR windows remain visible as deeper, faded dome
 layers. Only the active desktop accepts input; switching desktops brings the
 selected desktop to the front. Minimized and desktop-only windows are omitted.
+.PP
+The Desktops switcher shows each desktop's open-window count, including minimized
+windows and windows presented only in XR, or Empty when none are open.
+Click Rename beside a desktop, or select it with the arrow keys and press F2.
+Enter or Save applies the name; Escape or Cancel discards the edit.
+Names support 1\(en32 printable Unicode characters and are saved in the session
+layout. Renaming leaves the active desktop and window placement unchanged.
+The rename buttons also accept the XR bottom-panel pointer.
 .SH CURSOR
 DomeD owns cursor appearance and visibility globally. Applications cannot replace
 the cursor image or hotspot, or hide it. Native and nested backends draw the

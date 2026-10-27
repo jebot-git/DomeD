@@ -87,11 +87,15 @@ int main(int argc, char **argv) try {
   std::filesystem::remove(iconPath);
   // Current desktop identity is independent of the switcher's keyboard cursor.
   for (bool light : {false, true}) {
-    auto desktop = [light](int active, int selected, std::string name = "Writing") {
+    auto desktop = [light](int active, int selected, std::string name = "Writing", int count = 2) {
       J value = {{"kind", "shell"}, {"width", 640}, {"height", 480},
                  {"desktops", J::array({"Desktop 1", name, "Desktop 3"})},
                  {"active_workspace", active}, {"shell_selection", selected},
                  {"manager", true}, {"appearance", {{"light", light}}}};
+      value["workspace_switcher"] = {{"layout", {{"x",70},{"y",206},{"w",560},{"h",204},
+          {"row_y",238},{"row_height",36},{"count",3},{"can_add",true}}},
+          {"rows",J::array({{{"name","Desktop 1"},{"windows",0}},{{"name",name},{"windows",count}},
+                            {{"name","Desktop 3"},{"windows",1}}})}};
       std::vector<uint32_t> pixels(640 * 480);
       require(dome_qt_paint(value.dump().c_str(), (unsigned char *)pixels.data(), pixels.size() * 4) == 1,
               "Desktop switcher painting failed");
@@ -107,11 +111,13 @@ int main(int argc, char **argv) try {
     require(regionDiffers(first, second, 400, 422, 140, 28), "Bar desktop number did not update");
     require(regionDiffers(second, renamed, 400, 450, 140, 28), "Bar omitted the current desktop name");
     require(!regionDiffers(second, cursor, 390, 420, 160, 60), "Keyboard cursor changed current desktop identity");
-    const int marker = 333;
-    require(first[110 * 640 + marker] == second[142 * 640 + marker], "Active desktop marker did not follow the workspace");
-    require(second[142 * 640 + marker] == cursor[142 * 640 + marker], "Keyboard cursor moved the active desktop marker");
-    require(cursor[142 * 640 + marker] != cursor[174 * 640 + marker], "Keyboard target was marked as the active desktop");
+    const int marker = 83;
+    require(first[256 * 640 + marker] == second[292 * 640 + marker], "Active desktop marker did not follow the workspace");
+    require(second[292 * 640 + marker] == cursor[292 * 640 + marker], "Keyboard cursor moved the active desktop marker");
+    require(cursor[292 * 640 + marker] != cursor[328 * 640 + marker], "Keyboard target was marked as the active desktop");
     require(!regionDiffers(cursor, renamed, 540, 420, 100, 60), "Long desktop name escaped into the XR button");
+    auto empty = desktop(1,2,"Writing",0);
+    require(regionDiffers(cursor,empty,440,274,96,36), "Window occupancy is not visible beside the desktop");
     auto image = cairo_image_surface_create_for_data((unsigned char *)cursor.data(), CAIRO_FORMAT_ARGB32, 640, 480, 640 * 4);
     cairo_surface_write_to_png(image, (std::string(argv[2]) + (light ? ".desktop-light.png" : ".desktop-dark.png")).c_str());
     cairo_surface_destroy(image);

@@ -420,7 +420,6 @@ impl Dome {
             self.about = false;
             return;
         }
-        let scene = self.scene.lock().unwrap().clone();
         let size = self.shell_geometry().size;
         let (width, height) = (size.w as f64, size.h as f64);
         if self.task_popup.is_some() && self.task_popup_click(x, y, size.w, size.h) {
@@ -478,17 +477,7 @@ impl Dome {
         }
         if self.launcher {self.launcher_button(x,y,0x110,true);return;}
         if self.desktop_manager {
-            if x > width - 320. && y > height - 380. && y < height - 100. {
-                let i = ((y - (height - 380.)) / 32.) as usize;
-                if i < scene.workspaces.len() {
-                    self.action(Action::SwitchWorkspace { workspace: i });
-                } else if i == scene.workspaces.len() {
-                    self.action(Action::AddWorkspace {
-                        name: format!("Desktop {}", i + 1),
-                    });
-                }
-            }
-            self.desktop_manager = false;
+            self.desktop_switcher_click(x,y,size.w,size.h);
             return;
         }
         if y >= height - 60. {
@@ -501,8 +490,7 @@ impl Dome {
                 return;
             }
             if x >= width - 250. {
-                self.shell_selection = scene.active_workspace;
-                self.desktop_manager = true;
+                self.open_desktops();
                 return;
             }
             if x >= 110. {
@@ -523,6 +511,7 @@ impl Dome {
         let popup = self.task_popup_json(width, height);
         let mut model = serde_json::json!({"kind":"shell","menu_headers":self.menu_headers_at(width),"appmenu_panels":self.appmenu_panels(width,height),"keyboard":if self.keyboard_config.ime {dome::keyboard::input_method_label(&ime.method).map(str::to_owned).unwrap_or_else(||self.keyboard_config.label())}else{self.keyboard_config.label()},"keyboard_flag":dome::keyboard::input_method_flag(if self.keyboard_config.ime { &ime.method } else { self.keyboard_config.layout.split(',').nth(self.keyboard_config.active).unwrap_or("us") }),"keyboard_settings":self.keyboard_draft,"keyboard_field":self.keyboard_field,"keyboard_error":if self.keyboard_error.is_empty(){self.ime.snapshot().error}else{self.keyboard_error.clone()},"keyboard_shortcut":self.keyboard_draft.as_ref().map(|d|d.switch_shortcut.label()),"audio":self.audio_json(width,height),"history":self.history_json(width,height),"notifications": if !self.audio_open && self.history_panel.is_none() && self.input_realm == dome::Realm::Desktop {self.notifications.layout(width,height,self.notification_font_height())} else {vec![]},"xr_settings":self.xr_settings_json(width,height),"default_apps":self.default_apps_json(width,height),"appearance":self.appearance,"appearance_open":self.appearance_open,"shell_selection":self.shell_selection,"session_confirm":self.session_confirm.map(|s|s.label()),"session_error":self.session.state().error,"about":self.about,"about_is_app":self.shell_error=="@app-info","width":width,"height":height,"app":app,"app_info":entry,"menu":self.menu.map(|m|m as i32).unwrap_or(-1),"hover":self.menu_hover,"items":items,"tasks":tasks,"tray":self.visible_tray(width),"task_popup":popup,"launcher":self.launcher,"launch_index":self.launch_index.saturating_sub(self.launch_navigation.offset),"launch_offset":self.launch_navigation.offset,"launch_total":self.matching_apps().len(),"launch_error":self.launch_navigation.error,"xr_active":self.input_xr_active,"manager":self.desktop_manager,"query":self.launch_query,"apps":self.matching_apps().into_iter().skip(self.launch_navigation.offset).take(crate::launcher::ROWS).collect::<Vec<_>>(),"desktops":scene.workspaces.iter().map(|w|w.name.clone()).collect::<Vec<_>>()});
         model["active_workspace"] = scene.active_workspace.into();
+        model["workspace_switcher"]=self.workspace_switcher_json(width,height);
         model["tray_viewport"] = serde_json::to_value(self.tray_menu_viewport(height)).unwrap();
         model["quick_launch"] = self.quick_launch_json();
         if self.appearance_open && self.keyboard_draft.is_none() {

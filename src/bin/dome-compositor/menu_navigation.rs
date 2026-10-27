@@ -93,25 +93,10 @@ impl crate::Dome {
             return true;
         }
         if self.desktop_manager {
-            let count = self.scene.lock().unwrap().workspaces.len();
-            if let Some(row) = selection(self.shell_selection, count + 1, key) {
-                self.shell_selection = row;
-            } else {
-                match key {
-                    0xff1b => self.desktop_manager = false,
-                    0xff0d | 0xff8d | 0x20 => {
-                        if self.shell_selection < count {
-                            self.action(dome::Action::SwitchWorkspace { workspace: self.shell_selection });
-                        } else {
-                            self.action(dome::Action::AddWorkspace { name: format!("Desktop {}", count + 1) });
-                        }
-                        self.desktop_manager = false;
-                    }
-                    _ => (),
-                }
-            }
+            self.desktop_switcher_key(key);
             return true;
         }
+
         false
     }
 }

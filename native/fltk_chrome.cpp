@@ -278,6 +278,47 @@ struct Paint {
         width += face->glyph->advance.x / 64;
     return width;
   }
+  int inputWidth(const std::string &value) {
+    int width = 0;
+    if (!face) return width;
+    for (const char *p = value.c_str(); *p; p = g_utf8_next_char(p)) {
+      unsigned cp = g_utf8_get_char(p);
+      FT_Face glyph_face = face;
+      if (!FT_Get_Char_Index(glyph_face, cp)) {
+        for (auto &fallback : fonts) {
+          if (!FT_Get_Char_Index(fallback.face, cp)) continue;
+          glyph_face = scaledFace(fallback.face, scale);
+          int strike = 0, distance = 1000000;
+          for (int n = 0; n < glyph_face->num_fixed_sizes; ++n) {
+            int diff = std::abs(int(glyph_face->available_sizes[n].y_ppem / 64) - size);
+            if (diff < distance) { strike = n; distance = diff; }
+          }
+          FT_Select_Size(glyph_face, strike);
+          break;
+        }
+      }
+      if (!FT_Load_Char(glyph_face, cp, FT_LOAD_RENDER | FT_LOAD_MONOCHROME | FT_LOAD_TARGET_MONO))
+        width += glyph_face->glyph->advance.x / 64;
+    }
+    return width;
+  }
+  void renameInput(int x, int y, int w, int h, const J &edit) {
+    if (w <= 8 || h <= 8) return;
+    auto value = str(edit, "text");
+    int cursor = std::clamp(num(edit, "cursor"), 0, int(value.size()));
+    int anchor = std::clamp(num(edit, "anchor", cursor), 0, int(value.size()));
+    int before = inputWidth(value.substr(0, cursor));
+    int offset = std::max(0, before - std::max(1, w - 20));
+    rect(x, y, w, h, bg); border(x, y, w, h, accent);
+    cairo_save(c); cairo_rectangle(c, x + 4, y + 1, w - 8, h - 2); cairo_clip(c);
+    int start = std::min(cursor, anchor), end = std::max(cursor, anchor);
+    if (start != end)
+      rect(x + 8 + inputWidth(value.substr(0, start)) - offset, y + 3,
+           inputWidth(value.substr(start, end - start)), h - 6, sel);
+    text(x + 8 - offset, y, w + offset - 12, h, value, fg);
+    rect(x + 8 + before - offset, y + 4, 1, h - 8, fg);
+    cairo_restore(c);
+  }
   void notificationOrigin(int x, int y, int w, int h, const std::string &origin,
                           const J &notice, bool date) {
     auto timestamp = notificationTimestamp(notice, date);
@@ -819,20 +860,38 @@ extern "C" int dome_qt_paint(const char *json, unsigned char *pixels,
       p.text(36, 438, 560, 18, error.empty() ? hint : error, error.empty() ? p.muted : p.accent);
     }
     if (yes(o, "manager")) {
-      p.rect(w - 330, h - 390, 320, 320, p.bg);
-      i = 0;
-      for (auto &d : desktops) {
-        const int y = h - 384 + i * 32;
-        if (i == num(o, "shell_selection"))
-          p.rect(w - 320, y, 300, 32, p.sel);
-        // The current desktop stays marked while keyboard selection moves.
-        if (i == activeDesktop)
-          p.rect(w - 310, y + 11, 6, 10, p.fg);
-        p.text(w - 294, y, 264, 32,
-               d.is_string() ? d.get<std::string>() : "Desktop", p.fg);
-        ++i;
+      auto switcher = obj(o, "workspace_switcher"), layout = obj(switcher, "layout");
+      auto rows = arr(switcher, "rows"), edit = obj(switcher, "edit");
+      int x = num(layout, "x"), y = num(layout, "y"), pw = num(layout, "w"), ph = num(layout, "h");
+      int rowY = num(layout, "row_y"), rowH = num(layout, "row_height", 36);
+      p.rect(x, y, pw, ph, p.bg); p.border(x, y, pw, ph, p.muted);
+      p.text(x + 12, y, pw - 24, 30, "Desktops", p.fg);
+      for (int i = 0; i < int(rows.size()); ++i) {
+        int ry = rowY + i * rowH;
+        if (i == num(o, "shell_selection")) p.rect(x + 6, ry, pw - 12, rowH, p.sel);
+        if (i == activeDesktop) p.rect(x + 12, ry + (rowH - 10)/2, 5, 10, p.accent);
+        if (!edit.empty() && i == num(edit, "workspace", -1)) {
+          p.renameInput(x + 26, ry + 2, pw - 206, rowH - 4, edit);
+          p.button(x + pw - 172, ry + 2, 76, rowH - 4, "Save");
+          p.button(x + pw - 88, ry + 2, 80, rowH - 4, "Cancel");
+        } else {
+          p.text(x + 26, ry, pw - 226, rowH, str(rows[i], "name"), p.fg);
+          int count = num(rows[i], "windows");
+          p.text(x + pw - 190, ry, 96, rowH,
+                 count ? std::to_string(count) + (count == 1 ? " window" : " windows") : "Empty",
+                 count ? p.fg : p.muted);
+          p.button(x + pw - 88, ry + 2, 80, rowH - 4, "Rename");
+        }
       }
-      p.text(w - 310, h - 384 + i * 32, 280, 32, "+ New desktop", p.fg);
+      if (yes(layout, "can_add")) {
+        int ry = rowY + int(rows.size()) * rowH;
+        if (int(rows.size()) == num(o, "shell_selection")) p.rect(x + 6, ry, pw - 12, rowH, p.sel);
+        p.text(x + 26, ry, pw - 52, rowH, "+ New desktop", p.fg);
+      }
+      auto error = str(edit, "error");
+      p.text(x + 12, y + ph - 27, pw - 24, 24,
+             !error.empty() ? error : edit.empty() ? "F2: rename · Enter: switch" : "Enter: save · Esc: cancel · Ctrl+A: select all",
+             error.empty() ? p.muted : p.accent);
     }
     if (num(o, "menu", -1) >= 0 && !arr(o, "items").empty()) {
       int menu = num(o, "menu");

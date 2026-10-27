@@ -22,6 +22,7 @@ pub mod xr_transport;
 pub mod desktop_entries;
 
 pub mod taskbar;
+pub mod workspace_switcher;
 
 pub mod appearance;
 pub mod keyboard;

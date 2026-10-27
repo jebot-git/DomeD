@@ -326,8 +326,7 @@ impl Dome {
                 self.open_launcher();
             }
             Desktops => {
-                self.shell_selection = self.scene.lock().unwrap().active_workspace;
-                self.desktop_manager = true;
+                self.open_desktops();
             }
             Menu => {
                 self.menu_has_ui_origin = false;

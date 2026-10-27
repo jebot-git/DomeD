@@ -1120,6 +1120,18 @@ Close All. Pins use desktop-file IDs and persist in
 `$XDG_CONFIG_HOME/dome/taskbar.json`. Launcher search remains at the left and the
 virtual desktop manager at the right.
 
+The **Desktops** switcher shows each desktop's live window count, or **Empty**.
+Minimized windows and windows shown only in XR still count as open; application
+popups and selection tooltips do not. Click **Rename** beside a desktop, or select
+it with the arrow keys and press **F2**. The inline editor supports Unicode names,
+Ctrl+A, arrow/Home/End keys, Backspace and Delete. **Save** or **Enter** applies the
+name; **Cancel** or **Escape** discards the edit. Names contain 1–32 printable
+characters and are saved with the login-session layout. Renaming another desktop
+does not switch to it or move its windows. The same buttons work through the XR
+bottom panel. `scripts/test-workspaces.py` exercises actual Wayland windows,
+switcher clicks/keys, live occupancy changes, saved names and XR pointer input in
+an isolated compositor.
+
 The Launch menu browses the entire visible XDG application catalog through an
 eight-row viewport. Hold a cursor key to keep scrolling; selection wraps at both
 ends. Home/End jump to the first/last match, and typing or Backspace filters the

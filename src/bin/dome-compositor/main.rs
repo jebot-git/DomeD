@@ -32,6 +32,7 @@ mod keyboard;
 mod launcher;
 mod x11_bridge;
 mod menu_navigation;
+mod workspace_switcher;
 mod notifications;
 mod notification_windows;
 mod outputs;

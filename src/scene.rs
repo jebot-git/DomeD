@@ -1021,17 +1021,11 @@ impl Scene {
                 if self.workspaces.len() >= 8 {
                     return Err("At most eight desktops".into());
                 }
-                let name = name.trim();
-                if name.is_empty() || name.chars().count() > 32 {
-                    return Err("Desktop name must contain 1–32 characters".into());
-                }
+                let name = crate::workspace_switcher::validate_name(&name)?;
                 self.workspaces.push(Workspace::new(name));
             }
             Action::RenameWorkspace { workspace, name } => {
-                let name = name.trim();
-                if name.is_empty() || name.chars().count() > 32 {
-                    return Err("Desktop name must contain 1–32 characters".into());
-                }
+                let name = crate::workspace_switcher::validate_name(&name)?;
                 self.workspaces
                     .get_mut(workspace)
                     .ok_or("Invalid workspace")?
