@@ -1,0 +1,81 @@
+Native toolkit dependency builds
+===============================
+
+These recipes accompany the 2026-10-28 DomeD toolkit cleanup. Build as the
+regular user. Stage and inspect artifacts; sudo is used only for installing
+verified system packages. Nothing here restarts a desktop or display manager.
+
+Fcitx core does not require Qt or GTK. Its optional client modules are separate
+packages. SKK's Qt editor can be disabled with ENABLE_QT=OFF; no code fork is
+needed for either engine.
+
+Pinned sources:
+  https://github.com/fcitx/fcitx5 tag 5.1.23
+    27cca6e0239938b2d53937061d0980c087856b22 (with pinned Yoga submodule)
+  https://github.com/fcitx/fcitx5-skk tag 5.1.10
+    176361f7711d7b1e9f98f08eb94f750474aeba3c
+
+The build needs CMake/Ninja, a C++ compiler, gettext, ECM, nlohmann-json,
+Wayland/protocols/scanner, XCB utility and imdkit development files, xkbcommon,
+iso-codes/xkeyboard-config, systemd, libuuid, enchant2, libskk and libgee.
+ECM supplies CMake macros and does not create a Qt runtime dependency.
+For the installed build, missing development RPMs were downloaded and extracted
+to a private dependency prefix rather than installing system development stacks.
+--deps-root accepts that prepared prefix, whose .pc/CMake paths must resolve
+inside the extracted tree. With normal system development packages it is not
+needed. The two pinned source checkouts must already exist.
+
+  python3 build-fcitx.py --source /path/to/fcitx5 \
+    --skk-source /path/to/fcitx5-skk --work /path/to/work
+  python3 package-fcitx.py --work /path/to/work
+
+The core's 51 CTests must pass before packaging. The script installs only to
+work/fcitx-stage and work/skk-stage, excludes development/test files from RPMs,
+and provides the existing native FLTK configuration launcher. It assumes the
+DomeD fcitx5-configuration-fltk executable is already installed. Check RPM
+requirements and ELF runpaths before system installation. Package sources are
+upstream Fcitx/SKK, not this recipe repository.
+
+OpenCV and RapidOCR
+------------------
+OpenCV's GUI support is optional. The installed OCR environment uses
+opencv-python-headless==5.0.0.93, whose cv2 build reports GUI: NONE. RapidOCR
+3.9.2 hard-codes opencv_python in package metadata. The script below rewrites
+only that dependency and its local version, preserving every upstream code
+file byte-for-byte and regenerating RECORD hashes:
+
+  python3 rebuild-rapidocr-headless.py \
+    rapidocr-3.9.2-py3-none-any.whl rapidocr-3.9.2+domed1-py3-none-any.whl
+
+In a copy of the OCR venv, remove opencv-python, install the local RapidOCR
+wheel and the matching headless OpenCV wheel, run the package manager's check,
+then test imports, contour operations, and /proc/self/maps. Keep the original
+venv for rollback and switch only after verification. Do not retain the GUI
+and headless OpenCV distributions together; they share the cv2 namespace.
+
+Other replacements
+------------------
+https://github.com/jebot-git/kdeconnect-dome is the GSConnect-derived native
+GIO service with FLTK dialogs and KDE-compatible D-Bus interfaces.
+https://github.com/jebot-git/dome-dialog provides the tested Zenity command
+subset used by Winetricks, without GTK. These are separate source repositories.
+
+Validation on the target system
+-------------------------------
+51 Fcitx CTests, 13 protocol/plugin suites (124 tests), 16 independent TLS/SSHFS
+checks, two real GJS/FLTK dialog response checks, and seven installed Zenity
+compatibility checks passed. GTK3 native Wayland applications accepted English
+and Japanese composition without Fcitx GTK modules. The original paired phone
+reconnected and provided battery and certificate-pinned SFTP access. Full
+feature parity with the original KDE Qt daemon is not claimed; Bluetooth is
+not implemented and was already disabled in the old configuration.
+
+The active Fcitx process was left intact because its inherited Wayland socket
+cannot be recreated by an ordinary restart. Its maps already contained no Qt
+or GTK; the rebuilt installed executable starts on the next login.
+
+Calligra, KWallet and installed GTK applications were deliberately preserved.
+Qt6 and GTK3 libraries needed by them remain installed. Desktop, wallet and
+input-method sessions were not restarted. Private device keys, trust data,
+network addresses, local backup trees and generated RPMs are not repository
+contents.

@@ -49,7 +49,10 @@ unset DISPLAY WAYLAND_DISPLAY WAYLAND_SOCKET
 export XDG_CURRENT_DESKTOP=Dome XDG_SESSION_DESKTOP=dome XDG_SESSION_TYPE=wayland
 export SUDO_ASKPASS="${SUDO_ASKPASS-/usr/local/bin/dome-askpass}"
 export QT_QPA_PLATFORM=wayland
-export QT_IM_MODULE=wayland GTK_IM_MODULE=fcitx XMODIFIERS=@im=fcitx
+export QT_IM_MODULE=wayland XMODIFIERS=@im=fcitx
+# Native Wayland applications use the compositor's text-input protocol. GTK
+# applications on X11 can use XIM without the separate Fcitx GTK client module.
+unset GTK_IM_MODULE
 # Native FLTK 1.4 otherwise reopens menus dismissed by the compositor. Keep the
 # compatibility core local to this session; never replace distribution libraries.
 fltk_runtime="$HOME/.local/lib/domed/fltk"
