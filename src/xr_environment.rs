@@ -1,6 +1,11 @@
 //! Transparent XR presentation without replacing the main application's session.
 use openxr as xr;
 
+// WayVR uses placement 5 and the desktop defaults to 10. An opaque environment
+// must have its own session: ordering layers inside the desktop session cannot
+// place them behind another application's overlay.
+pub const BACKDROP_PLACEMENT: u32 = 0;
+
 #[derive(Clone, Copy, Debug)]
 pub struct Environment {
     pub overlay: bool,

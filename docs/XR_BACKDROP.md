@@ -26,10 +26,20 @@ DomeD’s configured **room anchor X/Y/Z and yaw**. Geometry remains in metres;
 each eye uses its actual tracked position, orientation and asymmetric FOV.
 The environment stays in room space even when the desktop follows the headset.
 Re-anchoring the dome moves the environment with it. No window, taskbar item,
-input target, independent OpenXR session or child game process is created.
+input target or child game process is created.
 
-A single stereo projection layer precedes every desktop layer. Desktop surfaces
-therefore remain in front, including curved panels, bars, menus and popups.
+A single stereo projection layer uses a separate, input-free OpenXR overlay
+session at placement **0**. WayVR's overlay (placement **5**) and DomeD's desktop
+session (default placement **10**) therefore remain in front of the city,
+including curved panels, bars, menus and popups. Ordering the projection first
+inside the desktop session alone cannot put it behind another overlay session.
+The background has its own OpenXR instance, lifecycle, frame timing and stereo
+tracking, while sharing the desktop's Vulkan device on the same render thread.
+Suspension submits no layers in the background session. It does not consume the
+desktop session's layer budget or controller input. If the runtime cannot create
+the background session, the city stays disabled and the desktop remains usable.
+Without overlay support (or with explicit `--standalone` diagnostics), the city
+is the first projection in the desktop session as before.
 The indexed mesh and textures are uploaded once to device-local GPU memory. The
 scene uses depth testing, alpha cutouts and additive signage. Traffic, lift and
 neon transforms are updated independently from the baked static geometry; rain,
@@ -90,6 +100,13 @@ audio follows the same animation transforms, with distance attenuation and
 head-relative stereo panning. No external audio-player process is launched and
 long ambience tracks are never loaded into memory in full.
 
+All backdrop SFX use half their original gain (−6 dB) before the saved volume
+setting is applied. The looping rain ambience skips its authored quiet lead-in
+and fade-out, detected from bounded edge samples, and uses a two-second
+equal-power crossfade. Only that short loop prefix is cached. Circular clock
+comparison prevents audio scheduling jitter at the wrap from replaying the tail.
+These playback changes apply to existing imports without rebaking their audio.
+
 When the backdrop is enabled, **Appearance** shows **Backdrop volume** (0–100%,
 5% steps; 0% mutes) and **Backdrop Y rotation** (0–355°, 5° steps). Click the minus
 or plus half of a numeric control, or use Left/Right. Rotation affects only the
@@ -137,6 +154,8 @@ fullscreen application. The native handoff flag is exported through
 
 ```sh
 cargo test --features xr --lib xr_backdrop
+cargo test --features xr --bin dome-xr backdrop_session
+cargo test --features xr --bin dome-xr backdrop::sound::tests
 DOME_XR_BACKDROP_PATH=/path/to/import cargo test --features xr --bin dome-xr \
   imported_scene_stereo_vulkan -- --ignored --nocapture
 ```
@@ -151,5 +170,7 @@ audio sink. Automated tests also cover anchors, route wrapping, pausable clocks,
 stale audio input and suspension/restoration policy. Set
 `DOME_BACKDROP_BENCH_FRAMES=90` for a GPU submission/completion timing sample.
 Headset appearance and independent runtime visibility events need headset QA.
+XR reports include `backdrop_overlay_placement` and `backdrop_overlay_frames`
+to distinguish the background session from inline standalone rendering.
 The normal desktop screenshot/export path currently captures desktop surfaces;
 it does not include the environment projection layer.

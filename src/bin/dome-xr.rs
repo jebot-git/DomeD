@@ -13,6 +13,8 @@ use std::{
 };
 #[path = "dome-xr/backdrop.rs"]
 mod backdrop;
+#[path = "dome-xr/backdrop_session.rs"]
+mod backdrop_session;
 #[path = "dome-xr/gpu.rs"]
 mod gpu;
 #[path = "dome-xr/screenshot.rs"]
@@ -472,16 +474,17 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
         let queue = vk_device.get_device_queue(queue_family_index, 0);
 
+        let graphics = xr::vulkan::SessionCreateInfo {
+            instance: vk_instance.handle().as_raw() as _,
+            physical_device: vk_physical_device.as_raw() as _,
+            device: vk_device.handle().as_raw() as _,
+            queue_family_index,
+            queue_index: 0,
+        };
         let (session, mut waiter, mut stream) = dome::xr_environment::create_session(
             &xr_instance,
             system,
-            &xr::vulkan::SessionCreateInfo {
-                instance: vk_instance.handle().as_raw() as _,
-                physical_device: vk_physical_device.as_raw() as _,
-                device: vk_device.handle().as_raw() as _,
-                queue_family_index,
-                queue_index: 0,
-            },
+            &graphics,
             environment.overlay,
             placement,
         )?;
@@ -573,6 +576,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let mut backdrop_renderer: Option<backdrop::Renderer> = None;
         let mut backdrop_attempted = false;
         let mut backdrop_panels: Vec<Panel> = Vec::new();
+        let mut backdrop_session: Option<backdrop_session::Background> = None;
         let mut external_primary_visible = false;
         let mut browser_panel: Option<Panel> = None;
         let mut browser_views: Option<[dome::webxr_bridge::ProjectionView; 2]> = None;
@@ -696,6 +700,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             if !active {
                 if let Some(renderer)=backdrop_renderer.as_mut(){renderer.suspend(start.elapsed().as_secs_f64());}
+                if let (Some(background), Some(renderer)) = (backdrop_session.as_mut(), backdrop_renderer.as_mut()) {
+                    if let Err(error) = background.update(renderer, queue, None, Default::default(), start.elapsed().as_secs_f64()) {
+                        eprintln!("XR backdrop session disabled: {error}");
+                        vk_device.device_wait_idle()?;
+                        backdrop_renderer = None;
+                        backdrop_session = None;
+                    }
+                }
                 std::thread::sleep(Duration::from_millis(20));
                 continue;
             }
@@ -1195,19 +1207,43 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 if let Some(directory) = dome::xr_backdrop::directory() {
                     match backdrop::Renderer::new(&vk_instance,&vk_device,vk_physical_device,queue_family_index,
                                                   queue,format,&directory) {
-                        Ok(renderer) => backdrop_renderer = Some(renderer),
+                        Ok(renderer) => {
+                            if environment.overlay {
+                                match backdrop_session::Background::new(&entry, &graphics, format, reference_space_type) {
+                                    Ok(background) => {
+                                        backdrop_session = Some(background);
+                                        backdrop_renderer = Some(renderer);
+                                    }
+                                    Err(error) => eprintln!("XR backdrop disabled: cannot create background overlay: {error}"),
+                                }
+                            } else {
+                                backdrop_renderer = Some(renderer);
+                            }
+                        }
                         Err(error) => eprintln!("XR backdrop unavailable at {}: {error}", directory.display()),
                     }
                 } else {
                     eprintln!("XR Precipice backdrop is not imported; see scripts/import-precipice.py");
                 }
             }
-            if let Some(renderer)=backdrop_renderer.as_mut(){
+            if let (Some(background), Some(renderer)) = (backdrop_session.as_mut(), backdrop_renderer.as_mut()) {
+                if let Err(error) = background.update(renderer, queue, scene.as_ref(), backdrop_state, start.elapsed().as_secs_f64()) {
+                    eprintln!("XR backdrop session disabled: {error}");
+                    vk_device.device_wait_idle()?;
+                    backdrop_renderer = None;
+                    backdrop_session = None;
+                }
+            }
+            // Inline projection is only for sessions without overlay support
+            // (or explicit standalone diagnostics). Never put the opaque city
+            // back into the placement-10 desktop overlay on background failure.
+            let inline_backdrop = !environment.overlay;
+            if let Some(renderer)=backdrop_renderer.as_mut().filter(|_| inline_backdrop){
                 if let Some(s)=scene.as_ref(){renderer.activity(start.elapsed().as_secs_f64(),backdrop_visible&&webxr_views.len()==2&&max_layers>1,head_pose,&s.config,s.config.xr_backdrop_sound);}
                 else {renderer.suspend(start.elapsed().as_secs_f64());}
             }
             let mut backdrop_submitted = false;
-            if backdrop_visible && webxr_views.len()==2 && max_layers > 1 {
+            if inline_backdrop && backdrop_visible && webxr_views.len()==2 && max_layers > 1 {
                 if let Some(renderer) = backdrop_renderer.as_mut() {
                     if backdrop_panels.is_empty() {
                         for size in eye_sizes {
@@ -1446,7 +1482,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         running.store(false, Ordering::Relaxed);
         let _ = worker.join();
         let _ = input_worker.join();
-        let summary = serde_json::json!({"runtime":runtime,"system":properties.system_name,"overlay":environment.overlay,"environment_blend":format!("{blend:?}"),"overlay_placement":placement,"frames":count,"peak_window_layers":peak,"peak_curved_layers":peak_curved,"peak_flat_layers":peak_flat,"peak_stereo_windows":peak_stereo,"peak_shell_layers":peak_shell,"uploads":uploaded,"performance_floor_frames":performance_floor_frames,"gpu_submissions":gpu_submissions,"backdrop_frames":backdrop_renderer.as_ref().map_or(0,|r|r.frames),"backdrop_suspended_frames":backdrop_renderer.as_ref().map_or(0,|r|r.suspended_frames),"input_methods":if input_enabled {vec!["mouse","keyboard","tracked-controllers"]}else{vec!["mouse","keyboard"]},"webxr_input_enabled":input_enabled,"presentation_hidden_frames":hidden_frames,"presentation_fade_frames":fade_frames,"presentation_slide_frames":slide_frames,"clean_exit":true,"webxr":browser.as_ref().map(|browser| browser.stats()).unwrap_or_default()});
+        let summary = serde_json::json!({"runtime":runtime,"system":properties.system_name,"overlay":environment.overlay,"environment_blend":format!("{blend:?}"),"overlay_placement":placement,"backdrop_overlay_placement":backdrop_session.as_ref().map(|_|dome::xr_environment::BACKDROP_PLACEMENT),"backdrop_overlay_frames":backdrop_session.as_ref().map_or(0,|s|s.submitted_frames),"frames":count,"peak_window_layers":peak,"peak_curved_layers":peak_curved,"peak_flat_layers":peak_flat,"peak_stereo_windows":peak_stereo,"peak_shell_layers":peak_shell,"uploads":uploaded,"performance_floor_frames":performance_floor_frames,"gpu_submissions":gpu_submissions,"backdrop_frames":backdrop_renderer.as_ref().map_or(0,|r|r.frames),"backdrop_suspended_frames":backdrop_renderer.as_ref().map_or(0,|r|r.suspended_frames),"input_methods":if input_enabled {vec!["mouse","keyboard","tracked-controllers"]}else{vec!["mouse","keyboard"]},"webxr_input_enabled":input_enabled,"presentation_hidden_frames":hidden_frames,"presentation_fade_frames":fade_frames,"presentation_slide_frames":slide_frames,"clean_exit":true,"webxr":browser.as_ref().map(|browser| browser.stats()).unwrap_or_default()});
         println!("{summary}");
         if let Some(path) = report {
             std::fs::write(path, serde_json::to_vec_pretty(&summary)?)?;
@@ -1454,6 +1490,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         vk_device.device_wait_idle()?;
         drop(backdrop_renderer);
         drop(backdrop_panels);
+        drop(backdrop_session);
         drop(gpu_renderer);
         drop(chains);
         drop(browser_panel);
