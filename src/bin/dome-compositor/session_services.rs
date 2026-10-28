@@ -102,9 +102,12 @@ pub fn start() {
                 })
             })
             .unwrap_or(true);
-        if !owned && std::path::Path::new("/usr/bin/ksecretd").is_file() {
-            if let Err(error) = std::process::Command::new("/usr/bin/ksecretd").spawn() {
-                eprintln!("KWallet Secret Service startup: {error}");
+        if !owned {
+            let selection = std::env::var("DOME_WALLET_BACKEND").unwrap_or_else(|_| "auto".into());
+            if let Some(program) = crate::wallet_backend::program(&selection, |path| std::path::Path::new(path).is_file()) {
+                if let Err(error) = std::process::Command::new(program).spawn() {
+                    eprintln!("Wallet Secret Service startup: {error}");
+                }
             }
         }
     });

@@ -41,6 +41,7 @@ mod session;
 mod screen_lock;
 mod session_restore;
 mod session_services;
+mod wallet_backend;
 mod gtk_menu;
 mod shell;
 mod snapping;
