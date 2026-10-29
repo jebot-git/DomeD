@@ -186,6 +186,17 @@ try:
               toolkit + " pointer leaving popup and application does not dismiss the menu")
         motion(*point(p, 1)); time.sleep(.8)
         child = wait(lambda: next((v for v in popups() if v["id"] != p["id"] and v["parent"] == p["id"]), None))
+        if toolkit == "fltk":
+            for _ in range(3):
+                motion(*point(child))
+                motion(*point(p))
+                time.sleep(.3)
+                check(any(v["id"] == p["id"] for v in popups()) and
+                      not any(v["id"] == child["id"] for v in popups()) and
+                      window()["title"] == before,
+                      "fltk returning from a desktop submenu closes only that submenu")
+                motion(*point(p, 1))
+                child = wait(lambda: next((v for v in popups() if v["parent"] == p["id"]), None))
         # point() accounts for title/menu/submenu chains in FLTK.
         cx, cy = point(child)
         click(cx, cy + child["anchor"]["h"] * .375)
@@ -281,6 +292,18 @@ try:
             time.sleep(.2)
         child = wait(lambda: next((v for v in popups() if v["parent"] == p["id"]), None))
         time.sleep(.6)
+        if toolkit == "fltk":
+            for _ in range(3):
+                for surface, y in ((child["id"], .5), (p["id"], .125)):
+                    for x in (.35, .4):
+                        post("/api/xr-input", {"events": [{"kind": "motion", "id": surface, "uv": [x, y]}], "actions": []})
+                        time.sleep(.15)
+                check(any(v["id"] == p["id"] for v in popups()) and
+                      not any(v["id"] == child["id"] for v in popups()) and
+                      window()["title"] == before,
+                      "fltk returning from an XR submenu closes only that submenu")
+                post("/api/xr-input", {"events": [{"kind": "motion", "id": p["id"], "uv": [.4, .375]}], "actions": []})
+                child = wait(lambda: next((v for v in popups() if v["parent"] == p["id"]), None))
         xr_click(child["id"], [.4, .5]); wait(lambda: "nested" in window()["title"])
         check(True, toolkit + " nested floating menu accepts XR traversal and action")
         wait(lambda: not popups())

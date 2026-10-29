@@ -45,6 +45,15 @@ XR interaction is driven through DomeD's XR input API without a physical headset
 
 ## Popup lifetime regression checks
 
+The FLTK 1.4.5 dismissal hook distinguishes compositor dismissal from local
+submenu cleanup. FLTK's Wayland `hide()` reuses `popup_done` after unmapping
+the window; that cleanup must not terminate the parent menu's modal loop.
+Only a compositor dismissal of a still-shown menu ends the loop. This is a
+shared toolkit fix, including FSVR and ordinary FLTK applications, with no
+DomeD input-routing change. Regression checks enter a submenu, return to a
+different parent item, reopen it repeatedly, and activate its action on both
+desktop and XR input paths.
+
 Pointer leave alone must preserve native menus, including every open submenu
 and `Fl_Choice` dropdowns. Selection, an outside click, or Escape dismisses them.
 The native popup test checks desktop leave and XR leave into empty space,
