@@ -48,6 +48,9 @@ finite numbers, pose normalization and bounds before allocating or importing.
   "should_render":true,"visible":true,"focused":true,"head_flags":15,"view_flags":15,"head":POSE,
   "views":[{"pose":POSE,"fov":FOV},{"pose":POSE,"fov":FOV}]}`.
   Time is the actual host OpenXR predicted display time, in OpenXR nanoseconds.
+  `period` is the runtime-predicted frame period in nanoseconds. A browser may
+  report the corresponding nominal cadence after session creation, independently
+  of author-controlled target-rate support. It is not measured RAF throughput.
   VIEW/LOCAL/STAGE transformations must use these poses; no fabricated head pose.
   Wire poses use the host's actual STAGE-or-LOCAL origin. The client anchors
   LOCAL at the actual initial head position and gravity-aligned yaw after
@@ -88,7 +91,8 @@ uploads, while desktop layers keep their existing format.
 `hello.input_stream_version` defaults to zero. Version 1 is enabled only when
 real OpenXR actions have been attached and the compositor publishes the native
 input policy. Older desktop processes retain head/stereo-only compatibility.
-The installed release does not yet expose these controller changes.
+Availability depends on the running `dome-xr` process; replacing its executable
+preserves the current session.
 
 A client opts in by adding `"input_after":0` to its first `wait_frame`. Responses
 then include `inputs` and

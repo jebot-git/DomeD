@@ -12,6 +12,9 @@ use std::{
 };
 
 fn apply(frame: &mut Tracking, command: &Value) {
+    if let Some(period) = command["period_ns"].as_i64() {
+        frame.period = period;
+    }
     if let Some(reset) = command.get("reference_reset") {
         let state = frame.reference_space.get_or_insert_with(Default::default);
         state.revision += 1;
