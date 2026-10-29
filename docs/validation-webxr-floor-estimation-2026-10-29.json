@@ -1,0 +1,22 @@
+{
+  "scope": "Private synthetic WebXR test-host option --no-stage",
+  "base_commit": "c447a79cec94ea7a0d736e7152b45434defdb053",
+  "production_domed_changed": false,
+  "optimized_fixture_sha256": "b51768ee47fef6d319cdcf5140d3f0a80d10d4f9f18bde7ff35864d3de3f6d0b",
+  "fixture_source_sha256": {
+    "examples/webxr_input_fixture.rs": "720a04168d0f44f5947cb90c7ccf287df4c1f286045b8508d77adda1c7e7b139"
+  },
+  "native_floor_checks_per_clock": 35,
+  "clock_modes": [
+    "precise",
+    "legacy"
+  ],
+  "tested_behavior": [
+    "Required local-floor with no native stage",
+    "Independent and partial tracking, loss and restoration",
+    "Estimated floor and offset-space reset delivery before animation"
+  ],
+  "physical_xr_device_opened": false,
+  "full_goal_achieved": false,
+  "validated_utc": "2026-10-29T08:58:17.508229+00:00"
+}

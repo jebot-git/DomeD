@@ -188,7 +188,7 @@ fn main() {
             max_width: 4096,
             max_height: 4096,
             blend_modes: vec!["opaque".into()],
-            stage: true,
+            stage: !std::env::args().any(|v| v == "--no-stage"),
             period: 11_111_111,
             input_stream_version: stream,
         },
