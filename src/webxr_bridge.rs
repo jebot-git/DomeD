@@ -863,6 +863,7 @@ mod tests {
         TrackedInput { id, handedness: if id == 1 { InputHandedness::Left } else { InputHandedness::Right },
             profiles: vec!["generic-trigger".into()], supports_grip: true,
             aim: Some(Pose::default()), grip: Some(Pose::default()),
+            aim_emulated_position: false, grip_emulated_position: false,
             select: false, squeeze: false, select_active: true, squeeze_active: true, buttons: vec![0.; 4], axes: vec![0.; 4], touches: vec![false; 4] }
     }
 

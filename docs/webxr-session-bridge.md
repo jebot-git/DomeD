@@ -101,6 +101,13 @@ baseline; it never inherits previous-page gestures.
 An input contains nonzero `id`, lowercase `handedness` (`none`, `left`, `right`),
 ordered `profiles`, `supports_grip`, nullable `aim` and `grip` poses,
 boolean `select` and `squeeze`, normalized `buttons`, `touches` and `axes`.
+Optional boolean `aim_emulated_position` and `grip_emulated_position` describe
+the two poses independently. Missing values retain the older host's tracked
+pose assumption. Native action-space locations with valid estimated positions
+set the matching field when `POSITION_TRACKED` is absent; unavailable poses
+remain null. Historical action snapshots carry their own flags, located at
+the action time. Changes to these flags alone do not consume transition-history
+capacity or replace an input source.
 There are at most two sources, eight button slots and four axis slots. Button
 slots 0/1/2/3 represent trigger, squeeze, touchpad and thumbstick. Axes 0/1
 are touchpad; 2/3 are thumbstick. Internal absent slots stay neutral; trailing

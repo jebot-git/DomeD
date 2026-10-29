@@ -115,6 +115,8 @@ fn apply(frame: &mut Tracking, command: &Value) {
                 input.axes.clear();
             }
         }
+        if let Some(v) = command["aim_emulated_position"].as_bool() { input.aim_emulated_position = v; }
+        if let Some(v) = command["grip_emulated_position"].as_bool() { input.grip_emulated_position = v; }
         if let Some(v) = command["grip"].as_bool() {
             input.supports_grip = v;
             input.grip = if v { controller().grip } else { None };
@@ -138,6 +140,8 @@ fn controller() -> TrackedInput {
             position: [1.4, 1.3, 1.],
             ..Pose::default()
         }),
+        aim_emulated_position: false,
+        grip_emulated_position: false,
         select: false,
         squeeze: false,
         select_active: true,

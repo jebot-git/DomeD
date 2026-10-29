@@ -25,6 +25,12 @@ pub struct TrackedInput {
     pub supports_grip: bool,
     pub aim: Option<Pose>,
     pub grip: Option<Pose>,
+    /// Runtime-estimated position, independent for the two controller spaces.
+    /// Omitted by older hosts, whose complete poses were treated as tracked.
+    #[serde(default)]
+    pub aim_emulated_position: bool,
+    #[serde(default)]
+    pub grip_emulated_position: bool,
     pub select: bool,
     pub squeeze: bool,
     #[serde(default = "active_by_default")]
@@ -154,6 +160,7 @@ mod tests {
         TrackedInput { id: 1, handedness: InputHandedness::Left,
             profiles: vec!["generic-trigger".into()], supports_grip: true,
             aim: Some(Pose::default()), grip: Some(Pose::default()),
+            aim_emulated_position: false, grip_emulated_position: false,
             select: false, squeeze: false, select_active: true, squeeze_active: true, buttons: vec![0.; 4], axes: vec![0.; 4], touches: vec![false; 4] }
     }
 
@@ -163,6 +170,45 @@ mod tests {
         f.inputs.push(input); f
     }
 
+    #[test]
+    fn emulation_metadata_round_trips_and_legacy_input_defaults_to_tracked() {
+        let mut input = source();
+        input.aim_emulated_position = true;
+        let mut wire = serde_json::to_value(&input).unwrap();
+        let decoded: TrackedInput = serde_json::from_value(wire.clone()).unwrap();
+        assert!(decoded.aim_emulated_position && !decoded.grip_emulated_position);
+        wire.as_object_mut().unwrap().remove("aim_emulated_position");
+        wire.as_object_mut().unwrap().remove("grip_emulated_position");
+        let legacy: TrackedInput = serde_json::from_value(wire).unwrap();
+        assert!(!legacy.aim_emulated_position && !legacy.grip_emulated_position);
+        assert!(legacy.valid());
+    }
+    #[test]
+    fn estimation_changes_do_not_displace_actions_from_bounded_history() {
+        let mut queue = InputQueue::new(Some(&frame(1, false)));
+        for id in 2..200 {
+            let mut f = frame(id, false);
+            f.inputs[0].aim_emulated_position = id % 2 == 0;
+            f.inputs[0].grip_emulated_position = id % 3 == 0;
+            queue.observe(&f);
+        }
+        assert_eq!(queue.batch(0).unwrap().through, 0);
+        let mut pressed = frame(200, true);
+        pressed.inputs[0].aim_emulated_position = true;
+        queue.observe(&pressed);
+        let mut released = frame(201, false);
+        released.inputs[0].grip_emulated_position = true;
+        queue.observe(&released);
+        let batch = queue.batch(0).unwrap();
+        assert!(!batch.reset);
+        assert_eq!(batch.updates.len(), 2);
+        assert!(batch.updates[0].frame.inputs[0].aim_emulated_position);
+        assert!(!batch.updates[0].frame.inputs[0].grip_emulated_position);
+        assert!(!batch.updates[1].frame.inputs[0].aim_emulated_position);
+        assert!(batch.updates[1].frame.inputs[0].grip_emulated_position);
+        assert!(batch.updates[0].frame.inputs[0].select);
+        assert!(!batch.updates[1].frame.inputs[0].select);
+    }
     #[test]
     fn transitions_between_browser_frames_keep_their_original_poses_and_times() {
         let mut queue = InputQueue::new(Some(&frame(1, true)));

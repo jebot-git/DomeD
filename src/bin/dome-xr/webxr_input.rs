@@ -187,13 +187,17 @@ impl Controllers {
             let axis_values = axes.iter().take(axis_count).enumerate()
                 .map(|(i, state)| axis_value(state.is_active, state.current_state, i, touched.get(2).copied().unwrap_or(false))).collect();
             let supports_grip = profile.is_some() || self.grip.is_active(session, path)?;
+            let aim = located(&self.aim_spaces[hand], stage, time)?;
+            let grip = if supports_grip { located(&self.grip_spaces[hand], stage, time)? } else { Located::default() };
             let mut input = TrackedInput {
                 id: hand as u32 + 1,
                 handedness: if hand == 0 { InputHandedness::Left } else { InputHandedness::Right },
                 profiles: profile.map_or_else(|| vec!["generic-trigger".into()], |p| p.names.iter().map(|s| (*s).into()).collect()),
                 supports_grip,
-                aim: located(&self.aim_spaces[hand], stage, time)?,
-                grip: if supports_grip { located(&self.grip_spaces[hand], stage, time)? } else { None },
+                aim: aim.pose,
+                grip: grip.pose,
+                aim_emulated_position: aim.emulated_position,
+                grip_emulated_position: grip.emulated_position,
                 select: select.is_active && select.current_state,
                 squeeze: squeeze.is_active && squeeze.current_state,
                 select_active: select.is_active,
@@ -213,8 +217,12 @@ impl Controllers {
         for event in &mut events {
             for input in &mut event.inputs {
                 let hand = (input.id - 1) as usize;
-                input.aim = located(&self.aim_spaces[hand], stage, event.time)?;
-                input.grip = if input.supports_grip { located(&self.grip_spaces[hand], stage, event.time)? } else { None };
+                let aim = located(&self.aim_spaces[hand], stage, event.time)?;
+                let grip = if input.supports_grip { located(&self.grip_spaces[hand], stage, event.time)? } else { Located::default() };
+                input.aim = aim.pose;
+                input.grip = grip.pose;
+                input.aim_emulated_position = aim.emulated_position;
+                input.grip_emulated_position = grip.emulated_position;
             }
         }
         self.cached = inputs.clone();
@@ -277,11 +285,28 @@ fn axis_value(active: bool, raw: f32, index: usize, touchpad_touched: bool) -> f
     if normalized == 0. { 0. } else { normalized * if index % 2 == 1 { -1. } else { 1. } }
 }
 
-fn located(space: &xr::Space, stage: &xr::Space, time: xr::Time) -> Result<Option<Pose>> {
-    let location = space.locate(stage, time)?;
-    if !location.location_flags.contains(xr::SpaceLocationFlags::POSITION_VALID | xr::SpaceLocationFlags::ORIENTATION_VALID) { return Ok(None); }
-    let pose = super::bridge_pose(location.pose);
-    Ok(pose.valid().then_some(pose))
+#[derive(Default)]
+struct Located {
+    pose: Option<Pose>,
+    emulated_position: bool,
+}
+impl Located {
+    fn from_location(location: xr::SpaceLocation) -> Self {
+        // Unflagged components are unspecified and must not be read. A runtime
+        // can provide a meaningful estimated position without active tracking.
+        if !location.location_flags.contains(xr::SpaceLocationFlags::POSITION_VALID | xr::SpaceLocationFlags::ORIENTATION_VALID) {
+            return Self::default();
+        }
+        let pose = super::bridge_pose(location.pose);
+        if !pose.valid() { return Self::default(); }
+        Self {
+            pose: Some(pose),
+            emulated_position: !location.location_flags.contains(xr::SpaceLocationFlags::POSITION_TRACKED),
+        }
+    }
+}
+fn located(space: &xr::Space, stage: &xr::Space, time: xr::Time) -> Result<Located> {
+    space.locate(stage, time).map(Located::from_location)
 }
 
 #[cfg(test)]
@@ -289,8 +314,33 @@ mod tests {
     use super::*;
     fn controller(id: u32) -> TrackedInput {
         TrackedInput { id, handedness: InputHandedness::Left, profiles: vec!["generic-trigger-squeeze".into()],
-            supports_grip: true, aim: Some(Pose::default()), grip: Some(Pose::default()), select: false, squeeze: false,
+            supports_grip: true, aim: Some(Pose::default()), grip: Some(Pose::default()),
+            aim_emulated_position: false, grip_emulated_position: false, select: false, squeeze: false,
             select_active: true, squeeze_active: true, buttons: vec![0.,0.], touches: vec![false;2], axes: vec![] }
+    }
+    #[test]
+    fn native_pose_metadata_distinguishes_valid_estimates_from_active_tracking() {
+        let valid = xr::SpaceLocationFlags::POSITION_VALID | xr::SpaceLocationFlags::ORIENTATION_VALID;
+        for (extra, emulated) in [(xr::SpaceLocationFlags::EMPTY, true),
+            (xr::SpaceLocationFlags::ORIENTATION_TRACKED, true),
+            (xr::SpaceLocationFlags::POSITION_TRACKED, false)] {
+            let sample = Located::from_location(xr::SpaceLocation { location_flags: valid | extra, pose: xr::Posef::IDENTITY });
+            assert!(sample.pose.is_some());
+            assert_eq!(sample.emulated_position, emulated);
+        }
+    }
+    #[test]
+    fn unavailable_or_invalid_native_poses_do_not_become_estimated_coordinates() {
+        for flags in [xr::SpaceLocationFlags::EMPTY, xr::SpaceLocationFlags::ORIENTATION_VALID,
+            xr::SpaceLocationFlags::POSITION_VALID, xr::SpaceLocationFlags::POSITION_TRACKED] {
+            let sample = Located::from_location(xr::SpaceLocation { location_flags: flags, pose: xr::Posef::IDENTITY });
+            assert!(sample.pose.is_none());
+        }
+        let mut pose = xr::Posef::IDENTITY;
+        pose.position.x = f32::NAN;
+        let sample = Located::from_location(xr::SpaceLocation {
+            location_flags: xr::SpaceLocationFlags::POSITION_VALID | xr::SpaceLocationFlags::ORIENTATION_VALID, pose });
+        assert!(sample.pose.is_none());
     }
     #[test]
     fn action_events_use_runtime_occurrence_time_and_missing_times_cancel_instead_of_predicting() {
