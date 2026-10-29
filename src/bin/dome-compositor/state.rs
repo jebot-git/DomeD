@@ -129,6 +129,7 @@ pub struct Dome {
     pub history_panel: Option<crate::histories::Kind>,
     pub history_selected: usize,
     pub notifications: crate::notifications::Notifications,
+    pub sounds: dome::system_sounds::Player,
     pub pins: Vec<String>,
     pub shell_error: String,
     pub start_time: std::time::Instant,
@@ -229,6 +230,7 @@ impl Dome {
         // checking that wl_seat has arrived. Advertise the seat first so these
         // native Wayland clients can bind our GTK menu extension safely.
         crate::gtk_menu::register(&dh);
+        smithay::wayland::xdg_system_bell::XdgSystemBellState::new::<Self>(&dh);
 
         // Notify clients that we have a keyboard, for the sake of the example we assume that keyboard is always present.
         // You may want to track keyboard hot-plug in real compositor.
@@ -282,6 +284,9 @@ impl Dome {
         // Get the loop signal, used to stop the event loop
         let loop_signal = event_loop.get_signal();
 
+        let sound_settings = dome::system_sounds::Settings::load(&dome::system_sounds::Settings::path())
+            .unwrap_or_else(|error| { eprintln!("Dome sound settings: {error}"); dome::system_sounds::Settings { enabled: false } });
+        let sounds = dome::system_sounds::Player::new(sound_settings.enabled);
         Self {
             dmabuf_state: smithay::wayland::dmabuf::DmabufState::new(),
             dmabuf_importer: None,
@@ -389,7 +394,8 @@ impl Dome {
             clipboard: crate::clipboard::Clipboard::new(),
             history_panel: None,
             history_selected: 0,
-            notifications: crate::notifications::Notifications::new(),
+            sounds: sounds.clone(),
+            notifications: crate::notifications::Notifications::new(sounds),
             pins: crate::tasks::load_pins(),
             shell_error: String::new(),
             start_time,

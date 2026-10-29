@@ -34,6 +34,7 @@ mod x11_bridge;
 mod menu_navigation;
 mod workspace_switcher;
 mod notifications;
+mod system_sounds;
 mod notification_windows;
 mod outputs;
 mod qt;

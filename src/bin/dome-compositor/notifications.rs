@@ -113,6 +113,7 @@ struct State {
     notices: Vec<Notice>,
     history: Vec<Notice>,
     unread: bool,
+    sounds: Option<dome::system_sounds::Player>,
     dismissed_surfaces: std::collections::HashSet<u64>,
     surface_clicks: Vec<(u64, [f64; 2])>,
     presentation_sequence: u64,
@@ -143,7 +144,7 @@ struct Server(Arc<Mutex<State>>);
 #[zbus::interface(name = "org.freedesktop.Notifications")]
 impl Server {
     fn get_capabilities(&self) -> Vec<&str> {
-        vec!["body", "actions"]
+        vec!["body", "actions", "sound"]
     }
     fn get_server_information(&self) -> (&str, &str, &str, &str) {
         ("DomeD", "DomeD", env!("CARGO_PKG_VERSION"), "1.2")
@@ -213,6 +214,7 @@ impl Server {
                 "Notification is too large or actions are not pairs".into(),
             ));
         }
+        let sound = notification_sound(&hints);
         let delivery=hints.get("x-dome-event-id").and_then(|v|<&str>::try_from(v).ok().map(str::to_owned)).filter(|s|!s.is_empty()&&s.len()<=256&&app_name=="WayVR");
         let mut s = self.0.lock().unwrap();
         if let Some(key)=&delivery {if let Some((_,id))=s.forwarded.iter().find(|(k,_)|k==key){return Ok(*id);}}
@@ -280,8 +282,23 @@ impl Server {
             s.notices.push(notice);
         }
         s.revision = s.revision.wrapping_add(1);
+        let player = s.sounds.clone();
+        drop(s);
+        // Updating an existing notice or replaying a forwarded event stays quiet.
+        if index.is_none() {
+            if let (Some(player), Some(sound)) = (player, sound) { player.play_name(&sound); }
+        }
         Ok(id)
     }
+}
+fn notification_sound(hints: &HashMap<String, OwnedValue>) -> Option<String> {
+    if hints.get("suppress-sound").and_then(|v| bool::try_from(v).ok()) == Some(true) { return None; }
+    if let Some(name) = hints.get("sound-name").and_then(|v| <&str>::try_from(v).ok()) {
+        if dome::system_sounds::valid_name(name) { return Some(name.to_owned()); }
+    }
+    Some(if hints.get("urgency").and_then(|v| u8::try_from(v).ok()) == Some(2) {
+        dome::system_sounds::Event::Critical
+    } else { dome::system_sounds::Event::Notification }.name().to_owned())
 }
 fn remove(state: &Mutex<State>, id: u32) -> bool {
     let mut s = state.lock().unwrap();
@@ -315,8 +332,8 @@ impl Notifications {
             title.into(),body.into(),vec![],HashMap::new(),5000);
     }
 
-    pub fn new() -> Self {
-        let state = Arc::new(Mutex::new(State::default()));
+    pub fn new(sounds: dome::system_sounds::Player) -> Self {
+        let state = Arc::new(Mutex::new(State { sounds: Some(sounds), ..State::default() }));
         let (send, receive) = mpsc::channel();
         let shared = state.clone();
         std::thread::spawn(move || {
@@ -621,6 +638,20 @@ fn run(state: Arc<Mutex<State>>, receive: mpsc::Receiver<Request>) -> zbus::Resu
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn notification_sound_hints_observe_suppression_and_theme_names() {
+        let mut hints = HashMap::new();
+        assert_eq!(notification_sound(&hints).as_deref(), Some("message-new-instant"));
+        hints.insert("urgency".into(), OwnedValue::from(2u8));
+        assert_eq!(notification_sound(&hints).as_deref(), Some("dialog-warning"));
+        hints.insert("sound-name".into(), OwnedValue::from(zbus::zvariant::Str::from("complete")));
+        assert_eq!(notification_sound(&hints).as_deref(), Some("complete"));
+        hints.insert("suppress-sound".into(), OwnedValue::from(true));
+        assert!(notification_sound(&hints).is_none());
+        hints.insert("suppress-sound".into(), OwnedValue::from(false));
+        hints.insert("sound-name".into(), OwnedValue::from(zbus::zvariant::Str::from("/tmp/not-a-theme")));
+        assert_eq!(notification_sound(&hints).as_deref(), Some("dialog-warning"));
+    }
     fn destination() -> Destination {
         Destination { workspace: 1, realm: dome::Realm::Desktop,
             output: dome::Rect { x: 1920., y: 0., w: 1600., h: 1000. } }

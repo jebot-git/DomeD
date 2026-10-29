@@ -24,6 +24,7 @@ smithay::backend::renderer::element::render_elements! {
 }
 #[derive(Default)]
 pub struct DesktopRenderer {
+    last_error: String,
     decoration_buffers: std::collections::HashMap<u64, (String, MemoryRenderBuffer)>,
     shell_buffer: Option<(String, MemoryRenderBuffer)>,
     backdrop_buffers: std::collections::HashMap<(i32,i32),(bool,MemoryRenderBuffer)>,
@@ -37,7 +38,16 @@ impl DesktopRenderer {
         {
             let mut scene = state.scene.lock().unwrap();
             let locked = state.session.locked();
-            if scene.locked != locked { scene.locked = locked; scene.revision += 1; }
+            if scene.locked != locked {
+                scene.locked = locked; scene.revision += 1;
+                state.sounds.play(if locked { dome::system_sounds::Event::Lock } else { dome::system_sounds::Event::Unlock });
+            }
+        }
+        if self.last_error != state.shell_error {
+            self.last_error = state.shell_error.clone();
+            if !self.last_error.is_empty() && !self.last_error.starts_with('@') {
+                state.sounds.play(dome::system_sounds::Event::Error);
+            }
         }
         state.poll_screenshots();
         state.notification_surface_clicks();
@@ -51,7 +61,7 @@ impl DesktopRenderer {
         let key = format!(
             "{:?}:{}:{}:{}:{:?}:{:?}:{}:{}",
             (
-                (state.applied_revision,format!("{:?}",state.clock)),
+                (state.applied_revision,format!("{:?}",state.clock),state.sounds.enabled()),
                 (
                     (state.appearance_open,state.default_apps_open,state.default_apps_row,state.default_apps_choice,state.default_apps.revision()),
                     state.xr_settings_open,

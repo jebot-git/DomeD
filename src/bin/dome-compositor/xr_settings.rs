@@ -210,6 +210,13 @@ impl Dome {
                     self.settings_page = if row == 2 { SettingsPage::Graphics } else { SettingsPage::Keybindings };
                     self.xr_settings_row = 0;
                 }
+                4 => {
+                    let setting = dome::system_sounds::Settings { enabled: !self.sounds.enabled() };
+                    match setting.save(&dome::system_sounds::Settings::path()) {
+                        Ok(()) => self.sounds.set_enabled(setting.enabled),
+                        Err(error) => self.geometry_error = error,
+                    }
+                }
                 _ => (),
             }
             return;
@@ -358,6 +365,7 @@ impl Dome {
                 ("Keyboard Layouts…".into(), self.keyboard_config.label()),
                 ("Graphical Settings…".into(), "Open".into()),
                 ("Keybindings…".into(), "Open".into()),
+                ("Notification/system sounds".into(), if self.sounds.enabled() { "On" } else { "Off" }.into()),
             ],
             SettingsPage::Graphics => {
                 let mut rows = vec![("Compositor GPU · next session".into(),

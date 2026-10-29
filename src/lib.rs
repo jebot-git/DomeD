@@ -86,3 +86,5 @@ pub mod xr_backdrop;
 pub mod appearance_panel;
 
 pub mod desktop_backdrop;
+
+pub mod system_sounds;
