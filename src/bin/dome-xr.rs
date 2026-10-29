@@ -974,7 +974,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     if let Some(age) = control.finder_seconds.filter(|age| *age < dome::visual_feedback::FINDER_DURATION) {
                         let mut finder = reticle.clone();
                         finder.id = u64::MAX - 1;
-                        finder.size = finder.size.map(|v| v * 4.);
+                        finder.size = finder.size.map(|v| v * 8.);
                         images.insert(
                             finder.id,
                             Image {
