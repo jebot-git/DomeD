@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <unistd.h>
 typedef struct { char event[128]; } Properties;
 static void record(const char *kind, const char *event) {
     const char *path = getenv("DOME_SOUND_TEST_RECORD");
@@ -18,5 +19,7 @@ int ca_proplist_sets(void *p,const char *key,const char *value) { if (!strcmp(ke
 int ca_context_change_props_full(void *ctx,void *props) { (void)ctx;(void)props;return 0; }
 int ca_context_cancel(void *ctx,uint32_t id) { (void)ctx;(void)id;record("cancel",NULL);return 0; }
 int ca_context_play_full(void *ctx,uint32_t id,void *props,void (*cb)(void*,uint32_t,int,void*),void *data) {
-    (void)ctx;(void)id;(void)cb;(void)data;record("play",((Properties*)props)->event);return 0;
+    (void)ctx;(void)id;(void)cb;(void)data;record("play",((Properties*)props)->event);
+    if (getenv("DOME_SOUND_FIXTURE_DELAY")) usleep(1000000);
+    return 0;
 }

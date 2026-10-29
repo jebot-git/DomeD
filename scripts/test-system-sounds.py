@@ -67,10 +67,11 @@ try:
         connection=display.Display(env['DISPLAY'])
         def get(path):
             with urllib.request.urlopen(base+path,timeout=2)as response:return json.load(response)
-        def boot(name,fail=False):
+        def boot(name,fail=False,delay=False):
             global compositor
             current=env.copy()
             if fail:current['DOME_SOUND_FIXTURE_FAIL']='1'
+            if delay:current['DOME_SOUND_FIXTURE_DELAY']='1'
             compositor=start([a.binary.resolve(),'--backend','nested'],name,current)
             wait(lambda:get('/api/state')['scene']['source']=='wayland')
             host=wait(lambda:next((w for w in connection.screen().root.query_tree().children if str(w.get_wm_name()or'').startswith('Dome')),None))
@@ -126,6 +127,14 @@ try:
         stop(compositor);compositor=None
         host,client_env=boot('backend-unavailable',fail=True);notice();time.sleep(.2)
         check(compositor.poll()is None and get('/api/state')['scene']['source']=='wayland','Missing audio backend leaves notification and desktop service usable')
+        stop(compositor);compositor=None
+        host,client_env=boot('delayed-backend',delay=True);open_settings()
+        count=len(plays());notice();wait(lambda:len(plays())>count)
+        def cancellations():return sum(line.startswith('cancel ')for line in record.read_text().splitlines())
+        old=cancellations();toggle(False);toggle(True)
+        check(wait(lambda:cancellations()>old,seconds=3),'Rapid mute and reenable cancels in-flight playback from the old setting generation')
+        check(len(plays())==count+1,'Reenabling sounds does not replay the stale notification')
+        key('Escape');audible({},'message-new-instant')
         stop(compositor);compositor=None;connection.close()
 except BaseException as ex:
     failure=repr(ex);raise

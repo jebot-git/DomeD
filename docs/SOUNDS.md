@@ -58,6 +58,8 @@ The control test uses temporary profiles, a private bus and display, and a
 libcanberra fixture that records requests without audio. It checks normal,
 critical, named and suppressed notices, quiet replacements, native desktop and
 XR settings, Wayland bells, persistence and unavailable-backend behavior.
+A deliberately delayed backend also checks that rapid Off/On changes cancel
+in-flight audio without replaying an older notice.
 The audio test decodes a real event through libcanberra into a private
 PipeWire/PulseAudio virtual sink and measures nonzero PCM after a silent
 baseline. It does not open physical audio devices or connect to the host graph.

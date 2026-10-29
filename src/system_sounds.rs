@@ -181,6 +181,7 @@ fn worker(receive: Receiver<Request>, gate: Arc<Mutex<Gate>>) {
             None
         }
     };
+    let mut playing_generation = None;
     while let Ok(request) = receive.recv() {
         let state = gate.lock().unwrap();
         let enabled = state.enabled;
@@ -189,8 +190,12 @@ fn worker(receive: Receiver<Request>, gate: Arc<Mutex<Gate>>) {
         let Some(backend) = backend.as_mut() else {
             continue;
         };
-        if !enabled {
+        // A quick off/on transition still cancels the previous generation.
+        if !enabled || playing_generation.is_some_and(|old| old != generation) {
             backend.stop();
+            playing_generation = None;
+        }
+        if !enabled {
             continue;
         }
         if let Request::Play {
@@ -201,6 +206,16 @@ fn worker(receive: Receiver<Request>, gate: Arc<Mutex<Gate>>) {
         {
             if requested == generation && at.elapsed() < Duration::from_secs(1) {
                 backend.play(&name);
+                playing_generation = Some(requested);
+                // Driver connection/initialization can take time. Recheck the
+                // policy before allowing an in-flight old sound to continue.
+                let state = gate.lock().unwrap();
+                let stale = !state.enabled || state.generation != requested;
+                drop(state);
+                if stale {
+                    backend.stop();
+                    playing_generation = None;
+                }
             }
         }
     }
