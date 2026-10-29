@@ -1,5 +1,5 @@
-//! Private synthetic controller feed for testing the real browser projection transport.
-//! No OpenXR instance or device is opened.
+// Private synthetic feed for independent head/view validity testing.
+// No OpenXR instance or device is opened.
 use dome::webxr_bridge::{
     Capabilities, Fov, InputHandedness, Pose, Server, TrackedInput, Tracking, View,
 };
@@ -42,14 +42,30 @@ fn apply(frame: &mut Tracking, command: &Value) {
         }
     }
     if let Some(valid) = command["head_valid"].as_bool() {
-        frame.head_flags = if valid { 3 } else { 0 };
-        frame.view_flags = if valid { 3 } else { 0 };
+        frame.head_flags = if valid { 15 } else { 0 };
+        frame.view_flags = if valid { 15 } else { 0 };
         let orientation = if valid { [0., 0., 0., 1.] } else { [0.; 4] };
         frame.head.orientation = orientation;
         for eye in &mut frame.views {
             eye.pose.orientation = orientation;
         }
     }
+    if let Some(flags) = command["head_flags"].as_u64() { frame.head_flags = flags; }
+    if let Some(flags) = command["view_flags"].as_u64() { frame.view_flags = flags; }
+    if let Some(position) = command.get("head_position") {
+        let next: [f32; 3] = serde_json::from_value(position.clone()).unwrap();
+        let delta = glam::Vec3::from_array(next) - glam::Vec3::from_array(frame.head.position);
+        frame.head.position = next;
+        for eye in &mut frame.views { eye.pose.position = (glam::Vec3::from_array(eye.pose.position) + delta).to_array(); }
+    }
+    if let Some(yaw) = command["head_yaw"].as_f64() {
+        frame.head.orientation = glam::Quat::from_rotation_y(yaw as f32).to_array();
+    }
+    if let Some(position) = command.get("eye_positions") {
+        let values: [[f32; 3]; 2] = serde_json::from_value(position.clone()).unwrap();
+        for (eye, position) in frame.views.iter_mut().zip(values) { eye.pose.position = position; }
+    }
+    if command["unknown_position"] == true { frame.head.position = [f32::NAN;3]; }
     if let Some(v) = command["focused"].as_bool() {
         frame.focused = v;
     }
@@ -143,7 +159,9 @@ fn stamp(frame: &mut Tracking, monotonic: i64, precise: bool) {
 fn publish(server: &Server, frame: &mut Tracking, precise: bool) {
     frame.frame_id += 1;
     stamp(frame, now() + frame.period, precise);
-    server.publish(frame.clone());
+    let mut outgoing = frame.clone();
+    dome::webxr_bridge::sanitize_poses(&mut outgoing);
+    server.publish(outgoing);
 }
 fn main() {
     let path = std::env::args().nth(1).expect("private socket path");
@@ -192,8 +210,8 @@ fn main() {
         should_render: true,
         visible: true,
         focused: true,
-        head_flags: 3,
-        view_flags: 3,
+        head_flags: 15,
+        view_flags: 15,
         head: Pose {
             position: [1., 1.6, 2.],
             ..Pose::default()
@@ -217,6 +235,7 @@ fn main() {
     publish(&server, &mut frame, precise);
     println!("{}", json!({"ready":true,"input_stream_version":stream}));
     io::stdout().flush().unwrap();
+    let mut last_projection = Value::Null;
     loop {
         for line in rx.try_iter() {
             let value: Value = serde_json::from_str(&line).unwrap();
@@ -232,23 +251,30 @@ fn main() {
                     let mut event = frame.clone();
                     let age = command["event_age_ms"].as_i64().unwrap_or(0);
                     stamp(&mut event, observed - age * 1_000_000, precise);
+                    dome::webxr_bridge::sanitize_poses(&mut event);
                     history.push(event);
                 }
                 let predicted = observed + frame.period;
                 stamp(&mut frame, predicted, precise);
-                server.publish_with_history(frame.clone(), &history);
+                let mut outgoing = frame.clone();
+                dome::webxr_bridge::sanitize_poses(&mut outgoing);
+                server.publish_with_history(outgoing, &history);
             } else {
                 apply(&mut frame, &value);
                 publish(&server, &mut frame, precise);
             }
             println!(
                 "{}",
-                json!({"ack":value["ack"],"frame_id":frame.frame_id,"stats":server.stats()})
+                json!({"ack":value["ack"],"frame_id":frame.frame_id,"stats":server.stats(),"last_projection":&last_projection})
             );
             io::stdout().flush().unwrap();
         }
         if let Some(submission) = server.take_submission() {
             let accepted = server.composed(&submission);
+            if accepted {
+                last_projection = json!({"frame_id":submission.frame_id,"views":&submission.views,
+                    "bytes":submission.rgba.len(),"blue_pixels":submission.rgba.chunks_exact(4).filter(|p|p[2]>p[0]&&p[2]>p[1]).count()});
+            }
             submission.complete(if accepted {
                 Ok(())
             } else {

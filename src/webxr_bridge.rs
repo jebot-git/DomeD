@@ -1,6 +1,8 @@
 //! Same-user local browser projection transport into Dome's existing XR session.
 //! No OpenXR objects or runtime connections are created by this module.
 mod input;
+mod pose;
+pub use pose::sanitize_poses;
 mod reference_space;
 pub use reference_space::{ReferenceSpaceState, ReferenceSpaceTimeline};
 pub use input::{InputBatch, InputHandedness, InputUpdate, TrackedInput, INPUT_STREAM_VERSION};

@@ -29,16 +29,7 @@ fn nanos(seconds: i64, nanoseconds: i64) -> Option<i64> {
 /// Untracked OpenXR poses have unspecified components. Keep the transport
 /// numeric without presenting those placeholders as valid tracking.
 pub fn sanitize_poses(frame: &mut dome::webxr_bridge::Tracking) {
-    if !frame.head.valid() {
-        frame.head = Default::default();
-        frame.head_flags = 0;
-    }
-    for eye in &mut frame.views {
-        if !eye.pose.valid() {
-            eye.pose = Default::default();
-            frame.view_flags = 0;
-        }
-    }
+    dome::webxr_bridge::sanitize_poses(frame);
 }
 
 pub fn event_tracking<G>(
@@ -105,8 +96,10 @@ mod tests {
         frame.head.orientation = [0.; 4];
         frame.views[0].pose.position[0] = f32::NAN;
         sanitize_poses(&mut frame);
-        assert_eq!(frame.head_flags, 0);
-        assert_eq!(frame.view_flags, 0);
+        // Invalid orientation leaves meaningful tracked position intact;
+        // an invalid eye position leaves meaningful eye orientation intact.
+        assert_eq!(frame.head_flags, 10);
+        assert_eq!(frame.view_flags, 5);
         assert!(frame.head.valid());
         assert!(frame.views.iter().all(|eye| eye.pose.valid()));
         let wire = serde_json::to_value(&frame).unwrap();
