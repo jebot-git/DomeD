@@ -29,6 +29,7 @@ patch_names=['fltk-1.4.5-bitmap-fonts.patch','fltk-1.4.5-popup-done.patch','fltk
 patch_names.append('fltk-1.4.5-window-suspended.patch')
 patch_names.append('fltk-1.4.5-touch-input.patch')
 patch_names.append('fltk-1.4.5-pen-input.patch')
+patch_names.append('fltk-1.4.5-pcf-fonts.patch')
 patches=[repo/'native/toolkit-hooks'/name for name in patch_names]
 digest=hashlib.sha256(b''.join(p.read_bytes() for p in patches)).hexdigest()
 stamp=source/'.dome-patches.sha256'
@@ -47,7 +48,7 @@ env=dict(os.environ)
 sysroot=deps/'sysroot/usr'
 if sysroot.is_dir():
     env['PKG_CONFIG_PATH']=str(sysroot/'lib/x86_64-linux-gnu/pkgconfig')+':'+env.get('PKG_CONFIG_PATH','')
-args=['cmake','-S',str(source),'-B',str(deps/'build'),'-G','Ninja','-DCMAKE_BUILD_TYPE=Release',f'-DCMAKE_INSTALL_PREFIX={prefix}',f'-DCMAKE_PREFIX_PATH={sysroot}','-DFLTK_BACKEND_WAYLAND=ON','-DFLTK_BACKEND_X11=ON','-DFLTK_BUILD_SHARED_LIBS=ON','-DFLTK_BUILD_TEST=OFF','-DFLTK_BUILD_EXAMPLES=OFF','-DFLTK_BUILD_FLUID=OFF','-DFLTK_BUILD_FLTK_OPTIONS=OFF','-DFLTK_BUILD_FORMS=OFF','-DFLTK_BUILD_GL=ON','-DFLTK_USE_DBUS=OFF','-DFLTK_USE_PANGO=OFF','-DFLTK_USE_SYSTEM_LIBDECOR=OFF','-DFLTK_USE_LIBDECOR_GTK=OFF','-DFLTK_OPTION_CAIRO_WINDOW=ON']
+args=['cmake','-S',str(source),'-B',str(deps/'build'),'-G','Ninja','-DCMAKE_BUILD_TYPE=Release','-DCMAKE_INSTALL_LIBDIR:STRING=lib','-DFLTK_LIBDIR:STRING=lib','-DCMAKE_C_FLAGS_RELEASE=-O3 -DNDEBUG -march=native -mtune=native','-DCMAKE_CXX_FLAGS_RELEASE=-O3 -DNDEBUG -march=native -mtune=native',f'-DCMAKE_INSTALL_PREFIX={prefix}',f'-DCMAKE_PREFIX_PATH={sysroot}','-DFLTK_BACKEND_WAYLAND=ON','-DFLTK_BACKEND_X11=ON','-DFLTK_BUILD_SHARED_LIBS=ON','-DFLTK_BUILD_TEST=OFF','-DFLTK_BUILD_EXAMPLES=OFF','-DFLTK_BUILD_FLUID=OFF','-DFLTK_BUILD_FLTK_OPTIONS=OFF','-DFLTK_BUILD_FORMS=OFF','-DFLTK_BUILD_GL=ON','-DFLTK_USE_DBUS=OFF','-DFLTK_USE_PANGO=OFF','-DFLTK_USE_SYSTEM_LIBDECOR=OFF','-DFLTK_USE_LIBDECOR_GTK=OFF','-DFLTK_OPTION_CAIRO_WINDOW=ON']
 subprocess.run(args,env=env,check=True)
 subprocess.run(['cmake','--build',str(deps/'build'),'--parallel','4'],check=True)
 subprocess.run(['cmake','--install',str(deps/'build')],check=True)

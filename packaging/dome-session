@@ -67,12 +67,10 @@ fi
 if [[ -f /usr/local/lib/domed/bitmap/libpangoft2-1.0.so.0 ]]; then
     export LD_LIBRARY_PATH="/usr/local/lib/domed/bitmap${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 fi
-# Only the native BDF fork is supported, including an explicitly selected prefix.
-bdf_manifest=/usr/share/domed-bdf-runtime/manifest.json
-if [[ -n "${DOME_BDF_RUNTIME_PREFIX:-}" ]]; then
-    bdf_manifest="$DOME_BDF_RUNTIME_PREFIX/share/domed-bdf-runtime/manifest.json"
-    export LD_LIBRARY_PATH="$DOME_BDF_RUNTIME_PREFIX/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-fi
+# Require the native BDF/PCF stack, including an explicitly selected prefix.
+export DOME_BDF_RUNTIME_PREFIX="${DOME_BDF_RUNTIME_PREFIX:-/opt/fltk-vr/bdf-runtime}"
+bdf_manifest="$DOME_BDF_RUNTIME_PREFIX/share/domed-bdf-runtime/manifest.json"
+export LD_LIBRARY_PATH="$DOME_BDF_RUNTIME_PREFIX/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 /usr/local/libexec/domed/check-bitmap-runtime --manifest "$bdf_manifest" || exit 1
 export DOME_LOGIN_SESSION=1 DOME_BACKEND=drm
 export LIBSEAT_BACKEND="${LIBSEAT_BACKEND:-logind}"

@@ -48,7 +48,7 @@ pub fn export(root: &Path, inherited: &str, _families: &[String]) -> std::io::Re
         .unwrap_or_else(|| PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".cache"))
         .join("de-xr/bdf2x-v1");
     std::fs::create_dir_all(&cache)?;
-    let accepted = "<pattern><patelt name=\"fontformat\"><string>BDF</string></patelt><patelt name=\"scalable\"><bool>false</bool></patelt></pattern>";
+    let accepted = "<pattern><patelt name=\"fontformat\"><string>BDF</string></patelt><patelt name=\"scalable\"><bool>false</bool></patelt></pattern><pattern><patelt name=\"fontformat\"><string>PCF</string></patelt><patelt name=\"scalable\"><bool>false</bool></patelt></pattern>";
     let path = root.join("fonts.conf");
     // Use pattern rules on both sides: glob rejections take precedence over
     // accepted patterns and would hide the bundled BDF faces as well.
@@ -136,8 +136,8 @@ mod tests {
         assert!(formats.status.success());
         let formats = String::from_utf8_lossy(&formats.stdout);
         assert!(!formats.is_empty());
-        assert!(formats.lines().all(|format| format == "BDF"),
-                "Session exports must admit BDF faces only: {formats}");
+        assert!(formats.lines().all(|format| matches!(format, "BDF" | "PCF")),
+                "Session exports must admit BDF/PCF faces only: {formats}");
         let retired = root.join("fonts/retired.bdf");
         std::fs::write(&retired, "old distribution font").unwrap();
         let modified = std::fs::metadata(&config).unwrap().modified().unwrap();

@@ -1,0 +1,127 @@
+--- a/include/freetype/ftfntfmt.h
++++ b/include/freetype/ftfntfmt.h
+@@ -85,6 +85,11 @@
+   /* */
+ 
+ 
++  /* DomeD native fixed-strike font policy; define
++   * FT_CONFIG_OPTION_ALLOW_NON_BITMAP_FONTS at build time to opt out. */
++  FT_EXPORT( FT_Bool ) FT_Dome_Bitmap_Only( void );
++  FT_EXPORT( FT_UInt ) FT_Dome_Bitmap_Formats( void );
++
+ FT_END_HEADER
+ 
+ #endif /* FTFNTFMT_H_ */
+--- a/include/freetype/ftoutln.h
++++ b/include/freetype/ftoutln.h
+@@ -166,6 +166,15 @@
+                   FT_Int       numContours,
+                   FT_Outline  *anoutline );
+ 
++  /*
++   * Kept downstream for ABI compatibility only.
++   * It just throws error now. Remove once soname has been bumped.
++   */
++  FT_EXPORT( FT_Error )
++  FT_Outline_New_Internal( FT_Memory    memory,
++                           FT_UInt      numPoints,
++                           FT_Int       numContours,
++                           FT_Outline  *anoutline );
+ 
+   /**************************************************************************
+    *
+@@ -193,6 +202,13 @@
+   FT_Outline_Done( FT_Library   library,
+                    FT_Outline*  outline );
+ 
++  /*
++   * Kept downstream for ABI compatibility only.
++   * It just throws error now. Remove once soname has been bumped.
++   */
++  FT_EXPORT( FT_Error )
++  FT_Outline_Done_Internal( FT_Memory    memory,
++                            FT_Outline*  outline );
+ 
+   /**************************************************************************
+    *
+--- a/src/base/ftfntfmt.c
++++ b/src/base/ftfntfmt.c
+@@ -51,4 +51,17 @@
+   }
+ 
+ 
++  FT_EXPORT_DEF( FT_Bool )
++  FT_Dome_Bitmap_Only( void )
++  {
++#ifdef FT_CONFIG_OPTION_ALLOW_NON_BITMAP_FONTS
++    return 0;
++#else
++    return 1;
++#endif
++  }
++
++  FT_EXPORT_DEF( FT_UInt )
++  FT_Dome_Bitmap_Formats( void ) { return 3; } /* BDF | PCF */
++
+ /* END */
+--- a/src/base/ftobjs.c
++++ b/src/base/ftobjs.c
+@@ -2716,6 +2716,18 @@
+     }
+ 
+   Success:
++#ifndef FT_CONFIG_OPTION_ALLOW_NON_BITMAP_FONTS
++    {
++      const char* format = FT_Get_Font_Format( face );
++      if ( !format || ( ft_strcmp( format, "BDF" ) && ft_strcmp( format, "PCF" ) ) ||
++           FT_IS_SCALABLE( face ) ||
++           ( face_index >= 0 && !FT_HAS_FIXED_SIZES( face ) ) )
++      {
++        error = FT_THROW( Unknown_File_Format );
++        goto Fail;
++      }
++    }
++#endif
+     FT_TRACE4(( "FT_Open_Face: New face object, adding to list\n" ));
+ 
+     /* add the face object to its driver's list */
+--- a/src/base/ftoutln.c
++++ b/src/base/ftoutln.c
+@@ -300,6 +300,19 @@
+ 
+   /* documentation is in ftoutln.h */
+ 
++  /*
++   * Kept downstream for ABI compatibility only.
++   * It just throws error now. Remove once soname has been bumped.
++   */
++  FT_EXPORT_DEF( FT_Error )
++  FT_Outline_New_Internal( FT_Memory    memory,
++                           FT_UInt      numPoints,
++                           FT_Int       numContours,
++                           FT_Outline  *anoutline )
++  {
++    return FT_THROW( Unimplemented_Feature );
++  }
++
+   FT_EXPORT_DEF( FT_Error )
+   FT_Outline_New( FT_Library   library,
+                   FT_UInt      numPoints,
+@@ -433,6 +446,17 @@
+ 
+ 
+   /* documentation is in ftoutln.h */
++
++  /*
++   * Kept downstream for ABI compatibility only.
++   * It just throws error now. Remove once soname has been bumped.
++   */
++  FT_EXPORT_DEF( FT_Error )
++  FT_Outline_Done_Internal( FT_Memory    memory,
++                            FT_Outline*  outline )
++  {
++    return FT_THROW( Unimplemented_Feature );
++  }
+ 
+   FT_EXPORT_DEF( FT_Error )
+   FT_Outline_Done( FT_Library   library,

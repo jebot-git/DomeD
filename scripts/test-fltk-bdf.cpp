@@ -40,7 +40,7 @@ int main(int argc, char **argv) try {
   if (FT_Init_FreeType(&library)) return 2;
   std::vector<std::filesystem::path> paths;
   for (auto &entry : std::filesystem::recursive_directory_iterator(argv[1]))
-    if (entry.path().extension() == ".bdf" && entry.path().filename() != "upstream.bdf") {
+    if ((entry.path().extension() == ".bdf" || entry.path().extension() == ".pcf") && entry.path().filename() != "upstream.bdf") {
       paths.push_back(entry.path());
       if (!FcConfigAppFontAddFile(nullptr, (FcChar8 *)entry.path().c_str()))
         throw std::runtime_error("Fontconfig rejected BDF " + entry.path().string());

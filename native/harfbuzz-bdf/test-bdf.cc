@@ -1,4 +1,4 @@
-// DomeD bitmap fork regression: real BDF metrics/shaping and outline rejection.
+// DomeD bitmap fork regression: real BDF/PCF metrics/shaping and outline rejection.
 #include <hb.h>
 #include <hb-ft.h>
 #include <ft2build.h>
@@ -20,37 +20,26 @@ int main(int argc, char **argv) try {
   hb_face_t *rejected = hb_face_create(outline, 0);
   check(!hb_face_get_glyph_count(rejected), "outline accepted by blob constructor");
   hb_face_destroy(rejected); hb_blob_destroy(outline);
-  for (bool font : {false, true}) {
-    FT_Face ft; check(!FT_New_Face(library, argv[1], 0, &ft), "load outline FT fixture");
-    if (font) {
-      hb_font_t *f = hb_ft_font_create(ft, destroy_ft);
-      check(!hb_face_get_glyph_count(hb_font_get_face(f)), "outline accepted by FT font constructor");
-      hb_font_destroy(f);
-    } else {
-      hb_face_t *f = hb_ft_face_create(ft, destroy_ft);
-      check(!hb_face_get_glyph_count(f), "outline accepted by FT face constructor");
-      hb_face_destroy(f);
-    }
-  }
-  check(destroyed == 2, "rejected FT ownership callback");
+  FT_Face outline_face = nullptr;
+  check(FT_New_Face(library, argv[1], 0, &outline_face) != 0, "FreeType outline policy");
   int calls = 0;
   hb_face_t *callback = hb_face_create_for_tables(table, &calls, destroy_int);
   check(!hb_face_get_glyph_count(callback) && calls == 1, "table callback bypass");
   hb_face_destroy(callback);
   hb_blob_t *bad = hb_blob_create("STARTFONT 2.1\n", 14, HB_MEMORY_MODE_READONLY, nullptr, nullptr);
-  rejected = hb_face_create(bad, 0); check(!hb_face_get_glyph_count(rejected), "malformed BDF accepted");
+  rejected = hb_face_create(bad, 0); check(!hb_face_get_glyph_count(rejected), "malformed BDF/PCF accepted");
   hb_face_destroy(rejected); hb_blob_destroy(bad);
   for (int i=2; i<argc; ++i) {
-    FT_Face ft; check(!FT_New_Face(library, argv[i], 0, &ft), "load BDF");
-    check(!FT_Select_Charmap(ft, FT_ENCODING_UNICODE) && !FT_Select_Size(ft, 0), "select BDF Unicode strike");
-    hb_blob_t *blob = hb_blob_create_from_file_or_fail(argv[i]); check(blob, "BDF blob");
-    check(hb_face_count(blob) == 1, "BDF face count");
+    FT_Face ft; check(!FT_New_Face(library, argv[i], 0, &ft), "load BDF/PCF");
+    check(!FT_Select_Charmap(ft, FT_ENCODING_UNICODE) && !FT_Select_Size(ft, 0), "select BDF/PCF Unicode strike");
+    hb_blob_t *blob = hb_blob_create_from_file_or_fail(argv[i]); check(blob, "BDF/PCF blob");
+    check(hb_face_count(blob) == 1, "BDF/PCF face count");
     hb_face_t *face = hb_face_create(blob, 0); hb_blob_destroy(blob);
     check(hb_face_get_glyph_count(face) == static_cast<unsigned>(ft->num_glyphs), "native glyph count");
     check(hb_face_get_upem(face) == ft->size->metrics.y_ppem, "bitmap design units");
     hb_set_t *coverage = hb_set_create();
     hb_face_collect_unicodes(face, coverage);
-    check(hb_set_has(coverage, 'M') && hb_set_has(coverage, 'A'), "BDF Unicode coverage");
+    check(hb_set_has(coverage, 'M') && hb_set_has(coverage, 'A'), "BDF/PCF Unicode coverage");
     unsigned covered = 0; FT_UInt glyph_index;
     for (FT_ULong cp=FT_Get_First_Char(ft, &glyph_index); glyph_index;
          cp=FT_Get_Next_Char(ft, cp, &glyph_index)) {
@@ -80,7 +69,7 @@ int main(int argc, char **argv) try {
           hb_shape(font, buffer, nullptr, 0);
           unsigned count; auto info = hb_buffer_get_glyph_infos(buffer, &count);
           auto positions = hb_buffer_get_glyph_positions(buffer, nullptr);
-          check(count == 3, "BDF shaping lost glyphs");
+          check(count == 3, "BDF/PCF shaping lost glyphs");
           for (unsigned j=0; j<count; ++j) {
             unsigned cluster = direction == HB_DIRECTION_RTL ? 2-j : j;
             auto glyph = FT_Get_Char_Index(ft, "M A"[cluster]);
@@ -94,7 +83,7 @@ int main(int argc, char **argv) try {
       hb_font_destroy(font);
     }
     hb_face_destroy(face); FT_Done_Face(ft);
-    std::cout << "PASS native BDF blob/FreeType metrics, 1x/2x, LTR/RTL: " << argv[i] << '\n';
+    std::cout << "PASS native BDF/PCF blob/FreeType metrics, 1x/2x, LTR/RTL: " << argv[i] << '\n';
   }
   FT_Done_FreeType(library);
   std::cout << "PASS outline, table callback and malformed-font rejection; ownership callbacks\n";

@@ -1,0 +1,71 @@
+{
+  "policy": "native-unicode-bitmap-only",
+  "formats": [
+    "BDF",
+    "PCF"
+  ],
+  "harfbuzz_fork": "https://github.com/jebot-git/harfbuzz.git",
+  "harfbuzz_branch": "domed-bitmap",
+  "harfbuzz_revision": "b71a54f31f03853d655438abbd70ca8a00a73b4c",
+  "sources": [
+    {
+      "file": "freetype-2.14.3.tar.xz",
+      "url": "https://download.savannah.gnu.org/releases/freetype/freetype-2.14.3.tar.xz",
+      "sha256": "36bc4f1cc413335368ee656c42afca65c5a3987e8768cc28cf11ba775e785a5f",
+      "bytes": 2670220,
+      "name": "freetype",
+      "version": "2.14.3",
+      "directory": "freetype-2.14.3",
+      "patch": "freetype-2.14.3-bitmap.patch",
+      "patch_sha256": "d4bc632b097cc78f3baeafc59d9e2b854359b5125e63f69be3d9c53a3d11be4e",
+      "licenses": [
+        "LICENSE.TXT",
+        "docs/FTL.TXT",
+        "docs/GPLv2.TXT"
+      ]
+    },
+    {
+      "file": "harfbuzz-14.1.0.tar.xz",
+      "url": "https://github.com/harfbuzz/harfbuzz/releases/download/14.1.0/harfbuzz-14.1.0.tar.xz",
+      "sha256": "ee0eb3a1da2c5a28147f12dff55f6c7d60aeeeb29ac7ef334eabe84c8476c105",
+      "name": "harfbuzz",
+      "version": "14.1.0",
+      "directory": "harfbuzz-14.1.0",
+      "patch": "harfbuzz-14.1.0-bitmap.patch",
+      "patch_sha256": "bc141a1d93dedf0a3c9f8f44e9a48fbce268e2d1cdd9c723fa24544962322bf4",
+      "licenses": [
+        "COPYING"
+      ]
+    },
+    {
+      "file": "cairo-1.18.4.tar.xz",
+      "url": "https://cairographics.org/releases/cairo-1.18.4.tar.xz",
+      "sha256": "445ed8208a6e4823de1226a74ca319d3600e83f6369f99b14265006599c32ccb",
+      "bytes": 32578804,
+      "name": "cairo",
+      "version": "1.18.4",
+      "directory": "cairo-1.18.4",
+      "patch": "cairo-1.18.4-bitmap.patch",
+      "patch_sha256": "4aa6c2229c3cf6e99d955b4df0f9dddbc969fd3bdd56e1f779c008fc2c3e3f23",
+      "licenses": [
+        "COPYING",
+        "COPYING-LGPL-2.1",
+        "COPYING-MPL-1.1"
+      ]
+    },
+    {
+      "file": "pango-1.57.1.tar.xz",
+      "url": "https://download.gnome.org/sources/pango/1.57/pango-1.57.1.tar.xz",
+      "sha256": "e65d6d117080dc3aeeb7d8b4b3b518f7383aa2e6cfce23117c623cd624764c2f",
+      "bytes": 2588416,
+      "name": "pango",
+      "version": "1.57.1",
+      "directory": "pango-1.57.1",
+      "patch": "pango-1.57.1-bitmap.patch",
+      "patch_sha256": "8d190e919dc188f435bf05c9c7b363053d36ac8bced8f0242c9bf6c1e38f6ea0",
+      "licenses": [
+        "COPYING"
+      ]
+    }
+  ]
+}

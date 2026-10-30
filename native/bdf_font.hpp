@@ -3,10 +3,15 @@
 // Francesco149/bdf2x (Unlicense); see bdf2x/upstream.json for the pinned source.
 #pragma once
 #include <fontconfig/fontconfig.h>
+#include <ft2build.h>
+#include FT_FREETYPE_H
+#include FT_FONT_FORMATS_H
+#include FT_BDF_H
 #include <zlib.h>
 #include <algorithm>
 #include <chrono>
 #include <cctype>
+#include <cstring>
 #include <cstdlib>
 #include <cstdint>
 #include <filesystem>
@@ -18,13 +23,6 @@
 #include <string>
 #include <vector>
 namespace bdf_fonts {
-inline bool default_family(std::string family) {
-  family = family.substr(0, family.find(" ["));
-  std::transform(family.begin(), family.end(), family.begin(), [](unsigned char c) { return std::tolower(c); });
-  static const std::set<std::string> names = {"unifont", "unifont upper", "x10y12pxdenkichiphangul", "ufo16",
-      "x10y12pxdonguriduel", "x12y16pxlinelinker", "x12y16pxmarumonica", "x12y16pxsolidlinker", "x12y20pxscanline", "x14y20pxscoredozer", "x14y24pxheadupdaisy", "x16y32pxgridgazer", "x8y12pxthestronggamer", "x8y12pxdenkichip", "x5y8pxnegaclip", "x5y8pxnegatape", "tekuplus", "x12y12pxmaruminyahangul", "domed shijimi", "x12y12pxmaruminya"};
-  return names.count(family) || family.rfind("galmuri", 0) == 0 || (family.rfind("fusion pixel ", 0) == 0 && (family.size() >= 5 && (family.compare(family.size()-5, 5, " mono") == 0 || family.compare(family.size()-5, 5, " prop") == 0))) || family.rfind("ark pixel ", 0) == 0 || family.rfind("jelly pixel ", 0) == 0 || family.rfind("retro pixel ", 0) == 0;
-}
 inline std::string identity(const std::string &family, const std::string &style) {
   auto variant = family.find(" [");
   if (variant != std::string::npos && family.back() == ']')
@@ -37,6 +35,71 @@ struct Face {
   bool text = true;
   std::string id() const { return identity(family, style); }
 };
+// Lossless adapter for FLTK's BDF cache and integer enlargement. The input is
+// a host PCF strike; only Unicode mapping/metadata changes, never glyph pixels.
+inline std::string pcf_bdf(const std::string &bytes) {
+  struct Owner {
+    FT_Library library = nullptr; FT_Face face = nullptr;
+    ~Owner() { if (face) FT_Done_Face(face); if (library) FT_Done_FreeType(library); }
+  } owner;
+  if (FT_Init_FreeType(&owner.library) ||
+      FT_New_Memory_Face(owner.library, (const FT_Byte *)bytes.data(), bytes.size(), 0, &owner.face))
+    throw std::runtime_error("Cannot decode PCF strike");
+  auto face = owner.face;
+  if (!FT_Get_Font_Format(face) || strcmp(FT_Get_Font_Format(face), "PCF") ||
+      FT_IS_SCALABLE(face) || face->num_fixed_sizes != 1 ||
+      FT_Select_Charmap(face, FT_ENCODING_UNICODE) || FT_Select_Size(face, 0))
+    throw std::runtime_error("PCF requires one native Unicode bitmap strike");
+  std::string family = face->family_name ? face->family_name : "PCF";
+  for (char &c : family) if (c == '"' || c == '\n' || c == '\r') c = '_';
+  std::ostringstream glyphs; unsigned count = 0; int left = 0, right = 0, bottom = 0, top = 0;
+  FT_UInt glyph; static const char hex[] = "0123456789ABCDEF";
+  for (FT_ULong cp = FT_Get_First_Char(face, &glyph); glyph; cp = FT_Get_Next_Char(face, cp, &glyph)) {
+    if (cp > 0x10ffff || FT_Load_Glyph(face, glyph, FT_LOAD_DEFAULT) || face->glyph->format != FT_GLYPH_FORMAT_BITMAP)
+      throw std::runtime_error("Invalid PCF character map or bitmap");
+    auto slot = face->glyph; auto &bitmap = slot->bitmap;
+    if ((bitmap.width && bitmap.rows && bitmap.pixel_mode != FT_PIXEL_MODE_MONO) || bitmap.width > 512 || bitmap.rows > 256)
+      throw std::runtime_error("PCF strike exceeds native bitmap bounds");
+    int x = slot->bitmap_left, y = slot->bitmap_top - int(bitmap.rows);
+    left = std::min(left, x); right = std::max(right, x + int(bitmap.width));
+    bottom = std::min(bottom, y); top = std::max(top, slot->bitmap_top);
+    glyphs << "STARTCHAR uni" << cp << "\nENCODING " << cp << "\nSWIDTH 500 0\nDWIDTH " << slot->advance.x / 64 << " " << slot->advance.y / 64
+           << "\nBBX " << bitmap.width << " " << bitmap.rows << " " << x << " " << y << "\nBITMAP\n";
+    for (unsigned row = 0; row < bitmap.rows; ++row) {
+      auto data = bitmap.buffer + (bitmap.pitch >= 0 ? row : bitmap.rows - 1 - row) * std::abs(bitmap.pitch);
+      for (unsigned col = 0; col < (bitmap.width + 7) / 8; ++col) {
+        unsigned value = data[col];
+        if (col + 1 == (bitmap.width + 7) / 8 && bitmap.width % 8) value &= 255 << (8 - bitmap.width % 8);
+        glyphs << hex[value >> 4] << hex[value & 15];
+      }
+      glyphs << '\n';
+    }
+    glyphs << "ENDCHAR\n"; ++count;
+    if (glyphs.tellp() > 128 * 1024 * 1024) throw std::runtime_error("PCF adapter exceeds cache limit");
+  }
+  std::ostringstream properties;
+  unsigned property_count = 6;
+  // PCF stores the original XLFD properties. Preserve its style/foundry so
+  // conversion and 2x selection keep the host identity as well as its pixels.
+  for (const char *name : {"FOUNDRY", "WEIGHT_NAME", "SLANT", "SETWIDTH_NAME", "ADD_STYLE_NAME", "SPACING", "RESOLUTION_X", "RESOLUTION_Y", "POINT_SIZE"}) {
+    BDF_PropertyRec property;
+    if (FT_Get_BDF_Property(face, name, &property)) continue;
+    if (property.type == BDF_PROPERTY_TYPE_ATOM && property.u.atom) {
+      std::string value = property.u.atom;
+      for (char &c : value) if (c == '"' || c == '\n' || c == '\r') c = '_';
+      properties << name << " \"" << value << "\"\n";
+    } else if (property.type == BDF_PROPERTY_TYPE_INTEGER) properties << name << " " << property.u.integer << "\n";
+    else if (property.type == BDF_PROPERTY_TYPE_CARDINAL) properties << name << " " << property.u.cardinal << "\n";
+    else continue;
+    ++property_count;
+  }
+  int pixels = face->size->metrics.y_ppem;
+  std::ostringstream out;
+  out << "STARTFONT 2.1\nFONT -Dome-PCF-medium-r-normal--" << pixels << "-0-75-75-C-0-ISO10646-1\nSIZE " << pixels << " 75 75\nFONTBOUNDINGBOX " << right-left << " " << top-bottom << " " << left << " " << bottom
+      << "\nSTARTPROPERTIES " << property_count << "\nFAMILY_NAME \"" << family << "\"\nPIXEL_SIZE " << pixels << "\nFONT_ASCENT " << face->size->metrics.ascender / 64 << "\nFONT_DESCENT " << -face->size->metrics.descender / 64
+      << "\nCHARSET_REGISTRY \"ISO10646\"\nCHARSET_ENCODING \"1\"\n" << properties.str() << "ENDPROPERTIES\nCHARS " << count << "\n" << glyphs.str() << "ENDFONT\n";
+  return out.str();
+}
 inline std::string read(const std::string &file) {
   gzFile f = gzopen(file.c_str(), "rb");
   if (!f) throw std::runtime_error("Cannot read BDF: " + file);
@@ -47,7 +110,9 @@ inline std::string read(const std::string &file) {
     if (data.size() > 128 * 1024 * 1024) { gzclose(f); throw std::runtime_error("BDF exceeds 128 MiB"); }
   }
   gzclose(f);
-  if (n < 0 || data.rfind("STARTFONT ", 0) != 0) throw std::runtime_error("Invalid BDF: " + file);
+  if (n < 0) throw std::runtime_error("Cannot read bitmap font: " + file);
+  if (data.size() >= 4 && (unsigned char)data[0] == 1 && data.substr(1, 3) == "fcp") return pcf_bdf(data);
+  if (data.rfind("STARTFONT ", 0) != 0) throw std::runtime_error("Invalid BDF/PCF: " + file);
   return data;
 }
 inline std::string twice(const std::string &data, const std::string &family = "") {
@@ -109,7 +174,7 @@ inline std::string twice(const std::string &data, const std::string &family = ""
   return output.str();
 }
 inline bool inspect(const std::string &file, Face &face) {
-  if (file.size() >= 3 && file.substr(file.size()-3) == ".gz") {
+  if (file.size() >= 3 && file.substr(file.size()-3) == ".gz" && file.find(".pcf") == std::string::npos) {
     try {
       auto bytes = read(file); unsigned long long hash=14695981039346656037ull;
       for(unsigned char c:bytes){hash^=c;hash*=1099511628211ull;}
@@ -128,7 +193,7 @@ inline bool inspect(const std::string &file, Face &face) {
   if (!p) return false;
   FcChar8 *format = nullptr, *family = nullptr, *style = nullptr; double pixels = 0;
   bool ok = FcPatternGetString(p, FC_FONTFORMAT, 0, &format) == FcResultMatch &&
-    !FcStrCmp(format, (const FcChar8 *)"BDF") &&
+    (!FcStrCmp(format, (const FcChar8 *)"BDF") || !FcStrCmp(format, (const FcChar8 *)"PCF")) &&
     FcPatternGetString(p, FC_FAMILY, 0, &family) == FcResultMatch &&
     FcPatternGetDouble(p, FC_PIXEL_SIZE, 0, &pixels) == FcResultMatch && pixels >= 4 && pixels <= 128;
   if (ok) {
@@ -173,7 +238,7 @@ inline std::vector<Face> discover(bool force = false) {
   }
   auto objects = FcObjectSetBuild(FC_FILE, nullptr);
   auto filter = FcPatternCreate();
-  FcPatternAddString(filter, FC_FONTFORMAT, (const FcChar8 *)"BDF");
+  FcPatternAddBool(filter, FC_SCALABLE, FcFalse);
   auto listed = FcFontList(nullptr, filter, objects);
   FcPatternDestroy(filter);
   if (listed) { for (int i = 0; i < listed->nfont; ++i) { FcChar8 *file; if (FcPatternGetString(listed->fonts[i], FC_FILE, 0, &file) == FcResultMatch) files.emplace((const char *)file); } FcFontSetDestroy(listed); }
@@ -205,7 +270,7 @@ inline std::vector<Face> discover(bool force = false) {
       if (error) { error.clear(); continue; }
       auto name = it->path().string(); auto suffix = name;
       std::transform(suffix.begin(),suffix.end(),suffix.begin(),[](unsigned char c){return std::tolower(c);});
-      if (suffix.size() >= 4 && (suffix.substr(suffix.size()-4) == ".bdf" || (name.size() >= 7 && suffix.substr(suffix.size()-7) == ".bdf.gz"))) files.insert(name);
+      if (suffix.size() >= 4 && (suffix.substr(suffix.size()-4) == ".bdf" || suffix.substr(suffix.size()-4) == ".pcf" || (name.size() >= 7 && (suffix.substr(suffix.size()-7) == ".bdf.gz" || suffix.substr(suffix.size()-7) == ".pcf.gz")))) files.insert(name);
     }
   }
   faces.clear();
@@ -225,14 +290,6 @@ inline std::vector<Face> discover(bool force = false) {
 
     }
     Face f = found->second.face;
-    // Retired default faces can survive in old installations and exported caches.
-    // Personal BDF directories remain available for explicitly installed fonts.
-    bool distributed = file.find("/assets/fonts/") != std::string::npos ||
-        file.find("/share/fonts/domed/") != std::string::npos ||
-        file.find("/de-xr/bundled/fonts/") != std::string::npos ||
-        file.find("/dome-fonts/fonts/") != std::string::npos ||
-        (file.find("/dome-appearance-") != std::string::npos && file.find("/fonts/") != std::string::npos);
-    if (distributed && !default_family(f.family)) continue;
     if (found->second.valid && f.family.rfind("Dome 2x ", 0) != 0 && f.family.rfind("Dome Qt BDF ", 0) != 0 && f.family.rfind("Dome Media BDF ", 0) != 0) {
       faces.push_back(f);
     }
@@ -283,9 +340,9 @@ inline Face qt_alias(const Face &face, const std::string &role = "qt") {
   if(prior!=cached.end() && prior->second.first==modified && std::filesystem::exists(prior->second.second.file))return prior->second.second;
   auto bytes=read(face.file);unsigned long long hash=14695981039346656037ull;
   for(unsigned char c:bytes){hash^=c;hash*=1099511628211ull;}
-  auto family=std::string(role == "media" ? "Dome Media BDF " : "Dome Qt BDF ")+std::to_string(hash);
+  auto family=std::string(role == "media" ? "Dome Media BDF " : role == "browser" ? "Dome Browser Bitmap " : "Dome Qt BDF ")+std::to_string(hash);
   auto base=getenv("XDG_CACHE_HOME"),home=getenv("HOME");
-  auto directory=std::filesystem::path(base ? base : home ? std::string(home)+"/.cache" : "/tmp")/("de-xr/bdf-"+role+"-v1");
+  auto directory=std::filesystem::path(base ? base : home ? std::string(home)+"/.cache" : "/tmp")/("de-xr/bdf-"+role+"-v2");
   std::filesystem::create_directories(directory);auto path=directory/(std::to_string(hash)+".bdf");
   if(!std::filesystem::exists(path)){
     std::istringstream input(bytes);std::ostringstream out;std::string line;bool property=false;
@@ -307,9 +364,6 @@ inline Face resolve(const std::string &family, const std::string &style, int pix
   auto faces = discover();
   auto found = std::find_if(faces.begin(), faces.end(), [&](const Face &f) { return (style.empty() ? f.family == family : f.id() == family + " / " + style) && f.pixels == pixels; });
   if (found == faces.end()) throw std::runtime_error("BDF face/size is unavailable: " + family);
-  // Register matching native fallback strikes before a toolkit resolves glyphs.
-  for (const auto &face : faces)
-    if (face.family == "Unifont Upper") scaled(face, scale);
   return scaled(*found, scale);
 }
 inline std::string export_config() {
@@ -330,9 +384,17 @@ inline std::string export_config() {
   directories.insert((cache/"bdf2x-v1").string());
   std::filesystem::create_directories(cache/"bdf-media-v1");
   directories.insert((cache/"bdf-media-v1").string());
-  std::string xml = "<?xml version=\"1.0\"?><!DOCTYPE fontconfig SYSTEM \"urn:fontconfig:fonts.dtd\"><fontconfig><include ignore_missing=\"yes\">"+escape(inherited)+"</include>";
+  std::string xml = "<?xml version=\"1.0\"?><!DOCTYPE fontconfig SYSTEM \"urn:fontconfig:fonts.dtd\"><fontconfig>";
+#ifdef DOME_OUTLINE_FONTS
+  xml += "<include ignore_missing=\"yes\">"+escape(inherited)+"</include>";
+#endif
   for (const auto &directory : directories) xml += "<dir>"+escape(directory)+"</dir>";
-  xml += "<selectfont><rejectfont><glob>*</glob></rejectfont><acceptfont><glob>*.bdf</glob><glob>*.bdf.gz</glob><glob>*.BDF</glob><glob>*.BDF.gz</glob><pattern><patelt name=\"fontformat\"><string>BDF</string></patelt></pattern></acceptfont></selectfont></fontconfig>";
+#ifdef DOME_OUTLINE_FONTS
+  xml += "<selectfont><acceptfont><pattern><patelt name=\"scalable\"><bool>true</bool></patelt></pattern><pattern><patelt name=\"fontformat\"><string>BDF</string></patelt></pattern></acceptfont></selectfont>";
+#else
+  xml += "<selectfont><rejectfont><pattern/></rejectfont><acceptfont><pattern><patelt name=\"fontformat\"><string>BDF</string></patelt><patelt name=\"scalable\"><bool>false</bool></patelt></pattern><pattern><patelt name=\"fontformat\"><string>PCF</string></patelt><patelt name=\"scalable\"><bool>false</bool></patelt></pattern></acceptfont></selectfont>";
+#endif
+  xml += "</fontconfig>";
   unsigned long long hash=14695981039346656037ull;for(unsigned char c:xml){hash^=c;hash*=1099511628211ull;}
   auto path=cache/"fontconfig"/(std::to_string(hash)+".conf");
   if(!std::filesystem::is_regular_file(path)){

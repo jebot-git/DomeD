@@ -1,3 +1,6 @@
+Current BDF/PCF runtime: see [../bitmap-runtime/README.md](../bitmap-runtime/README.md).
+The pinned 12.3.2 BDF-only files below are retained as historical provenance.
+
 # DomeD native BDF HarfBuzz fork
 
 This is a [separate HarfBuzz fork](https://github.com/jebot-git/harfbuzz/tree/domed-bdf)

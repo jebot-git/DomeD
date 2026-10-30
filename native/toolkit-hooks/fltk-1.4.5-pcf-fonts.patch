@@ -1,0 +1,87 @@
+--- a/src/drivers/Cairo/Fl_Cairo_Graphics_Driver.cxx
++++ b/src/drivers/Cairo/Fl_Cairo_Graphics_Driver.cxx
+@@ -1047,6 +1047,30 @@
+ #include <set>
+ #include <string>
+ #include <vector>
++// Fontconfig treats multiple fontformat values as an intersection. Query
++// each native bitmap format separately, then merge the resulting patterns.
++static FcFontSet *dome_bitmap_list(FcPattern *filter, FcObjectSet *objects) {
++  auto result = FcFontSetCreate();
++  if (!result) return nullptr;
++  for (const char *format : {"BDF", "PCF"}) {
++    if (getenv("DE_XR_LIGHTXR_PCF") && !strcmp(format, "BDF")) continue;
++    auto query = FcPatternDuplicate(filter);
++    if (!query) { FcFontSetDestroy(result); return nullptr; }
++    FcPatternDel(query, FC_FONTFORMAT);
++    FcPatternAddString(query, FC_FONTFORMAT, (const FcChar8 *)format);
++    auto fonts = FcFontList(nullptr, query, objects); FcPatternDestroy(query);
++    if (!fonts) continue;
++    for (int i = 0; i < fonts->nfont; ++i) {
++      auto copy = FcPatternDuplicate(fonts->fonts[i]);
++      if (!copy || !FcFontSetAdd(result, copy)) {
++        if (copy) FcPatternDestroy(copy);
++        FcFontSetDestroy(fonts); FcFontSetDestroy(result); return nullptr;
++      }
++    }
++    FcFontSetDestroy(fonts);
++  }
++  return result;
++}
+ static FT_Face dome_bitmap_name(const char *name, Fl_Fontsize size) {
+   static FT_Library library = NULL;
+   static std::map<std::pair<std::string,int>,FT_Face> cache;
+@@ -1066,7 +1090,7 @@
+   auto filter = FcPatternCreate();
+   FcPatternAddString(filter, FC_FONTFORMAT, (const FcChar8 *)format);
+   auto objects = FcObjectSetBuild(FC_FILE, FC_FAMILY, FC_STYLE, FC_PIXEL_SIZE, FC_FONTFORMAT, nullptr);
+-  auto available = FcFontList(nullptr, filter, objects);
++  auto available = dome_bitmap_list(filter, objects);
+   FcPatternDestroy(filter); FcObjectSetDestroy(objects);
+   auto query = FcPatternCreate();
+   FcPatternAddString(query, FC_FAMILY, (const FcChar8 *)family.c_str());
+@@ -1081,7 +1105,7 @@
+     if (!library) FT_Init_FreeType(&library);
+     if (library && !FT_New_Face(library, (const char *)file, 0, &face)) {
+       bool ok = !FT_IS_SCALABLE(face) && face->num_fixed_sizes && FT_Get_Font_Format(face) &&
+-        !strcmp(FT_Get_Font_Format(face), format) && !FT_Select_Charmap(face, FT_ENCODING_UNICODE);
++        (!strcmp(FT_Get_Font_Format(face), "BDF") || !strcmp(FT_Get_Font_Format(face), "PCF")) && !FT_Select_Charmap(face, FT_ENCODING_UNICODE);
+       int best = 0;
+       for (int i = 1; i < face->num_fixed_sizes; ++i)
+         if (abs(int(face->available_sizes[i].y_ppem/64)-size) < abs(int(face->available_sizes[best].y_ppem/64)-size)) best=i;
+@@ -1115,7 +1139,7 @@
+   FcPatternAddString(filter, FC_FONTFORMAT, (const FcChar8 *)"BDF");
+   FcPatternAddCharSet(filter, FC_CHARSET, charset); FcCharSetDestroy(charset);
+   auto objects = FcObjectSetBuild(FC_FILE, FC_FAMILY, FC_PIXEL_SIZE, FC_FONTFORMAT, nullptr);
+-  auto available = FcFontList(nullptr, filter, objects);
++  auto available = dome_bitmap_list(filter, objects);
+   FcPatternDestroy(filter); FcObjectSetDestroy(objects);
+   auto query = FcPatternCreate();
+   int pixels = primary->size->metrics.y_ppem;
+@@ -1133,7 +1157,7 @@
+       if (!library) FT_Init_FreeType(&library);
+       if (library && !FT_New_Face(library, (const char *)file, 0, &face)) {
+         bool valid = !FT_IS_SCALABLE(face) && face->num_fixed_sizes &&
+-          FT_Get_Font_Format(face) && !strcmp(FT_Get_Font_Format(face), "BDF") &&
++          FT_Get_Font_Format(face) && (!strcmp(FT_Get_Font_Format(face), "BDF") || !strcmp(FT_Get_Font_Format(face), "PCF")) &&
+           !FT_Select_Charmap(face, FT_ENCODING_UNICODE);
+         int best = 0;
+         for (int i = 1; i < face->num_fixed_sizes; ++i)
+@@ -1248,7 +1272,7 @@
+   auto filter=FcPatternCreate();
+   FcPatternAddString(filter,FC_FONTFORMAT,(const FcChar8 *)(getenv("DE_XR_LIGHTXR_PCF") ? "PCF" : "BDF"));
+   auto objects=FcObjectSetBuild(FC_FAMILY,FC_STYLE,nullptr);
+-  auto fonts=FcFontList(nullptr,filter,objects);
++  auto fonts=dome_bitmap_list(filter,objects);
+   std::set<std::string> names;
+   if(fonts)for(int i=0;i<fonts->nfont;++i){
+     FcChar8 *family=nullptr,*style=nullptr;
+@@ -1313,7 +1337,7 @@
+   FcPatternAddString(filter,FC_FONTFORMAT,(const FcChar8 *)(getenv("DE_XR_LIGHTXR_PCF") ? "PCF" : "BDF"));
+   FcPatternAddString(filter,FC_FAMILY,(const FcChar8 *)family.c_str());
+   if(!style.empty())FcPatternAddString(filter,FC_STYLE,(const FcChar8 *)style.c_str());
+-  auto objects=FcObjectSetBuild(FC_PIXEL_SIZE,nullptr);auto fonts=FcFontList(nullptr,filter,objects);
++  auto objects=FcObjectSetBuild(FC_PIXEL_SIZE,nullptr);auto fonts=dome_bitmap_list(filter,objects);
+   if(fonts)for(int i=0;i<fonts->nfont;++i){double size=0;if(FcPatternGetDouble(fonts->fonts[i],FC_PIXEL_SIZE,0,&size)==FcResultMatch)sizes.push_back(int(size+.5));}
+   if(fonts)FcFontSetDestroy(fonts);FcPatternDestroy(filter);FcObjectSetDestroy(objects);
+   std::sort(sizes.begin(),sizes.end());sizes.erase(std::unique(sizes.begin(),sizes.end()),sizes.end());

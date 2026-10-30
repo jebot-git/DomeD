@@ -1,0 +1,49 @@
+--- a/src/cairo-ft-font.c
++++ b/src/cairo-ft-font.c
+@@ -51,6 +51,7 @@
+ #include "cairo-recording-surface-private.h"
+ 
+ #include <float.h>
++#include FT_FONT_FORMATS_H
+ 
+ #include "cairo-fontconfig-private.h"
+ 
+@@ -4487,6 +4488,14 @@
+     cairo_ft_options_t ft_options;
+     cairo_status_t status;
+ 
++#ifndef CAIRO_ALLOW_NON_BITMAP_FONTS
++    const char *format = face ? FT_Get_Font_Format (face) : NULL;
++    if (!format || (strcmp (format, "BDF") && strcmp (format, "PCF")) || FT_IS_SCALABLE (face)) {
++        font_face = cairo_user_font_face_create ();
++        _cairo_font_face_set_error (font_face, CAIRO_STATUS_INVALID_FORMAT);
++        return font_face;
++    }
++#endif
+     status = _cairo_ft_unscaled_font_create_from_face (face, &unscaled);
+     if (unlikely (status))
+ 	return (cairo_font_face_t *)&_cairo_font_face_nil;
+@@ -4708,3 +4717,12 @@
+ {
+     _cairo_ft_unscaled_font_map_destroy ();
+ }
++
++cairo_public cairo_bool_t cairo_dome_bitmap_only (void);
++cairo_bool_t cairo_dome_bitmap_only (void) {
++#ifdef CAIRO_ALLOW_NON_BITMAP_FONTS
++    return 0;
++#else
++    return 1;
++#endif
++}
+--- a/src/cairo-ft.h
++++ b/src/cairo-ft.h
+@@ -51,6 +51,8 @@
+ #endif
+ 
+ CAIRO_BEGIN_DECLS
++
++cairo_public cairo_bool_t cairo_dome_bitmap_only (void);
+ 
+ cairo_public cairo_font_face_t *
+ cairo_ft_font_face_create_for_ft_face (FT_Face         face,
