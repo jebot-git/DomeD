@@ -1,2 +1,4 @@
 # Preserve the checksum-pinned upstream CRLF author notice byte-for-byte.
 assets/fonts/hicchicc--maruminya/AUTHORS.txt -text whitespace=cr-at-eol
+# Unified-diff context includes required leading spaces and upstream tabs.
+native/harfbuzz-bdf/*.patch -whitespace

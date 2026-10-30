@@ -5,6 +5,7 @@ stage="${DOME_STAGE_DIR:-$root/build/system-stage}"
 release="${DOME_RELEASE_DIR:-$root/target/release}"
 "$root/scripts/stage-askpass.sh" "$stage"
 "$root/scripts/stage-tray.sh" "$stage"
+install -D -m 0755 "$root/scripts/check-bitmap-runtime.py" "$stage/usr/local/libexec/domed/check-bitmap-runtime"
 "$release/dome-compositor" --backend drm --check-backend
 for name in dome-compositor dome-xr dome-preview dome-portal-picker dome-bdf-font; do
     install -D -m 0755 "$release/$name" "$stage/usr/local/bin/$name"

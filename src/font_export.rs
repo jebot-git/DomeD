@@ -36,14 +36,9 @@ fn prune_retired(directory: &Path, root: &Path, retained: &std::collections::Has
 /// without replacing its themes or restarting the compositor.
 pub fn export(root: &Path, inherited: &str, _families: &[String]) -> std::io::Result<PathBuf> {
     let directory = root.join("fonts");
-    let mut accepted = String::new();
     for (name, bytes) in crate::bundled_fonts::FONTS {
         let path = directory.join(name);
         write_if_changed(&path, bytes)?;
-        accepted.push_str(&format!(
-            "<pattern><patelt name=\"file\"><string>{}</string></patelt></pattern>",
-            xml(&path.to_string_lossy())
-        ));
     }
     let retained = crate::bundled_fonts::FONTS.iter().map(|(name, _)| *name).collect();
     prune_retired(&directory, &directory, &retained)?;
@@ -53,11 +48,12 @@ pub fn export(root: &Path, inherited: &str, _families: &[String]) -> std::io::Re
         .unwrap_or_else(|| PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".cache"))
         .join("de-xr/bdf2x-v1");
     std::fs::create_dir_all(&cache)?;
-    accepted.push_str("<pattern><patelt name=\"fontformat\"><string>BDF</string></patelt></pattern>");
+    let accepted = "<pattern><patelt name=\"fontformat\"><string>BDF</string></patelt><patelt name=\"scalable\"><bool>false</bool></patelt></pattern>";
     let path = root.join("fonts.conf");
     // Use pattern rules on both sides: glob rejections take precedence over
     // accepted patterns and would hide the bundled BDF faces as well.
-    let configuration = format!("<?xml version=\"1.0\"?><!DOCTYPE fontconfig SYSTEM \"urn:fontconfig:fonts.dtd\"><fontconfig><include ignore_missing=\"yes\">{}</include><dir>{}</dir><dir>{}</dir><cachedir>{}</cachedir><selectfont><rejectfont><pattern/></rejectfont><acceptfont><glob>*.bdf</glob><glob>*.bdf.gz</glob><glob>*.BDF</glob><glob>*.BDF.gz</glob>{accepted}</acceptfont></selectfont></fontconfig>", xml(inherited), xml(&directory.to_string_lossy()), xml(&cache.to_string_lossy()), xml(&root.join("font-cache").to_string_lossy()));
+    // Match the decoded face, not its suffix: a renamed TTF is still an outline.
+    let configuration = format!("<?xml version=\"1.0\"?><!DOCTYPE fontconfig SYSTEM \"urn:fontconfig:fonts.dtd\"><fontconfig><include ignore_missing=\"yes\">{}</include><dir>{}</dir><dir>{}</dir><cachedir>{}</cachedir><selectfont><rejectfont><pattern/></rejectfont><acceptfont>{accepted}</acceptfont></selectfont></fontconfig>", xml(inherited), xml(&directory.to_string_lossy()), xml(&cache.to_string_lossy()), xml(&root.join("font-cache").to_string_lossy()));
     write_if_changed(&path, configuration.as_bytes())?;
     Ok(path)
 }
@@ -109,7 +105,9 @@ mod tests {
         let config = export(&root, "/etc/fonts/fonts.conf", &["A&B".into()]).unwrap();
         let data = std::fs::read_to_string(&config).unwrap();
         assert!(!data.contains("A&amp;B"), "Family aliases must not admit outline fonts with the same name");
-        assert!(data.contains("TakWolf--jelly-pixel-font/jelly-pixel-12px-monospaced-mixed.bdf"));
+        assert!(data.contains("<string>BDF</string>"));
+        assert!(data.contains("<bool>false</bool>"));
+        assert!(!data.contains("<glob>"), "Filename suffixes must not bypass format checks");
         assert!(!data.contains("kissinger2"));
         assert!(!data.contains("kirsch"));
         for (name, bytes) in crate::bundled_fonts::FONTS {
@@ -126,6 +124,11 @@ mod tests {
         assert!(matched.status.success());
         assert_eq!(String::from_utf8_lossy(&matched.stdout),
                    "Fusion Pixel 12px Mono|12|False");
+        // An outline must remain rejected even when disguised as a .bdf file.
+        let outline = std::path::Path::new("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf");
+        if outline.exists() {
+            std::fs::copy(outline, root.join("fonts/outline-renamed.bdf")).unwrap();
+        }
         let formats = std::process::Command::new("fc-list")
             .env("FONTCONFIG_FILE", &config)
             .args(["-f", "%{fontformat}\n"])
@@ -151,7 +154,7 @@ mod tests {
         assert_eq!(stable, root.join("dome-fonts/fonts.conf"));
         assert!(std::fs::read_to_string(legacy.join("fonts.conf"))
             .unwrap()
-            .contains("jelly-pixel-12px-monospaced-mixed.bdf"));
+            .contains("<string>BDF</string>"));
         assert_eq!(
             refresh_session(&root, "/etc/fonts/fonts.conf", &[]).unwrap(),
             stable

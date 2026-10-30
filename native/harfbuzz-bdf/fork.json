@@ -1,0 +1,10 @@
+{
+  "upstream": "https://github.com/harfbuzz/harfbuzz.git",
+  "tag": "12.3.2",
+  "upstream_revision": "b42511e071162fe76102f613a6ccc009726c99af",
+  "fork": "https://github.com/jebot-git/harfbuzz.git",
+  "branch": "domed-bdf",
+  "fork_revision": "39144f4a5da0cd0c2ffd9e61649faba4d6d6a2eb",
+  "patch_sha256": "df88e621deb0d0f027a69dc1fff9eed31387dc75a30d2af71dc4c70077bc79e1",
+  "font_policy": "native-unicode-bdf-only"
+}

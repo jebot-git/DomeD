@@ -1,0 +1,9 @@
+# DomeD supports only its BDF-only HarfBuzz and paired Pango build.
+# Rebuild the fork and update these release prefixes for new upstream versions.
+Package: gir1.2-harfbuzz-0.0 libharfbuzz-cairo0 libharfbuzz-dev libharfbuzz-gobject0 libharfbuzz-icu0 libharfbuzz-subset0 libharfbuzz0b
+Pin: version 12.3.2-2+domed.bdf.*
+Pin-Priority: 1001
+
+Package: gir1.2-pango-1.0 libpango-1.0-0 libpango1.0-dev libpangocairo-1.0-0 libpangoft2-1.0-0 libpangoxft-1.0-0 pango1.0-tools
+Pin: version 1.57.0-1+domed.bdf.*
+Pin-Priority: 1001

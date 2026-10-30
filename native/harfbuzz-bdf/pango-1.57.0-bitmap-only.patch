@@ -1,0 +1,54 @@
+--- a/pango/pangofc-fontmap.c
++++ b/pango/pangofc-fontmap.c
+@@ -1096,39 +1096,21 @@
+   return pats->pattern;
+ }
+ 
++__attribute__((visibility("default"))) gboolean pango_dome_bdf_only (void);
++gboolean pango_dome_bdf_only (void) { return TRUE; }
++
+ static gboolean
+ pango_fc_is_supported_font_format (FcPattern* pattern)
+ {
+-  FcResult res;
+-  const char *file;
+-  const char *fontwrapper;
+-  const char *fontformat;
+-
+-  /* Patterns without FC_FILE are problematic, since our caching is based
+-   * on filenames.
+-   */
+-  res = FcPatternGetString (pattern, FC_FILE, 0, (FcChar8 **)(void*)&file);
+-  if (res != FcResultMatch)
+-    return FALSE;
+-
+-  /* Harfbuzz supports only SFNT fonts. */
+-  res = FcPatternGetString (pattern, FC_FONT_WRAPPER, 0, (FcChar8 **)(void*)&fontwrapper);
+-  if (res == FcResultMatch)
+-    return strcmp (fontwrapper, "SFNT") == 0;
+-
+-  res = FcPatternGetString (pattern, FC_FONTFORMAT, 0, (FcChar8 **)(void*)&fontformat);
+-   if (res != FcResultMatch)
+-     return FALSE;
+-
+-  /* FIXME: "CFF" is used for both CFF in OpenType and bare CFF files, but
+-   * HarfBuzz does not support the later and FontConfig does not seem
+-   * to have a way to tell them apart.
+-   */
+-  if (g_ascii_strcasecmp (fontformat, "TrueType") == 0 ||
+-      g_ascii_strcasecmp (fontformat, "CFF") == 0)
+-    return TRUE;
+-
+-  return FALSE;
++  const char *file, *format;
++  FcBool scalable = FcTrue;
++  /* The DomeD HarfBuzz fork loads native BDF, including its Unicode cmap.
++   * Never admit an outline fallback or trust a filename extension. */
++  return FcPatternGetString (pattern, FC_FILE, 0, (FcChar8 **)&file) == FcResultMatch &&
++         FcPatternGetString (pattern, FC_FONTFORMAT, 0, (FcChar8 **)&format) == FcResultMatch &&
++         strcmp (format, "BDF") == 0 &&
++         FcPatternGetBool (pattern, FC_SCALABLE, 0, &scalable) == FcResultMatch &&
++         !scalable;
+ }
+ 
+ static FcPattern *

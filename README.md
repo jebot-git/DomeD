@@ -46,6 +46,22 @@ enabling `fltk` is rejected; there is no Qt frontend fallback. The standalone
 third-party GTK applications for appearance and application-menu integration.
 It is never a DomeD widget frontend and is not required by the FLTK build.
 
+## Bitmap-only text runtime
+
+DomeD offers native Unicode BDF bitmap faces only. The session Fontconfig
+allowlist checks the decoded BDF format and non-scalable flag, so renaming an
+outline file to `.bdf` does not admit it.
+
+The [separate HarfBuzz BDF fork](native/harfbuzz-bdf/README.md) adds
+native BDF blob and FreeType loading, glyph metrics and Unicode coverage.
+Its font constructors reject outline fonts and table-based font creation.
+`scripts/prepare-bitmap-runtime.py` builds that fork together with a BDF-only
+Pango backend in a private prefix; `scripts/test-bitmap-runtime.py` checks raw
+glyph metrics, Pango/Cairo pixels, outline rejection and session font exports.
+DomeD sessions require this implementation. System deployment replaces the
+distribution HarfBuzz and paired Pango packages; the session checks the loaded
+implementation and hashes and rejects a stock fallback.
+
 ## Native tray applications and rendering audit
 
 DomeD starts one native FLTK/OpenGL tray applications manager. Its single tray
