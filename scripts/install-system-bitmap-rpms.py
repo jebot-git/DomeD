@@ -42,6 +42,10 @@ def main():
         assert sha(P(item['source']))==item['sha256'],item['source']
         destination=P(item['destination'])
         if item.get('previous_sha256'):assert sha(destination)==item['previous_sha256'],str(destination)+' changed since staging'
+        elif item.get('previous_metadata'):
+            info=destination.stat()
+            assert {key:getattr(info,key) for key in item['previous_metadata']}==item['previous_metadata'],str(destination)+' changed since staging'
+            assert str(destination).startswith('/opt/fltk-vr/toolkit/share/fltk-bdf-source/') and info.st_uid==0 and not info.st_mode&0o111 and not destination.is_symlink()
         else:assert not destination.exists(),str(destination)+' appeared since staging'
     verify_tree(P(plan['runtime_source']),plan['runtime_tree'])
     # Validate the full package transaction again under authentication.

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Stage a reviewable system bitmap/runtime/browser installation; never elevate."""
-import argparse,hashlib,json,os,pathlib,shutil,subprocess
+import argparse,hashlib,json,os,pathlib,shutil,subprocess,tempfile
 P=pathlib.Path
 ROOT=P(__file__).resolve().parents[1]
 def sha(p):
@@ -11,7 +11,12 @@ def main():
     a=p.parse_args()
     if os.geteuid()==0:p.error('Stage as the regular user')
     out=a.output.resolve();out.mkdir(parents=True,exist_ok=True);runtime=out/'runtime'
-    shutil.copytree(a.prefix.resolve(),runtime,symlinks=True,dirs_exist_ok=True)
+    marker=out/'.domed-bitmap-stage'
+    if runtime.exists():
+        if not marker.is_file() or marker.read_text()!='DomeD bitmap installation stage\n':p.error('Use a fresh --output directory; existing runtime is not a task-owned stage')
+        previous=P(tempfile.mkdtemp(prefix='runtime-previous-',dir=out));previous.rmdir();runtime.rename(previous)
+    marker.write_text('DomeD bitmap installation stage\n')
+    shutil.copytree(a.prefix.resolve(),runtime,symlinks=True)
     for file in runtime.rglob('*'):
         if file.is_file() and not file.is_symlink() and file.suffix in ['.pc','.cmake']:
             file.write_text(file.read_text().replace(str(a.prefix.resolve()),'/opt/fltk-vr/bdf-runtime'))
@@ -23,7 +28,17 @@ def main():
         shutil.copy2(source,target)
         if relocate:subprocess.run(['patchelf','--set-rpath','/opt/fltk-vr/bdf-runtime/lib:/opt/fltk-vr/toolkit/lib:/usr/local/lib/domed/bitmap',str(target)],check=True)
         target.chmod(mode)
-        files.append(dict(source=str(target),destination=str(destination),mode=mode,sha256=sha(target),previous_sha256=sha(destination) if destination.exists() else None))
+        previous=None; metadata=None
+        if destination.exists():
+            try:previous=sha(destination)
+            except PermissionError:
+                # Older installs made some public source notices root-readable
+                # only. Record their identity for authenticated verification;
+                # executable/library files still require a preflight digest.
+                info=destination.stat()
+                assert str(destination).startswith('/opt/fltk-vr/toolkit/share/fltk-bdf-source/') and info.st_uid==0 and not info.st_mode&0o111 and not destination.is_symlink()
+                metadata={key:getattr(info,key) for key in ['st_dev','st_ino','st_size','st_mtime_ns','st_mode','st_uid']}
+        files.append(dict(source=str(target),destination=str(destination),mode=mode,sha256=sha(target),previous_sha256=previous,previous_metadata=metadata))
     add(a.browser,'/usr/local/libexec/dome-browser/dome-browser',0o755,True)
     add(ROOT/'scripts/check-bitmap-runtime.py','/usr/local/libexec/domed/check-bitmap-runtime',0o755)
     add(ROOT/'packaging/99-domed-bitmap.conf','/etc/fonts/conf.d/99-domed-bitmap.conf')
