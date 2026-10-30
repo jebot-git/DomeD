@@ -32,3 +32,11 @@ which opts into bundled upstream FreeType/HarfBuzz and the font sanitizer.
 FreeType/Cairo standalone source builds can opt out of the bitmap restriction
 using FT_CONFIG_OPTION_ALLOW_NON_BITMAP_FONTS / CAIRO_ALLOW_NON_BITMAP_FONTS.
 These options are never enabled in the DomeD runtime.
+
+For the system transaction, first build the i686 prefix with `--sdk32` using
+a user SDK from `prepare-bitmap-sdk32.py`. Stage the complete installation with
+`prepare-system-bitmap-install.py --help`; it copies and hashes the tested
+artifacts and preserves the existing session/realm launchers. Review its plan,
+then run `install-system-bitmap-rpms.py PLAN SHA256` with native sudo
+authentication. The staged DNF configuration keeps stock updates from replacing
+the selected font fork; later fork updates use the same explicit installer.
