@@ -66,6 +66,11 @@ def main():
         # Preserve distro headers/tools, but add complete source archives, patches and licenses.
         if name=='harfbuzz' and arch=='x86_64':
             notices=root/'usr/share/domed-bdf-runtime';shutil.copytree(args.prefix/'share/domed-bdf-runtime',notices,dirs_exist_ok=True)
+        # Runtime sources and manifests must remain readable regardless of the
+        # developer's umask. Preserve executable bits for libraries/tools.
+        root.chmod(0o755)
+        for entry in root.rglob('*'):
+            if not entry.is_symlink():entry.chmod(0o755 if entry.is_dir() or entry.stat().st_mode&0o111 else 0o644)
         requires=run(['rpm','-qp','--requires',item['original']]).splitlines()
         provides=run(['rpm','-qp','--provides',item['original']]).splitlines()
         def align(s):
@@ -87,6 +92,10 @@ def main():
             subprocess.run(['rpmbuild','--rcfile','/usr/lib/rpm/rpmrc:'+str(rc),'-bb','--target',arch,'--define','_topdir '+str(top),'--define','_build_id_links none','--define','__os_install_post %{nil}',str(spec)],stdout=log,stderr=log,check=True)
         outputs=list((top/'RPMS').rglob('*.rpm'));assert len(outputs)==1,outputs
         item['archive']=str(outputs[0]);item['sha256']=sha(outputs[0]);item['new_release']=release
+        if name=='harfbuzz' and arch=='x86_64':
+            modes=query(outputs[0],'[%{FILENAMES} %{FILEMODES:perms}\n]')
+            assert '/usr/share/domed-bdf-runtime/manifest.json -rw-r--r--' in modes,'Runtime manifest must be readable without root'
+
     plan=dict(format='rpm',packages=metadata,new_libraries=records,abi=abi,prefix=str(args.prefix.resolve()),prefix32=str(args.prefix32.resolve()))
     (base/'plan.json').write_text(json.dumps(plan,indent=2)+'\n')
     # RPM resolves the complete transaction against the real, read-only package database.
