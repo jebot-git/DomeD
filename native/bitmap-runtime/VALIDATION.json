@@ -34,5 +34,6 @@
     "x86_64",
     "i686"
   ],
-  "sessions_restarted": false
+  "sessions_restarted": false,
+  "font_alias_export": "passed"
 }

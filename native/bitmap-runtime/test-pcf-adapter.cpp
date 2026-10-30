@@ -19,6 +19,11 @@ int main(int argc,char **argv) try {
  }
  std::cout<<"PASS lossless PCF adapter: "<<count<<" Unicode glyphs and native metrics\n";
  bdf_fonts::Face source;if(!bdf_fonts::inspect(argv[1],source))throw std::runtime_error("inspect PCF");
- for(int scale:{1,2}){auto selected=bdf_fonts::scaled(source,scale);auto alias=bdf_fonts::qt_alias(selected,"browser");if(alias.pixels!=source.pixels*scale||alias.family.rfind("Dome Browser Bitmap ",0)!=0)throw std::runtime_error("selected strike");std::cout<<"PASS selected host PCF "<<scale<<"x browser alias\n";}
+ for(int scale:{1,2}){auto selected=bdf_fonts::scaled(source,scale);auto alias=bdf_fonts::qt_alias(selected,"browser");auto media=bdf_fonts::qt_alias(selected,"media");auto configuration=bdf_fonts::export_config();
+ auto config=FcConfigCreate();if(!FcConfigParseAndLoad(config,(const FcChar8*)configuration.c_str(),FcTrue)||!FcConfigBuildFonts(config))throw std::runtime_error("exported font configuration");
+ auto query=FcPatternCreate();FcPatternAddString(query,FC_FAMILY,(const FcChar8*)media.family.c_str());FcPatternAddDouble(query,FC_PIXEL_SIZE,media.pixels);FcConfigSubstitute(config,query,FcMatchPattern);FcDefaultSubstitute(query);FcResult result;auto match=FcFontMatch(config,query,&result);FcChar8 *file=nullptr;
+ if(!match||FcPatternGetString(match,FC_FILE,0,&file)!=FcResultMatch||std::filesystem::path((const char*)file)!=media.file)throw std::runtime_error("exported media font identity");
+ FcPatternDestroy(match);FcPatternDestroy(query);FcConfigDestroy(config);
+ if(alias.pixels!=source.pixels*scale||alias.family.rfind("Dome Browser Bitmap ",0)!=0)throw std::runtime_error("selected strike");std::cout<<"PASS selected host PCF "<<scale<<"x browser alias\n";}
  FT_Done_Face(original);FT_Done_Face(converted);FT_Done_FreeType(library);
 } catch(const std::exception &error){std::cerr<<error.what()<<"\n";return 1;}
