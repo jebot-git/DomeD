@@ -172,8 +172,22 @@ w.end();DesktopMenu exported(w,m);w.show();return Fl::run();}
         shell=wait(lambda:(l if (l:=layout())['top']==l['height'] else None));capture('02-settings')
         w,h=shell['width'],shell['height'];pw=min(800,w-16);ph=min(700,h-100);left=(w-pw)/2;top=36+max(0,h-96-ph)/2
         original_size=win()['desktop'].copy();density=state()['config']['xr_render_scale']
+        check(not state()['config']['wayvr_controller_mouse'], 'WayVR controller mouse defaults to off in Settings')
+        key('Home');key('Up');key('Right') # wrap to Input and enter
+        capture('02-input-settings-off')
+        key('Right');wait(lambda:state()['config']['wayvr_controller_mouse'])
+        saved=runtime/'config/dome/xr.json'
+        wait(lambda:saved.exists() and json.loads(saved.read_text())['wayvr_controller_mouse'])
+        capture('02-input-settings-on')
+        key('Escape') # return to Input link in root
+        key('Right');click(left+pw-100,top+57)
+        wait(lambda:not state()['config']['wayvr_controller_mouse'])
+        wait(lambda:not json.loads(saved.read_text())['wayvr_controller_mouse'])
+        key('Right');wait(lambda:state()['config']['wayvr_controller_mouse'])
+        key('Escape')
+        check(True, 'Input submenu toggles and saves WayVR controller mouse in both directions')
         # The root contains links; graphical controls and bindings live on separate pages.
-        key('Home');key('Up');key('Right') # wrap to Keybindings and enter
+        key('Home');key('Down');key('Down');key('Down');key('Right') # Keybindings
         key('Home');key('Up');key('Right') # wrap to last binding and capture
         previous_bindings=state()['config']['keybindings']
         key('Super_L',True);key('F8');key('Super_L',False)
@@ -214,7 +228,8 @@ w.end();DesktopMenu exported(w,m);w.show();return Fl::run();}
         bindings_before_reset=state()['config']['keybindings']
         click(left+400,top+ph-48) # graphical defaults must preserve keybindings
         assert state()['config']['keybindings']==bindings_before_reset
-        check(True,'Restoring graphical defaults preserves remapped keybindings')
+        assert state()['config']['wayvr_controller_mouse']
+        check(True,'Restoring graphical defaults preserves remapped keybindings and controller input preference')
         click(left+pw-80,top+18) # submenu Back header button
         key('Home')
         check(True,'New XR window resolution is adjustable and saved from Settings without resizing the open window or changing density')
@@ -230,8 +245,7 @@ w.end();DesktopMenu exported(w,m);w.show();return Fl::run();}
         updated=state()['config']['keybindings'];check(updated[1:]==previous[1:],'Keybinding Help starts at the first binding and pointer hit testing edits that exact binding')
         click(left+pw-80,top+ph-48);wait(lambda:layout()['top']==36)
         click(425,18);wait(lambda:layout()['top']>36);capture('05-native-window-menu')
-        band=24 if layout()['top']<13*28+44 else 0
-        click(480,36+4+band+14)
+        key('Home');key('Return') # first action, independent of menu scroll bands
         wait(lambda:win()['desktop_visible'] and not win()['xr_visible'])
         check(client.poll()is None and not (runtime/'native-marker').exists(),'Universal Window Send to Desktop precedes native Window actions and transfers the running XR application')
         xd.close()

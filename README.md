@@ -718,6 +718,11 @@ The cursor stops inside the headset viewport edges, including after head movemen
 Held buttons capture the
 original target through a drag. Outside XR, the mouse uses desktop stacking.
 
+WiVRn-Pro / WayVR controllers can optionally operate the XR mouse. Enable
+**Settings → Input → WiVRn-Pro / WayVR controllers as XR mouse**; it defaults to
+**Off** and saves the preference across sessions. Disabling it releases held
+controller buttons immediately. WayVR shortcuts and notifications remain available.
+
 The resting XR menu/tray and taskbar attach to the top and bottom dome lanes,
 including the upper lane's tilt. They track horizontal head turns around the
 dome, while head pitch, roll and movement leave the room anchor unchanged.

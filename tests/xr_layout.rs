@@ -1101,6 +1101,15 @@ fn mouse_rebases_to_the_same_uv_after_head_and_carousel_movement() {
     }
 }
 #[test]
+fn wayvr_controller_mouse_is_opt_in_for_new_and_legacy_profiles() {
+    assert!(!Config::default().wayvr_controller_mouse);
+    let legacy: Config = serde_json::from_str(r#"{"radius_m":2.5}"#).unwrap();
+    assert!(!legacy.wayvr_controller_mouse);
+    let enabled: Config = serde_json::from_str(r#"{"wayvr_controller_mouse":true}"#).unwrap();
+    assert!(enabled.wayvr_controller_mouse);
+}
+
+#[test]
 fn settings_persist_height_and_bindings_and_reject_conflicts_atomically() {
     let folder = std::env::temp_dir().join(format!(
         "dome-settings-{}-{}",
@@ -1112,6 +1121,7 @@ fn settings_persist_height_and_bindings_and_reject_conflicts_atomically() {
     ));
     let path = folder.join("xr.json");
     let mut c = Config::default();
+    c.wayvr_controller_mouse = true;
     c.center_m[1] = 1.75;
     c.dome_vertical_span_deg = 130.;
     let index = c

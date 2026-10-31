@@ -8,6 +8,7 @@ thread; the D-Bus thread does not manipulate the renderer or Wayland seat.
 * `GetIntegrationState() -> s`: JSON `version:1`, `ready`, `backend` (`drm` or
   `nested`), `xr_active`, `shown`, `notifications` (`domed` when this compositor
   owns the desktop notification service, otherwise `host`), `pointer_protocol:1`.
+  `pointer_enabled` reports whether controller mouse input is enabled.
 * `Activate(s) -> b`: allowlisted `toggle_desktop`, `launcher`, `screenshot`,
   `terminal`, or `stop`. The presentation toggle includes both bars and the XR
   desktop, preserving the normal fade/slide and input realm handoff. Screenshot
@@ -20,6 +21,14 @@ thread; the D-Bus thread does not manipulate the renderer or Wayland seat.
   use the `x-dome-event-id` hint and share the same bounded 512-ID dedup cache.
 * `SubmitPointers(s) -> s`: bounded JSON frame; reply has `version`, last
   processed `sequence`, and two nullable `hits` distances. Feedback is asynchronous.
+
+Controller mouse input is optional and **off by default**, including with older
+profiles. Enable **Settings → Input → WiVRn-Pro / WayVR controllers as XR mouse**
+to use it. The choice is saved as `wayvr_controller_mouse` in `dome/xr.json` under
+the user's configuration directory. While off, pointer frames have no seat
+effects and report no hits; control shortcuts and notifications remain available.
+Switching off immediately releases held controller buttons. Switching on requires
+a neutral controller frame before a press can take effect.
 
 Pointer frame:
 

@@ -39,6 +39,7 @@ impl Dome {
         }
     }
     pub fn poll_wivrn(&mut self) {
+        let pointer_enabled = self.scene.lock().unwrap().config.wayvr_controller_mouse;
         let (commands, frames, expired) = {
             let mut c = self.tray.integration.lock().unwrap();
             let p = self.scene.lock().unwrap().presentation;
@@ -48,14 +49,14 @@ impl Dome {
                 .and_then(|v| v.as_str())
                 .unwrap_or("nested")
                 .to_owned();
-            c.status = serde_json::json!({"version":1,"ready":true,"backend":backend,"xr_active":self.xr_bridge.lock().unwrap().visible(),"shown":p.desktop||p.top||p.bottom,"notifications":if self.notifications.owns_bus(){"domed"}else{"host"},"pointer_protocol":1});
+            c.status = serde_json::json!({"version":1,"ready":true,"backend":backend,"xr_active":self.xr_bridge.lock().unwrap().visible(),"shown":p.desktop||p.top||p.bottom,"notifications":if self.notifications.owns_bus(){"domed"}else{"host"},"pointer_protocol":1,"pointer_enabled":pointer_enabled});
             (
                 c.commands.drain(..).collect::<Vec<_>>(),
                 c.frames.drain(..).collect::<Vec<_>>(),
                 c.received.is_some_and(|t| t.elapsed() > LEASE),
             )
         };
-        if expired || self.session.locked() || !self.xr_owns_input() {
+        if !pointer_enabled || expired || self.session.locked() || !self.xr_owns_input() {
             self.release_wivrn_pointer();
         }
         let notices = self
@@ -113,6 +114,9 @@ impl Dome {
             self.input_realm = before;
         }
         for (owner, frame) in frames {
+            if !pointer_enabled {
+                continue;
+            }
             if !frame.valid(dome::wivrn::monotonic_ns()) {
                 continue;
             }
@@ -139,6 +143,10 @@ impl Dome {
         }
     }
     fn wivrn_frame(&mut self, frame: Frame) {
+        if !self.scene.lock().unwrap().config.wayvr_controller_mouse {
+            self.release_wivrn_pointer();
+            return;
+        }
         let blocked = {
             let b = self.xr_bridge.lock().unwrap();
             !b.visible()

@@ -123,6 +123,8 @@ pub struct Config {
     /// Native compositor GPU, applied when the next session starts.
     pub gpu_device: Option<String>,
     pub projection: Projection,
+    /// Allow WiVRn-Pro / WayVR controller rays to operate the XR mouse seat.
+    pub wayvr_controller_mouse: bool,
     #[serde(rename = "xr_pointer_mode", deserialize_with = "discard_retired_setting", skip_serializing)]
     pub retired_pointer_mode: (),
     #[serde(rename = "gaze_smoothing", deserialize_with = "discard_retired_setting", skip_serializing)]
@@ -174,6 +176,7 @@ impl Default for Config {
             displays: Vec::new(),
             gpu_device: None,
             projection: Projection::RoomDome,
+            wayvr_controller_mouse: false,
             retired_pointer_mode: (),
             retired_pointer_smoothing: (),
             keybindings: crate::shortcuts::defaults(),

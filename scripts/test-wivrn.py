@@ -51,7 +51,7 @@ try:
            'LIBGL_ALWAYS_SOFTWARE':'1','XDG_CURRENT_DESKTOP':'Dome','RUST_LOG':'warn',
            'XDG_SESSION_TYPE':'x11','DOME_LOGIN_SESSION':'0','DOME_TERMINAL_BACKEND':'ghostty'}
     for k in ['WAYLAND_DISPLAY','WAYLAND_SOCKET','QT_QPA_PLATFORM','QT_PLUGIN_PATH','QT_QPA_PLATFORM_PLUGIN_PATH']: env.pop(k, None)
-    compositor = start([str(root/'target/debug/dome-compositor'),'--backend','nested'], 'compositor', env)
+    compositor = start([os.environ.get('DOME_WIVRN_COMPOSITOR', str(root/'target/debug/dome-compositor')),'--backend','nested'], 'compositor', env)
     wait(lambda:get('/api/state')['scene']['source']=='wayland')
     bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
     def call(method, value=None, connection=bus):
@@ -105,6 +105,16 @@ try:
         time.sleep(.045)
         return result
     def events(): return [json.loads(line) for line in journal.read_text().splitlines()]
+    def controller_mouse(enabled):
+        config = get('/api/state')['scene']['config']
+        config['wayvr_controller_mouse'] = enabled
+        post('/api/action', {'op':'configure','config':config})
+        wait(lambda:json.loads(call('GetIntegrationState'))['pointer_enabled'] == enabled)
+    check(not json.loads(call('GetIntegrationState'))['pointer_enabled'], 'Controller mouse defaults to off')
+    frame(); frame(1); frame()
+    check(frame()['hits'] == [None, None] and not any(e['kind']=='press' for e in events()),
+          'Disabled controller rays have no hits or mouse button effects')
+    controller_mouse(True)
     frame(1); frame(1)
     check(not any(e['kind']=='press' for e in events()),'Acquiring a laser while pinching cannot press a window')
     frame(); feedback=frame()
@@ -120,6 +130,15 @@ try:
     except GLib.Error:rejected=True
     check(rejected,'Another D-Bus sender cannot steal a held pointer')
     other.close_sync(None);frame()
+    before = len(events()); frame(1)
+    wait(lambda:any(e['kind']=='press' for e in events()[before:]))
+    before = len(events()); controller_mouse(False)
+    wait(lambda:any(e['kind']=='release' for e in events()[before:]))
+    frame(1); frame()
+    check(frame()['hits'] == [None, None], 'Disabling controller mouse releases a held press and clears hits')
+    before = len(events()); controller_mouse(True); frame(1); frame(1)
+    check(not any(e['kind']=='press' for e in events()[before:]), 'Re-enabling controller mouse requires neutral before pressing')
+    frame(); frame()
     before = len(events()); frame(1); time.sleep(.35)
     wait(lambda:any(e['kind']=='release' for e in events()[before:]))
     check(True,'Expired pointer lease releases held mouse buttons')

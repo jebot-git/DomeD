@@ -7,10 +7,11 @@ pub enum SettingsPage {
     General,
     Graphics,
     Keybindings,
+    Input,
 }
 impl SettingsPage {
     fn title(self) -> &'static str {
-        match self { Self::General => "Settings", Self::Graphics => "Settings · Graphical", Self::Keybindings => "Settings · Keybindings" }
+        match self { Self::General => "Settings", Self::Graphics => "Settings · Graphical", Self::Keybindings => "Settings · Keybindings", Self::Input => "Settings · Input" }
     }
 }
 
@@ -217,11 +218,28 @@ impl Dome {
                         Err(error) => self.geometry_error = error,
                     }
                 }
+                5 => {
+                    self.settings_page = SettingsPage::Input;
+                    self.xr_settings_row = 0;
+                }
                 _ => (),
             }
             return;
         }
         let c = self.scene.lock().unwrap().config.clone();
+        if self.settings_page == SettingsPage::Input {
+            if row == 0 {
+                let mut config = c;
+                config.wayvr_controller_mouse = !config.wayvr_controller_mouse;
+                self.geometry_error.clear();
+                self.action(Action::Configure { config });
+                // Balance held buttons and discard frames queued before this change.
+                self.release_wivrn_pointer();
+                self.tray.integration.lock().unwrap().frames.clear();
+                self.persist_geometry();
+            }
+            return;
+        }
         if self.settings_page == SettingsPage::Keybindings {
             if row < c.keybindings.len() {
                 self.binding_capture = Some(row);
@@ -295,6 +313,7 @@ impl Dome {
             } else if self.settings_page == SettingsPage::Graphics && x >= left + 280. && x < left + 520. {
                 let mut config = Config::default();
                 config.keybindings = c.keybindings.clone();
+                config.wayvr_controller_mouse = c.wayvr_controller_mouse;
                 self.action(Action::Configure { config });
                 self.persist_geometry();
             } else if self.settings_page != SettingsPage::General && x >= left + 20. && x < left + 140. {
@@ -352,7 +371,11 @@ impl Dome {
         if self.settings_page == SettingsPage::General {
             self.xr_settings_open = false;
         } else {
-            self.xr_settings_row = if self.settings_page == SettingsPage::Graphics { 2 } else { 3 };
+            self.xr_settings_row = match self.settings_page {
+                SettingsPage::Graphics => 2,
+                SettingsPage::Input => 5,
+                _ => 3,
+            };
             self.settings_page = SettingsPage::General;
         }
         self.binding_capture = None;
@@ -366,7 +389,12 @@ impl Dome {
                 ("Graphical Settings…".into(), "Open".into()),
                 ("Keybindings…".into(), "Open".into()),
                 ("Notification/system sounds".into(), if self.sounds.enabled() { "On" } else { "Off" }.into()),
+                ("Input…".into(), "Open".into()),
             ],
+            SettingsPage::Input => return vec![(
+                "WiVRn-Pro / WayVR controllers as XR mouse".into(),
+                if c.wayvr_controller_mouse { "On" } else { "Off" }.into(),
+            )],
             SettingsPage::Graphics => {
                 let mut rows = vec![("Compositor GPU · next session".into(),
                     dome::gpu_settings::label(c.gpu_device.as_deref(), self.active_gpu_device.as_deref(), &self.gpu_choices))];
