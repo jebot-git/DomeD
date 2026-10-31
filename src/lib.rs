@@ -18,6 +18,7 @@ pub mod shortcuts;
 pub mod xr_input;
 
 pub mod xr_transport;
+pub mod capture;
 
 pub mod desktop_entries;
 

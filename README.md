@@ -416,6 +416,12 @@ uv run --no-project --with dbus-next --with python-xlib --with pillow python scr
 
 ## Screen sharing and WayVR desktop capture
 
+The experimental [DomeD Capture application](prototypes/capture/README.md)
+records a desktop monitor or a selected XR eye through an FLTK frontend, with
+VA-API/Intel QSV hardware encoding, H.264/H.265/VP9/AV1 codecs, optional PipeWire
+system or microphone audio and a direct DMA-BUF/EGL path for DomeD XR surfaces.
+It also reads the native Linux OBSMirror fork's application-eye stream.
+
 DomeD implements the ScreenCast v3 portal on its own session bus name,
 `org.freedesktop.impl.portal.desktop.dome.screencast`. The installed
 `dome-portals.conf` selects it explicitly; general dialogs use the FLTK portal.

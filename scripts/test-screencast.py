@@ -158,6 +158,34 @@ context.modules = [
         path=data['session_handle'].value
         code,data=await request('SelectSources','oa{sv}',[path,{'types':Variant('u',1),'multiple':Variant('b',True),'cursor_mode':Variant('u',cursor)}]);assert code==0
         return path
+    capture_app=os.environ.get('DOME_TEST_CAPTURE_APP')
+    capture_encoder=os.environ.get('DOME_CAPTURE_TEST_ENCODER','vaapi')
+    capture_codec=os.environ.get('DOME_CAPTURE_TEST_CODEC','h264')
+    if capture_app:
+        # Exercise the real FLTK recorder's portal client, not a pre-authorized node.
+        capture_env={**env};capture_env.pop('LIBGL_ALWAYS_SOFTWARE',None)
+        for accept in (False,True):
+            name='recorder-'+('accepted' if accept else 'cancelled')
+            video=out/(name+'.mkv');report=out/(name+'.json')
+            video.unlink(missing_ok=True);report.unlink(missing_ok=True)
+            recorder=start([capture_app,'--record','--source','desktop','--encoder',capture_encoder,'--codec',capture_codec,
+                '--seconds','1.1','--output',str(video),'--report',str(report)],name,capture_env)
+            await consent(accept)
+            await wait(lambda:recorder.poll() is not None,25)
+            result=json.loads(report.read_text())
+            if not accept:
+                check(recorder.returncode!=0 and not video.exists() and result['frames']==0,
+                      'Recorder cancellation creates no output or capture frames')
+            else:
+                check(recorder.returncode==0 and result['frames']>=10 and result['encoder']==capture_encoder,
+                      'Recorder obtains consent and hardware-encodes real PipeWire frames')
+                probe=json.loads(subprocess.check_output(['ffprobe','-v','error','-show_streams','-of','json',str(video)]))
+                check(probe['streams'][0]['codec_name']==('hevc'if capture_codec=='h265'else capture_codec) and probe['streams'][0]['width']==1280,
+                      'Recorder produces a finalized, decodable '+capture_codec+' Matroska file')
+                pixels=subprocess.check_output(['ffmpeg','-v','error','-i',str(video),'-frames:v','1',
+                    '-f','rawvideo','-pix_fmt','rgb24','-'])
+                check(any(pixels[i]>120 and pixels[i]>pixels[i+1]*1.5 for i in range(0,len(pixels)-2,3)),
+                      'Decoded recording contains the actual coloured Wayland window')
     path=await session()
     task=asyncio.create_task(request('Start','osa{sv}',[path,'',{}]));await consent(False)
     check((await task)[0]==1,'Native picker cancel grants no capture')

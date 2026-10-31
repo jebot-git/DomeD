@@ -147,6 +147,18 @@ pub fn serve_native(
                     .with_header(Header::from_bytes("Cache-Control", "no-store").unwrap()));
                 continue;
             }
+            if request.method() == &Method::Get && request.url() == "/api/capture/xr" {
+                let value = if let Some(b) = &bridge {
+                    let b = crate::capture::XrState::from(&*b.lock().unwrap());
+                    crate::capture::xr_snapshot(&scene.lock().unwrap(), &b)
+                } else {
+                    serde_json::json!({"version":1,"available":false,"reason":"No compositor GPU bridge"})
+                };
+                let _ = request.respond(Response::from_string(value.to_string())
+                    .with_header(Header::from_bytes("Content-Type", "application/json").unwrap())
+                    .with_header(Header::from_bytes("Cache-Control", "no-store").unwrap()));
+                continue;
+            }
             if request.method() == &Method::Get && request.url() == "/api/xr-layout" {
                 let (session, shell) = bridge.as_ref().map(|b| {
                     let b = b.lock().unwrap(); (b.session.clone(), b.shell.clone())

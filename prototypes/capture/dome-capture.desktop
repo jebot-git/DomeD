@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=DomeD Capture (Prototype)
+Comment=Record a desktop monitor or one XR eye using hardware encoding
+Exec=dome-capture
+TryExec=dome-capture
+Icon=camera-video
+Terminal=false
+Categories=AudioVideo;Recorder;
+StartupWMClass=dome-capture
