@@ -75,6 +75,11 @@ export LD_LIBRARY_PATH="$DOME_BDF_RUNTIME_PREFIX/lib${LD_LIBRARY_PATH:+:$LD_LIBR
 export DOME_LOGIN_SESSION=1 DOME_BACKEND=drm
 export LIBSEAT_BACKEND="${LIBSEAT_BACKEND:-logind}"
 export DOME_START_XR="${DOME_START_XR:-1}"
+# The system WiVRn-Pro runtime is available before a headset connects. Do not
+# depend on a stale per-user runtime link left by a removed distribution package.
+if [[ -z "${XR_RUNTIME_JSON:-}" && -r /usr/local/share/openxr/1/openxr_wivrn_pro.json ]]; then
+    export XR_RUNTIME_JSON=/usr/local/share/openxr/1/openxr_wivrn_pro.json
+fi
 # Prefer FLTerm when installed; retain explicit terminal/backend overrides.
 if [[ -n "${DOME_TERMINAL:-}" ]]; then export DOME_TERMINAL; fi
 export DOME_TERMINAL_BACKEND="${DOME_TERMINAL_BACKEND:-auto}"
