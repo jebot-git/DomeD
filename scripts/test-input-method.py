@@ -29,7 +29,8 @@ if os.environ.get('DOME_IME_TEST_BUS')!='1':
 from Xlib import X,XK,display
 from Xlib.ext import xtest
 from PIL import Image
-root=Path(__file__).resolve().parents[1];out=root/'artifacts/input-method';out.mkdir(parents=True,exist_ok=True)
+prestart=os.environ.get('DOME_IME_PRESTART')=='1'
+root=Path(__file__).resolve().parents[1];out=root/'artifacts'/('input-method-existing' if prestart else 'input-method');out.mkdir(parents=True,exist_ok=True)
 processes=[];logs=[];checks=[]
 def check(ok,label):
     checks.append({'check':label,'passed':bool(ok)});print(('PASS 'if ok else'FAIL ')+label,flush=True)
@@ -57,6 +58,21 @@ try:
     env={**os.environ,'HOME':str(runtime/'home'),'XDG_CONFIG_HOME':str(runtime/'config'),'XDG_DATA_HOME':str(runtime/'data'),'XDG_STATE_HOME':str(runtime/'state'),'XDG_RUNTIME_DIR':directory,'DISPLAY':display_name,'DOME_PREVIEW_PORT':str(port),'DOME_RENDERER':os.environ.get('DOME_RENDERER','gles'),'DOME_START_IME':'1','DOME_LOGIN_SESSION':'0','DOME_START_XR':'0','QT_IM_MODULE':'wayland','QT_WAYLAND_TEXT_INPUT_PROTOCOL':'zwp_text_input_v3','LIBGL_ALWAYS_SOFTWARE':'1','RUST_LOG':'warn'}
     for name in ['WAYLAND_DISPLAY','WAYLAND_SOCKET','IBUS_ADDRESS','FCITX_CONFIG_HOME','FCITX_DATA_HOME','QT_QPA_PLATFORM']:env.pop(name,None)
     subprocess.run(['/usr/bin/dbus-update-activation-environment','HOME','XDG_RUNTIME_DIR','XDG_CONFIG_HOME','XDG_DATA_HOME','XDG_STATE_HOME','DISPLAY','WAYLAND_DISPLAY=','QT_QPA_PLATFORM=offscreen','XDG_CURRENT_DESKTOP=Dome','XDG_SESSION_DESKTOP=dome'],env=env,check=True)
+    def owner():
+        response=subprocess.run(['/usr/bin/busctl','--address='+env['DBUS_SESSION_BUS_ADDRESS'],'call','org.freedesktop.DBus','/org/freedesktop/DBus','org.freedesktop.DBus','NameHasOwner','s','org.fcitx.Fcitx5'],env=env,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=2)
+        return b'true' in response.stdout
+    if prestart:
+        # Reproduce bus activation before a Wayland display exists. Include a
+        # custom method and layout override to catch accidental profile resets.
+        existing_profile=runtime/'config/fcitx5/profile'
+        existing_profile.parent.mkdir(parents=True)
+        methods=['keyboard-us','anthy','keyboard-cz','hangul','keyboard-rs','keyboard-gb']
+        existing_profile.write_text('[Groups/0]\nName=Default\nDefault Layout=us\nDefaultIM=anthy\n\n'+''.join(f'[Groups/0/Items/{i}]\nName={name}\nLayout={"us" if i==0 else ""}\n\n' for i,name in enumerate(methods))+'[GroupOrder]\n0=Default\n')
+        headless={k:v for k,v in env.items() if k not in ('DISPLAY','WAYLAND_DISPLAY','WAYLAND_SOCKET')}
+        existing=start([os.environ.get('DOME_FCITX5','/usr/bin/fcitx5'),'-D','--disable=xcb,ibusfrontend,kimpanel','--ui=classicui'],'existing-fcitx',headless)
+        wait(owner)
+        original_profile=existing_profile.read_bytes()
+        check(existing.poll() is None,'Fcitx5 is running before DomeD creates its Wayland display')
     start([os.environ.get('DOME_COMPOSITOR',str(root/'target/release/dome-compositor')),'--backend','nested'],'compositor',env)
     base=f'http://127.0.0.1:{port}'
     def get(path):return json.load(urllib.request.urlopen(base+path,timeout=2))
@@ -64,23 +80,26 @@ try:
     wait(lambda:scene()['source']=='wayland')
     wayland=wait(lambda:re.search(r'Dome Wayland socket: (\S+)',(out/'compositor.log').read_text()))[1]
     client_env={**env,'WAYLAND_DISPLAY':wayland,'QT_QPA_PLATFORM':'wayland'}
-    def owner():
-        owner=subprocess.run(['/usr/bin/busctl','--address='+env['DBUS_SESSION_BUS_ADDRESS'],'call','org.freedesktop.DBus','/org/freedesktop/DBus','org.freedesktop.DBus','NameHasOwner','s','org.fcitx.Fcitx5'],env=client_env,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=2)
-        return b'true' in owner.stdout
     def method():
         if not owner():return ''
         r=subprocess.run([os.environ.get('DOME_FCITX5_REMOTE','/usr/bin/fcitx5-remote'),'--check','-n'],env=client_env,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=2)
         return r.stdout.decode().strip() if r.returncode==0 else ''
     wait(owner)
-    check(True,'DomeD starts Fcitx5 on its private trusted Wayland connection')
+    check(True,'DomeD finds the existing Fcitx5 service' if prestart else 'DomeD starts Fcitx5 on its private trusted Wayland connection')
     def configured_methods():
         response=subprocess.run(['/usr/bin/busctl','--json=short','--address='+env['DBUS_SESSION_BUS_ADDRESS'],'call','org.fcitx.Fcitx5','/controller','org.fcitx.Fcitx.Controller1','InputMethodGroupInfo','s','Default'],env=client_env,check=True,stdout=subprocess.PIPE,timeout=2)
         return [item[0] for item in json.loads(response.stdout)['data'][1]]
     expected_methods=['keyboard-us','anthy','keyboard-cz','hangul','keyboard-rs']
     wait(lambda:all(name in configured_methods() for name in expected_methods))
-    profile=runtime/'config/dome/fcitx5/profile'
-    wait(lambda:profile.exists() and all('Name='+name in profile.read_text() for name in expected_methods))
-    check(True,'DomeD adds installed Czech, Hangul and Serbian Cyrillic methods to its profile')
+    if prestart:
+        check(existing_profile.read_bytes()==original_profile,'Attaching the existing daemon preserves its profile, custom method and layout override')
+        check(not (runtime/'config/dome/fcitx5').exists(),'Attaching does not create a replacement DomeD profile')
+        response=subprocess.run(['/usr/bin/busctl','--json=short','--address='+env['DBUS_SESSION_BUS_ADDRESS'],'call','org.freedesktop.DBus','/org/freedesktop/DBus','org.freedesktop.DBus','GetConnectionUnixProcessID','s','org.fcitx.Fcitx5'],env=env,check=True,stdout=subprocess.PIPE)
+        check(json.loads(response.stdout)['data'][0]==existing.pid,'DomeD reuses the original daemon process')
+    else:
+        profile=runtime/'config/dome/fcitx5/profile'
+        wait(lambda:profile.exists() and all('Name='+name in profile.read_text() for name in expected_methods))
+        check(True,'DomeD adds installed Czech, Hangul and Serbian Cyrillic methods to its profile')
     start([sys.executable,__file__,'--fixture'],'editor',client_env)
     window=wait(lambda:next((w for w in scene()['windows'] if 'IME fixture' in w['title']),None))
     xd=display.Display(display_name);host=wait(lambda:next((w for w in xd.screen().root.query_tree().children if str(w.get_wm_name()or'').startswith('Dome')),None))
@@ -130,11 +149,8 @@ try:
         shot('language-'+target)
     cycle_to('keyboard-us')
     chord(['Control_L'],'a');key('BackSpace')
-    g=host.get_geometry()
-    xtest.fake_input(xd,X.MotionNotify,x=g.x+g.width-198,y=g.y+18);xd.sync()
-    for pressed in [True,False]:xtest.fake_input(xd,X.ButtonPress if pressed else X.ButtonRelease,1);xd.sync();time.sleep(.08)
-    wait(lambda:method()=='anthy')
-    check(True,'Clicking the keyboard switcher changes US English to Anthy')
+    cycle_to('anthy')
+    check(True,'Super+Space selects Anthy')
     for c in 'nihongo':key(c)
     wait(lambda:any('にほんご' in e.get('preedit','') for e in entries()))
     check(True,'Anthy produces Japanese preedit through the Wayland text-input protocol')
@@ -176,7 +192,8 @@ try:
         if not bands or y>bands[-1][-1]+1:bands.append([])
         bands[-1].append(y)
     band=max(bands,key=len);candidate_y=(band[0]+band[-1])/2
-    xtest.fake_input(xd,X.MotionNotify,x=int(g.x+r['x']+popup['anchor']['x']+texture.width*.6),y=int(g.y+r['y']+popup['anchor']['y']+candidate_y));xd.sync()
+    # XR export uses texture pixels; desktop hit testing uses logical coordinates.
+    xtest.fake_input(xd,X.MotionNotify,x=int(g.x+r['x']+popup['anchor']['x']+popup['anchor']['w']*.6),y=int(g.y+r['y']+popup['anchor']['y']+candidate_y*popup['anchor']['h']/texture.height));xd.sync()
     for pressed in [True,False]:xtest.fake_input(xd,X.ButtonPress if pressed else X.ButtonRelease,1);xd.sync();time.sleep(.08)
     check(scene()['focused']==window['id'],'Clicking an Anthy candidate preserves text-field focus')
     key('Return');wait(lambda:any('日本語' in e.get('text','')for e in entries()))

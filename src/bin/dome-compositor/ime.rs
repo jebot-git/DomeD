@@ -45,8 +45,25 @@ impl Ime {
                             .map_err(|e| e.to_string())?;
                             if bus
                                 .call::<_, _, bool>("NameHasOwner", &("org.fcitx.Fcitx5",))
-                                .unwrap_or(true)
+                                .map_err(|e| e.to_string())?
                             {
+                                // A bus-activated daemon may predate our display. Its
+                                // ordinary Wayland connection cannot bind the trusted
+                                // input-method globals, so pass the private socket just
+                                // as we do when launching our own child. Keep its profile.
+                                let controller = Proxy::new(
+                                    &connection,
+                                    "org.fcitx.Fcitx5",
+                                    "/controller",
+                                    "org.fcitx.Fcitx.Controller1",
+                                )
+                                .map_err(|e| e.to_string())?;
+                                controller
+                                    .call::<_, _, ()>(
+                                        "OpenWaylandConnectionSocket",
+                                        &(zbus::zvariant::Fd::from(&stream),),
+                                    )
+                                    .map_err(|e| e.to_string())?;
                                 return Ok(None);
                             }
                             let config = std::env::var_os("XDG_CONFIG_HOME")

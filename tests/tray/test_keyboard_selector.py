@@ -110,7 +110,13 @@ try:
   assert next(i for i in service('tray') if i['Id']=='fixture')['managed']
   service('placement',item=fixture,managed=False);wait(green)
   service('placement',item=screenshot,managed=True);time.sleep(.4)
-  point=green()[0];click(point[0]+4,18);key('Return')
+  point=green()[0]
+  menu_background=shot('09-before-fixture-menu').getpixel((width-270,50))
+  click(point[0]+4,18)
+  # The tray worker loads DBusMenu asynchronously. Do not send Return to the
+  # desktop before the fixture's action is available.
+  wait(lambda:shot('10-fixture-menu').getpixel((width-270,50))!=menu_background)
+  key('Return')
   wait(lambda:Path(str(runtime/'ready')+'.event').exists())
   service('placement',item=screenshot,managed=False)
   print('PASS: move applications into/out of manager live, persist placement, and route tray actions after screenshot moves')

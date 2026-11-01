@@ -75,8 +75,9 @@ configuration. It shares the universal application menu, live DomeD palette,
 bitmap fonts, Ctrl+R, Ctrl+W/Escape, Ctrl+Q, and Alt+1..5 page bindings.
 Ctrl+, opens input-method configuration. Global/engine/addon settings use
 Fcitx's GetConfig/SetConfig protocol and preserve fields that were not edited.
-An already running Fcitx instance is observed and controlled without rewriting
-its profile.
+An already running Fcitx instance receives the compositor's private trusted
+Wayland socket through `OpenWaylandConnectionSocket`, including when D-Bus
+activated it before the display existed. Its process and profile are preserved.
 
 Flags use the suite's 24-unit canvas, rounded 1.6-unit outlines and a muted flat
 palette. Editable Inkscape sources are in `native/icons/flags/`; run
@@ -108,7 +109,13 @@ TRAY_TEST_PRIVATE_BUS=1 dbus-run-session -- uv run --no-project --with dbus-next
 TRAY_TEST_PRIVATE_BUS=1 dbus-run-session -- uv run --no-project --with dbus-next --with python-xlib --with pillow python tests/tray/test_keyboard_selector.py
 DOME_COMPOSITOR="$PWD/target/release/dome-compositor" uv run --no-project --with dbus-next --with python-xlib --with pillow python scripts/test-shell-history.py
 DOME_COMPOSITOR="$PWD/target/release/dome-compositor" python3 scripts/test-xwayland.py
+DOME_IME_PRESTART=1 DOME_COMPOSITOR="$PWD/target/release/dome-compositor" uv run --no-project --with pyside6 --with python-xlib --with pillow python scripts/test-input-method.py
 ```
+
+The input-method test runs real composition and desktop/XR focus checks. Set
+`DOME_IME_PRESTART=1` to reproduce an existing daemon with no display and verify
+attachment preserves its PID, profile, custom method and layout override. Omit
+it to test compositor-owned startup. PySide6 is used only by the test editor.
 
 Optional `tests/tray/test_hardware.py` opens a short-lived native window on the
 caller's display, with fake services on a private bus, and checks the actual GL

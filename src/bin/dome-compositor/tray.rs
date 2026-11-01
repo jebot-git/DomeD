@@ -64,6 +64,8 @@ fn loading_rows() -> Vec<Row> {
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct Snapshot {
     pub revision: u64,
+    #[serde(skip)]
+    pub items_revision: u64,
     pub items: Vec<Item>,
     pub menu: Option<usize>,
     pub rows: Vec<Row>,
@@ -74,6 +76,18 @@ pub struct Snapshot {
     pub screenshot_managed: bool,
 }
 impl Snapshot {
+    fn replace_items(&mut self, items: Vec<Item>, screenshot_managed: bool) {
+        self.items = items;
+        self.screenshot_managed = screenshot_managed;
+        self.items_revision += 1;
+        // Keyboard menus use a fixed service, independent of the SNI list.
+        // Redraw changing icons without invalidating a queued keyboard request.
+        if !self.keyboard_menu {
+            self.menu = None;
+            self.rows.clear();
+            self.revision += 1;
+        }
+    }
     fn dismiss(&mut self) {
         self.menu = None;
         self.rows.clear();
@@ -232,9 +246,9 @@ impl Tray {
     pub fn take_screenshot_request(&self) -> bool {
         self.screenshot.swap(false, Ordering::AcqRel)
     }
-    pub fn visual_key(&self) -> (u64, Option<usize>, u32) {
+    pub fn visual_key(&self) -> (u64, u64, Option<usize>, u32) {
         let state = self.snapshot.lock().unwrap();
-        (state.revision, state.selected, state.offset.to_bits())
+        (state.revision, state.items_revision, state.selected, state.offset.to_bits())
     }
     pub fn state(&self) -> Snapshot {
         self.snapshot.lock().unwrap().clone()
@@ -304,8 +318,11 @@ impl Tray {
             .filter(|(_, row)| row.enabled && !row.separator).map(|(i, _)| i).collect();
         let current = enabled.iter().position(|i| Some(*i) == state.selected).unwrap_or(0);
         if let Some(next) = crate::menu_navigation::selection(current, enabled.len(), key) {
-            state.selected = enabled.get(next).copied();
-            state.revision += 1;
+            let selected = enabled.get(next).copied();
+            if state.selected != selected {
+                state.selected = selected;
+                state.revision += 1;
+            }
         } else {
             let request = match key {
                 0xff51 => Some(Request::Back),
@@ -720,13 +737,7 @@ fn run(
         let mut s = state.lock().unwrap();
         let before = serde_json::to_string(&s.items)?;
         if serde_json::to_string(&items)? != before || s.screenshot_managed != screenshot_managed {
-            s.items = items;
-            s.screenshot_managed = screenshot_managed;
-            if !s.keyboard_menu {
-                s.menu = None;
-                s.rows.clear();
-            }
-            s.revision += 1;
+            s.replace_items(items, screenshot_managed);
         }
         drop(s);
         // Bounded polling keeps property updates and process exits out of the render thread.
@@ -853,6 +864,25 @@ mod tests {
         assert_ne!(receive.try_recv().unwrap().0, state.revision);
         tray.close();
         assert_eq!(tray.state().revision, 2);
+    }
+    #[test]
+    fn icon_discovery_keeps_pending_keyboard_menu_request_valid() {
+        let (send, receive) = mpsc::sync_channel(32);
+        let tray = Tray { integration:Default::default(),
+            snapshot: Arc::new(Mutex::new(Snapshot::default())), send,
+            screenshot: Arc::new(AtomicBool::new(false)) };
+        tray.keyboard();
+        let (revision, _) = receive.try_recv().unwrap();
+        let visual = tray.visual_key();
+        tray.snapshot.lock().unwrap().replace_items(vec![keyboard_item()], true);
+        assert_ne!(tray.visual_key(), visual, "Icon updates still redraw the shell");
+        assert_eq!(tray.state().revision, revision, "Discovery must not discard the queued request");
+        assert!(tray.key(0xff54)); // Down while the loading row is disabled.
+        assert_eq!(tray.state().revision, revision);
+        assert!(tray.state().keyboard_menu);
+        assert_eq!(tray.state().rows[0].text, "Loading input methods…");
+        tray.close();
+        assert_ne!(tray.state().revision, revision, "Closing still cancels the request");
     }
     #[test]
     fn full_worker_queue_does_not_leave_a_loading_popup() {
