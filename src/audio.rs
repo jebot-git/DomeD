@@ -11,12 +11,14 @@ use std::{
 pub enum Target {
     Output,
     Input,
+    Notification,
 }
 impl Target {
     fn alias(self) -> &'static str {
         match self {
             Self::Output => "@DEFAULT_AUDIO_SINK@",
             Self::Input => "@DEFAULT_AUDIO_SOURCE@",
+            Self::Notification => unreachable!("Notification audio uses persistent category settings"),
         }
     }
 }
@@ -41,6 +43,7 @@ pub struct Snapshot {
     pub inputs: Vec<Device>,
     pub output: Option<Level>,
     pub input: Option<Level>,
+    pub notification: Option<Level>,
     pub error: String,
     pub mixer: Vec<crate::audio_mixer::Item>,
     pub mixer_error: String,
@@ -69,7 +72,7 @@ impl DeviceList {
                 rows.extend((offset..offset + count).map(DeviceRow::Device));
             }
         }
-        let visible = ((panel_height - 250.) / 32.).floor().max(1.) as usize;
+        let visible = ((panel_height - 322.) / 32.).floor().max(1.) as usize;
         let selected_row = selected
             .and_then(|index| rows.iter().position(|row| *row == DeviceRow::Device(index)))
             .unwrap_or(0);
@@ -101,6 +104,7 @@ pub enum Request {
     Volume(Target, f32),
     Step(Target, i8),
     Mute(Target),
+    NotificationMute(bool),
     Default {
         target: Target,
         id: u32,
@@ -110,7 +114,7 @@ pub enum Request {
 pub struct Audio {
     state: Arc<Mutex<Snapshot>>,
     send: mpsc::SyncSender<Request>,
-    volumes: Arc<Mutex<[Option<f32>; 2]>>,
+    volumes: Arc<Mutex<[Option<f32>; 3]>>,
     mixer_volume: Arc<Mutex<Option<crate::audio_mixer::Request>>>,
 }
 impl Audio {
@@ -118,7 +122,7 @@ impl Audio {
         let state = Arc::new(Mutex::new(Snapshot::default()));
         let (send, receive) = mpsc::sync_channel(32);
         let shared = state.clone();
-        let volumes = Arc::new(Mutex::new([None, None]));
+        let volumes = Arc::new(Mutex::new([None, None, None]));
         let pending = volumes.clone();
         let mixer_volume = Arc::new(Mutex::new(None));
         let pending_mixer = mixer_volume.clone();
@@ -142,7 +146,7 @@ impl Audio {
             }
         }
         if let Request::Volume(target, volume) = request {
-            self.volumes.lock().unwrap()[usize::from(target == Target::Input)] = Some(volume);
+            self.volumes.lock().unwrap()[match target { Target::Output => 0, Target::Input => 1, Target::Notification => 2 }] = Some(volume);
         }
         let _ = self.send.try_send(request);
     }
@@ -261,7 +265,7 @@ pub fn parse_devices(bytes: &[u8]) -> Result<Snapshot, String> {
             }
         }
     }
-    let mut snapshot = Snapshot::default();
+    let mut snapshot = Snapshot { notification: crate::notification_audio::level(&nodes), ..Default::default() };
     for node in &nodes {
         if node["type"] != "PipeWire:Interface:Node" {
             continue;
@@ -292,6 +296,7 @@ pub fn parse_devices(bytes: &[u8]) -> Result<Snapshot, String> {
             == match target {
                 Target::Output => output_name.as_deref(),
                 Target::Input => input_name.as_deref(),
+                Target::Notification => None,
             };
         let device = Device {
             id,
@@ -304,6 +309,7 @@ pub fn parse_devices(bytes: &[u8]) -> Result<Snapshot, String> {
         match target {
             Target::Output => snapshot.outputs.push(device),
             Target::Input => snapshot.inputs.push(device),
+            Target::Notification => (),
         }
     }
     snapshot
@@ -361,6 +367,18 @@ fn apply(request: Request) -> Result<(), String> {
     match request {
         Request::Open(_) | Request::MixerPage(_) | Request::MixerVolumeWake => (),
         Request::Mixer(request) => crate::audio_mixer::apply(request)?,
+        Request::NotificationMute(muted) => crate::notification_audio::apply(None, Some(muted))?,
+        Request::Volume(Target::Notification, volume) => crate::notification_audio::apply(Some(volume), None)?,
+        Request::Step(Target::Notification, step) => {
+            let snapshot = parse_devices(&run("pw-dump", &[])?)?;
+            let level = snapshot.notification.ok_or("Notification audio is unavailable")?;
+            crate::notification_audio::apply(Some((level.volume + f32::from(step) / 100.).clamp(0.,1.)), None)?;
+        }
+        Request::Mute(Target::Notification) => {
+            let snapshot = parse_devices(&run("pw-dump", &[])?)?;
+            let level = snapshot.notification.ok_or("Notification audio is unavailable")?;
+            crate::notification_audio::apply(None, Some(!level.muted))?;
+        }
         Request::Volume(target, volume) => {
             if !volume.is_finite() {
                 return Err("Invalid audio volume".into());
@@ -412,9 +430,9 @@ fn apply(request: Request) -> Result<(), String> {
     }
     Ok(())
 }
-fn flush_volumes(volumes: &Mutex<[Option<f32>; 2]>) -> Result<(), String> {
-    let values = std::mem::replace(&mut *volumes.lock().unwrap(), [None, None]);
-    for (target, value) in [Target::Output, Target::Input].into_iter().zip(values) {
+fn flush_volumes(volumes: &Mutex<[Option<f32>; 3]>) -> Result<(), String> {
+    let values = std::mem::replace(&mut *volumes.lock().unwrap(), [None, None, None]);
+    for (target, value) in [Target::Output, Target::Input, Target::Notification].into_iter().zip(values) {
         if let Some(value) = value {
             apply(Request::Volume(target, value))?;
         }
@@ -428,7 +446,7 @@ fn flush_mixer(pending: &Mutex<Option<crate::audio_mixer::Request>>) -> Result<(
 fn worker(
     state: Arc<Mutex<Snapshot>>,
     receive: mpsc::Receiver<Request>,
-    volumes: Arc<Mutex<[Option<f32>; 2]>>,
+    volumes: Arc<Mutex<[Option<f32>; 3]>>,
     mixer_volume: Arc<Mutex<Option<crate::audio_mixer::Request>>>,
 ) {
     let mut open = false;
@@ -533,7 +551,7 @@ mod tests {
             inputs: vec![device(Target::Input, 3)],
             ..Default::default()
         };
-        let list = DeviceList::new(&snapshot, None, 410.);
+        let list = DeviceList::new(&snapshot, None, 482.);
         assert_eq!(
             list.rows,
             vec![
@@ -556,7 +574,7 @@ mod tests {
             inputs: (0..20).map(|id| device(Target::Input, id)).collect(),
             ..Default::default()
         };
-        let list = DeviceList::new(&snapshot, Some(19), 346.);
+        let list = DeviceList::new(&snapshot, Some(19), 418.);
         assert_eq!(list.visible, 3);
         assert_eq!(list.first, 18);
         assert_eq!(list.device_at(80.), Some(19));

@@ -63,7 +63,8 @@ try:
         env.update(HOME=temporary,XDG_RUNTIME_DIR=temporary,XDG_CONFIG_HOME=temporary+'/config',XDG_DATA_HOME=temporary+'/data',XDG_STATE_HOME=temporary+'/state',XDG_CACHE_HOME=temporary+'/cache',XDG_DATA_DIRS=temporary+'/empty',PIPEWIRE_RUNTIME_DIR=temporary,PIPEWIRE_REMOTE='no-host-audio',PULSE_SERVER='unix:'+temporary+'/no-host-audio',DBUS_SYSTEM_BUS_ADDRESS='unix:path='+temporary+'/no-system-bus',DOME_LOGIN_SESSION='0',DOME_SESSION_RESTORE='0',DOME_START_XR='0',DOME_RENDERER='gles',DOME_APPEARANCE_SERVICE='0',LIBGL_ALWAYS_SOFTWARE='1',DOME_PREVIEW_PORT=str(port),DOME_SOUND_TEST_RECORD=str(record),LD_LIBRARY_PATH=str(shim)+':'+os.environ.get('LD_LIBRARY_PATH',''),RUST_LOG='warn')
         for name in ['TRAY','KDECONNECT','KWALLET','POLKIT','IME','XWAYLAND']:env['DOME_START_'+name]='0'
         for name in ['WAYLAND_DISPLAY','WAYLAND_SOCKET']:env.pop(name,None)
-        rd,wr=os.pipe();start(['Xvfb','-displayfd',str(wr),'-screen','0','1600x1000x24','-nolisten','tcp'],'xvfb',env,pass_fds=(wr,));os.close(wr);env['DISPLAY']=':'+os.read(rd,64).decode().strip();os.close(rd)
+        rd,wr=os.pipe();start(['Xvfb','-displayfd',str(wr),'-screen','0','1600x1000x24','-nolisten','tcp'],'xvfb',env,pass_fds=(wr,));os.close(wr)
+        with os.fdopen(rd)as pipe:env['DISPLAY']=':'+pipe.readline().strip()
         connection=display.Display(env['DISPLAY'])
         def get(path):
             with urllib.request.urlopen(base+path,timeout=2)as response:return json.load(response)
@@ -92,7 +93,7 @@ try:
         settings=runtime/'config/dome/sounds.json'
         def enabled():return json.loads(settings.read_text())['enabled']if settings.exists()else True
         def open_settings():
-            key('comma',('Super_L',));wait(lambda:get('/api/xr-shell')['top']>36);key('End');time.sleep(.2)
+            key('comma',('Super_L',));wait(lambda:get('/api/xr-shell')['top']>36);key('Home');[key('Down') for _ in range(4)];time.sleep(.2)
         def toggle(expected):
             key('Return');wait(lambda:enabled()==expected);time.sleep(.2)
         def xr_toggle(expected):

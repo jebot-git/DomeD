@@ -218,13 +218,16 @@ fn separate_background_session_preserves_desktop_placement_and_lifecycle() -> Re
             true,
             10,
         )?;
+        let backdrop_instance = entry.create_instance(&xr::ApplicationInfo::default(), &extensions, &[])?;
+        let instances = RUNTIME.with_borrow(|r| r.instances);
         let mut background = Background::new(
-            &entry,
+            backdrop_instance,
             &graphics,
             vk::Format::R8G8B8A8_SRGB,
             xr::ReferenceSpaceType::LOCAL,
         )?;
         assert_ne!(desktop.as_raw(), background.instance.as_raw());
+        assert_eq!(RUNTIME.with_borrow(|r| r.instances), instances, "Session construction must reuse the helper instance");
         RUNTIME.with_borrow(|r| {
             assert_eq!(
                 r.placements,
@@ -248,14 +251,14 @@ fn separate_background_session_preserves_desktop_placement_and_lifecycle() -> Re
         background.poll()?;
         assert!(background.active && background.visible);
         RUNTIME.with_borrow_mut(|r| r.events.push_back(xr::SessionState::LOSS_PENDING));
-        background.poll()?;
+        assert!(background.poll().is_err(), "Loss must exit the helper so its supervisor can retry");
         assert!(background.lost && !background.visible);
         drop(background);
         // Runtime rejection is propagated, never replaced with a high-placement
         // background session which would cover WayVR again.
         RUNTIME.with_borrow_mut(|r| r.reject = true);
         assert!(Background::new(
-            &entry,
+            entry.create_instance(&xr::ApplicationInfo::default(), &extensions, &[])?,
             &graphics,
             vk::Format::R8G8B8A8_SRGB,
             xr::ReferenceSpaceType::LOCAL

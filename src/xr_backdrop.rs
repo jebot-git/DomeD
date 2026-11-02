@@ -29,7 +29,7 @@ impl Backdrop {
 
 /// Runtime main-session visibility covers independent OpenXR applications;
 /// native handoffs and WebXR also have explicit compositor-owned state.
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct Presentation {
     pub runtime_visible: bool,
     pub external_primary: bool,

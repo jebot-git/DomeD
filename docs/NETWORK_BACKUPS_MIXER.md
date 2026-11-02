@@ -94,7 +94,13 @@ source or backup disk is unavailable. Inspect job history with
 ## Audio mixer
 
 Open the speaker widget and select its second page, **Mixer**. **Volume** retains
-the default speaker/microphone controls and default-device list. Tab or
+the default speaker/microphone controls and default-device list. A third
+**Notifications** row controls the saved notification category volume and mute,
+even when no short event sound is currently playing. Unmute also reenables
+DomeD's notification/system sounds; mute disables them. Volume, arrow keys,
+wheel and pointer controls work identically in desktop and XR. The category is
+saved by WirePlumber and applies to later notification streams.
+Tab or
 Page Up/Page Down switches pages in desktop and XR.
 
 The mixer lists output/input devices, playback/recording applications and device

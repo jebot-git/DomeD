@@ -18,6 +18,13 @@ Missing preferences default to enabled. Invalid preferences remain intact and
 start with event sounds disabled. This control manages session event feedback;
 application media volume and XR backdrop ambience keep their existing controls.
 
+The speaker tray's **Volume → Notifications** row exposes volume and mute for
+WirePlumber's persistent notification audio category, including between sounds.
+It reflects both category mute and DomeD's enabled setting. Unmute clears the
+category mute and reenables event sounds; mute saves both settings. It requires
+WirePlumber's `route-settings` metadata. Notification volume does not alter
+speaker, microphone or application volumes.
+
 | Event | Theme sound |
 | --- | --- |
 | New notification | `message-new-instant` |

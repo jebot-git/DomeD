@@ -1035,15 +1035,15 @@ extern "C" int dome_qt_paint(const char *json, unsigned char *pixels,
           p.button(x + 10, ry, pw - 20, 30, str(rows[n], "label"), selected == n);
         }
       } else {
-      for (int n = 0; n < 2; ++n) {
-        int offset = n ? 136 : 64;
-        auto level = obj(audio, n ? "input" : "output");
+      for (int n = 0; n < 3; ++n) {
+        int offset = 64 + n * 72;
+        auto level = obj(audio, n == 2 ? "notification" : n ? "input" : "output");
         bool available = !level.empty();
         double volume = level.value("volume", 0.);
         if (selected == n) p.rect(x + 10, y + offset - 30, pw - 20, 64, p.sel);
-        auto name = str(audio, n ? "input_name" : "output_name");
+        auto name = n == 2 ? "All notification sounds" : str(audio, n ? "input_name" : "output_name");
         p.text(x + 16, y + offset - 28, pw - 32, 24,
-               std::string(n ? "Microphone" : "Output") + " " +
+               std::string(n == 2 ? "Notifications" : n ? "Microphone" : "Output") + " " +
                    (available ? std::to_string(int(std::lround(volume * 100))) + "%" : "Unavailable") + " · " + name,
                available ? p.fg : p.muted);
         p.button(x + 16, y + offset, 32, 30, "−");
@@ -1055,12 +1055,12 @@ extern "C" int dome_qt_paint(const char *json, unsigned char *pixels,
                std::clamp(int(volume * (pw - 216)), 0, std::max(0, pw - 216)),
                8, yes(level, "muted") ? p.muted : p.accent);
       }
-      p.text(x + 16, y + 182, pw - 32, 28, "Default devices · click to select", p.muted);
+      p.text(x + 16, y + 254, pw - 32, 28, "Default devices · click to select", p.muted);
       int first = num(audio, "first"), visible = num(audio, "visible");
       auto rows = arr(audio, "rows");
       for (int n = first; n < std::min(int(rows.size()), first + visible); ++n) {
         auto row = rows[n];
-        int ry = y + 214 + (n - first) * 32;
+        int ry = y + 286 + (n - first) * 32;
         if (str(row, "kind") == "heading") {
           p.text(x + 16, ry, pw - 32, 28, str(row, "label"), p.muted);
           p.rect(x + 16, ry + 28, pw - 32, 1, p.muted);

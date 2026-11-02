@@ -33,11 +33,18 @@ session at placement **0**. WayVR's overlay (placement **5**) and DomeD's deskto
 session (default placement **10**) therefore remain in front of the city,
 including curved panels, bars, menus and popups. Ordering the projection first
 inside the desktop session alone cannot put it behind another overlay session.
-The background has its own OpenXR instance, lifecycle, frame timing and stereo
-tracking, while sharing the desktop's Vulkan device on the same render thread.
+The background runs as an input-free `dome-xr --backdrop-only` child, with its
+own OpenXR instance, Vulkan device, lifecycle, frame timing and stereo tracking.
+Keeping one instance per process also supports OpenXR loaders that reject
+simultaneous instances in the same process. The desktop supervises the helper
+without waiting for its frame calls. Startup errors and lost sessions retry
+with a bounded 1–30 second backoff; disabling and reenabling the backdrop resets
+that delay. The child stops when its parent exits or the backdrop is disabled.
+Stale scene or parent visibility updates suspend its rendering and audio.
 Suspension submits no layers in the background session. It does not consume the
 desktop session's layer budget or controller input. If the runtime cannot create
-the background session, the city stays disabled and the desktop remains usable.
+the background session, the city remains hidden while retries continue and the
+desktop remains usable.
 Without overlay support (or with explicit `--standalone` diagnostics), the city
 is the first projection in the desktop session as before.
 The indexed mesh and textures are uploaded once to device-local GPU memory. The
@@ -170,7 +177,8 @@ audio sink. Automated tests also cover anchors, route wrapping, pausable clocks,
 stale audio input and suspension/restoration policy. Set
 `DOME_BACKDROP_BENCH_FRAMES=90` for a GPU submission/completion timing sample.
 Headset appearance and independent runtime visibility events need headset QA.
-XR reports include `backdrop_overlay_placement` and `backdrop_overlay_frames`
-to distinguish the background session from inline standalone rendering.
+XR reports include `backdrop_overlay_placement`, `backdrop_helper_starts` and
+`backdrop_report`. The helper writes its placement and frame counters into
+`REPORT.backdrop.json`, separately from inline standalone rendering.
 The normal desktop screenshot/export path currently captures desktop surfaces;
 it does not include the environment projection layer.

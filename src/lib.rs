@@ -47,6 +47,7 @@ pub mod file_manager;
 pub mod stereo;
 
 pub mod audio;
+pub mod notification_audio;
 
 
 pub mod music_floor;

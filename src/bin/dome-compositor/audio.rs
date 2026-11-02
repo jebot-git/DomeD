@@ -45,7 +45,7 @@ impl Dome {
         }
         let count = DeviceList::new(&self.audio.state(), None, 0.).rows.len();
         let w = 440.min((width - 24).max(1)) as f64;
-        let h = (250 + count.min(10) as i32 * 32).min((height - 108).max(1)) as f64;
+        let h = (322 + count.min(10) as i32 * 32).min((height - 108).max(1)) as f64;
         [(width as f64 - w - 12.).max(0.), 42., w, h]
     }
     pub fn audio_json(&self, width: i32, height: i32) -> serde_json::Value {
@@ -58,23 +58,35 @@ impl Dome {
         }
         let devices = Self::audio_devices(&snapshot);
         let [x, y, w, h] = self.audio_rect(width, height);
-        let selected = self.audio_selected.min(devices.len() + 1);
-        let list = DeviceList::new(&snapshot, selected.checked_sub(2), h);
+        let selected = self.audio_selected.min(devices.len() + 2);
+        let list = DeviceList::new(&snapshot, selected.checked_sub(3), h);
         let visible = list.visible;
         let first = list.first;
         let rows: Vec<_> = list.rows.iter().map(|row| match row {
             DeviceRow::Heading(target) => serde_json::json!({"kind":"heading","target":target,"label":if *target==Target::Output {"Output devices"}else{"Microphones"}}),
-            DeviceRow::Device(index) => {let d=devices[*index];serde_json::json!({"kind":"device","index":index+2,"id":d.id,"serial":d.serial,"target":d.target,"label":d.label,"active":d.selected})},
+            DeviceRow::Device(index) => {let d=devices[*index];serde_json::json!({"kind":"device","index":index+3,"id":d.id,"serial":d.serial,"target":d.target,"label":d.label,"active":d.selected})},
         }).collect();
-        serde_json::json!({"x":x,"y":y,"w":w,"h":h,"output":snapshot.output,"input":snapshot.input,"output_name":snapshot.outputs.iter().find(|d|d.selected).map(|d|d.label.as_str()).unwrap_or("No output device"),"input_name":snapshot.inputs.iter().find(|d|d.selected).map(|d|d.label.as_str()).unwrap_or("No microphone"),"error":snapshot.error,"rows":rows,"visible":visible,"first":first,"selected":selected})
+        serde_json::json!({"x":x,"y":y,"w":w,"h":h,"output":snapshot.output,"input":snapshot.input,"notification":snapshot.notification.map(|mut l| {l.muted |= !self.sounds.enabled(); l}),"output_name":snapshot.outputs.iter().find(|d|d.selected).map(|d|d.label.as_str()).unwrap_or("No output device"),"input_name":snapshot.inputs.iter().find(|d|d.selected).map(|d|d.label.as_str()).unwrap_or("No microphone"),"error":if self.audio_notification_error.is_empty(){&snapshot.error}else{&self.audio_notification_error},"rows":rows,"visible":visible,"first":first,"selected":selected})
     }
-    fn audio_activate(&self) {
+    fn audio_activate(&mut self) {
         let snapshot = self.audio.state();
         match self.audio_selected {
             0 if snapshot.output.is_some() => self.audio.request(Request::Mute(Target::Output)),
             1 if snapshot.input.is_some() => self.audio.request(Request::Mute(Target::Input)),
-            n if n >= 2 => {
-                if let Some(d) = Self::audio_devices(&snapshot).get(n - 2) {
+            2 if snapshot.notification.is_some() => {
+                let enabled = !self.sounds.enabled() || snapshot.notification.is_some_and(|l| l.muted);
+                self.audio_notification_error.clear();
+                let setting = dome::system_sounds::Settings { enabled };
+                match setting.save(&dome::system_sounds::Settings::path()) {
+                    Ok(()) => {
+                        self.sounds.set_enabled(enabled);
+                        self.audio.request(Request::NotificationMute(!enabled));
+                    }
+                    Err(error) => self.audio_notification_error = error,
+                }
+            }
+            n if n >= 3 => {
+                if let Some(d) = Self::audio_devices(&snapshot).get(n - 3) {
                     self.audio.request(Request::Default {
                         target: d.target,
                         id: d.id,
@@ -98,7 +110,7 @@ impl Dome {
             return true;
         }
         let snapshot = self.audio.state();
-        let last = Self::audio_devices(&snapshot).len() + 1;
+        let last = Self::audio_devices(&snapshot).len() + 2;
         self.audio_selected = self.audio_selected.min(last);
         match key {
             0xff1b => self.close_audio(),
@@ -107,17 +119,9 @@ impl Dome {
             0xff50 => self.audio_selected = 0,
             0xff57 => self.audio_selected = last,
             0xff51 | 0xff53 => {
-                let target = if self.audio_selected == 1 {
-                    Target::Input
-                } else {
-                    Target::Output
-                };
-                let level = if target == Target::Input {
-                    snapshot.input
-                } else {
-                    snapshot.output
-                };
-                if level.is_some() && self.audio_selected < 2 {
+                let target = match self.audio_selected { 1 => Target::Input, 2 => Target::Notification, _ => Target::Output };
+                let level = match target { Target::Input => snapshot.input, Target::Notification => snapshot.notification, Target::Output => snapshot.output };
+                if level.is_some() && self.audio_selected < 3 {
                     self.audio
                         .request(Request::Step(target, if key == 0xff53 { 5 } else { -5 }));
                 }
@@ -155,12 +159,14 @@ impl Dome {
         for (target, offset, index, level) in [
             (Target::Output, 64., 0, snapshot.output),
             (Target::Input, 136., 1, snapshot.input),
+            (Target::Notification, 208., 2, snapshot.notification),
         ] {
             if y >= top + offset && y < top + offset + 30. {
                 self.audio_selected = index;
                 if level.is_some() {
                     if x >= left + w - 96. {
-                        self.audio.request(Request::Mute(target));
+                        if target == Target::Notification { self.audio_activate(); }
+                        else { self.audio.request(Request::Mute(target)); }
                     } else if x >= left + w - 140. {
                         self.audio.request(Request::Step(target, 5));
                     } else if x < left + 52. {
@@ -173,9 +179,9 @@ impl Dome {
                 return true;
             }
         }
-        let list = DeviceList::new(&snapshot, self.audio_selected.checked_sub(2), h);
-        if let Some(index) = list.device_at(y - top - 214.) {
-            self.audio_selected = index + 2;
+        let list = DeviceList::new(&snapshot, self.audio_selected.checked_sub(3), h);
+        if let Some(index) = list.device_at(y - top - 286.) {
+            self.audio_selected = index + 3;
             self.audio_activate();
         }
         true
@@ -235,24 +241,22 @@ impl Dome {
         }
         let snapshot = self.audio.state();
         let [_, top, _, _] = self.audio_rect(width, height);
-        if self.audio_open && y >= top + 214. {
-            let last = Self::audio_devices(&snapshot).len() + 1;
+        if self.audio_open && y >= top + 286. {
+            let last = Self::audio_devices(&snapshot).len() + 2;
             self.audio_selected = if delta > 0. {
                 (self.audio_selected + 1).min(last)
             } else {
                 self.audio_selected.saturating_sub(1)
             };
         } else {
-            let target = if self.audio_open && y >= top + 108. && y < top + 176. {
+            let target = if self.audio_open && y >= top + 180. {
+                Target::Notification
+            } else if self.audio_open && y >= top + 108. && y < top + 176. {
                 Target::Input
             } else {
                 Target::Output
             };
-            let level = if target == Target::Input {
-                snapshot.input
-            } else {
-                snapshot.output
-            };
+            let level = match target { Target::Input => snapshot.input, Target::Notification => snapshot.notification, Target::Output => snapshot.output };
             if level.is_some() {
                 self.audio
                     .request(Request::Step(target, if delta < 0. { 5 } else { -5 }));

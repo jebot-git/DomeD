@@ -60,7 +60,8 @@ try:
         wait(lambda:re.search(r'^Default Sink: dome\.test\.speakers$',command('pactl','info').decode(),re.M))
         (out/'pulse-info.txt').write_bytes(command('pactl','info'))
         check('dome.test.speakers.monitor'in command('pactl','list','short','sources').decode(),'Private PulseAudio server exposes the virtual sink monitor')
-        rd,wr=os.pipe();start(['Xvfb','-displayfd',str(wr),'-screen','0','1280x900x24','-nolisten','tcp'],'xvfb',pass_fds=(wr,));os.close(wr);env['DISPLAY']=':'+os.read(rd,64).decode().strip();os.close(rd)
+        rd,wr=os.pipe();start(['Xvfb','-displayfd',str(wr),'-screen','0','1280x900x24','-nolisten','tcp'],'xvfb',pass_fds=(wr,));os.close(wr)
+        with os.fdopen(rd)as pipe:env['DISPLAY']=':'+pipe.readline().strip()
         compositor=start([a.binary.resolve(),'--backend','nested'],'compositor')
         def state():
             with urllib.request.urlopen(f'http://127.0.0.1:{port}/api/state',timeout=2)as response:return json.load(response)

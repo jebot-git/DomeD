@@ -1,5 +1,5 @@
 //! Lowest-placement overlay for the opaque city, independent of desktop layers.
-//! A separate instance also works on runtimes with one session per instance.
+//! Runs in the isolated backdrop helper: one instance and session per process.
 use super::{backdrop, pose, Panel, VIEW_TYPE};
 use ash::vk;
 use dome::{xr_backdrop::Presentation, Scene};
@@ -28,28 +28,14 @@ pub struct Background {
 }
 
 impl Background {
-    /// The Vulkan binding is shared with the desktop. All queue access and both
-    /// sessions' begin/end/acquire/release calls stay on the render thread.
+    /// Use the helper's existing instance and Vulkan binding. All queue access
+    /// and session begin/end/acquire/release calls stay on its render thread.
     pub unsafe fn new(
-        entry: &xr::Entry,
+        instance: xr::Instance,
         graphics: &xr::vulkan::SessionCreateInfo,
         format: vk::Format,
         reference_space_type: xr::ReferenceSpaceType,
     ) -> Result<Self> {
-        let mut extensions = xr::ExtensionSet::default();
-        extensions.extx_overlay = true;
-        extensions.khr_vulkan_enable2 = true;
-        let instance = entry.create_instance(
-            &xr::ApplicationInfo {
-                application_name: "Dome backdrop",
-                application_version: 1,
-                engine_name: "Dome Rust",
-                engine_version: 1,
-                api_version: xr::Version::new(1, 0, 0),
-            },
-            &extensions,
-            &[],
-        )?;
         let system = instance.system(xr::FormFactor::HEAD_MOUNTED_DISPLAY)?;
         let requirements = instance.graphics_requirements::<xr::Vulkan>(system)?;
         if requirements.min_api_version_supported > xr::Version::new(1, 1, 0) {
@@ -75,7 +61,11 @@ impl Background {
         }
         // Use exactly the desktop's space type; mixing LOCAL and STAGE would
         // move the city relative to the desktop when a stage is unavailable.
-        let stage = session.create_reference_space(reference_space_type, xr::Posef::IDENTITY)?;
+        let stage = match session.create_reference_space(reference_space_type, xr::Posef::IDENTITY) {
+            Ok(space) => space,
+            Err(_) if reference_space_type == xr::ReferenceSpaceType::STAGE => session.create_reference_space(xr::ReferenceSpaceType::LOCAL, xr::Posef::IDENTITY)?,
+            Err(error) => return Err(error.into()),
+        };
         let view =
             session.create_reference_space(xr::ReferenceSpaceType::VIEW, xr::Posef::IDENTITY)?;
         let recommended = instance.enumerate_view_configuration_views(system, VIEW_TYPE)?;
@@ -147,6 +137,7 @@ impl Background {
                 _ => (),
             }
         }
+        if self.lost { return Err("Backdrop XR session was lost; recreate the helper".into()); }
         Ok(())
     }
 
@@ -159,7 +150,8 @@ impl Background {
         now: f64,
     ) -> Result<()> {
         self.poll()?;
-        if !self.active || self.lost {
+        if self.lost { renderer.suspend(now); return Err("Backdrop XR session was lost; recreate the helper".into()); }
+        if !self.active {
             renderer.suspend(now);
             return Ok(());
         }
