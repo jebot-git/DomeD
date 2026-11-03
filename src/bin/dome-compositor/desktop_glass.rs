@@ -236,12 +236,14 @@ impl GlassRenderer {
             h: height as f32,
         };
         let bounds = dome::looking_glass::bounds(rect, angle);
-        let a = angle.clamp(-89.9, 89.9).to_radians();
+        let a = angle.clamp(-dome::looking_glass::MAX_TILT_DEG, dome::looking_glass::MAX_TILT_DEG).to_radians();
         let texture = TextureRenderElement::from_texture_buffer(
             (bounds.x as f64, bounds.y as f64),
             &self.snapshots[&id].buffer,
-            Some(1. - 0.35 * (angle.abs() / 90.)),
-            None,
+            Some(1. - 0.35 * (angle.abs() / dome::looking_glass::MAX_TILT_DEG)),
+            // The destination bounds shrink with tilt; source coordinates must
+            // still cover the entire original window texture.
+            Some(Rectangle::from_size((width as f64, height as f64).into())),
             Some((bounds.w as i32, bounds.h as i32).into()),
             Kind::Unspecified,
         );

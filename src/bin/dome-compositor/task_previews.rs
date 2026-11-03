@@ -57,24 +57,16 @@ fn preview_size(width: i32, height: i32) -> Option<((i32, i32), f64)> {
 }
 impl crate::Dome {
     pub fn update_task_previews(&mut self, renderer: &mut GlesRenderer) {
-        let scene=self.scene.lock().unwrap().clone();
-        let glass=scene.looking_glass.enabled;
-        let ids: Vec<_> = if glass {
-            let mut ids=Vec::new();
-            for realm in [dome::Realm::Desktop,dome::Realm::Xr] {
-                for task in dome::taskbar::tasks(&scene.realm_scene(realm),&self.apps,&self.pins).into_iter().take(12) {
-                    for id in task.windows.into_iter().rev().take(3) {if !ids.contains(&id) && ids.len()<36 {ids.push(id);}}
-                }
-            }
-            ids
-        } else {self.task_popup.filter(|_|!self.task_context).and_then(|index|self.task_list().get(index).cloned()).map(|task|task.windows.into_iter().take(4).collect()).unwrap_or_default()};
+        let ids: Vec<_> = self.task_popup.filter(|_| !self.task_context)
+            .and_then(|index| self.task_list().get(index).cloned())
+            .map(|task| task.windows.into_iter().take(4).collect()).unwrap_or_default();
         // Bound memory to the visible group; closing the popup stops all preview work.
         self.task_previews.frames.retain(|id, _| ids.contains(id));
         if ids.is_empty()
             || self
                 .task_previews
                 .last_capture
-                .is_some_and(|last| last.elapsed() < Duration::from_millis(if glass {40}else{100}))
+                .is_some_and(|last| last.elapsed() < Duration::from_millis(100))
         {
             return;
         }

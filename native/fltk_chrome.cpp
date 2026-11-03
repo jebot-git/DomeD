@@ -424,23 +424,6 @@ struct Paint {
     cairo_restore(c);
     cairo_surface_destroy(surface);
   }
-  void glassDock(const J &glass,int w,int h) {
-    if(!yes(glass,"enabled"))return;
-    int i=0;
-    for(const auto &group:arr(glass,"groups")) {
-      int x=110+i++*130;if(x>w-380)break;
-      if(yes(group,"active"))rect(x-5,h-56,126,52,sel);
-      const auto previews=arr(group,"previews");
-      for(int n=int(previews.size())-1;n>=0;--n) {
-        rect(x+20+n*5,h-55-n*3,79,35,muted);
-        image(x+21+n*5,h-54-n*3,77,33,previews[n],"rgba");
-      }
-      if(previews.empty())icon(x+46,h-54,28,str(group,"icon"),fg);
-      text(x+2,h-19,120,18,str(group,"name"),fg,true);
-      auto count=arr(group,"windows").size();
-      if(count>1)text(x+100,h-55,20,20,std::to_string(count),accent,true);
-    }
-  }
   void taskPopup(const J &panel) {
     if (panel.empty())
       return;
@@ -813,10 +796,7 @@ extern "C" int dome_qt_paint(const char *json, unsigned char *pixels,
     const auto desktops = arr(o, "desktops");
     const int activeDesktop = num(o, "active_workspace", -1);
     const bool hasActiveDesktop = activeDesktop >= 0 && activeDesktop < int(desktops.size());
-    if (yes(obj(o,"looking_glass"),"enabled")) {
-      p.button(w-250,h-56,76,48,"Glass");
-      p.text(w-168,h-56,76,48,"Desktops",p.fg);
-    } else if (hasActiveDesktop) {
+    if (hasActiveDesktop) {
       p.text(w - 240, h - 58, 140, 28,
              "Desktops " + std::to_string(activeDesktop + 1) + "/" + std::to_string(desktops.size()), p.fg);
       p.text(w - 240, h - 30, 140, 28,
@@ -827,7 +807,7 @@ extern "C" int dome_qt_paint(const char *json, unsigned char *pixels,
     p.text(w - 90, h - 60, 86, 60, yes(o, "xr_active") ? "Desktop" : "XR",
            p.fg);
     i = 0;
-    if(!yes(obj(o,"looking_glass"),"enabled")) for (auto &task : arr(o, "tasks")) {
+    for (auto &task : arr(o, "tasks")) {
       int x = 110 + i++ * 130;
       if (x > w - 380)
         break;
@@ -844,7 +824,6 @@ extern "C" int dome_qt_paint(const char *json, unsigned char *pixels,
       if (count > 1)
         p.text(x + 96, h - 20, 22, 16, std::to_string(count), p.fg);
     }
-    p.glassDock(obj(o,"looking_glass"),w,h);
     if (yes(o, "launcher")) {
       p.rect(20, 56, 600, 400, p.bg);
       p.text(36, 65, 560, 30, "Applications · " + str(o, "query"), p.fg);

@@ -1,29 +1,7 @@
-//! Input and grouped dock for the natural-placement Looking Glass experiment.
+//! Input for the natural-placement Looking Glass experiment.
 use crate::Dome;
 use dome::{looking_glass as lg, Action};
 impl Dome {
-    pub fn glass_json(&self, _width: i32, _height: i32) -> serde_json::Value {
-        if !self.scene.lock().unwrap().looking_glass.enabled {
-            return serde_json::json!({"enabled":false});
-        }
-        let groups: Vec<_> = self
-            .task_list()
-            .into_iter()
-            .map(|task| {
-                let previews: Vec<_> = task
-                    .windows
-                    .iter()
-                    .rev()
-                    .take(3)
-                    .map(|id| self.task_previews.json(*id))
-                    .collect();
-                let mut group = serde_json::to_value(task).unwrap();
-                group["previews"] = serde_json::json!(previews);
-                group
-            })
-            .collect();
-        serde_json::json!({"enabled":true,"groups":groups})
-    }
     pub fn glass_open(&mut self, id: u64) {
         self.action(Action::GlassWindow {
             id,
@@ -33,18 +11,6 @@ impl Dome {
             note: None,
         });
         self.action(Action::Focus { id });
-    }
-    pub fn glass_click(&mut self, x: f64, y: f64, width: i32, height: i32) -> bool {
-        let enabled = self.scene.lock().unwrap().looking_glass.enabled;
-        if enabled
-            && y >= height as f64 - 60.
-            && x >= width as f64 - 250.
-            && x < width as f64 - 170.
-        {
-            self.action(Action::LookingGlass { enabled: false });
-            return true;
-        }
-        false
     }
     pub fn glass_scroll(&mut self, vertical: f64) -> bool {
         let mods = self.seat.get_keyboard().unwrap().modifier_state();
@@ -79,7 +45,7 @@ impl Dome {
         let current = scene.looking_glass.cards.get(&id).map_or(0., |c| c.yaw_deg);
         self.action(Action::GlassWindow {
             id,
-            yaw_deg: Some((current + vertical as f32 * (10. / 15.)).clamp(-90., 90.)),
+            yaw_deg: Some((current + vertical as f32 * (10. / 15.)).clamp(-lg::MAX_TILT_DEG, lg::MAX_TILT_DEG)),
             parked: None,
             back: None,
             note: None,

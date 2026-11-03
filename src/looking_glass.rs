@@ -2,7 +2,8 @@
 use crate::{Rect, Scene, WindowId};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-pub const SETTLE_DELAY_MS: u64 = 350;
+pub const SETTLE_DELAY_MS: u64 = 900;
+pub const MAX_TILT_DEG: f32 = 80.;
 pub const PREVIEW_TOWARD_DEG: f32 = 12.;
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -28,13 +29,13 @@ pub fn angle(scene: &Scene, id: WindowId) -> f32 {
         .looking_glass
         .cards
         .get(&id)
-        .map_or(0., |c| c.display_yaw_deg)
+        .map_or(0., |c| c.display_yaw_deg.clamp(-MAX_TILT_DEG, MAX_TILT_DEG))
 }
 pub fn opacity(scene: &Scene, id: WindowId) -> f32 {
-    1. - 0.35 * (angle(scene, id).abs() / 90.).min(1.)
+    1. - 0.35 * (angle(scene, id).abs() / MAX_TILT_DEG).min(1.)
 }
 pub fn corners(rect: Rect, yaw: f32) -> [[f32; 2]; 4] {
-    let a = yaw.clamp(-89.9, 89.9).to_radians();
+    let a = yaw.clamp(-MAX_TILT_DEG, MAX_TILT_DEG).to_radians();
     [[-0.5, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]].map(|[x, y]| {
         let scale = 1. / (1. - x * a.sin() / 2.5);
         [
@@ -48,7 +49,7 @@ pub fn inverse(rect: Rect, yaw: f32, point: [f32; 2]) -> Option<[f32; 2]> {
     if rect.w <= 0. || rect.h <= 0. {
         return None;
     }
-    let a = yaw.clamp(-89.9, 89.9).to_radians();
+    let a = yaw.clamp(-MAX_TILT_DEG, MAX_TILT_DEG).to_radians();
     let dx = (point[0] - rect.x) / rect.w - 0.5;
     let dy = (point[1] - rect.y) / rect.h - 0.5;
     let denom = a.cos() + dx * a.sin() / 2.5;
@@ -109,9 +110,9 @@ impl Scene {
         if back == Some(true) || note.is_some() {
             return Err("Window backs and notes are not part of Looking Glass v2".into());
         }
-        let value = yaw.unwrap_or_else(|| if parked == Some(true) { 90. } else { 0. });
-        if !value.is_finite() || value.abs() > 90. {
-            return Err("Tilt must be between -90 and 90 degrees".into());
+        let value = yaw.unwrap_or_else(|| if parked == Some(true) { MAX_TILT_DEG } else { 0. });
+        if !value.is_finite() || value.abs() > MAX_TILT_DEG {
+            return Err("Tilt must be between -80 and 80 degrees".into());
         }
         self.looking_glass
             .cards
@@ -182,12 +183,12 @@ mod tests {
         let mut s = Scene::demo();
         let id = s.windows[0].id;
         let before = serde_json::to_value(&s.windows).unwrap();
-        assert!(s.glass_edit(id, Some(90.), None, None, None).is_err());
+        assert!(s.glass_edit(id, Some(80.), None, None, None).is_err());
         s.apply(Action::LookingGlass { enabled: true }).unwrap();
-        s.glass_edit(id, Some(90.), None, None, None).unwrap();
-        assert_eq!(angle(&s, id), 90.);
+        s.glass_edit(id, Some(80.), None, None, None).unwrap();
+        assert_eq!(angle(&s, id), 80.);
         assert!(opacity(&s, id) < 1.);
-        assert!(s.glass_edit(id, Some(91.), None, None, None).is_err());
+        assert!(s.glass_edit(id, Some(81.), None, None, None).is_err());
         assert!(s.glass_edit(id, Some(f32::NAN), None, None, None).is_err());
         s.apply(Action::LookingGlass { enabled: false }).unwrap();
         assert_eq!(angle(&s, id), 0.);
@@ -214,8 +215,8 @@ mod tests {
             w: 1279.,
             h: 719.,
         };
-        for yaw in [-90_f32, -80., -30., 0., 30., 80., 90.] {
-            let a = yaw.clamp(-89.9_f32, 89.9_f32).to_radians();
+        for yaw in [-80_f32, -70., -30., 0., 30., 70., 80.] {
+            let a = yaw.clamp(-MAX_TILT_DEG, MAX_TILT_DEG).to_radians();
             for uv in [[0.2, 0.3], [0.5, 0.5], [0.8, 0.7]] {
                 let x = uv[0] - 0.5;
                 let y = uv[1] - 0.5;
@@ -244,9 +245,9 @@ mod tests {
         s.glass_tick(250);
         assert_eq!(angle(&s, a), 60.);
         assert_eq!(angle(&s, b), -63.);
-        s.glass_tick(549);
+        s.glass_tick(200 + SETTLE_DELAY_MS - 1);
         assert_eq!(s.looking_glass.cards[&b].yaw_deg, -75.);
-        for t in (550..=750).step_by(20) {
+        for t in (200 + SETTLE_DELAY_MS..=400 + SETTLE_DELAY_MS).step_by(20) {
             s.glass_tick(t);
         }
         assert_eq!(angle(&s, b), 0.);

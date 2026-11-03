@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Native Wayland clients, real desktop pointer/keys and synthetic XR, in a private session."""
 
-import json, os, pathlib, shlex, signal, socket, subprocess, sys, tempfile, threading, time, urllib.request
+import math, json, os, pathlib, shlex, signal, socket, subprocess, sys, tempfile, threading, time, urllib.request
 from Xlib import X, XK, display
 from Xlib.ext import xtest
-from PIL import Image
+from PIL import Image, ImageChops
 
 P = pathlib.Path
 root = P(__file__).resolve().parents[1]
@@ -245,13 +245,18 @@ try:
             w["id"]: (w["desktop"].copy(), w["xr_pose"], w["xr_scale"])
             for w in state()["windows"]
         }
+        baseline_bar = shot("desktop-classic-before.png")
+        baseline_bar = baseline_bar.crop((0, baseline_bar.height - 60, baseline_bar.width, baseline_bar.height))
         chord("Super_L", "g")
         wait(lambda: state()["looking_glass"]["enabled"])
         check(True, "Super+G enables natural-placement mode without opening a grid")
         for id, angle in zip(visible, [50, -55, 35]):
             action(op="glass_window", id=id, yaw_deg=angle)
         time.sleep(0.5)
-        shot("desktop-natural-tilt.png")
+        tilted_desktop = shot("desktop-natural-tilt.png")
+        current_bar = tilted_desktop.crop((0, tilted_desktop.height - 60, tilted_desktop.width, tilted_desktop.height))
+        check(ImageChops.difference(baseline_bar, current_bar).getbbox() is None,
+              "Looking Glass preserves the classic taskbar without changing its controls or application groups")
         check(
             all(
                 (w["desktop"], w["xr_pose"], w["xr_scale"]) == geometry[w["id"]]
@@ -268,6 +273,27 @@ try:
         # Target the visibly topmost window using the physical pointer and real wheel events.
         target = visible[-1]
         rect = geometry[target][0]
+        # Sample all four colored client landmarks after the actual GPU projection.
+        # The fixture uses the default 30 px caption and 4 px frame borders.
+        for tilt in [-80, -70, -35, 35, 70, 80]:
+            action(op="glass_window", id=target, yaw_deg=tilt)
+            image = shot(f"desktop-corners-{tilt}.png")
+            width, height = rect["w"] + 8, rect["h"] + 34
+            for corner in range(4):
+                cx = rect["w"] - 40 if corner % 2 else 40
+                cy = rect["h"] - 40 if corner // 2 else 80
+                u, v = (cx + 4) / width - 0.5, (cy + 30) / height - 0.5
+                a = math.radians(tilt)
+                k = 1 / (1 - u * math.sin(a) / 2.5)
+                px = round(rect["x"] - 4 + width * (0.5 + u * math.cos(a) * k))
+                py = round(rect["y"] - 30 + height * (0.5 + v * k))
+                rgb = image.getpixel((px, py))
+                if corner < 3:
+                    assert rgb[corner] > max(rgb[i] for i in range(3) if i != corner) + 60, (tilt, corner, rgb)
+                else:
+                    assert min(rgb) > 155, (tilt, corner, rgb)
+        check(True, "All four content corners remain visible through positive and negative tilt up to eighty degrees")
+        action(op="glass_window", id=target, yaw_deg=35)
         g = host.get_geometry()
         xtest.fake_input(
             xd,
@@ -287,7 +313,7 @@ try:
             lambda: state()["looking_glass"]["cards"][str(target)]["yaw_deg"] != before
         )
         check(True, "Super+scroll changes tilt and is consumed by the window manager")
-        action(op="glass_window", id=target, yaw_deg=85)
+        action(op="glass_window", id=target, yaw_deg=75)
         xtest.fake_input(xd, X.KeyPress, super_code)
         xd.sync()
         time.sleep(0.1)
@@ -297,8 +323,8 @@ try:
         xd.sync()
         time.sleep(0.2)
         check(
-            abs(state()["looking_glass"]["cards"][str(target)]["yaw_deg"]) == 90,
-            "Wheel tilt clamps at ninety degrees without a back side",
+            abs(state()["looking_glass"]["cards"][str(target)]["yaw_deg"]) == 80,
+            "Wheel tilt clamps at eighty degrees without a back side",
         )
         click(rect["x"] + rect["w"] / 2, rect["y"] + rect["h"] / 2)
         wait(lambda: state()["looking_glass"]["cards"][str(target)]["display_yaw_deg"] == 0)
@@ -323,6 +349,10 @@ try:
         xtest.fake_input(xd, X.KeyRelease, alt)
         xd.sync()
         last = visited[-1]
+        time.sleep(0.5)
+        pending = state()["looking_glass"]
+        check(pending["settle_at_ms"] is not None and pending["cards"][str(last)]["yaw_deg"] == 60,
+              "Alt-Tab keeps the selected window tilted for longer than half a second before restoring full view")
         wait(
             lambda: (
                 abs(state()["looking_glass"]["cards"][str(last)]["display_yaw_deg"])
@@ -339,7 +369,7 @@ try:
             "Alt-Tab previews lean toward view; only the final focus settles flat after the pause",
         )
         shot("desktop-after-alt-tab.png")
-        # The grouped dock shows all application windows, including minimized ones.
+        # The classic group popup includes minimized application windows.
         time.sleep(0.5)
         g = host.get_geometry()
         click(160, g.height - 35)
@@ -352,7 +382,7 @@ try:
         check(
             abs(state()["looking_glass"]["cards"][str(visible[0])]["display_yaw_deg"])
             < 0.01,
-            "Grouped application stack opens a window and removes its tilt",
+            "Classic application group popup opens a window and removes its tilt",
         )
 
         # Real window texture capture must remain full-size, not taskbar preview size.

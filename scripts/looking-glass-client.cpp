@@ -25,6 +25,11 @@ struct Content : Fl_Widget {
             20, 40);
     fl_color(FL_YELLOW);
     fl_rectf(20 + (tick * 17) % 400, 90, 65, 65);
+    // Opaque landmarks catch source cropping when the destination is tilted.
+    for (int corner = 0; corner < 4; ++corner) {
+      fl_color(corner == 0 ? FL_RED : corner == 1 ? FL_GREEN : corner == 2 ? FL_BLUE : FL_WHITE);
+      fl_rectf(corner % 2 ? w() - 60 : 20, corner / 2 ? h() - 60 : 60, 40, 40);
+    }
   }
   int handle(int event) override {
     if (event == FL_FOCUS || event == FL_UNFOCUS)
