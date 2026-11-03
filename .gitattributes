@@ -2,3 +2,5 @@
 assets/fonts/hicchicc--maruminya/AUTHORS.txt -text whitespace=cr-at-eol
 # Unified-diff context includes required leading spaces and upstream tabs.
 native/harfbuzz-bdf/*.patch -whitespace
+# Unified upstream patch context preserves leading tabs and blank context lines.
+native/bitmap-runtime/cairo-1.18.4-bitmap.patch -whitespace

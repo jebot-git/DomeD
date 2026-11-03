@@ -1,0 +1,214 @@
+{
+  "base": "b2f23ce68d92b9a43e62fddb3bb69fb6eec13d20",
+  "scope": "Canonical Cairo1.18.4 Xlib device cache teardown under existing device lock and live X Display/error handler. Cached white, alpha and solid source references released before close; font policy/drawing/public ABI unchanged.",
+  "bitmap_build": {
+    "status": "terminal",
+    "source_base": "b2f23ce68d92b9a43e62fddb3bb69fb6eec13d20",
+    "source_inputs": 6,
+    "command": [
+      "nice",
+      "-n",
+      "15",
+      "python3",
+      "scripts/prepare-bitmap-runtime.py",
+      "--prefix",
+      "/home/blux/de-xr/dome-sculpt/artifacts/domed-cairo-cleanup-b2f23ce/artifacts/bitmap-runtime",
+      "--work",
+      "/home/blux/de-xr/dome-sculpt/artifacts/domed-cairo-cleanup-b2f23ce/artifacts/bitmap-work",
+      "--jobs",
+      "2"
+    ],
+    "exit_code": 0,
+    "seconds": 244.9205663499888,
+    "input_drift": []
+  },
+  "real_source_cache_probe": {
+    "status": "terminal",
+    "inputs": 99,
+    "runs": [
+      {
+        "name": "old",
+        "exit_code": 1,
+        "expected_exit": 1,
+        "seconds": 0.16436310001881793,
+        "pixels": [
+          "PIXELS 0 a54a357253c49603",
+          "PIXELS 1 a54a357253c49603",
+          "PIXELS 2 a54a357253c49603",
+          "PIXELS 3 a54a357253c49603"
+        ],
+        "runtime": "/home/blux/de-xr/dome-sculpt/artifacts/bitmap-runtime-eee23b7"
+      },
+      {
+        "name": "fixed",
+        "exit_code": 0,
+        "expected_exit": 0,
+        "seconds": 0.11425001098541543,
+        "pixels": [
+          "PIXELS 0 a54a357253c49603",
+          "PIXELS 1 a54a357253c49603",
+          "PIXELS 2 a54a357253c49603",
+          "PIXELS 3 a54a357253c49603"
+        ],
+        "runtime": "/home/blux/de-xr/dome-sculpt/artifacts/domed-cairo-cleanup-b2f23ce/artifacts/bitmap-runtime"
+      }
+    ],
+    "sanitizer_suppressions": false,
+    "scope": "Real Cairo/Xlib source/mask cache; sanitizer client with external optimized bitmap libraries; private Xvfb, no FLTK lifecycle model, physical GPU or session.",
+    "exit_code": 0,
+    "pixels_exact": true,
+    "input_drift": []
+  },
+  "old_stress_negative": {
+    "bytes": 458000,
+    "allocations": 1145,
+    "surface_source": "cairo-xlib-source.c source()",
+    "cycles": 4
+  },
+  "new_stress": {
+    "exit_code": 0,
+    "cycles": 4,
+    "explicit_device_finish_cycles": 2,
+    "pixel_hash_per_cycle": "a54a357253c49603",
+    "old_new_pixels_equal": true
+  },
+  "actual_FLTK": {
+    "fixture": "scripts/test-fltk-process-cleanup.py",
+    "whole_Fltk_libdecor_client_SAN": true,
+    "external_bitmap_libraries": "Release, sanitizer allocations observed via native client; no whole bitmap sanitizer rebuild claim",
+    "x11_checks": 9,
+    "wayland_checks": 9,
+    "both_exits": 0,
+    "sanitizer_suppressions": false,
+    "old_X11_negative": "800B/two cached source surfaces retained in parent b2 receipt; now eliminated with this runtime"
+  },
+  "scope_limits": [
+    "No physical HMD/GPU/session or system installation action.",
+    "No assertion, per-operation bound or bitmap/font rendering policy changed.",
+    "Standalone-XR112B Mesa report is unrelated and remains unresolved.",
+    "UI/application integration is separately qualified by Dome Sculpt; this component fixture uses real toolkit objects."
+  ],
+  "source_sha256": {
+    "native/bitmap-runtime/cairo-1.18.4-bitmap.patch": "025e4b8b70edd9d7397c71e13622e4676319f8505566326d4ffa2bfc533d5957",
+    "native/bitmap-runtime/sources.json": "c7ca3428846fe36285edd77f0598e21751efe61d9ff8955a8b24f84f512f0f43",
+    "native/bitmap-runtime/xlib-lifetime.c": "85d50113619cc3a2d339a83e20a8948fcc79ddd24f2c78c53cd5f26f7d9380c9",
+    "scripts/test-cairo-xlib-lifetime.py": "e19f4cf0349d37aecaaffceb391adda3edaf575ec6d67ce91bb9b1b85c1ef4f9",
+    "scripts/prepare-bitmap-runtime.py": "df44413892b38098703fc4e5c0be04e5015382b524f83a9f5478fb22077ed151"
+  },
+  "runtime_manifest": {
+    "policy": "native-unicode-bitmap-only",
+    "formats": [
+      "BDF",
+      "PCF"
+    ],
+    "buildtype": "release",
+    "local_cpu": true,
+    "arch": "native",
+    "sources": [
+      {
+        "file": "freetype-2.14.3.tar.xz",
+        "url": "https://download.savannah.gnu.org/releases/freetype/freetype-2.14.3.tar.xz",
+        "sha256": "36bc4f1cc413335368ee656c42afca65c5a3987e8768cc28cf11ba775e785a5f",
+        "bytes": 2670220,
+        "name": "freetype",
+        "version": "2.14.3",
+        "directory": "freetype-2.14.3",
+        "patch": "freetype-2.14.3-bitmap.patch",
+        "patch_sha256": "d4bc632b097cc78f3baeafc59d9e2b854359b5125e63f69be3d9c53a3d11be4e",
+        "licenses": [
+          "LICENSE.TXT",
+          "docs/FTL.TXT",
+          "docs/GPLv2.TXT"
+        ]
+      },
+      {
+        "file": "harfbuzz-14.1.0.tar.xz",
+        "url": "https://github.com/harfbuzz/harfbuzz/releases/download/14.1.0/harfbuzz-14.1.0.tar.xz",
+        "sha256": "ee0eb3a1da2c5a28147f12dff55f6c7d60aeeeb29ac7ef334eabe84c8476c105",
+        "name": "harfbuzz",
+        "version": "14.1.0",
+        "directory": "harfbuzz-14.1.0",
+        "patch": "harfbuzz-14.1.0-bitmap.patch",
+        "patch_sha256": "bc141a1d93dedf0a3c9f8f44e9a48fbce268e2d1cdd9c723fa24544962322bf4",
+        "licenses": [
+          "COPYING"
+        ]
+      },
+      {
+        "file": "cairo-1.18.4.tar.xz",
+        "url": "https://cairographics.org/releases/cairo-1.18.4.tar.xz",
+        "sha256": "445ed8208a6e4823de1226a74ca319d3600e83f6369f99b14265006599c32ccb",
+        "bytes": 32578804,
+        "name": "cairo",
+        "version": "1.18.4",
+        "directory": "cairo-1.18.4",
+        "patch": "cairo-1.18.4-bitmap.patch",
+        "patch_sha256": "025e4b8b70edd9d7397c71e13622e4676319f8505566326d4ffa2bfc533d5957",
+        "licenses": [
+          "COPYING",
+          "COPYING-LGPL-2.1",
+          "COPYING-MPL-1.1"
+        ]
+      },
+      {
+        "file": "pango-1.57.1.tar.xz",
+        "url": "https://download.gnome.org/sources/pango/1.57/pango-1.57.1.tar.xz",
+        "sha256": "e65d6d117080dc3aeeb7d8b4b3b518f7383aa2e6cfce23117c623cd624764c2f",
+        "bytes": 2588416,
+        "name": "pango",
+        "version": "1.57.1",
+        "directory": "pango-1.57.1",
+        "patch": "pango-1.57.1-bitmap.patch",
+        "patch_sha256": "8d190e919dc188f435bf05c9c7b363053d36ac8bced8f0242c9bf6c1e38f6ea0",
+        "licenses": [
+          "COPYING"
+        ]
+      }
+    ],
+    "libraries": {
+      "libfreetype.so.6": "826c2bf3007f04253719b5492314fb0521e5f6c4a55b9d18e48995b7d1f95c97",
+      "libharfbuzz.so.0": "881d7b6a6aac2bb647ab5b5187142710a921695df2e341a7adc8c0f6f7a95e99",
+      "libharfbuzz-subset.so.0": "bc6722de7371cfeb22937205d9a54e91e07c798edacfda45534d336a2d685859",
+      "libharfbuzz-raster.so.0": "c3b595cd42e68ca6317370085d4c5a4bb84975021a05f12097b22c51ec73acf2",
+      "libharfbuzz-vector.so.0": "2502981dbbafeca4ff0760dc54376cb4f05874dc3f78f309dfe9d00a5f88489f",
+      "libharfbuzz-gpu.so.0": "e0df8308357102f9d7587ff2dfbc60a72d4ebdb0caa5e4dc44d7a3246bb8ee1d",
+      "libharfbuzz-cairo.so.0": "f3af7cbb7f7b84345187275e009fd2a834bee3b62ea7055cb06f6ba53da2e822",
+      "libharfbuzz-icu.so.0": "4ed43f1c638ca55455d10370840e81a45c923be86b4f05109f1d9f153a419621",
+      "libharfbuzz-gobject.so.0": "3924ae25330d8d755e020207cb51865d6886d76357e95e4b1b30f90436c28c87",
+      "libcairo.so.2": "8f45f554372a1b6531ec049199f19e6a8feb5a7294341b28b51c60906eb894ef",
+      "libcairo-gobject.so.2": "5ba8389b3149a962d63e5ebbed6403b395a7aaa106ab0eb8866204057f688914",
+      "libcairo-script-interpreter.so.2": "73fa57f28d91acf128db90b3301f79ebe0da9cf1b7017506889f7485ae68ab4c",
+      "libpango-1.0.so.0": "19afae7d7a87da694fff94b9367a9c1b406e20464f026478d113b2586ed5ee18",
+      "libpangoft2-1.0.so.0": "cba202c5d64cb96dc21f2ee88ca145d5503fa16478a998a290d156bbbefcc62e",
+      "libpangoxft-1.0.so.0": "d4810b2f313d91039f273972a31ac390a295e4233ccd1377c10c93fa4aa4b5d8",
+      "libpangocairo-1.0.so.0": "16f93d2a0067c869a07c4c8ca8e524008c75b11a0d9eb6a127cea7f4287548c7"
+    }
+  },
+  "evidence_sha256": {
+    "artifacts/bitmap-proof/build.log": "7bb9ded9b100e66fc136ee216b590e261c08d9137c813227791fcb942cb0a8c6",
+    "artifacts/bitmap-proof/fltk-sanitize/compositor.log": "c6738a82092adb4ff7cf9f8e2309488b060a2a3687006f73921ed8a0ef2b5404",
+    "artifacts/bitmap-proof/fltk-sanitize/wayland-maps.txt": "b046e9a0fc8e59e15bd9c2d583deb868855ae46e903324d961becf59be2b3c45",
+    "artifacts/bitmap-proof/fltk-sanitize/wayland.log": "1f0f7eba2c57a7161e72b895c69af3d0845f6cefc1db8abfde18d46e2460e64f",
+    "artifacts/bitmap-proof/fltk-sanitize/x11-maps.txt": "c46a16df25cccc230d8d0ec82a4c0be78e2d398164d90b06551f178221f44ba9",
+    "artifacts/bitmap-proof/fltk-sanitize/x11.log": "fbeafcd450f229777da34cd6ed239c99c64b09dd754ebee47d1956089238c5d4",
+    "artifacts/bitmap-proof/fltk-sanitize/xvfb.log": "d236b6348ddfd83fe1d4caa97b7c4b2cf1812f6399d68d81553ef19f904a774d",
+    "artifacts/bitmap-proof/fltk-sanitize.log": "ed252416881f9e2692d9007a591e35243c2febcd27e32270db4c4ea551c0dd74",
+    "artifacts/bitmap-proof/inputs-after.json": "b718a88f6025de5a4317befafc6c1932f781fd7d3259f6a6bbee1877e278f48a",
+    "artifacts/bitmap-proof/inputs-before.json": "b718a88f6025de5a4317befafc6c1932f781fd7d3259f6a6bbee1877e278f48a",
+    "artifacts/bitmap-proof/new-probe-xvfb.log": "2702c35bf2515fa5b5859cb02875835eb73a5c3421f73638fb2f9c4a0539abe4",
+    "artifacts/bitmap-proof/new-probe.json": "0ee76b68979848277623cf4f07fc844ca6ba02193f6ae9c69de00f3592d94234",
+    "artifacts/bitmap-proof/new-probe.log": "29a06c80622086e3e562af2b85e5920848e1dc9128cca56317d5e2e903efd4d5",
+    "artifacts/bitmap-proof/old-probe.json": "e075060ba57f1ac556136d169148920f0780f91fee9fa5d6763f491501716cf2",
+    "artifacts/bitmap-proof/old-probe.log": "a246812ca579a559b8b5e9a6daa689462a7bac684c92434c4a78984a485792af",
+    "artifacts/bitmap-proof/probe-compile.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "artifacts/bitmap-proof/probe-xvfb.log": "2702c35bf2515fa5b5859cb02875835eb73a5c3421f73638fb2f9c4a0539abe4",
+    "artifacts/bitmap-proof/qualified-probe/fixed.log": "29a06c80622086e3e562af2b85e5920848e1dc9128cca56317d5e2e903efd4d5",
+    "artifacts/bitmap-proof/qualified-probe/inputs-after.json": "ff3df4fa480665b7d1ec2ddb42af97d13bfab78c0470e905f6f0f7d182d02eba",
+    "artifacts/bitmap-proof/qualified-probe/inputs-before.json": "ff3df4fa480665b7d1ec2ddb42af97d13bfab78c0470e905f6f0f7d182d02eba",
+    "artifacts/bitmap-proof/qualified-probe/old.log": "5293394a8d4e559d5f2d7ecc0732b0a4a1cedbdd53cfd4159a2b747b73454015",
+    "artifacts/bitmap-proof/qualified-probe/status.json": "7595ae88c406d097658757a4ac0cae33f73b6e77048a040df5e682c9922f9ced",
+    "artifacts/bitmap-proof/qualified-probe/xvfb.log": "42caa5c5d65cb5fa31c6b93cf20ef167de0a65343883a0f0fd50994f1d8f52ab",
+    "artifacts/bitmap-proof/qualified-probe.log": "6f2682d3832f5db8e77691b307a7d3c8b5cb89053d3ccdc96f9d2ba0d1a478f5",
+    "artifacts/bitmap-proof/status.json": "0c0371adc1e3d772e09dfb0f4e7b543b6455fab9515f07aa65f08111ba931fcd"
+  }
+}

@@ -46,7 +46,7 @@
       "version": "1.18.4",
       "directory": "cairo-1.18.4",
       "patch": "cairo-1.18.4-bitmap.patch",
-      "patch_sha256": "4aa6c2229c3cf6e99d955b4df0f9dddbc969fd3bdd56e1f779c008fc2c3e3f23",
+      "patch_sha256": "025e4b8b70edd9d7397c71e13622e4676319f8505566326d4ffa2bfc533d5957",
       "licenses": [
         "COPYING",
         "COPYING-LGPL-2.1",

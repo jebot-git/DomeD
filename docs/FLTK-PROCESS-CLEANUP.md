@@ -1,5 +1,11 @@
 # Canonical FLTK process cleanup checkpoint
 
+A subsequent canonical Cairo source-cache fix now removes the optional X11
+800-byte report when using the matching new bitmap runtime. Its whole-toolkit/
+client sanitizer fixture passes9 checks on each backend with clean exits. Read
+[CAIRO-XLIB-CACHE-CLEANUP.md](CAIRO-XLIB-CACHE-CLEANUP.md). The parent evidence
+below remains scoped to the earlier bitmap runtime and retains its negatives.
+
 The FLTK1.4.5 builder now applies `fltk-1.4.5-process-cleanup.patch`. It releases
 the compose table's constructor reference after creating the keyboard state,
 destroys the GTK-shell protocol proxy on explicit display close, and releases
