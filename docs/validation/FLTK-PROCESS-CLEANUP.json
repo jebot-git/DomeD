@@ -1,0 +1,367 @@
+{
+  "base": "62b6417bb251aef8e00a1c3e8d4d1a69c043572b",
+  "branch": "work/fltk-process-lifetime-62b6417",
+  "scope": "Canonical FLTK1.4.5 explicit process display teardown: xkb compose constructor reference, protocol proxy, Cairo clip/region/dummy ownership, guarded exit callback, plugin construction without virtual calls before base construction.",
+  "qualification": {
+    "status": "terminal",
+    "runs": [
+      {
+        "name": "release",
+        "exit_code": 0,
+        "expected_exit": 0,
+        "seconds": 14.986233880015789,
+        "command": [
+          "python3",
+          "scripts/test-fltk-process-cleanup.py",
+          "--prefix",
+          "/home/blux/de-xr/dome-sculpt/artifacts/domed-fltk-lifetime-62b6417/artifacts/toolkit",
+          "--compositor",
+          "/home/blux/de-xr/dome-sculpt/artifacts/domed-62b6417-target/release/dome-compositor",
+          "--output",
+          "/home/blux/de-xr/dome-sculpt/artifacts/domed-fltk-lifetime-62b6417/artifacts/toolkit-proof/qualification/release"
+        ],
+        "x11_functional_checks": 9,
+        "x11_exit": 0,
+        "x11_HarfBuzz_loaded": false,
+        "wayland_functional_checks": 9,
+        "wayland_exit": 0,
+        "wayland_HarfBuzz_loaded": false
+      },
+      {
+        "name": "san-wayland",
+        "exit_code": 0,
+        "expected_exit": 0,
+        "seconds": 23.512686330999713,
+        "command": [
+          "python3",
+          "scripts/test-fltk-process-cleanup.py",
+          "--prefix",
+          "/home/blux/de-xr/dome-sculpt/artifacts/domed-fltk-lifetime-62b6417/artifacts/toolkit-sanitize",
+          "--compositor",
+          "/home/blux/de-xr/dome-sculpt/artifacts/domed-62b6417-target/release/dome-compositor",
+          "--output",
+          "/home/blux/de-xr/dome-sculpt/artifacts/domed-fltk-lifetime-62b6417/artifacts/toolkit-proof/qualification/san-wayland",
+          "--sanitize",
+          "--wayland-only"
+        ],
+        "wayland_functional_checks": 9,
+        "wayland_exit": 0,
+        "wayland_HarfBuzz_loaded": false
+      },
+      {
+        "name": "san-x11",
+        "exit_code": 1,
+        "expected_exit": 1,
+        "seconds": 22.159699195006397,
+        "command": [
+          "python3",
+          "scripts/test-fltk-process-cleanup.py",
+          "--prefix",
+          "/home/blux/de-xr/dome-sculpt/artifacts/domed-fltk-lifetime-62b6417/artifacts/toolkit-sanitize",
+          "--compositor",
+          "/home/blux/de-xr/dome-sculpt/artifacts/domed-62b6417-target/release/dome-compositor",
+          "--output",
+          "/home/blux/de-xr/dome-sculpt/artifacts/domed-fltk-lifetime-62b6417/artifacts/toolkit-proof/qualification/san-x11",
+          "--sanitize",
+          "--x11-only"
+        ],
+        "x11_functional_checks": 9,
+        "x11_exit": 1,
+        "x11_HarfBuzz_loaded": false
+      },
+      {
+        "name": "old-x11",
+        "exit_code": 1,
+        "expected_exit": 1,
+        "seconds": 22.133823228010442,
+        "command": [
+          "python3",
+          "scripts/test-fltk-process-cleanup.py",
+          "--prefix",
+          "/home/blux/de-xr/dome-sculpt/artifacts/toolkit-eee23b7",
+          "--compositor",
+          "/home/blux/de-xr/dome-sculpt/artifacts/domed-62b6417-target/release/dome-compositor",
+          "--output",
+          "/home/blux/de-xr/dome-sculpt/artifacts/domed-fltk-lifetime-62b6417/artifacts/toolkit-proof/qualification/old-x11",
+          "--sanitize",
+          "--x11-only"
+        ],
+        "x11_functional_checks": 9,
+        "x11_exit": 1,
+        "x11_HarfBuzz_loaded": false
+      }
+    ],
+    "started_utc": "2026-11-03T09:45:54.613867+00:00",
+    "inputs": 1076,
+    "physical_HMD": false,
+    "system_install": false,
+    "whole_toolkit_SAN": true,
+    "sanitizer_suppressions": false,
+    "full_backend_qualification": false,
+    "qualified_scope": "Release X11/Wayland18 functional; fully instrumented toolkit/client nativeWayland9 clean; X11 residual explicit negative800B (old968B). No whole-all-backends pass.",
+    "exit_code": 0,
+    "input_drift": []
+  },
+  "fresh_Release_build": {
+    "status": "terminal",
+    "exit_code": 0,
+    "seconds": 29.676351784990402,
+    "inputs": 29,
+    "input_drift": [],
+    "system_install": false
+  },
+  "whole_owned_SAN_build": {
+    "status": "terminal",
+    "runs": [
+      {
+        "name": "configure",
+        "exit_code": 0,
+        "seconds": 4.539866814011475,
+        "command": [
+          "cmake",
+          "-S",
+          "/home/blux/de-xr/dome-sculpt/artifacts/domed-fltk-lifetime-62b6417/artifacts/toolkit-deps/fltk-1.4.5",
+          "-B",
+          "/home/blux/de-xr/dome-sculpt/artifacts/domed-fltk-lifetime-62b6417/artifacts/toolkit-sanitize-build",
+          "-G",
+          "Ninja",
+          "-DCMAKE_BUILD_TYPE=Release",
+          "-DCMAKE_INSTALL_LIBDIR=lib",
+          "-DFLTK_LIBDIR=lib",
+          "-DCMAKE_C_FLAGS_RELEASE=-O1 -g1 -DNDEBUG -fsanitize=address,undefined -fno-omit-frame-pointer",
+          "-DCMAKE_CXX_FLAGS_RELEASE=-O1 -g1 -DNDEBUG -fsanitize=address,undefined -fno-omit-frame-pointer",
+          "-DCMAKE_SHARED_LINKER_FLAGS=-fsanitize=address,undefined",
+          "-DCMAKE_INSTALL_PREFIX=/home/blux/de-xr/dome-sculpt/artifacts/domed-fltk-lifetime-62b6417/artifacts/toolkit-sanitize",
+          "-DFLTK_BACKEND_WAYLAND=ON",
+          "-DFLTK_BACKEND_X11=ON",
+          "-DFLTK_BUILD_SHARED_LIBS=ON",
+          "-DFLTK_BUILD_TEST=OFF",
+          "-DFLTK_BUILD_EXAMPLES=OFF",
+          "-DFLTK_BUILD_FLUID=OFF",
+          "-DFLTK_BUILD_FLTK_OPTIONS=OFF",
+          "-DFLTK_BUILD_FORMS=OFF",
+          "-DFLTK_BUILD_GL=ON",
+          "-DFLTK_USE_DBUS=OFF",
+          "-DFLTK_USE_PANGO=OFF",
+          "-DFLTK_USE_SYSTEM_LIBDECOR=OFF",
+          "-DFLTK_USE_LIBDECOR_GTK=OFF",
+          "-DFLTK_OPTION_CAIRO_WINDOW=ON"
+        ]
+      },
+      {
+        "name": "build",
+        "exit_code": 0,
+        "seconds": 80.95443904600688,
+        "command": [
+          "cmake",
+          "--build",
+          "/home/blux/de-xr/dome-sculpt/artifacts/domed-fltk-lifetime-62b6417/artifacts/toolkit-sanitize-build",
+          "--parallel",
+          "2"
+        ]
+      },
+      {
+        "name": "stage",
+        "exit_code": 0,
+        "seconds": 0.030498774023726583,
+        "command": [
+          "cmake",
+          "--install",
+          "/home/blux/de-xr/dome-sculpt/artifacts/domed-fltk-lifetime-62b6417/artifacts/toolkit-sanitize-build"
+        ]
+      }
+    ],
+    "exit_code": 0,
+    "scope": "Fresh whole FLTK and vendored libdecor C/C++ O1 ASan/UBSan/leaks; system external libraries remain external. Regular-user private stage only.",
+    "staging_correction": "Initial untyped FLTK_LIBDIR became absolute private-worktree/lib; preserved files under artifacts/toolkit-proof/untagged-install-path-negative, then explicitly reconfigured typed STRING before final fixture."
+  },
+  "final_incremental_build": {
+    "status": "terminal",
+    "runs": [
+      {
+        "name": "release-v3",
+        "command": [
+          "python3",
+          "scripts/prepare-fltk-experiment.py",
+          "--deps",
+          "/home/blux/de-xr/dome-sculpt/artifacts/domed-fltk-lifetime-62b6417/artifacts/toolkit-deps",
+          "--prefix",
+          "/home/blux/de-xr/dome-sculpt/artifacts/domed-fltk-lifetime-62b6417/artifacts/toolkit"
+        ],
+        "exit_code": 0,
+        "seconds": 27.786492004001047
+      },
+      {
+        "name": "san-v3-build",
+        "command": [
+          "cmake",
+          "--build",
+          "artifacts/toolkit-sanitize-build",
+          "--parallel",
+          "2"
+        ],
+        "exit_code": 0,
+        "seconds": 70.94079497200437
+      },
+      {
+        "name": "san-v3-stage",
+        "command": [
+          "cmake",
+          "--install",
+          "artifacts/toolkit-sanitize-build"
+        ],
+        "exit_code": 0,
+        "seconds": 0.02571094999439083
+      }
+    ],
+    "exit_code": 0
+  },
+  "counterfactuals": {
+    "old_actual_native_Sculpt_close": {
+      "exit_code": 1,
+      "leak_bytes": 159565,
+      "allocations": 699,
+      "scope": "Explicit fl_close_display diagnostic wrapper on actual coherent eec whole-ownedSAN app/core with old Release toolkit; no product change"
+    },
+    "first_partial_fix_actual_Sculpt_close": {
+      "exit_code": 0,
+      "scope": "Same actual app diagnostic with fixed Release toolkit; prior to discovered plugin-constructor SAN fixes"
+    },
+    "old_X11_fixture": {
+      "exit_code": 1,
+      "leak_bytes": 968,
+      "allocations": 8
+    },
+    "fixed_X11_fixture": {
+      "exit_code": 1,
+      "leak_bytes": 800,
+      "allocations": 2,
+      "remaining": "Same libcairo-xlib-source allocation site as old control. Cairo Clip/region168B eliminated."
+    },
+    "plugin_sanitizer_reports": [
+      "Fl_Gl_Device_Plugin constructor calls virtual name() before base constructed",
+      "Fl_Device_Plugin constructor calls virtual klass() before base constructed"
+    ],
+    "fixed_native_Wayland": {
+      "checks": 9,
+      "exit_code": 0,
+      "scope": "Whole FLTK/vendoredlibdecor/client C/C++ O1ASanUBSan with leaks enabled; external system/bitmap libraries not rebuilt under sanitizers."
+    }
+  },
+  "limitations": [
+    "No complete all-backends sanitizer pass: optional X11 retains800B Cairo Xlib source report. No suppression or assertion weakening.",
+    "Application must call documented fl_close_display only after all widgets/GL/workers are destroyed, with no later FLTK calls. No automatic global toolkit teardown was introduced.",
+    "Dome Sculpt has not yet integrated a production display owner; its explicit-close wrapper is diagnostic only.",
+    "Standalone-XR Mesa112B report is unrelated and not fixed.",
+    "No system installation, active session restart, physical HMD or GPU device use.",
+    "Initial fixture compile/link omissions, unused-HarfBuzz observer assumption and untyped private stage destination were retained as setup negatives; typed lib staging corrected."
+  ],
+  "source_sha256": {
+    "native/toolkit-hooks/fltk-1.4.5-process-cleanup.patch": "c40abb454f7cd648227cdaca8802a9f01073b992250accd10969c5b9627537c3",
+    "scripts/prepare-fltk-experiment.py": "7a6bef76fcb22805ebcb655b17d8fc5f1bbf082991fab3be557c6a79fb136d44",
+    "scripts/fltk-process-cleanup-client.cpp": "0de9bac27659c47ff615cc496a8934b0cea830c03b6d6f319b522d752365b736",
+    "scripts/test-fltk-process-cleanup.py": "d041b6c3a884b40ddff1e6b52547b04cbaba39c40df83cbd2a64c1b57065955c"
+  },
+  "evidence_sha256": {
+    "artifacts/toolkit-proof/actual-close/after.json": "398f09cf6236b4e9b842ab7e968204a74e28804f3f9197ed79bc87dc03c38aa6",
+    "artifacts/toolkit-proof/actual-close/before.json": "398f09cf6236b4e9b842ab7e968204a74e28804f3f9197ed79bc87dc03c38aa6",
+    "artifacts/toolkit-proof/actual-close/run.log": "fed9decc1854679176e82e3e4f8932a7729d51c746d129aefb936b9f234c75f2",
+    "artifacts/toolkit-proof/actual-close/runtime-maps.json": "613e306231f8bfe215d6910f9bc894040c783995d22dd0f6fd3bb7ee7123691b",
+    "artifacts/toolkit-proof/actual-close/status.json": "f614579683bdadc1b2e6072a90c346f1389d399e3c01bf35c6286144357b9a3d",
+    "artifacts/toolkit-proof/actual-close/wayland/client.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "artifacts/toolkit-proof/actual-close/wayland/compositor.log": "3d3f7be35b9a67252a2e5c5d7505f800e3edb587aabfba31350615ef894415ff",
+    "artifacts/toolkit-proof/actual-close/wayland/report.json": "1f56b68f934536ce3caffe87d032645d7fd394666d2bded8b95c8dd607089124",
+    "artifacts/toolkit-proof/actual-close/wayland/xvfb.log": "d236b6348ddfd83fe1d4caa97b7c4b2cf1812f6399d68d81553ef19f904a774d",
+    "artifacts/toolkit-proof/build.log": "c521896274db909e21913399da5ac447cfa9f3684e79fb4b76e04082f43114a3",
+    "artifacts/toolkit-proof/final/inputs-before.json": "6edca5a7d7cc44fc617bbe99e74c3625c50b39716719c518eeb51bd32442d294",
+    "artifacts/toolkit-proof/final/observer-negative.json": "7742e04961019276ef6527a6f9c16de78fedd378ebe1f6981721d03d099ccb6a",
+    "artifacts/toolkit-proof/final/release/compositor.log": "73ec39adaf86a0df21af683cef7abea8d97c234f85afccae56eecd4c4205d0e4",
+    "artifacts/toolkit-proof/final/release/wayland-maps.txt": "92e7b78c0e67196318cbcece35b13154769a9ce51999812b0d324f723e231928",
+    "artifacts/toolkit-proof/final/release/wayland.log": "1f0f7eba2c57a7161e72b895c69af3d0845f6cefc1db8abfde18d46e2460e64f",
+    "artifacts/toolkit-proof/final/release/x11-maps.txt": "33213dab8c97366fe7a1bb8795d91e77f02773d2b558cb2f3c35782628f5bfc4",
+    "artifacts/toolkit-proof/final/release/x11.log": "fbeafcd450f229777da34cd6ed239c99c64b09dd754ebee47d1956089238c5d4",
+    "artifacts/toolkit-proof/final/release/xvfb.log": "d236b6348ddfd83fe1d4caa97b7c4b2cf1812f6399d68d81553ef19f904a774d",
+    "artifacts/toolkit-proof/final/release.log": "ed252416881f9e2692d9007a591e35243c2febcd27e32270db4c4ea551c0dd74",
+    "artifacts/toolkit-proof/final/sanitize/x11.log": "dba635654e5bbd276a3bcef77999ffe3e842685d69fabb4bad13150acc1ab530",
+    "artifacts/toolkit-proof/final/sanitize/xvfb.log": "d236b6348ddfd83fe1d4caa97b7c4b2cf1812f6399d68d81553ef19f904a774d",
+    "artifacts/toolkit-proof/final/sanitize.log": "7caf64406572592012537b58aba9a63ffe1241befe78c0fc9563216a255f9c91",
+    "artifacts/toolkit-proof/final/status.json": "033ebb7c41fef4aab29529657ba4ed1efdb16c8b3c48a5f6e98d61065688445e",
+    "artifacts/toolkit-proof/final-v3/inputs-after.json": "538a35e0ab412b2619f5d0287ef079afc9c5f3195f04ff5465a87345ae52c3bf",
+    "artifacts/toolkit-proof/final-v3/inputs-before.json": "538a35e0ab412b2619f5d0287ef079afc9c5f3195f04ff5465a87345ae52c3bf",
+    "artifacts/toolkit-proof/final-v3/release/compositor.log": "0e2e030ee737b96878743be4f27af2d2e79bd634c5ce9452dc8e911b784d1e15",
+    "artifacts/toolkit-proof/final-v3/release/wayland-maps.txt": "ec24e7b4d9c55b1fca332cfc815a4be154bf2f2150c0f8072cd32eb64506f51f",
+    "artifacts/toolkit-proof/final-v3/release/wayland.log": "1f0f7eba2c57a7161e72b895c69af3d0845f6cefc1db8abfde18d46e2460e64f",
+    "artifacts/toolkit-proof/final-v3/release/x11-maps.txt": "00a8572cd2699a18e8d9e35286727aed9da24fb6420448fc5f3b12dac98980f3",
+    "artifacts/toolkit-proof/final-v3/release/x11.log": "fbeafcd450f229777da34cd6ed239c99c64b09dd754ebee47d1956089238c5d4",
+    "artifacts/toolkit-proof/final-v3/release/xvfb.log": "d236b6348ddfd83fe1d4caa97b7c4b2cf1812f6399d68d81553ef19f904a774d",
+    "artifacts/toolkit-proof/final-v3/release.log": "ed252416881f9e2692d9007a591e35243c2febcd27e32270db4c4ea551c0dd74",
+    "artifacts/toolkit-proof/final-v3/sanitize/x11-maps.txt": "76d7c776cee45599581ffe3b883649e61e4b2ecd363d0d04b07e80e458014a0c",
+    "artifacts/toolkit-proof/final-v3/sanitize/x11.log": "98444de4c88b9c1ea3e43ed41f9fa0a5955147c23c79c3fd890f9990818d1bf0",
+    "artifacts/toolkit-proof/final-v3/sanitize/xvfb.log": "d236b6348ddfd83fe1d4caa97b7c4b2cf1812f6399d68d81553ef19f904a774d",
+    "artifacts/toolkit-proof/final-v3/sanitize.log": "91b4e4dac083fbcd64fb59b3c5392d0cb349897e42bf3c6d5d32fa563ba6b094",
+    "artifacts/toolkit-proof/final-v3/status.json": "2e543554f5b51f0804adf1fa76362a584689ece99b56af1f45e88733aa2199fb",
+    "artifacts/toolkit-proof/inputs-after.json": "82f2f62b8d64d820649e83ec0460f0d046a4959b56cc81a2150f2f016f179a5d",
+    "artifacts/toolkit-proof/inputs-before.json": "82f2f62b8d64d820649e83ec0460f0d046a4959b56cc81a2150f2f016f179a5d",
+    "artifacts/toolkit-proof/old-x11-residual/x11-maps.txt": "07aab9fa86f9ebc481642d8e7b1e5e3f7386656e54db1bcbb2d74e81b5bf16c4",
+    "artifacts/toolkit-proof/old-x11-residual/x11.log": "b9cb3afc36b32250ddbd49bb697c0154c064a48f126d553561c265b179693041",
+    "artifacts/toolkit-proof/old-x11-residual/xvfb.log": "d236b6348ddfd83fe1d4caa97b7c4b2cf1812f6399d68d81553ef19f904a774d",
+    "artifacts/toolkit-proof/old-x11-residual.log": "bcbc0b7082294276b939fc3d43c7ea77b8191019606d91eacd92f18cb68bec82",
+    "artifacts/toolkit-proof/qualification/inputs-after.json": "5bf232c3bd61624ecc5c3c1da63fa77a800e97282ea53d7bc945e78708c37081",
+    "artifacts/toolkit-proof/qualification/inputs-before.json": "5bf232c3bd61624ecc5c3c1da63fa77a800e97282ea53d7bc945e78708c37081",
+    "artifacts/toolkit-proof/qualification/old-x11/x11-maps.txt": "86824e1ab0809c1424908e14ae9e4c1a16ee383b0bf296c16f00165b2da04873",
+    "artifacts/toolkit-proof/qualification/old-x11/x11.log": "37f358e399e9883c634db064c77eeef73bd06771ec58dd1619f4497335ac03c9",
+    "artifacts/toolkit-proof/qualification/old-x11/xvfb.log": "d236b6348ddfd83fe1d4caa97b7c4b2cf1812f6399d68d81553ef19f904a774d",
+    "artifacts/toolkit-proof/qualification/old-x11.log": "e6f08ca137d645693dc700c79d61d428ad1ea6d16ff3dcc38587c7e0090dd15f",
+    "artifacts/toolkit-proof/qualification/release/compositor.log": "45dddbba7aab0cc369e3001fb98d726c510d8639fd1bd3d37a74c69425bfecec",
+    "artifacts/toolkit-proof/qualification/release/wayland-maps.txt": "9fbad4d5cd88e4b80514100ebbacdc3f3a1432515664789fcb45872d7f897a90",
+    "artifacts/toolkit-proof/qualification/release/wayland.log": "1f0f7eba2c57a7161e72b895c69af3d0845f6cefc1db8abfde18d46e2460e64f",
+    "artifacts/toolkit-proof/qualification/release/x11-maps.txt": "4fe46f565b581213c8c8f757e3e94c01a2aa777ecbda6478068d34167712f2a2",
+    "artifacts/toolkit-proof/qualification/release/x11.log": "fbeafcd450f229777da34cd6ed239c99c64b09dd754ebee47d1956089238c5d4",
+    "artifacts/toolkit-proof/qualification/release/xvfb.log": "d236b6348ddfd83fe1d4caa97b7c4b2cf1812f6399d68d81553ef19f904a774d",
+    "artifacts/toolkit-proof/qualification/release.log": "ed252416881f9e2692d9007a591e35243c2febcd27e32270db4c4ea551c0dd74",
+    "artifacts/toolkit-proof/qualification/san-wayland/compositor.log": "86e06ba0e5a0d260dcf70d0c22ecfb992fb0bdb1038e0c862bb8f5033a87ed9d",
+    "artifacts/toolkit-proof/qualification/san-wayland/wayland-maps.txt": "5f1578f169169db6b5b4986e5d94d848018cb326f295780d3833d75d46bd1c7e",
+    "artifacts/toolkit-proof/qualification/san-wayland/wayland.log": "1f0f7eba2c57a7161e72b895c69af3d0845f6cefc1db8abfde18d46e2460e64f",
+    "artifacts/toolkit-proof/qualification/san-wayland/xvfb.log": "d236b6348ddfd83fe1d4caa97b7c4b2cf1812f6399d68d81553ef19f904a774d",
+    "artifacts/toolkit-proof/qualification/san-wayland.log": "1f0f7eba2c57a7161e72b895c69af3d0845f6cefc1db8abfde18d46e2460e64f",
+    "artifacts/toolkit-proof/qualification/san-x11/x11-maps.txt": "662c5229c7dc8f017d9c62e7b25489e6aa8780c1d4d565447a12ab6eeefb7739",
+    "artifacts/toolkit-proof/qualification/san-x11/x11.log": "281ced3cee04acbfedd6a51abd43d993aebd6915d8887e7d3ca36a7e2348b624",
+    "artifacts/toolkit-proof/qualification/san-x11/xvfb.log": "d236b6348ddfd83fe1d4caa97b7c4b2cf1812f6399d68d81553ef19f904a774d",
+    "artifacts/toolkit-proof/qualification/san-x11.log": "79a1616f6fe04fe9f58d04fd58174e8698ed0016a671a53b4ceedc49749544e1",
+    "artifacts/toolkit-proof/qualification/status.json": "a94d6b0a6f41a837413121ef9c2a2650939c22a7f3f11d786ea644bfb1029219",
+    "artifacts/toolkit-proof/regressions/inputs-before.json": "d7dcc333d7de742429dd54360f34b1842a9899f78707ca2be9b7f387db125b5a",
+    "artifacts/toolkit-proof/regressions/release.log": "26795ee17f6db56b23db2a86bf4f6e13f62524691e4aa18755b5c6fc28b247e8",
+    "artifacts/toolkit-proof/regressions/status.json": "8228f5cb9ad1d76ca540d893e2f16358468a150d0b8355381fd885e373e01fe4",
+    "artifacts/toolkit-proof/regressions2/inputs-before.json": "49667b40b25f1d6f82a316da4fff58c6952eac9f2cd950bf3288677e13a993d8",
+    "artifacts/toolkit-proof/regressions2/release.log": "80df8e7eceacd0bdcd0411b7c2b1da592c14f0cb8246dc450c13e33856c9ab36",
+    "artifacts/toolkit-proof/regressions2/sanitize.log": "367642ab1f9f54b26d87e926935a890fc097a64faa1a8f73372fa76b50d92a69",
+    "artifacts/toolkit-proof/regressions3/release/compositor.log": "5f98db1d17d0f634769661e8d6a1c3b2d1489c4356bb06458c3eafc404f184ab",
+    "artifacts/toolkit-proof/regressions3/release/wayland-maps.txt": "9f4054c8b177dd68ee7305a69c11110e05618ad8119fb0fc651fdec4872a0d33",
+    "artifacts/toolkit-proof/regressions3/release/wayland.log": "3207ada14000d79a6320e3f0621d41eb7dd407aa37ee6669e8fd3de8e18f82da",
+    "artifacts/toolkit-proof/regressions3/release/x11-maps.txt": "78ac613bcb79e360032e78a2874a4f54c3685e1a7d8ec498a066a89079f07472",
+    "artifacts/toolkit-proof/regressions3/release/x11.log": "3057bf9de78029b3052b501e8fd9337541e90e20fdf6f3feece47ddc8d8d88c3",
+    "artifacts/toolkit-proof/regressions3/release/xvfb.log": "d236b6348ddfd83fe1d4caa97b7c4b2cf1812f6399d68d81553ef19f904a774d",
+    "artifacts/toolkit-proof/regressions3/sanitize/x11.log": "590a389dceece2e137608676fed88c0f7f565e6869e2f117a5cb31e5e354a5bf",
+    "artifacts/toolkit-proof/regressions3/sanitize/xvfb.log": "01ef9ea754ecffbc73812d25bc9331cbeb1b8b9f781723c23bafbe959b2a1bc9",
+    "artifacts/toolkit-proof/release-regressions3.log": "a8982f6fa57a181b340ade241b49f3ae010d9ad726fb5f125bee9cc613c8be13",
+    "artifacts/toolkit-proof/release-v2.log": "6b4b6b70703670b7d156b6eea9b676c4e0f531d7ee08875da85257459c99141d",
+    "artifacts/toolkit-proof/release-v3.log": "966f4322d842cf052da1df7a6e8f3d5e00a19df7d515a03f183b7532170f4020",
+    "artifacts/toolkit-proof/san-v2-build.log": "c0b35f21883ab489cb9b0dc6acbcefa2ce69983e0205cab1c6f9541fa4b1454f",
+    "artifacts/toolkit-proof/san-v2-stage.log": "5dfdbd0d3d73e656aefe51051173e681aefa670ae3afc89f30f778d0b2d3ac0f",
+    "artifacts/toolkit-proof/san-v3-build.log": "651babba28efe6ffb7ff4f955ad7cfac17e62adf2e655080f7f243e86d9f1363",
+    "artifacts/toolkit-proof/san-v3-stage.log": "7628ce4ddaecc16f786318942a29efc32b579cc5c40056558ea06cada174ce8c",
+    "artifacts/toolkit-proof/sanitize-build.log": "0ac01a90f65fdfb2e76e6d3a2783ed98396c211d58115a522cf0b0e4d0b7526a",
+    "artifacts/toolkit-proof/sanitize-configure.log": "f96f6991aacc903753892cb059c90fe807ddf6886f6bc306e4683c00056380b0",
+    "artifacts/toolkit-proof/sanitize-regressions3.log": "9faba6b0c332efc7751d79a65bf7bb46d6432499afb8ea5141c4d1ab28b12988",
+    "artifacts/toolkit-proof/sanitize-stage.log": "6b6a52fc541622a46ed68f36e1730e1636087658713aed0332ebf9cece2a5d04",
+    "artifacts/toolkit-proof/sanitize-status.json": "86236839831e0b8d01ccab11d21290014af7e2c6e3d1a8d536bfe9b2e4a83af7",
+    "artifacts/toolkit-proof/status.json": "b8ddc55668a4a92c76aae0cd1e9319479f3483484b52210342b4d15edf3a3989",
+    "artifacts/toolkit-proof/v2-status.json": "1defa3c9b9a076d5b416ed6ccbd31b7a0a68eab93d8c325e4a0dab55a5d4e4d3",
+    "artifacts/toolkit-proof/v3-status.json": "1cf0d87859d784c72d1292cecf10eda855fd648b12c6280322646f28ad9bd462",
+    "artifacts/toolkit-proof/wayland-v3/compositor.log": "cd907e046eac621c18d2c6228f7046e86ecd05cee7ad2bf99205ffed2246f937",
+    "artifacts/toolkit-proof/wayland-v3/wayland-maps.txt": "55e4e96bab718cfe9d6a9221d62fa20100af1f6deb55b4bd0a65c1a5d9d3f59b",
+    "artifacts/toolkit-proof/wayland-v3/wayland.log": "1f0f7eba2c57a7161e72b895c69af3d0845f6cefc1db8abfde18d46e2460e64f",
+    "artifacts/toolkit-proof/wayland-v3/xvfb.log": "d236b6348ddfd83fe1d4caa97b7c4b2cf1812f6399d68d81553ef19f904a774d",
+    "artifacts/toolkit-proof/wayland-v3.log": "1f0f7eba2c57a7161e72b895c69af3d0845f6cefc1db8abfde18d46e2460e64f"
+  }
+}

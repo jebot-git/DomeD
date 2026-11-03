@@ -30,6 +30,7 @@ patch_names.append('fltk-1.4.5-window-suspended.patch')
 patch_names.append('fltk-1.4.5-touch-input.patch')
 patch_names.append('fltk-1.4.5-pen-input.patch')
 patch_names.append('fltk-1.4.5-pcf-fonts.patch')
+patch_names.append('fltk-1.4.5-process-cleanup.patch')
 patches=[repo/'native/toolkit-hooks'/name for name in patch_names]
 digest=hashlib.sha256(b''.join(p.read_bytes() for p in patches)).hexdigest()
 stamp=source/'.dome-patches.sha256'

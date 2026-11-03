@@ -1,0 +1,96 @@
+--- a/src/drivers/Wayland/Fl_Wayland_Screen_Driver.cxx
++++ b/src/drivers/Wayland/Fl_Wayland_Screen_Driver.cxx
+@@ -1619,6 +1619,8 @@
+       if (table) {
+         scr_driver->seat->xkb_compose_state =
+           xkb_compose_state_new(table, XKB_COMPOSE_STATE_NO_FLAGS);
++        // Drop the constructor reference, including when state creation fails.
++        xkb_compose_table_unref(table);
+       }
+     }
+     wl_seat_add_listener(scr_driver->seat->wl_seat, &seat_listener, scr_driver->seat);
+@@ -1805,6 +1807,9 @@
+ 
+ 
+ static void do_atexit() {
++  // fl_close_display() already deleted the screen driver. Do not consult its
++  // cached pointer from this previously registered exit callback.
++  if (!Fl_Wayland_Screen_Driver::wl_display) return;
+   // Issue #821 no longer seems to require extra operations under gnome version < 44.
+   Fl_Wayland_Screen_Driver *scr_driver = (Fl_Wayland_Screen_Driver*)Fl::screen_driver();
+   if (scr_driver->libdecor_context) { // libdecor recommends a call to libdecor_unref()
+@@ -1922,6 +1927,10 @@
+     if (wl_touch_get_version(seat->wl_touch) >= WL_TOUCH_RELEASE_SINCE_VERSION) wl_touch_release(seat->wl_touch);
+     else wl_touch_destroy(seat->wl_touch);
+     seat->wl_touch = NULL;
++  }
++  if (seat->gtk_shell) {
++    gtk_shell1_destroy(seat->gtk_shell);
++    seat->gtk_shell = NULL;
+   }
+   wl_seat_destroy(seat->wl_seat); seat->wl_seat = NULL;
+   if (seat->name) free(seat->name);
+--- a/src/drivers/Cairo/Fl_Cairo_Graphics_Driver.cxx
++++ b/src/drivers/Cairo/Fl_Cairo_Graphics_Driver.cxx
+@@ -113,6 +113,17 @@
+ }
+ 
+ Fl_Cairo_Graphics_Driver::~Fl_Cairo_Graphics_Driver() {
++  // The window owns cairo_; only the dummy context belongs to this driver.
++  if (dummy_cairo_) cairo_destroy(dummy_cairo_);
++  while (clip_) {
++    Clip *previous = clip_->prev;
++    delete clip_;
++    clip_ = previous;
++  }
++  for (int i = 0; i <= rstackptr; ++i) {
++    if (rstack[i]) cairo_region_destroy((cairo_region_t*)rstack[i]);
++    rstack[i] = NULL;
++  }
+ }
+ 
+ const cairo_format_t Fl_Cairo_Graphics_Driver::cairo_format = CAIRO_FORMAT_ARGB32;
+--- a/src/Fl_Gl_Device_Plugin.cxx
++++ b/src/Fl_Gl_Device_Plugin.cxx
+@@ -27,7 +27,7 @@
+  */
+ class Fl_Gl_Device_Plugin : public Fl_Device_Plugin {
+ public:
+-  Fl_Gl_Device_Plugin() : Fl_Device_Plugin(name()) { }
++  Fl_Gl_Device_Plugin() : Fl_Device_Plugin("opengl.device.fltk.org") { }
+   const char *name() FL_OVERRIDE { return "opengl.device.fltk.org"; }
+   int print(Fl_Widget *w) FL_OVERRIDE {
+     Fl_Gl_Window *glw = w->as_gl_window();
+--- a/src/drivers/Wayland/Fl_Wayland_Gl_Window_Driver.cxx
++++ b/src/drivers/Wayland/Fl_Wayland_Gl_Window_Driver.cxx
+@@ -374,7 +374,7 @@
+ 
+ class Fl_Wayland_Gl_Plugin : public Fl_Wayland_Plugin {
+ public:
+-  Fl_Wayland_Gl_Plugin() : Fl_Wayland_Plugin(name()) { }
++  Fl_Wayland_Gl_Plugin() : Fl_Wayland_Plugin("gl.wayland.fltk.org") { }
+   const char *name() FL_OVERRIDE { return "gl.wayland.fltk.org"; }
+   void do_swap(Fl_Window *w) FL_OVERRIDE {
+     Fl_Gl_Window_Driver *gldr = Fl_Gl_Window_Driver::driver(w->as_gl_window());
+--- a/FL/Fl_Device.H
++++ b/FL/Fl_Device.H
+@@ -109,7 +109,7 @@
+ public:
+   /** \brief The constructor */
+   Fl_Device_Plugin(const char *pluginName)
+-  : Fl_Plugin(klass(), pluginName) { }
++  : Fl_Plugin("fltk:device", pluginName) { }
+   /** \brief Returns the class name */
+   virtual const char *klass() { return "fltk:device"; }
+   /** \brief Returns the plugin name */
+--- a/src/drivers/Wayland/Fl_Wayland_Window_Driver.H
++++ b/src/drivers/Wayland/Fl_Wayland_Window_Driver.H
+@@ -176,7 +176,7 @@
+ 
+ class Fl_Wayland_Plugin : public Fl_Plugin {
+ public:
+-  Fl_Wayland_Plugin(const char *pluginName)  : Fl_Plugin(klass(), pluginName) { }
++  Fl_Wayland_Plugin(const char *pluginName)  : Fl_Plugin("wayland.fltk.org", pluginName) { }
+   virtual const char *klass() { return "wayland.fltk.org"; }
+   virtual const char *name() = 0;
+   virtual void do_swap(Fl_Window*) = 0;
