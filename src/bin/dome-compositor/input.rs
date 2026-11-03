@@ -317,6 +317,9 @@ impl Dome {
                                 return FilterResult::Intercept(());
                             }
                         }
+                        if pressed && state.glass_key(sym.raw(),sym.key_char(),mods.ctrl||mods.logo||mods.alt) {
+                            state.shell_keys.insert(code); return FilterResult::Intercept(());
+                        }
                         if state.launcher && pressed {
                             state.shell_keys.insert(code);
                             state.launcher_key(code, sym.raw(), sym.key_char(), !mods.ctrl && !mods.alt && !mods.logo, mods.shift);
@@ -508,6 +511,7 @@ impl Dome {
                     && self.menu.is_none()
                     && !self.launcher
                     && !self.desktop_manager
+                    && !self.shell_modal_open()
                     && self.chrome_press(pos.x, pos.y)
                 {
                     return;

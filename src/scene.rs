@@ -438,6 +438,8 @@ pub struct RayHit {
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Scene {
+    #[serde(default)]
+    pub looking_glass: crate::looking_glass::State,
     #[serde(skip)]
     pub native_xr: crate::native_xr::Coordinator,
     /// Controlled by the compositor session authority, never by scene actions.
@@ -465,6 +467,10 @@ pub struct Scene {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Action {
+    LookingGlass { enabled: bool },
+    GlassOverview { open: bool },
+    GlassPage { page: usize },
+    GlassWindow { id: WindowId, yaw_deg: Option<f32>, parked: Option<bool>, back: Option<bool>, note: Option<String> },
     SendToRealm { id: WindowId, realm: Realm },
     WindowVisibility { id: WindowId, desktop: bool, xr: bool },
     XrPresentation {
@@ -586,6 +592,7 @@ impl Scene {
             focus_order: vec![],
             pullout_anchor: None,
             native_xr: Default::default(),
+            looking_glass: Default::default(),
         }
     }
     pub fn demo() -> Self {
@@ -761,6 +768,19 @@ impl Scene {
         }
         self.remember_focus();
         match action {
+            Action::LookingGlass { enabled } => {
+                if self.locked { return Err("Session is locked".into()); }
+                self.looking_glass.enabled = enabled;
+                self.looking_glass.overview = enabled;
+                self.looking_glass.selected = self.focused;
+                self.looking_glass.page = 0;
+            }
+            Action::GlassOverview { open } => {
+                if self.locked || !self.looking_glass.enabled {return Err("Looking Glass is not active".into());}
+                self.looking_glass.overview = open;
+            }
+            Action::GlassPage { page } => { if self.locked || !self.looking_glass.enabled {return Err("Looking Glass is not active".into());} self.looking_glass.page = page.min(self.windows.len().div_ceil(crate::looking_glass::PAGE_SIZE)); self.looking_glass.selected=None; }
+            Action::GlassWindow {id,yaw_deg,parked,back,note} => self.glass_edit(id,yaw_deg,parked,back,note)?,
             Action::SendToRealm { id, realm } => {
                 return self.apply(Action::WindowVisibility {
                     id, desktop: realm == Realm::Desktop, xr: realm == Realm::Xr,

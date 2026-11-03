@@ -1,0 +1,31 @@
+{
+  "passed": true,
+  "checks": [
+    "Prototype starts disabled",
+    "Super+G enables real compositor overview",
+    "Live Wayland client content updates card and dock previews",
+    "Visible Park control sets edge-on card state",
+    "Back-side note editing consumes keyboard input before applications",
+    "Bounded second page exposes windows beyond six",
+    "XR overview exports a compositor-owned interactive panel",
+    "XR seat flips the shared card and edits notes without client key leakage",
+    "XR renderer receives genuinely rotated flat window quads",
+    "GPU offscreen XR composition records real rotated window textures",
+    "Prototype can be disabled without terminating clients",
+    "Disabling restores original desktop and XR geometry exactly",
+    "Clients and compositor remain alive"
+  ],
+  "headset_tested": false,
+  "upstream": "f797e0f",
+  "unit_tests": {
+    "passed": 190,
+    "failed": 0
+  },
+  "gpu_capture": {
+    "frames": 17,
+    "width": 960,
+    "height": 636,
+    "transport": "DMA-BUF \u2192 EGL eye render \u2192 DRM PRIME \u2192 VA-API (no pixel readback)",
+    "video_encoder": "h264_vaapi"
+  }
+}

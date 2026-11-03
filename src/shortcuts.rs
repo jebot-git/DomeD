@@ -1,6 +1,8 @@
 //! Compositor-owned shortcuts. Ordinary Ctrl shortcuts remain with applications.
 #[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Command {
+    LookingGlass,
+    LookingGlassOverview,
     ToggleXrBars,
     ToggleXrTop,
     ToggleXrBottom,
@@ -118,6 +120,7 @@ pub fn defaults() -> Vec<Binding> {
             enabled: true,
         })
     };
+    add(LookingGlassOverview, 'g' as u32, logo);
     add(Close, 'w' as u32, logo);
     add(Screenshot, 0xff61, Mods::default());
     add(Menu, 0xffc7, logo);
@@ -241,6 +244,7 @@ pub fn defaults() -> Vec<Binding> {
         bindings.push(Binding { id: Some(id.into()), command, key,
             mods: Mods { ctrl: true, alt: true, ..Default::default() }, enabled: true });
     }
+    if let Some(b)=bindings.iter_mut().find(|b|b.command==LookingGlassOverview) {b.id=Some("looking-glass-overview".into());}
     bindings
 }
 fn normalized_key(key: u32) -> u32 {
@@ -298,6 +302,8 @@ pub fn validate(bindings: &[Binding]) -> Result<(), String> {
 pub fn action_label(command: Command) -> String {
     use Command::*;
     match command {
+        LookingGlass => "Toggle Looking Glass prototype".into(),
+        LookingGlassOverview => "Looking Glass overview".into(),
         ToggleXrBars => "Toggle XR bars".into(),
         ToggleXrTop => "Toggle upper XR bar".into(),
         ToggleXrBottom => "Toggle XR taskbar".into(),
@@ -604,7 +610,8 @@ mod window_binding_tests {
         menu.key = 0xff52;
         menu.mods = Mods { logo: true, alt: true, ..Default::default() };
         let old = restored(old);
-        let added: Vec<_> = old.iter().filter(|b| b.id.is_some()).collect();
+        let added: Vec<_> = old.iter().filter(|b| b.id.is_some() && matches!(b.command, Command::MoveLane(_) | Command::MoveHorizontal(_) | Command::CycleLane(_))).collect();
+        assert_eq!(resolve_with(&old, 'g' as u32, Mods { logo:true, ..Default::default() }), Some(Command::LookingGlassOverview));
         assert_eq!(added.len(), 6);
         assert!(!added.iter().find(|b| b.command == Command::MoveLane(-1)).unwrap().enabled);
         assert!(added.iter().find(|b| b.command == Command::MoveHorizontal(1)).unwrap().enabled);

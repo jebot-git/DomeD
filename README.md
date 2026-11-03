@@ -26,6 +26,10 @@ The optional [DomeD Translator](docs/TRANSLATOR.md) provides a native FLTK tray
 translator for configured input languages, using DeepL API Free and local script
 transcription. Build it with `scripts/build-translator.sh`.
 
+The opt-in [Looking Glass prototype](docs/LOOKING-GLASS.rst) adds angled window
+cards, back-side notes, a live-preview dock, and shared desktop/XR card state.
+Use Window > Looking Glass Prototype or Super+G to try it.
+
 ## Build and toolkit selection
 
 FLTK is the default Cargo feature. Native compositor builds require the patched

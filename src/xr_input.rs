@@ -165,6 +165,11 @@ pub fn render_quads_for_control(scene: &Scene, head: Pose, viewport: Option<[f32
 }
 fn window_quads(scene: &Scene, head: Pose, backgrounds: bool, viewport: Option<[f32; 4]>, centered: bool, flat_rollouts: bool) -> Vec<Quad> {
     if scene.locked { return vec![]; }
+    if scene.looking_glass.enabled {
+        let mut cards = crate::looking_glass::quads(scene, head);
+        crate::spatial_popup::append_quads_with_policy(scene, &mut cards, head, viewport, centered, flat_rollouts);
+        return cards;
+    }
     if let Some(fullscreen) = media_view::fullscreen_quad(scene, head, viewport) {
         let mut panels = vec![fullscreen];
         crate::spatial_popup::append_quads_with_policy(scene, &mut panels, head, viewport, centered, flat_rollouts);

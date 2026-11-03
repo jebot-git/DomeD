@@ -51,6 +51,7 @@ mod spatial_popups;
 mod state;
 mod tasks;
 mod task_previews;
+mod looking_glass;
 mod toolkit_appearance;
 mod tray;
 mod wivrn;

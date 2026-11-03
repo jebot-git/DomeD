@@ -90,3 +90,5 @@ pub mod appearance_panel;
 pub mod desktop_backdrop;
 
 pub mod system_sounds;
+
+pub mod looking_glass;
