@@ -74,8 +74,11 @@ The active Fcitx process was left intact because its inherited Wayland socket
 cannot be recreated by an ordinary restart. Its maps already contained no Qt
 or GTK; the rebuilt installed executable starts on the next login.
 
-Calligra, KWallet and installed GTK applications were deliberately preserved.
-Qt6 and GTK3 libraries needed by them remain installed. Desktop, wallet and
-input-method sessions were not restarted. Private device keys, trust data,
-network addresses, local backup trees and generated RPMs are not repository
-contents.
+At the 2026-10-28 baseline, Calligra, KWallet and installed GTK applications
+were preserved with their Qt6/GTK3 dependencies. The 2026-11-03 retirement
+subsequently replaced the remaining native dependencies and removed the host
+GTK/Qt runtimes. See ../../docs/GTK_QT_RETIREMENT.md for the build choices,
+validation, cleanup scope and the DNF/uv policies stored alongside these recipes.
+Desktop, wallet and input-method sessions were not restarted. Private device
+keys, trust data, network addresses, local backup trees and generated RPMs are
+not repository contents.
