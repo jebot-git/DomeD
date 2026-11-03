@@ -317,9 +317,6 @@ impl Dome {
                                 return FilterResult::Intercept(());
                             }
                         }
-                        if pressed && state.glass_key(sym.raw(),sym.key_char(),mods.ctrl||mods.logo||mods.alt) {
-                            state.shell_keys.insert(code); return FilterResult::Intercept(());
-                        }
                         if state.launcher && pressed {
                             state.shell_keys.insert(code);
                             state.launcher_key(code, sym.raw(), sym.key_char(), !mods.ctrl && !mods.alt && !mods.logo, mods.shift);
@@ -444,6 +441,9 @@ impl Dome {
                     // Shell controls keep priority over an application's popup grab.
                     self.dismiss_wayland_popups();
                 }
+                if button==0x110 && button_state==ButtonState::Pressed && !pointer.is_grabbed() && !self.shell_at(pos.x,pos.y) {
+                    if let Some(id)=self.glass_tilted_at(pos) {self.context_scroll_buttons.insert(button);self.glass_open(id);return;}
+                }
                 let launcher_pos=pos-self.shell_geometry().loc.to_f64();
                 if self.launcher_button(launcher_pos.x,launcher_pos.y,button,button_state==ButtonState::Pressed) {
                     if button_state==ButtonState::Pressed {self.context_scroll_buttons.insert(button);}else{self.context_scroll_buttons.remove(&button);}
@@ -562,8 +562,7 @@ impl Dome {
                             keyboard.set_focus(self, Some(surface), serial);
                         }
                     } else if let Some((window, _loc)) = self
-                        .space
-                        .element_under(pointer.current_location())
+                        .glass_element_under(pointer.current_location())
                         .map(|(w, l)| (w.clone(), l))
                     {
                         if let Some(id) = self.id_for(window.toplevel().unwrap().wl_surface()) {
@@ -615,6 +614,7 @@ impl Dome {
                 let vertical_amount = event.amount(Axis::Vertical).unwrap_or_else(|| {
                     event.amount_v120(Axis::Vertical).unwrap_or(0.0) * 15.0 / 120.
                 });
+                if self.glass_scroll(vertical_amount) {return;}
                 let horizontal_amount_discrete = event.amount_v120(Axis::Horizontal);
                 let vertical_amount_discrete = event.amount_v120(Axis::Vertical);
 

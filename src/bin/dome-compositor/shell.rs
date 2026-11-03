@@ -56,6 +56,12 @@ impl Dome {
             }
         }
         if let Action::Focus { id } = &a {
+            {
+                let mut scene=self.scene.lock().unwrap();
+                if scene.looking_glass.enabled && scene.popup(*id).is_none() && !(scene.looking_glass.focus_candidate==Some(*id)&&scene.looking_glass.settle_at_ms.is_some()) {
+                    let _=scene.glass_edit(*id,Some(0.),None,None,None);
+                }
+            }
             self.pending_raise = Some(*id);
             self.no_raise_focus = None;
         }
@@ -307,7 +313,7 @@ impl Dome {
             .collect()
     }
     pub fn shell_modal_open(&self) -> bool {
-        ({ let s=self.scene.lock().unwrap(); s.looking_glass.enabled && s.looking_glass.overview }) || self.clock.open || self.audio_open || self.history_panel.is_some() || self.about
+        self.clock.open || self.audio_open || self.history_panel.is_some() || self.about
             || self.default_apps_open || self.appearance_open || self.xr_settings_open
             || self.session_confirm.is_some()
     }
@@ -329,7 +335,6 @@ impl Dome {
             .layout(size.w, size.h, self.notification_font_height())
             .iter()
             .any(|n| n.contains(x, y))
-            || {let s=self.scene.lock().unwrap();s.looking_glass.enabled && s.looking_glass.overview}
             || y < 36.
             || y >= (size.h - 60) as f64
             || self.clock.open

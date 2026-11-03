@@ -1,219 +1,157 @@
-//! Looking Glass overview and dock input. Client input resumes after Open/Escape.
+//! Input and grouped dock for the natural-placement Looking Glass experiment.
 use crate::Dome;
-use dome::{looking_glass as lg, Action, Rect};
+use dome::{looking_glass as lg, Action};
 impl Dome {
-    pub fn glass_json(&self, width: i32, height: i32) -> serde_json::Value {
-        let scene = self.shell_scene();
-        let state = &scene.looking_glass;
-        if !state.enabled {
+    pub fn glass_json(&self, _width: i32, _height: i32) -> serde_json::Value {
+        if !self.scene.lock().unwrap().looking_glass.enabled {
             return serde_json::json!({"enabled":false});
         }
-        let cards: Vec<_> = lg::cards(&scene, self.input_realm, width, height)
+        let groups: Vec<_> = self
+            .task_list()
             .into_iter()
-            .map(|card| {
-                let mut value = serde_json::to_value(&card).unwrap();
-                value["corners"] = serde_json::json!(lg::corners(
-                    card.rect,
-                    if card.back { 0. } else { card.yaw_deg }
-                ));
-                value["preview"] = self.task_previews.json(card.id);
-                value
+            .map(|task| {
+                let previews: Vec<_> = task
+                    .windows
+                    .iter()
+                    .rev()
+                    .take(3)
+                    .map(|id| self.task_previews.json(*id))
+                    .collect();
+                let mut group = serde_json::to_value(task).unwrap();
+                group["previews"] = serde_json::json!(previews);
+                group
             })
             .collect();
-        let (_, page, pages) = lg::page(&scene, self.input_realm);
-        serde_json::json!({"enabled":true,"overview":state.overview,"page":page,"pages":pages,"cards":cards})
+        serde_json::json!({"enabled":true,"groups":groups})
     }
     pub fn glass_open(&mut self, id: u64) {
         self.action(Action::GlassWindow {
             id,
             yaw_deg: Some(0.),
-            parked: Some(false),
-            back: Some(false),
+            parked: None,
+            back: None,
             note: None,
         });
         self.action(Action::Focus { id });
-        self.action(Action::GlassOverview { open: false });
     }
     pub fn glass_click(&mut self, x: f64, y: f64, width: i32, height: i32) -> bool {
-        let scene = self.shell_scene();
-        if !scene.looking_glass.enabled
-            || self.menu.is_some()
-            || self.launcher
-            || self.desktop_manager
-            || self.appearance_open
-            || self.xr_settings_open
-            || self.about
-            || self.audio_open
-            || self.history_panel.is_some()
+        let enabled = self.scene.lock().unwrap().looking_glass.enabled;
+        if enabled
+            && y >= height as f64 - 60.
+            && x >= width as f64 - 250.
+            && x < width as f64 - 170.
+        {
+            self.action(Action::LookingGlass { enabled: false });
+            return true;
+        }
+        false
+    }
+    pub fn glass_scroll(&mut self, vertical: f64) -> bool {
+        let mods = self.seat.get_keyboard().unwrap().modifier_state();
+        if !mods.logo
+            || mods.ctrl
+            || mods.alt
+            || mods.shift
+            || !vertical.is_finite()
+            || vertical == 0.
         {
             return false;
         }
-        let (x, y) = (x as f32, y as f32);
-        let (ids, page, pages) = lg::page(&scene, self.input_realm);
-        if y >= height as f32 - 60. {
-            if x >= width as f32 - 250. && x < width as f32 - 170. {
-                self.action(Action::GlassOverview {
-                    open: !scene.looking_glass.overview,
-                });
-                return true;
-            }
-            if x >= 110. && x < width as f32 - 250. {
-                let capacity = ((width - 360) / 130).max(1) as usize;
-                if let Some(id) = ids.iter().take(capacity).nth(((x - 110.) / 130.) as usize) {
-                    self.glass_open(*id);
-                }
-                return true;
-            }
+        let scene = self.scene.lock().unwrap().clone();
+        if !scene.looking_glass.enabled || scene.native_owner().is_some() {
             return false;
         }
-        if !scene.looking_glass.overview || y < 36. {
+        let pointer = self.seat.get_pointer().unwrap().current_location();
+        let target = if self.input_realm == dome::Realm::Xr {
+            self.xr_target
+                .filter(|id| !dome::xr_transport::is_shell(*id))
+                .or(scene.focused)
+        } else {
+            self.glass_window_at(pointer)
+                .or(scene.focused)
+        };
+        let Some(id) = target
+            .map(|id| scene.popup_owner(id))
+            .filter(|id| scene.window(*id).is_some())
+        else {
             return false;
-        }
-        if y < 86. {
-            if x >= width as f32 - 110. {
-                self.action(Action::LookingGlass { enabled: false });
-            } else if x >= width as f32 - 220. {
-                self.action(Action::GlassOverview { open: false });
-            } else if x >= width as f32 - 310. {
-                self.action(Action::GlassPage {
-                    page: (page + 1).min(pages - 1),
-                });
-            } else if x >= width as f32 - 400. {
-                self.action(Action::GlassPage {
-                    page: page.saturating_sub(1),
-                });
-            }
-            return true;
-        }
-        for card in lg::cards(&scene, self.input_realm, width, height) {
-            let state = scene
-                .looking_glass
-                .cards
-                .get(&card.id)
-                .cloned()
-                .unwrap_or_default();
-            let controls = Rect {
-                x: card.rect.x,
-                y: card.rect.y + card.rect.h + 4.,
-                w: card.rect.w,
-                h: 24.,
-            };
-            if lg::contains(controls, x, y) {
-                match ((x - controls.x) / (controls.w / 5.)) as usize {
-                    0 => self.glass_open(card.id),
-                    1 => self.action(Action::GlassWindow {
-                        id: card.id,
-                        yaw_deg: None,
-                        parked: Some(!state.parked),
-                        back: None,
-                        note: None,
-                    }),
-                    2 => self.action(Action::GlassWindow {
-                        id: card.id,
-                        yaw_deg: None,
-                        parked: None,
-                        back: Some(!state.back),
-                        note: None,
-                    }),
-                    index => self.action(Action::GlassWindow {
-                        id: card.id,
-                        yaw_deg: Some(
-                            (state.yaw_deg + if index == 3 { -10. } else { 10. }).clamp(-80., 80.),
-                        ),
-                        parked: Some(false),
-                        back: None,
-                        note: None,
-                    }),
-                }
-                return true;
-            }
-            if lg::hit(&card, x, y) || (card.back && lg::contains(card.rect, x, y)) {
-                self.action(Action::GlassWindow {
-                    id: card.id,
-                    yaw_deg: None,
-                    parked: None,
-                    back: None,
-                    note: None,
-                });
-                return true;
-            }
-        }
+        };
+        let current = scene.looking_glass.cards.get(&id).map_or(0., |c| c.yaw_deg);
+        self.action(Action::GlassWindow {
+            id,
+            yaw_deg: Some((current + vertical as f32 * (10. / 15.)).clamp(-90., 90.)),
+            parked: None,
+            back: None,
+            note: None,
+        });
         true
     }
-    pub fn glass_key(&mut self, sym: u32, character: Option<char>, modified: bool) -> bool {
-        let scene = self.shell_scene();
-        if !scene.looking_glass.enabled || !scene.looking_glass.overview || self.menu.is_some() {
-            return false;
+    /// A tilted presentation is activated as a window, not accidentally clicked through.
+    pub fn glass_window_at(
+        &self,
+        point: smithay::utils::Point<f64, smithay::utils::Logical>,
+    ) -> Option<u64> {
+        let scene = self.scene.lock().unwrap();
+        if !scene.looking_glass.enabled {
+            return None;
         }
-        if sym == 0xff1b {
-            self.action(Action::GlassOverview { open: false });
-            return true;
-        }
-        if modified {
-            return true;
-        }
-        let selected = scene.looking_glass.selected.filter(|id| {
-            scene.window(*id).is_some_and(|w| {
-                w.workspace == scene.active_workspace && w.visible_in(self.input_realm)
-            })
-        });
-        if let Some(id) = selected {
-            let state = scene
-                .looking_glass
-                .cards
-                .get(&id)
-                .cloned()
-                .unwrap_or_default();
-            if state.back {
-                let mut note = state.note;
-                if sym == 0xff08 {
-                    note.pop();
-                } else if sym == 0xff0d {
-                    if note.len() < 4096 {
-                        note.push('\n');
-                    }
-                } else if let Some(c) = character.filter(|c| !c.is_control()) {
-                    if note.len() + c.len_utf8() <= 4096 {
-                        note.push(c);
-                    }
-                }
-                self.action(Action::GlassWindow {
-                    id,
-                    yaw_deg: None,
-                    parked: None,
-                    back: None,
-                    note: Some(note),
-                });
-                return true;
-            }
-            match sym {
-                0xff0d => self.glass_open(id),
-                0xff51 | 0xff53 => self.action(Action::GlassWindow {
-                    id,
-                    yaw_deg: Some(
-                        (state.yaw_deg + if sym == 0xff51 { -10. } else { 10. }).clamp(-80., 80.),
-                    ),
-                    parked: Some(false),
-                    back: None,
-                    note: None,
-                }),
-                _ if character == Some('p') => self.action(Action::GlassWindow {
-                    id,
-                    yaw_deg: None,
-                    parked: Some(!state.parked),
-                    back: None,
-                    note: None,
-                }),
-                _ if character == Some('f') => self.action(Action::GlassWindow {
-                    id,
-                    yaw_deg: None,
-                    parked: None,
-                    back: Some(true),
-                    note: None,
-                }),
-                _ => (),
+        for window in self.space.elements().rev() {
+            let Some(id) = self.id_for(window.toplevel().unwrap().wl_surface()) else {
+                continue;
+            };
+            let Some(w) = scene.window(id) else {
+                continue;
+            };
+            let Some(pos) = self.space.element_location(window) else {
+                continue;
+            };
+            let geo = window.geometry();
+            let cap = if w.maximized {
+                0
+            } else {
+                self.appearance.caption_height()
+            };
+            let border = if w.maximized { 0 } else { 4 };
+            let rect = dome::Rect {
+                x: (pos.x - border) as f32,
+                y: (pos.y - cap) as f32,
+                w: (geo.size.w + 2 * border) as f32,
+                h: (geo.size.h + cap + border) as f32,
+            };
+            let tilt = lg::angle(&scene, id);
+            if lg::inverse(rect, tilt, [point.x as f32, point.y as f32]).is_some() {
+                return Some(id);
             }
         }
-        true
+        None
+    }
+    pub fn glass_tilted_at(
+        &self,
+        point: smithay::utils::Point<f64, smithay::utils::Logical>,
+    ) -> Option<u64> {
+        self.glass_window_at(point)
+            .filter(|id| dome::looking_glass::angle(&self.scene.lock().unwrap(), *id).abs() > 0.01)
+    }
+    pub fn glass_element_under(
+        &self,
+        point: smithay::utils::Point<f64, smithay::utils::Logical>,
+    ) -> Option<(
+        &smithay::desktop::Window,
+        smithay::utils::Point<i32, smithay::utils::Logical>,
+    )> {
+        let enabled = self.scene.lock().unwrap().looking_glass.enabled;
+        if !enabled {
+            return self.space.element_under(point);
+        }
+        let id = self.glass_window_at(point)?;
+        self.space.elements().find_map(|w| {
+            (self.id_for(w.toplevel().unwrap().wl_surface()) == Some(id))
+                .then(|| self.space.element_location(w).map(|loc| (w, loc)))
+                .flatten()
+        })
+    }
+    pub fn glass_tick(&mut self) {
+        let now = self.start_time.elapsed().as_millis() as u64;
+        self.scene.lock().unwrap().glass_tick(now);
     }
 }

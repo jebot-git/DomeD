@@ -8,8 +8,9 @@ from PIL import Image
 
 P = pathlib.Path
 root = P(__file__).resolve().parents[1]
-out = root / "artifacts/looking-glass"
+out = root / "artifacts/looking-glass-v2"
 out.mkdir(parents=True, exist_ok=True)
+(out / "report.json").unlink(missing_ok=True)
 signal.pthread_sigmask(signal.SIG_SETMASK, [])
 if os.environ.get("DOME_GLASS_TEST_BUS") != "1":
     os.execvpe(
@@ -218,48 +219,166 @@ try:
             return img
 
         super_code = xd.keysym_to_keycode(XK.string_to_keysym("Super_L"))
+
+        def chord(modifier, name):
+            code = xd.keysym_to_keycode(XK.string_to_keysym(modifier))
+            xtest.fake_input(xd, X.KeyPress, code)
+            key(name)
+            xtest.fake_input(xd, X.KeyRelease, code)
+            xd.sync()
+
+        def wheel(direction=5):
+            xtest.fake_input(xd, X.ButtonPress, direction)
+            xtest.fake_input(xd, X.ButtonRelease, direction)
+            xd.sync()
+
+        ids = [w["id"] for w in initial["windows"]]
+        visible = [ids[0], ids[3], ids[6]]
+        for id in ids:
+            if id not in visible:
+                action(op="minimize", id=id)
+        for index, id in enumerate(visible):
+            action(op="desktop_move", id=id, x=35 + index * 230, y=100 + index * 65)
+        action(op="focus", id=visible[-1])
+        time.sleep(0.3)
+        geometry = {
+            w["id"]: (w["desktop"].copy(), w["xr_pose"], w["xr_scale"])
+            for w in state()["windows"]
+        }
+        chord("Super_L", "g")
+        wait(lambda: state()["looking_glass"]["enabled"])
+        check(True, "Super+G enables natural-placement mode without opening a grid")
+        for id, angle in zip(visible, [50, -55, 35]):
+            action(op="glass_window", id=id, yaw_deg=angle)
+        time.sleep(0.5)
+        shot("desktop-natural-tilt.png")
+        check(
+            all(
+                (w["desktop"], w["xr_pose"], w["xr_scale"]) == geometry[w["id"]]
+                for w in state()["windows"]
+            ),
+            "Enabling and tilting preserves every window position and resolution",
+        )
+        check("Full-resolution Looking Glass rendering:" not in (out/"compositor.log").read_text(), "Native desktop uses full-resolution GPU tilt textures without renderer fallback")
+        panels = request("/api/state")["panels"]
+        check(
+            all(0.65 <= p["opacity"] < 1.0 for p in panels if p["id"] in visible),
+            "Tilted window opacity is reduced in the shared scene",
+        )
+        # Target the visibly topmost window using the physical pointer and real wheel events.
+        target = visible[-1]
+        rect = geometry[target][0]
+        g = host.get_geometry()
+        xtest.fake_input(
+            xd,
+            X.MotionNotify,
+            x=g.x + int(rect["x"] + rect["w"] / 2),
+            y=g.y + int(rect["y"] + rect["h"] / 2),
+        )
+        xd.sync()
+        before = state()["looking_glass"]["cards"][str(target)]["yaw_deg"]
         xtest.fake_input(xd, X.KeyPress, super_code)
-        key("g")
+        xd.sync()
+        time.sleep(0.1)
+        wheel()
         xtest.fake_input(xd, X.KeyRelease, super_code)
         xd.sync()
-        wait(lambda: state()["looking_glass"]["overview"])
-        check(
-            state()["looking_glass"]["enabled"],
-            "Super+G enables real compositor overview",
+        wait(
+            lambda: state()["looking_glass"]["cards"][str(target)]["yaw_deg"] != before
         )
-        time.sleep(2)
-        a = shot("desktop-overview.png")
-        time.sleep(1)
-        b = shot("desktop-overview-live.png")
+        check(True, "Super+scroll changes tilt and is consumed by the window manager")
+        action(op="glass_window", id=target, yaw_deg=85)
+        xtest.fake_input(xd, X.KeyPress, super_code)
+        xd.sync()
+        time.sleep(0.1)
+        for _ in range(4):
+            wheel()
+        xtest.fake_input(xd, X.KeyRelease, super_code)
+        xd.sync()
+        time.sleep(0.2)
         check(
-            a.tobytes() != b.tobytes(),
-            "Live Wayland client content updates card and dock previews",
+            abs(state()["looking_glass"]["cards"][str(target)]["yaw_deg"]) == 90,
+            "Wheel tilt clamps at ninety degrees without a back side",
         )
+        click(rect["x"] + rect["w"] / 2, rect["y"] + rect["h"] / 2)
+        wait(lambda: state()["looking_glass"]["cards"][str(target)]["display_yaw_deg"] == 0)
+        check(state()["focused"] == target, "Clicking a tilted window opens that window without clicking through")
+        # Switch rapidly enough to keep the debounce pending, then let the last focus settle.
+        for id in visible:
+            action(op="glass_window", id=id, yaw_deg=60)
+        alt = xd.keysym_to_keycode(XK.string_to_keysym("Alt_L"))
+        xtest.fake_input(xd, X.KeyPress, alt)
+        xd.sync()
+        visited = []
+        for _ in range(4):
+            previous = state()["focused"]
+            key("Tab")
+            current = wait(lambda: (s if (s := state())["looking_glass"]["focus_candidate"] != previous
+                and s["looking_glass"]["focus_candidate"] == s["focused"] else None))
+            candidate = current["looking_glass"]["focus_candidate"]
+            assert candidate is not None
+            visited.append(candidate)
+            assert current["looking_glass"]["settle_at_ms"] is not None
+            wait(lambda: 0 < state()["looking_glass"]["cards"][str(candidate)]["display_yaw_deg"] < 60, timeout=0.25)
+        xtest.fake_input(xd, X.KeyRelease, alt)
+        xd.sync()
+        last = visited[-1]
+        wait(
+            lambda: (
+                abs(state()["looking_glass"]["cards"][str(last)]["display_yaw_deg"])
+                < 0.01
+            )
+        )
+        check(
+            all(
+                abs(state()["looking_glass"]["cards"][str(id)]["display_yaw_deg"] - 60)
+                < 0.01
+                for id in visible
+                if id != last
+            ),
+            "Alt-Tab previews lean toward view; only the final focus settles flat after the pause",
+        )
+        shot("desktop-after-alt-tab.png")
+        # The grouped dock shows all application windows, including minimized ones.
+        time.sleep(0.5)
         g = host.get_geometry()
-        cw = (g.width - 48) / 3
-        ch = (g.height - 220) / 2 - 46
-        cy = 110 + ch + 16
-        id = initial["windows"][0]["id"]
-        click(24 + cw / 5 * 1.5, cy)
-        wait(lambda: state()["looking_glass"]["cards"].get(str(id), {}).get("parked"))
-        shot("desktop-parked.png")
-        check(True, "Visible Park control sets edge-on card state")
-        click(24 + cw / 5 * 2.5, cy)
-        wait(lambda: state()["looking_glass"]["cards"].get(str(id), {}).get("back"))
-        key("k")
-        wait(lambda: state()["looking_glass"]["cards"][str(id)]["note"] == "k")
-        shot("desktop-notes.png")
+        click(160, g.height - 35)
+        time.sleep(0.3)
+        shot("application-stack-popup.png")
+        count = 3
+        popup_y = g.height - 60 - (count * 88 + 12)
+        click(230, popup_y + 45)
+        wait(lambda: state()["focused"] == visible[0])
         check(
-            "KEY k" not in (out / "client.log").read_text(),
-            "Back-side note editing consumes keyboard input before applications",
+            abs(state()["looking_glass"]["cards"][str(visible[0])]["display_yaw_deg"])
+            < 0.01,
+            "Grouped application stack opens a window and removes its tilt",
         )
-        click(g.width - 270, 60)
-        wait(lambda: state()["looking_glass"]["page"] == 1)
-        shot("desktop-page-two.png")
-        check(True, "Bounded second page exposes windows beyond six")
-        action(op="glass_page", page=0)
+
+        # Real window texture capture must remain full-size, not taskbar preview size.
+        def texture(id, name):
+            def read():
+                try:
+                    with http.open(base + f"/api/xr-frame/{id}", timeout=5) as response:
+                        size = (
+                            int(response.headers["X-Dome-Width"]),
+                            int(response.headers["X-Dome-Height"]),
+                        )
+                        Image.frombytes("RGBA", size, response.read()).save(out / name)
+                        return size
+                except OSError:
+                    return None
+
+            return wait(read)
+
+        source_size = texture(visible[0], "native-window-texture.png")
+        check(
+            source_size[0] >= geometry[visible[0]][0]["w"]
+            and source_size[1] >= geometry[visible[0]][0]["h"],
+            "Window captures retain native resolution independently of low-resolution dock previews",
+        )
         tracking = {
-            "id": 882,
+            "id": 884,
             "visible": True,
             "focused": True,
             "head": {"position_m": [0, 1.4, 0], "orientation_xyzw": [0, 0, 0, 1]},
@@ -282,89 +401,55 @@ try:
         beat = threading.Thread(target=heartbeat)
         beat.start()
         wait(lambda: request("/api/capture/xr")["available"])
-        check(
-            request("/api/xr-shell")["top"] > 36,
-            "XR overview exports a compositor-owned interactive panel",
+        wait(lambda: request("/api/xr-control")["input_realm"] == "xr")
+        target = visible[0]
+        action(op="glass_window", id=target, yaw_deg=0)
+
+        def quad(id):
+            return next(
+                s["quad"]
+                for s in request("/api/capture/xr")["surfaces"]
+                if s["quad"]["id"] == id
+            )
+
+        baseline = quad(target)
+        xtest.fake_input(xd, X.KeyPress, super_code)
+        xd.sync()
+        time.sleep(0.1)
+        request(
+            "/api/xr-input",
+            {
+                "events": [
+                    {"kind": "motion", "id": target, "uv": [0.5, 0.5]},
+                    {"kind": "scroll", "horizontal": 0, "vertical": 30},
+                ],
+                "actions": [],
+            },
         )
-        # Let the first visible tracking packet switch the seat before issuing
-        # keys: toggling immediately can race that automatic transition.
-        try:
-            wait(lambda: request("/api/xr-control")["input_realm"] == "xr", timeout=6)
-        except AssertionError:
-            (out / "xr-route-debug.json").write_text(
-                json.dumps(
-                    {"control": request("/api/xr-control"), "scene": state()}, indent=2
+        wait(lambda: state()["looking_glass"]["cards"][str(target)]["yaw_deg"] != 0)
+        xtest.fake_input(xd, X.KeyRelease, super_code)
+        xd.sync()
+        tilted = quad(target)
+        check(
+            tilted["dome"] is None
+            and tilted["size"] == baseline["size"]
+            and all(
+                abs(a - b) < 1e-5
+                for a, b in zip(
+                    tilted["pose"]["position_m"], baseline["pose"]["position_m"]
                 )
-            )
-            xtest.fake_input(xd, X.KeyPress, super_code)
-            key("x")
-            xtest.fake_input(xd, X.KeyRelease, super_code)
-            xd.sync()
-            wait(lambda: request("/api/xr-control")["input_realm"] == "xr")
-        layout = request("/api/xr-shell")
-        panel = 18446744073709551610 if layout.get("pullout") else 0
-        top = 36 if layout.get("pullout") else 0
-        panel_height = (
-            min(layout["top"], layout["height"] - 60) - top if panel else layout["top"]
+            ),
+            "XR Super+wheel rotates at the original dome anchor with unchanged extent",
         )
-
-        def xr_click(x, y):
-            request(
-                "/api/xr-input",
-                {
-                    "events": [
-                        {
-                            "kind": "motion",
-                            "id": panel,
-                            "uv": [x / layout["width"], (y - top) / panel_height],
-                        },
-                        {"kind": "button", "button": 272, "pressed": True},
-                        {"kind": "button", "button": 272, "pressed": False},
-                    ],
-                    "actions": [],
-                },
-            )
-
-        xr_click(24 + ((1024 - 48) / 3 - 16) * 0.5, 110 + (768 - 220) / 2 - 46 + 16)
-        wait(lambda: not state()["looking_glass"]["cards"][str(id)]["back"])
-        xr_click(24 + ((1024 - 48) / 3 - 16) * 0.5, 110 + (768 - 220) / 2 - 46 + 16)
-        wait(lambda: state()["looking_glass"]["cards"][str(id)]["back"])
-        key("j")
-        wait(lambda: state()["looking_glass"]["cards"][str(id)]["note"] == "kj")
         check(
-            "KEY j" not in (out / "client.log").read_text(),
-            "XR seat flips the shared card and edits notes without client key leakage",
+            texture(target, "xr-tilted-native-texture.png") == source_size,
+            "XR tilting does not resize the application or its texture",
         )
-        with http.open(base + f"/api/xr-frame/{panel}", timeout=5) as response:
-            Image.frombytes(
-                "RGBA",
-                (
-                    int(response.headers["X-Dome-Width"]),
-                    int(response.headers["X-Dome-Height"]),
-                ),
-                response.read(),
-            ).save(out / "xr-overview.png")
-        action(op="glass_window", id=id, back=False, parked=True)
-        action(op="glass_overview", open=False)
-
-        def captured():
-            value = request("/api/capture/xr")
-            return (
-                value if any(s["quad"]["id"] == id for s in value["surfaces"]) else None
-            )
-
-        capture = wait(captured)
-        spatial = next(v["quad"] for v in capture["surfaces"] if v["quad"]["id"] == id)
-        check(
-            spatial["dome"] is None
-            and abs(spatial["pose"]["orientation_xyzw"][1]) > 0.1,
-            "XR renderer receives genuinely rotated flat window quads",
-        )
-        video = out / "xr-spatial.mkv"
-        report = out / "xr-spatial.json"
+        video = out / "xr-natural.mkv"
+        report = out / "xr-natural.json"
         video.unlink(missing_ok=True)
         report.unlink(missing_ok=True)
-        recording = subprocess.run(
+        record = subprocess.run(
             [
                 "/usr/local/bin/dome-capture",
                 "--record",
@@ -394,11 +479,11 @@ try:
             text=True,
             timeout=45,
         )
-        (out / "xr-recording.log").write_text(recording.stdout + recording.stderr)
-        assert recording.returncode == 0, (recording.returncode, recording.stderr)
+        (out / "recording.log").write_text(record.stdout + record.stderr)
+        assert record.returncode == 0, record.stderr
         check(
             json.loads(report.read_text())["frames"] > 0,
-            "GPU offscreen XR composition records real rotated window textures",
+            "GPU XR composition renders naturally placed full-resolution tilted windows",
         )
         subprocess.run(
             [
@@ -412,29 +497,21 @@ try:
                 "-frames:v",
                 "1",
                 "-y",
-                str(out / "xr-spatial.png"),
+                str(out / "xr-natural.png"),
             ],
             check=True,
         )
-        action(op="glass_overview", open=True)
-        (out / "xr-capture.json").write_text(json.dumps(capture, indent=2))
         action(op="looking_glass", enabled=False)
-        final = state()
-        check(
-            not final["looking_glass"]["enabled"],
-            "Prototype can be disabled without terminating clients",
-        )
         check(
             all(
                 (w["desktop"], w["xr_pose"], w["xr_scale"]) == geometry[w["id"]]
-                for w in final["windows"]
-                if w["id"] in geometry
+                for w in state()["windows"]
             ),
-            "Disabling restores original desktop and XR geometry exactly",
+            "Disabling restores the original layout without changing client resolutions",
         )
         check(
-            client.poll() is None and server.poll() is None,
-            "Clients and compositor remain alive",
+            server.poll() is None and client.poll() is None,
+            "Native compositor and clients remain alive",
         )
         (out / "report.json").write_text(
             json.dumps(
@@ -442,13 +519,15 @@ try:
                     "passed": True,
                     "checks": checks,
                     "headset_tested": False,
-                    "upstream": "f797e0f",
+                    "window_capture_size": source_size,
+                    "iteration": 2,
                 },
                 indent=2,
             )
             + "\n"
         )
         xd.close()
+
 finally:
     pulse.set()
     if beat:

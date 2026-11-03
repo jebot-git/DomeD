@@ -1,92 +1,81 @@
-Looking Glass prototype
-=======================
+Looking Glass prototype, second iteration
+========================================
 
-This opt-in compositor experiment is inspired by Sun's Project Looking Glass:
-angled window cards, edge-on parking, notes on window backs and a reflective
-window-preview taskbar. It uses existing native Wayland clients, FLTK chrome,
-Cairo/FreeType bitmap text and DomeD's existing XR texture transport. It does not
-embed Java3D or add Qt, GTK or scalable-font dependencies.
+This opt-in experiment tilts live application windows in their existing desktop
+positions and dome locations. Client resolution, desktop rectangles, XR anchors
+and scales are retained. Desktop presentation uses full-resolution GPU textures;
+the small taskbar previews are separate. Tilted windows become progressively
+transparent, reaching 65% opacity at 90 degrees. No separate overview grid,
+window backs or note editor is presented.
 
-The implementation starts from upstream DomeD f797e0f, pulled before development,
-and retains the Orca sliced-object stereo identity from the installed session.
+The experiment lives on ``feat/looking-glass``. It starts from upstream DomeD
+f797e0f, pulled before development, and retains the Orca sliced-object stereo
+identity. This iteration is not installed over the restored stable session.
+It uses the existing FLTK chrome and Cairo/FreeType text stack and adds no Qt
+or GTK dependencies.
 
-Trying it
----------
+Controls
+--------
 
-After starting a session with the updated compositor and dome-xr helper:
+* Window > Looking Glass Prototype (experimental), or Super+G, toggles the experiment.
+* Super+scroll tilts the window under the pointer or XR ray, falling back to the
+  focused window. Each wheel notch changes tilt by 10 degrees, bounded to
+  -90 through +90 degrees. Super alone with scroll was previously unassigned;
+  the binding is reserved only while the experiment is enabled.
+* Clicking a tilted desktop window opens it flat and focuses it. That activation
+  click is consumed. Application input resumes after it opens.
+* Alt+Tab briefly brings each selected window 12 degrees toward the viewer.
+  After switching stops for 350 ms, only the final focused window animates flat.
+  Intermediate windows return to their chosen tilt. XR cycling preserves their
+  dome locations rather than recentering them.
+* Taskbar previews are stacked by application, with up to three visible previews
+  and a window count. The existing group popup selects individual windows.
+* The Glass taskbar button disables the experiment. Toggling off restores normal
+  presentation; manual tilt state remains available during the same session.
 
-* Choose Window > Looking Glass Prototype (experimental), or press Super+G.
-* Each page contains at most six window cards. Use the page buttons for more.
-* Select a card; P parks it edge-on, F opens its back and arrow keys rotate it.
-* The card's Open, Park/Unpark, Flip and rotation buttons provide mouse/XR input.
-* Type on the back to append a note. Backspace edits; newlines are supported.
-* Open or Enter returns to the application. Escape/Return closes the overview.
-* The reflective taskbar retains one preview per window on the current page.
-  Clicking a preview opens that window; right-clicking opens its notes.
-* The Glass taskbar button reopens the overview. The launcher and desktop
-  switcher remain available. Disable returns to the standard shell.
-
-Window identities and card metadata are shared by desktop and XR. In XR the
-application surfaces are real flat quads with corresponding ray intersections,
-anchored in the room by default; the normal head-anchor preference is respected.
-The overview and note editor are compositor-owned XR panels, so they consume
-input while open. A back-facing application's front is excluded from spatial
-rendering; its notes appear in the overview instead of mirroring its contents.
+Desktop and XR share tilt and focus state. XR uses rotated window quads and
+matching ray intersections at the existing panel center and extent. Untilted XR
+windows retain their original dome geometry. Notes and back-facing content are
+not part of this iteration.
 
 Screenshots
 -----------
 
 .. image:: looking-glass-desktop.png
-   :alt: Desktop overview with live angled window previews and reflective taskbar
+   :alt: Full-resolution tilted desktop windows and application preview stacks
+
+.. image:: looking-glass-stacks.png
+   :alt: Application preview stacks and the individual window selection popup
 
 .. image:: looking-glass-xr.png
-   :alt: GPU-composed XR view of rotated native Wayland window textures
+   :alt: GPU-composed XR view of native window textures at their dome locations
 
-Current limits
---------------
+Validation and limits
+---------------------
 
-This is an experimental spatial switcher and taskbar, not a complete replacement
-for normal application interaction. Desktop applications use their existing
-rectangular client surfaces after leaving the projected card overview. XR keeps
-actual spatial card geometry while the prototype is enabled. Animation and
-freehand 3D dragging are not implemented. Preview refreshes are bounded and
-rate-limited, not video-rate. Notes are session-local and do not survive a
-compositor restart; the original client contents are never edited. Card state
-is retained when disabling/re-enabling during the same session. Original desktop
-rectangles and XR poses/scales are preserved when disabling the prototype.
-
-Validation
-----------
-
-``scripts/test-looking-glass.py`` runs eight animated FLTK Wayland windows in a
-private nested compositor, leaving the active desktop and headset alone. It
-checks the real shortcut, controls, notes, page navigation, live preview pixels,
-input isolation, synthetic XR seat input, XR quaternions, GPU texture composition
-and restoration. It saves screenshots and a report in ``artifacts/looking-glass``.
-It requires Xvfb, python-xlib, Pillow, the installed FLTK toolkit and dome-capture::
+``scripts/test-looking-glass.py`` launches eight animated native FLTK windows,
+grouped into three applications, in a private nested compositor. It exercises
+real desktop keys and wheel input, geometry preservation, grouped activation,
+focus debounce, full-size texture transport, synthetic XR input and GPU XR
+capture. Results are saved under ``artifacts/looking-glass-v2``::
 
     DOME_COMPOSITOR=/path/to/dome-compositor \
       uv run --no-project --with python-xlib --with pillow \
       python scripts/test-looking-glass.py
 
-The shared policy has Rust unit tests covering validation, reversible enable /
-disable, bounded pages, projection hit tests and rotated ray-to-UV round trips.
-Actual headset comfort, passthrough integration and controller ergonomics still
-need hardware testing.
+It requires Xvfb, python-xlib, Pillow, the installed FLTK toolkit and dome-capture.
+Rust tests also check projection/inverse mapping, focus debounce, reversible
+enabling and XR center/extent and ray-to-UV preservation. The committed validation
+report records the latest completed run. Physical headset comfort and controller
+ergonomics still require hardware testing.
 
-Background: the Project Looking Glass rotation/back-side interaction is described
-in Columbia's 3D windows case study:
-https://www.cs.columbia.edu/~feiner/courses/csw4172/classes/3Dwindows-25-2.pdf
+Desktop snapshots have a 512 MiB cache budget and an 8192-pixel dimension limit.
+If a full-resolution snapshot cannot be rendered, the compositor logs the failure
+and displays the normal client surface. It does not reduce client resolution.
+Desktop interaction with a tilted window begins by opening it flat. Freehand 3D
+dragging and session-persistent tilt preferences are not implemented. The final
+90-degree desktop position uses a narrow renderable spine.
 
-Installing the prepared binaries
--------------------------------
-
-After committing the tested source, prepare a stage from the release directory::
-
-    python3 scripts/install-looking-glass.py --build /path/to/release
-    python3 scripts/install-looking-glass.py --apply artifacts/looking-glass/install-plan.json --verify-only
-    sudo -A python3 scripts/install-looking-glass.py --apply artifacts/looking-glass/install-plan.json
-
-The installer verifies dependencies and hashes, backs up both existing compositor
-and XR helpers, updates the suite inventory, and leaves running sessions alone.
-The prototype starts disabled in a new session.
+Prepared binaries can be reviewed in a separate nested session. The existing
+``scripts/install-looking-glass.py`` supports explicit staged installation, but
+was not used for this iteration; the stable system installation remains intact.

@@ -768,18 +768,13 @@ impl Scene {
         }
         self.remember_focus();
         match action {
-            Action::LookingGlass { enabled } => {
+            Action::LookingGlass { enabled } | Action::GlassOverview { open: enabled } => {
                 if self.locked { return Err("Session is locked".into()); }
                 self.looking_glass.enabled = enabled;
-                self.looking_glass.overview = enabled;
-                self.looking_glass.selected = self.focused;
-                self.looking_glass.page = 0;
+                self.looking_glass.focus_candidate = None;
+                self.looking_glass.settle_at_ms = None;
             }
-            Action::GlassOverview { open } => {
-                if self.locked || !self.looking_glass.enabled {return Err("Looking Glass is not active".into());}
-                self.looking_glass.overview = open;
-            }
-            Action::GlassPage { page } => { if self.locked || !self.looking_glass.enabled {return Err("Looking Glass is not active".into());} self.looking_glass.page = page.min(self.windows.len().div_ceil(crate::looking_glass::PAGE_SIZE)); self.looking_glass.selected=None; }
+            Action::GlassPage { .. } => { return Err("Looking Glass v2 uses natural placement, not pages".into()); }
             Action::GlassWindow {id,yaw_deg,parked,back,note} => self.glass_edit(id,yaw_deg,parked,back,note)?,
             Action::SendToRealm { id, realm } => {
                 return self.apply(Action::WindowVisibility {
@@ -1275,7 +1270,7 @@ impl Scene {
                         width_deg: width,
                         radius_m: radius,
                         opacity: if rank == 0 {
-                            1.
+                            crate::looking_glass::opacity(self,w.id)
                         } else {
                             0.16 / (rank as f32).sqrt()
                         },

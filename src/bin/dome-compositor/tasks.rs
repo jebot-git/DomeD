@@ -83,7 +83,6 @@ impl Dome {
         self.task_motion_policy(x, y, w, h, false);
     }
     fn task_motion_policy(&mut self, x: f64, y: f64, w: i32, h: i32, immediate: bool) {
-        if self.scene.lock().unwrap().looking_glass.enabled { self.task_popup=None; return; }
         if self.audio_open
             || self.history_panel.is_some()
             || self.launcher
@@ -144,14 +143,6 @@ impl Dome {
         }
     }
     pub fn activate_task(&mut self, index: usize, button: u32) {
-        let scene=self.shell_scene();
-        if scene.looking_glass.enabled {
-            if let Some(id)=dome::looking_glass::page(&scene,self.input_realm).0.get(index) {
-                if button==0x111 {self.action(Action::GlassWindow{id:*id,yaw_deg:None,parked:None,back:Some(true),note:None});self.action(Action::GlassOverview{open:true});}
-                else {self.glass_open(*id);}
-            }
-            return;
-        }
         let Some(task) = self.task_list().get(index).cloned() else {
             return;
         };

@@ -303,7 +303,7 @@ pub fn action_label(command: Command) -> String {
     use Command::*;
     match command {
         LookingGlass => "Toggle Looking Glass prototype".into(),
-        LookingGlassOverview => "Looking Glass overview".into(),
+        LookingGlassOverview => "Toggle Looking Glass".into(),
         ToggleXrBars => "Toggle XR bars".into(),
         ToggleXrTop => "Toggle upper XR bar".into(),
         ToggleXrBottom => "Toggle XR taskbar".into(),

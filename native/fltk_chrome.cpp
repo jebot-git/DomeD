@@ -424,73 +424,23 @@ struct Paint {
     cairo_restore(c);
     cairo_surface_destroy(surface);
   }
-  bool glassImage(const J &preview, const J &points) {
-    int iw=num(preview,"width"), ih=num(preview,"height");
-    if(iw<1||ih<1||iw>512||ih>512||!points.is_array()||points.size()!=4)return false;
-    gsize length=0;auto data=g_base64_decode(str(preview,"rgba").c_str(),&length);
-    if(length!=size_t(iw)*ih*4){g_free(data);return false;}
-    std::vector<uint32_t> pixels(size_t(iw)*ih);
-    for(size_t n=0;n<pixels.size();++n){auto v=data+n*4;unsigned a=v[3];pixels[n]=(a<<24)|((v[0]*a/255)<<16)|((v[1]*a/255)<<8)|(v[2]*a/255);}
-    g_free(data);
-    auto source=cairo_image_surface_create_for_data((unsigned char*)pixels.data(),CAIRO_FORMAT_ARGB32,iw,ih,iw*4);
-    struct Point{double x,y;};Point q[4];for(int i=0;i<4;++i)q[i]={points[i][0].get<double>(),points[i][1].get<double>()};
-    auto lerp=[](Point a,Point b,double v){return Point{a.x+(b.x-a.x)*v,a.y+(b.y-a.y)*v};};
-    for(int row=0;row<32;++row){
-      double a=row/32.,b=(row+1)/32.;auto l=lerp(q[0],q[3],a),r=lerp(q[1],q[2],a),ll=lerp(q[0],q[3],b),rr=lerp(q[1],q[2],b);
-      cairo_save(c);cairo_set_antialias(c,CAIRO_ANTIALIAS_NONE);cairo_move_to(c,l.x,l.y);cairo_line_to(c,r.x,r.y);cairo_line_to(c,rr.x,rr.y);cairo_line_to(c,ll.x,ll.y);cairo_close_path(c);cairo_clip(c);
-      double dx=(ll.x-l.x)/(ih*(b-a)),dy=(ll.y-l.y)/(ih*(b-a));
-      cairo_matrix_t matrix; cairo_matrix_init(&matrix,(r.x-l.x)/iw,(r.y-l.y)/iw,dx,dy,l.x-dx*ih*a,l.y-dy*ih*a);
-      cairo_transform(c,&matrix);cairo_set_source_surface(c,source,0,0);cairo_pattern_set_filter(cairo_get_source(c),CAIRO_FILTER_NEAREST);cairo_paint(c);cairo_restore(c);
-    }
-    cairo_surface_destroy(source);return true;
-  }
-  void lookingGlass(const J &glass,int w,int h) {
-    if(!yes(glass,"enabled")||!yes(glass,"overview"))return;
-    rect(0,36,w,h-96,bg);
-    text(20,42,std::max(100,w-430),32,"Looking Glass · spatial cards",fg);
-    text(20,76,w-40,22,"Select a card · P park · F notes · arrows rotate · Enter open · Esc return",muted);
-    button(w-400,44,80,30,"< "+std::to_string(num(glass,"page")+1));
-    button(w-310,44,80,30,std::to_string(num(glass,"pages",1))+" >");
-    button(w-220,44,100,30,"Return");button(w-110,44,100,30,"Disable");
-    for(const auto &card:arr(glass,"cards")) {
-      auto r=obj(card,"rect");int x=num(r,"x"),y=num(r,"y"),cw=num(r,"w"),ch=num(r,"h");
-      text(x,y-22,cw,22,str(card,"title"),yes(card,"selected")?accent:fg);
-      auto corners=arr(card,"corners");
-      if(corners.size()==4){
-        cairo_save(c);cairo_move_to(c,corners[0][0].get<double>(),corners[0][1].get<double>());
-        for(int i=1;i<4;++i)cairo_line_to(c,corners[i][0].get<double>(),corners[i][1].get<double>());
-        cairo_close_path(c);auto fill= yes(card,"selected")?accent:sel; cairo_set_source_rgba(c,fill.r,fill.g,fill.b,fill.a);cairo_fill_preserve(c);cairo_set_source_rgba(c,muted.r,muted.g,muted.b,muted.a);cairo_stroke(c);cairo_restore(c);
-      }
-      if(yes(card,"back")) {
-        rect(x,y,cw,ch,sel);
-        text(x+10,y+4,cw-20,24,"Notes · type to append, Backspace to edit",accent);
-        std::string note=str(card,"note");if(note.empty())note="Write a note on the back of this window…";
-        cairo_save(c);cairo_rectangle(c,x+8,y+30,cw-16,ch-32);cairo_clip(c);
-        int line=0;size_t start=0;
-        for(size_t end=0;end<=note.size();++end)if(end==note.size()||note[end]=='\n'){text(x+10,y+30+line++*20,cw-20,20,note.substr(start,end-start),fg);start=end+1;}
-        cairo_restore(c);
-      } else if(!glassImage(obj(card,"preview"),corners)) {
-        text(x+8,y+ch/2-12,cw-16,24,yes(card,"minimized")?"Minimized window":"Waiting for preview…",fg,true);
-      }
-      const char* labels[]={"Open","Park","Flip","<",">"};
-      for(int i=0;i<5;++i)button(x+i*cw/5,y+ch+4,cw/5-2,24,i==1&&yes(card,"parked")?"Unpark":labels[i]);
-    }
-    if(arr(glass,"cards").empty())text(30,140,w-60,40,"No windows on this desktop. Launch an application to begin.",fg);
-  }
   void glassDock(const J &glass,int w,int h) {
     if(!yes(glass,"enabled"))return;
-    int i=0;for(const auto &card:arr(glass,"cards")){
+    int i=0;
+    for(const auto &group:arr(glass,"groups")) {
       int x=110+i++*130;if(x>w-380)break;
-      if(yes(card,"selected"))rect(x-5,h-56,126,52,sel);
-      auto preview=obj(card,"preview");
-      if(!image(x+20,h-56,84,36,preview,"rgba"))icon(x+46,h-54,28,str(card,"title"),fg);
-      cairo_save(c);cairo_rectangle(c,x,h-20,124,9);cairo_clip(c);cairo_push_group(c);
-      cairo_translate(c,0,2*(h-20));cairo_scale(c,1,-1);image(x+20,h-56,84,36,preview,"rgba");
-      cairo_pop_group_to_source(c);cairo_paint_with_alpha(c,0.18);cairo_restore(c);
-      text(x+2,h-19,120,18,str(card,"title"),fg,true);
+      if(yes(group,"active"))rect(x-5,h-56,126,52,sel);
+      const auto previews=arr(group,"previews");
+      for(int n=int(previews.size())-1;n>=0;--n) {
+        rect(x+20+n*5,h-55-n*3,79,35,muted);
+        image(x+21+n*5,h-54-n*3,77,33,previews[n],"rgba");
+      }
+      if(previews.empty())icon(x+46,h-54,28,str(group,"icon"),fg);
+      text(x+2,h-19,120,18,str(group,"name"),fg,true);
+      auto count=arr(group,"windows").size();
+      if(count>1)text(x+100,h-55,20,20,std::to_string(count),accent,true);
     }
   }
-
   void taskPopup(const J &panel) {
     if (panel.empty())
       return;
@@ -894,7 +844,6 @@ extern "C" int dome_qt_paint(const char *json, unsigned char *pixels,
       if (count > 1)
         p.text(x + 96, h - 20, 22, 16, std::to_string(count), p.fg);
     }
-    p.lookingGlass(obj(o,"looking_glass"),w,h);
     p.glassDock(obj(o,"looking_glass"),w,h);
     if (yes(o, "launcher")) {
       p.rect(20, 56, 600, 400, p.bg);

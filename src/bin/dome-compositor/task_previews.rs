@@ -60,15 +60,14 @@ impl crate::Dome {
         let scene=self.scene.lock().unwrap().clone();
         let glass=scene.looking_glass.enabled;
         let ids: Vec<_> = if glass {
-            let mut ids=dome::looking_glass::page(&scene,dome::Realm::Desktop).0;
-            for id in dome::looking_glass::page(&scene,dome::Realm::Xr).0 {if !ids.contains(&id) {ids.push(id);}}
+            let mut ids=Vec::new();
+            for realm in [dome::Realm::Desktop,dome::Realm::Xr] {
+                for task in dome::taskbar::tasks(&scene.realm_scene(realm),&self.apps,&self.pins).into_iter().take(12) {
+                    for id in task.windows.into_iter().rev().take(3) {if !ids.contains(&id) && ids.len()<36 {ids.push(id);}}
+                }
+            }
             ids
-        } else { self
-            .task_popup
-            .filter(|_| !self.task_context)
-            .and_then(|index| self.task_list().get(index).cloned())
-            .map(|task| task.windows.into_iter().take(4).collect())
-            .unwrap_or_default() };
+        } else {self.task_popup.filter(|_|!self.task_context).and_then(|index|self.task_list().get(index).cloned()).map(|task|task.windows.into_iter().take(4).collect()).unwrap_or_default()};
         // Bound memory to the visible group; closing the popup stops all preview work.
         self.task_previews.frames.retain(|id, _| ids.contains(id));
         if ids.is_empty()

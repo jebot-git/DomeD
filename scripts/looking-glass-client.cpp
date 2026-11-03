@@ -48,7 +48,7 @@ int main() {
     auto title = "Looking Glass client " + std::to_string(i + 1);
     auto win = new Fl_Double_Window(540, 340);
     win->copy_label(title.c_str());
-    auto id = "org.domed.LookingGlassFixture." + std::to_string(i + 1);
+    auto id = "org.domed.LookingGlassFixture." + std::to_string(i / 3 + 1);
     win->xclass(id.c_str());
     contents.push_back(new Content(i));
     win->end();
