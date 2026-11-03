@@ -20,6 +20,7 @@ files=(
     usr/local/bin/dome-portal-picker
     usr/local/bin/dome-bdf-font
     usr/local/bin/dome-session
+    usr/local/bin/xwayland-satellite
     usr/local/bin/dome-link
     usr/local/share/doc/domed/TRAY_FRONTENDS.md
     usr/local/share/doc/domed/NETWORK_BACKUPS_MIXER.md

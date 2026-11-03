@@ -203,10 +203,12 @@ Closing the focused window returns keyboard focus to the most recently focused
 available application on the current desktop and input realm.
 Its local web panel controls the same live window/workspace model; its geometry
 preview still uses sample surface content. App launching requires `gio`, installed
-`.desktop` files. Login sessions start an optional `xwayland-satellite` bridge
-when installed alongside Xwayland, and export its `DISPLAY` for X11 apps such as Steam.
-Set `DOME_START_XWAYLAND=0` to disable it. A bridge attached to another compositor
-cannot serve the Dome session.
+`.desktop` files. Login sessions leave the Xwayland bridge disabled by default.
+Set `DOME_START_XWAYLAND=1` before starting the session to enable the optional
+`xwayland-satellite` bridge and export its `DISPLAY` for legacy X11 applications.
+A bridge attached to another compositor cannot serve the Dome session. The installed `/usr/local/bin/xwayland-satellite`
+wrapper applies the same opt-in to PATH-based launchers such as WayVR. The
+distribution binary `/usr/bin/xwayland-satellite` remains available for manual use.
 Close the nested compositor window to end the experiment. The initial protocol
 handlers are adapted from Smithay's MIT-licensed Smallvil; see THIRD-PARTY.md.
 

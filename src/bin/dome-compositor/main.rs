@@ -324,7 +324,7 @@ fn activate_client_socket(state: &mut Dome) {
     if std::env::var("DOME_LOGIN_SESSION").as_deref() == Ok("1") {
         // An Xwayland process attached to another compositor cannot serve this
         // login. Keep our bridge in the session's process group for logout.
-        if std::env::var("DOME_START_XWAYLAND").as_deref() != Ok("0") {
+        if std::env::var("DOME_START_XWAYLAND").as_deref() == Ok("1") {
             if let Some(program) = dome::desktop_entries::find_executable("xwayland-satellite") {
                 if let Some(number) = (100..200).find(|n| {
                     !std::path::Path::new(&format!("/tmp/.X{n}-lock")).exists()

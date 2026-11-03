@@ -80,6 +80,8 @@ export DOME_START_XR="${DOME_START_XR:-1}"
 if [[ -z "${XR_RUNTIME_JSON:-}" && -r /usr/local/share/openxr/1/openxr_wivrn_pro.json ]]; then
     export XR_RUNTIME_JSON=/usr/local/share/openxr/1/openxr_wivrn_pro.json
 fi
+# X11 compatibility is an explicit opt-in for this session and its children.
+export DOME_START_XWAYLAND="${DOME_START_XWAYLAND:-0}"
 # Prefer FLTerm when installed; retain explicit terminal/backend overrides.
 if [[ -n "${DOME_TERMINAL:-}" ]]; then export DOME_TERMINAL; fi
 export DOME_TERMINAL_BACKEND="${DOME_TERMINAL_BACKEND:-auto}"

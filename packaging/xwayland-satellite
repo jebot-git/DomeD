@@ -1,0 +1,9 @@
+#!/bin/sh
+# Optional compatibility bridge for DomeD, WayVR and other PATH-based launchers.
+# The distribution binary remains available for deliberate manual use.
+set -eu
+if [ "${DOME_START_XWAYLAND:-0}" != 1 ]; then
+    echo 'Xwayland bridge disabled by default; set DOME_START_XWAYLAND=1 to enable it.' >&2
+    exit 0
+fi
+exec /usr/bin/xwayland-satellite "$@"

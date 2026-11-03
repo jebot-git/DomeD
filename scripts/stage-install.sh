@@ -12,6 +12,7 @@ for name in dome-compositor dome-xr dome-preview dome-portal-picker dome-bdf-fon
 done
 install -D -m 0755 "$root/packaging/dome-link" "$stage/usr/local/bin/dome-link"
 install -D -m 0755 "$root/packaging/dome-session" "$stage/usr/local/bin/dome-session"
+install -D -m 0755 "$root/packaging/xwayland-satellite" "$stage/usr/local/bin/xwayland-satellite"
 install -D -m 0755 "$root/packaging/dome-session-client" "$stage/usr/local/libexec/dome-session-client"
 install -D -m 0644 "$root/packaging/dome-session.target" "$stage/etc/systemd/user/dome-session.target"
 install -D -m 0644 "$root/packaging/dome.desktop" "$stage/usr/share/wayland-sessions/dome.desktop"
