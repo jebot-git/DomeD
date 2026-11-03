@@ -10,7 +10,7 @@ paths=[root/'native/bitmap-runtime/xlib-shm-lifetime.c',Path(__file__).resolve()
 for runtime in [prefix]+([a.reference_prefix.resolve()] if a.reference_prefix else []):paths.extend(p for p in (runtime/'lib').glob('*.so*') if p.is_file())
 sha=lambda p:hashlib.sha256(p.read_bytes()).hexdigest();before={str(p):sha(p) for p in sorted(set(paths))};(out/'before.json').write_text(json.dumps(before,indent=2)+'\n');s={'state':'running','pid':os.getpid(),'runs':[],'sanitizer_suppressions':False,'scope':'Actual public Cairo similar-image API/device-owned SHM paints, independent Xlib pixel hashes and repeated finish/close. Sanitized client with optimized external libraries; private Xvfb, no physical session.'};(out/'status.json').write_text(json.dumps(s,indent=2)+'\n');server=None
 try:
- rd,wr=os.pipe();log=(out/'xvfb.log').open('w');server=subprocess.Popen(['Xvfb','-displayfd',str(wr),'-screen','0','640x640x24','-nolisten','tcp'],pass_fds=(wr,),stdout=log,stderr=log);os.close(wr)
+ rd,wr=os.pipe();log=(out/'xvfb.log').open('w');server=subprocess.Popen(['Xvfb','-displayfd',str(wr),'-screen','0','640x640x24','-noreset','-nolisten','tcp'],pass_fds=(wr,),stdout=log,stderr=log);os.close(wr)
  with os.fdopen(rd) as stream:env['DISPLAY']=':'+stream.readline().strip()
  old_pixels=None
  for label,runtime,expected in ([('old',a.reference_prefix.resolve(),1)] if a.reference_prefix else [])+[('fixed',prefix,0)]:
