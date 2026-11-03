@@ -1,0 +1,166 @@
+{
+  "version": 1,
+  "production_source": "3627ef5d572b3a24117eb056d8f2b659afa671d9",
+  "parent": "f797e0f1d43e7be5a06128ca7b0b0b0259fefabd",
+  "scope": "Cairo Xlib deferred SHM allocation-record cleanup only; no new protocol synchronization, pixel conversion, public API or font policy change.",
+  "patch_sha256": "260d2b81b7557a6c01bcda2bddea3864a8cfb4c7bdc40353c908a54b41278fdf",
+  "optimized_sdk_build_exit": 0,
+  "build": "Fresh regular-user Release FT/HB/Cairo/Pango via canonical prepare-bitmap-runtime.py,4jobs,source archives checksum-verified from prior immutable cache. New isolated prefix; no system/session change.",
+  "headers": {
+    "old_headers": 153,
+    "new_headers": 153,
+    "same": true,
+    "different": []
+  },
+  "shm": {
+    "state": "terminal",
+    "pid": 3643918,
+    "runs": [
+      {
+        "name": "old",
+        "exit": 1,
+        "expected": 1,
+        "pixels": [
+          "PIXELS 0 ac595224952be383",
+          "PIXELS 1 ac595224952be383",
+          "PIXELS 2 ac595224952be383",
+          "PIXELS 3 ac595224952be383"
+        ],
+        "seconds": 0.06431843299651518
+      },
+      {
+        "name": "fixed",
+        "exit": 0,
+        "expected": 0,
+        "pixels": [
+          "PIXELS 0 ac595224952be383",
+          "PIXELS 1 ac595224952be383",
+          "PIXELS 2 ac595224952be383",
+          "PIXELS 3 ac595224952be383"
+        ],
+        "seconds": 0.03215229700435884
+      }
+    ],
+    "sanitizer_suppressions": false,
+    "scope": "Actual public Cairo similar-image API/device-owned SHM paints, independent Xlib pixel hashes and repeated finish/close. Sanitized client with optimized external libraries; private Xvfb, no physical session.",
+    "exit_code": 0,
+    "pixels_exact": true,
+    "inputs": 99,
+    "drift": []
+  },
+  "source_cache": {
+    "status": "terminal",
+    "inputs": 51,
+    "runs": [
+      {
+        "name": "fixed",
+        "exit_code": 0,
+        "expected_exit": 0,
+        "seconds": 0.1146597320039291,
+        "pixels": [
+          "PIXELS 0 a54a357253c49603",
+          "PIXELS 1 a54a357253c49603",
+          "PIXELS 2 a54a357253c49603",
+          "PIXELS 3 a54a357253c49603"
+        ],
+        "runtime": "/home/blux/de-xr/DomeD/artifacts/cairo-shm-drain-f797/artifacts/bitmap-runtime"
+      }
+    ],
+    "sanitizer_suppressions": false,
+    "scope": "Real Cairo/Xlib source/mask cache; sanitizer client with external optimized bitmap libraries; private Xvfb, no FLTK lifecycle model, physical GPU or session.",
+    "exit_code": 0,
+    "pixels_exact": true,
+    "input_drift": []
+  },
+  "native_application": {
+    "source": "64b46cb (Dome Sculpt package Open/Save workflow, matched owned ASan/UBSan application and FLTK; external optimized bitmap libraries)",
+    "old_sdk": {
+      "ui_checks_passed": 7,
+      "total": 8,
+      "exit": 1,
+      "leak_bytes": 32,
+      "scope": "Actual native chooser/Open/native Save/reopen succeed; clean exit reports one deferred SHM record."
+    },
+    "new_sdk": {
+      "state": "terminal",
+      "pid": 3647913,
+      "source": "64b46cb658ee20608c657566b7bb5e242bf3c494",
+      "mode": "normal",
+      "scope": "Same matched sanitizer native app with ABI-compatible new canonical bitmap SDK; package Open via universal menu, native chooser/modal cancel, unsaved identity, Save As to exact native project, reopen and Quit. Private Xvfb/bus/HOME; no native Wayland or physical headset claim.",
+      "command": [
+        "/home/blux/de-xr/dome-sculpt/artifacts/selection-gui-venv/bin/python",
+        "/home/blux/de-xr/dome-sculpt/artifacts/native-package-open-7ecc/artifacts/union/package-menu-sanitize-sdk.py"
+      ],
+      "child_pid": 3648057,
+      "exit_code": 0,
+      "seconds": 18.27634660102194,
+      "report": {
+        "checks": [
+          {
+            "passed": true,
+            "check": "Package Open uses the actual native chooser with DomeD modal ownership"
+          },
+          {
+            "passed": true,
+            "check": "Universal Close cancels Open without changing the current project"
+          },
+          {
+            "passed": true,
+            "check": "Actual native Open restores the package as Untitled with an unsaved marker and preserves its source bytes"
+          },
+          {
+            "passed": true,
+            "check": "Ordinary Save after package Open requests a native project destination"
+          },
+          {
+            "passed": true,
+            "check": "Cancelling Save As preserves the unsaved document and original package"
+          },
+          {
+            "passed": true,
+            "check": "Actual FLTK Save writes the exact recovered native scene to a new project without overwriting the GLB"
+          },
+          {
+            "passed": true,
+            "check": "Reopening the saved native project restores its clean project identity"
+          },
+          {
+            "passed": true,
+            "check": "DomeD Close Window exits cleanly after package recovery and leaves both formats intact"
+          }
+        ],
+        "failed": 0
+      },
+      "inputs": 1648,
+      "drift": []
+    },
+    "ABI_scope": "Same app and FLTK binaries, runtime library replacement; all153 public bitmap headers exact. Not fresh FLTK/frontend build against this prefix."
+  },
+  "preserved_negatives": [
+    "First old probe reached3pixel checks before Xvfb last-client reset temporarily refused display4;96B/3records leaked. Final private server uses-noreset and completes all4old/newchecks.",
+    "First test invocation had no Xvfb inPATH; corrected environment to existing private Xvfb, no product change.",
+    "Manifest test without explicit LD_LIBRARY_PATH loaded installed /opt stack and correctly refused; explicit staged stack passes."
+  ],
+  "system_install": false,
+  "session_restart": false,
+  "physical_headset": false,
+  "remaining": "Dome Sculpt CMake manifest guard and coherent new SDK selection; inherited standalone-XR Mesa112B report and all independent production goals remain open.",
+  "artifacts_sha256": {
+    "/home/blux/de-xr/DomeD/artifacts/cairo-shm-drain-f797/artifacts/sdk-build.log": "f6cb7db993bed0aae0952623b6a2e0c249a9f4fd09fbbff4e8171b5a5f32dc33",
+    "/home/blux/de-xr/DomeD/artifacts/cairo-shm-drain-f797/artifacts/bitmap-runtime/share/domed-bdf-runtime/manifest.json": "faaa8c29728908c8903d9409b02401a4d142cf69980857617a22c3bc5acb6e92",
+    "/home/blux/de-xr/DomeD/artifacts/cairo-shm-drain-f797/artifacts/header-equality.json": "a447be442716b0d8e55eaf0700d03d6d9baf84ed5fd09effb24edb7e3a2d4b69",
+    "/home/blux/de-xr/DomeD/artifacts/cairo-shm-drain-f797/artifacts/runtime-check.json": "6301bd838eb8ac7715baaee60c35a1a515478558cb5f34e13a2771d391232e3c",
+    "/home/blux/de-xr/DomeD/artifacts/cairo-shm-drain-f797/artifacts/shm-proof/status.json": "ebae255b2188856cfc7e83feadaedd78b3c82e99f6bb0576b1213c7fbc78498b",
+    "/home/blux/de-xr/DomeD/artifacts/cairo-shm-drain-f797/artifacts/shm-proof/before.json": "bd716442cd8f4a09d7d2afd48fdca697d44e277ea886203727c8492f59a71d37",
+    "/home/blux/de-xr/DomeD/artifacts/cairo-shm-drain-f797/artifacts/shm-proof/after.json": "bd716442cd8f4a09d7d2afd48fdca697d44e277ea886203727c8492f59a71d37",
+    "/home/blux/de-xr/DomeD/artifacts/cairo-shm-drain-f797/artifacts/shm-proof/old.log": "85da4114a10c25a50d654c5992f867426f9b0ca4d15c19bac9a7ec9cae949ca6",
+    "/home/blux/de-xr/DomeD/artifacts/cairo-shm-drain-f797/artifacts/shm-proof/fixed.log": "26664119873fdabe872444267f5487c3e273a69033cdd28b74a9ca9c341f7c9a",
+    "/home/blux/de-xr/DomeD/artifacts/cairo-shm-drain-f797/artifacts/xlib-cache-proof/status.json": "0e2a0cc0e58b1d3ea4abda3f2f3843c967c47b1f7a64dedd742484241c3d7f6b",
+    "/home/blux/de-xr/DomeD/artifacts/cairo-shm-drain-f797/artifacts/xlib-cache-proof/fixed.log": "29a06c80622086e3e562af2b85e5920848e1dc9128cca56317d5e2e903efd4d5",
+    "/home/blux/de-xr/dome-sculpt/artifacts/native-package-open-7ecc/artifacts/open-proof/native-menu-sanitize-wrapper/status.json": "3cfd493d88f24d1132677f9806ad547c57d29fc36636cf3f9f1ee46367c32013",
+    "/home/blux/de-xr/dome-sculpt/artifacts/native-package-open-7ecc/artifacts/open-proof/native-menu-sanitize/app.log": "82184d103a8629ad3aca8aa100f4e88c3b2ae20105b69aca7accc5025a7f1a26",
+    "/home/blux/de-xr/dome-sculpt/artifacts/native-package-open-7ecc/artifacts/open-proof/native-menu-sanitize-sdk-wrapper/status.json": "cde99d6a9493edf1af94661769c8321e2c3c7053c60f9d50189bb3790e43ccf0",
+    "/home/blux/de-xr/dome-sculpt/artifacts/native-package-open-7ecc/artifacts/open-proof/native-menu-sanitize-sdk/app.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "/home/blux/de-xr/dome-sculpt/artifacts/native-package-open-7ecc/artifacts/open-proof/native-menu-sanitize-sdk/report.json": "1aaf7908bfe8af495a60f722d0ff6eb5cddfb055009726f0a7b9910d57c6c1e2"
+  }
+}

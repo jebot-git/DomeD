@@ -74,3 +74,23 @@
  
  	while (! cairo_list_is_empty (&display->fonts)) {
  	    _cairo_xlib_font_close (cairo_list_first_entry (&display->fonts,
+--- a/src/cairo-xlib-surface-shm.c
++++ b/src/cairo-xlib-surface-shm.c
+@@ -1447,6 +1447,17 @@
+ 						       cairo_xlib_shm_surface_t,
+ 						       link)->image.base);
+ 
++    /* Finishing surfaces may leave in-flight allocation records on the
++     * deferred queue. The pools below are destroyed as a whole, so release
++     * only the records here; do not recycle blocks still read by the server.
++     * _pqueue_fini() releases the pointer array, not the records it owns. */
++    while (PQ_TOP (&shm->info)) {
++	cairo_xlib_shm_info_t *info = PQ_TOP (&shm->info);
++
++	_pqueue_pop (&shm->info);
++	free (info);
++    }
++
+     _pqueue_fini (&shm->info);
+ 
+     while (!cairo_list_is_empty (&shm->pool)) {
