@@ -82,3 +82,12 @@ validation, cleanup scope and the DNF/uv policies stored alongside these recipes
 Desktop, wallet and input-method sessions were not restarted. Private device
 keys, trust data, network addresses, local backup trees and generated RPMs are
 not repository contents.
+
+X11 retirement
+--------------
+The later 2026-11-03 target cleanup removed Xwayland, Xvfb and legacy X11 tools.
+Native accessibility was rebuilt with X11 disabled, while shared libraries still
+required by LightXR, Fcitx and the graphics/VR stack were retained. See
+../../docs/X11_RETIREMENT.md for upstream build options, the reference removal
+inventory, package-policy additions and validation. No running desktop or display
+manager was restarted.

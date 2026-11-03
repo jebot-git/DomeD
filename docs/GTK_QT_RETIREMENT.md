@@ -50,8 +50,9 @@ third-party FLTK applications.
 ## Package installation policy
 
 `packaging/toolkit/no-gtk-qt.dnf.conf` contains the installed Fedora DNF exclusions
-and protection for the local native replacements. Review the native package
-names against the target inventory before enabling it. On the verified system
+and protection for the local native replacements. It also incorporates the later
+[X11 retirement](X11_RETIREMENT.md) exclusions and X11-free accessibility packages.
+Review the native package names against the target inventory before enabling it. On the verified system
 it is installed at `/etc/dnf/libdnf5.conf.d/99-de-xr-preserve.conf`, with the same
 `excludepkgs` value merged into `/etc/dnf/dnf.conf` for DNF4 compatibility. Merge
 with existing exclusions rather than overwriting unrelated DNF configuration.
@@ -78,7 +79,9 @@ followed by a checked 25-package GTK retirement set. The latter included both
 GTK3 architectures and development files, IBus/Anthy GTK frontends, Kasumi,
 indicators, legacy desktop menu integration, libnma, libwnck and xapps. Native
 Fcitx, its Anthy engine, libcanberra notification audio, SDL, Xwayland, Godot and
-DomeD services were preserved.
+DomeD services were preserved. Xwayland was subsequently removed in the separate
+[X11 retirement](X11_RETIREMENT.md); that later transaction retained the native
+Wayland desktop and VR sessions.
 
 A subsequent unused-runtime cleanup removed:
 

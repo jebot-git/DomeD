@@ -208,7 +208,9 @@ Set `DOME_START_XWAYLAND=1` before starting the session to enable the optional
 `xwayland-satellite` bridge and export its `DISPLAY` for legacy X11 applications.
 A bridge attached to another compositor cannot serve the Dome session. The installed `/usr/local/bin/xwayland-satellite`
 wrapper applies the same opt-in to PATH-based launchers such as WayVR. The
-distribution binary `/usr/bin/xwayland-satellite` remains available for manual use.
+distribution binary `/usr/bin/xwayland-satellite` is available for manual use when
+the compatibility packages are installed. The [retired-host policy](docs/X11_RETIREMENT.md)
+removes those packages and prevents their automatic reinstallation.
 Close the nested compositor window to end the experiment. The initial protocol
 handlers are adapted from Smithay's MIT-licensed Smallvil; see THIRD-PARTY.md.
 
