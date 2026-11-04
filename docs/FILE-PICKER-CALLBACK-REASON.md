@@ -1,3 +1,5 @@
+This intermediate scope is superseded by the qualified [poll/clipboard runtime](X11-CLIPBOARD-POLL.md). Its original evidence and negatives remain below.
+
 # Filename callback authority — partial component
 
 The additive 26th patch accepts a filename only for the input's actual

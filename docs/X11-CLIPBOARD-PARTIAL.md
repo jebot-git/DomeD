@@ -1,3 +1,5 @@
+This intermediate scope is superseded by the qualified [poll/clipboard runtime](X11-CLIPBOARD-POLL.md). Its original evidence and negatives remain below.
+
 # X11 clipboard ownership implementation — intermediate
 
 The27th source patch isolates TARGETS queries from real Paste replies, preserves

@@ -232,3 +232,12 @@ The builder preserves old source trees and installs only to the requested privat
 prefix. `--sanitize` instruments all owned toolkit C/C++ with ASan/UBSan;
 `--jobs` controls build parallelism. Existing prefixes and active sessions need
 not be changed. Read [the qualification](../../docs/FILE-PICKER-VIEWPORT.md).
+
+
+The canonical builder now also applies26 filename callback authority and27 X11
+clipboard ownership/query cleanup, and requires the official poll backend. It
+retains private-config.h and runtime-profile.json with actual source, builder,
+configuration and installed-library hashes. This preserves high-descriptor
+clipboard operation without public header/layout changes; old static fdsets
+export storage remains available. Read [X11-CLIPBOARD-POLL.md](../../docs/X11-CLIPBOARD-POLL.md)
+for the final picker/clipboard/SDK qualification and preserved negatives.
