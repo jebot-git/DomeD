@@ -6,3 +6,7 @@ pkg_check_modules(PICKER_FONTS REQUIRED IMPORTED_TARGET fontconfig freetype2 zli
 add_executable(file-picker-test file-picker-test.cpp)
 target_compile_features(file-picker-test PRIVATE cxx_std_17)
 target_link_libraries(file-picker-test PRIVATE fltk::fltk-shared fltk::images-shared PkgConfig::PICKER_FONTS)
+
+add_executable(clipboard-test clipboard-test.cpp)
+target_compile_features(clipboard-test PRIVATE cxx_std_17)
+target_link_libraries(clipboard-test PRIVATE fltk::fltk-shared PkgConfig::PICKER_FONTS)

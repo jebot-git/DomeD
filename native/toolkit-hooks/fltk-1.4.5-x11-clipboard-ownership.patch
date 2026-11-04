@@ -1,0 +1,235 @@
+--- a/src/Fl_x.cxx
++++ b/src/Fl_x.cxx
+@@ -51,6 +51,9 @@
+ #  include <unistd.h>
+ #  include <time.h>
+ #  include <sys/time.h>
++#  include <sys/select.h>
++#  include <errno.h>
++#  include <chrono>
+ #  include <math.h>
+ #  include <X11/Xmd.h>
+ #  include <X11/Xlocale.h>
+@@ -173,6 +176,8 @@
+ static Atom TIMESTAMP;
+ static Atom PRIMARY_TIMESTAMP;
+ static Atom CLIPBOARD_TIMESTAMP;
++static Atom FLTK_CLIPBOARD_QUERY;
++static Atom FLTK_CLIPBOARD_CLOCK;
+ Atom fl_XdndAware;
+ Atom fl_XdndSelection;
+ Atom fl_XdndEnter;
+@@ -570,6 +575,8 @@
+   TIMESTAMP             = XInternAtom(d, "TIMESTAMP",           0);
+   PRIMARY_TIMESTAMP     = XInternAtom(d, "PRIMARY_TIMESTAMP",   0);
+   CLIPBOARD_TIMESTAMP   = XInternAtom(d, "CLIPBOARD_TIMESTAMP", 0);
++  FLTK_CLIPBOARD_QUERY  = XInternAtom(d, "_FLTK_CLIPBOARD_TARGETS_QUERY", 0);
++  FLTK_CLIPBOARD_CLOCK  = XInternAtom(d, "_FLTK_CLIPBOARD_SERVER_TIME", 0);
+   fl_XdndAware          = XInternAtom(d, "XdndAware",           0);
+   fl_XdndSelection      = XInternAtom(d, "XdndSelection",       0);
+   fl_XdndEnter          = XInternAtom(d, "XdndEnter",           0);
+@@ -689,8 +696,72 @@
+ char fl_i_own_selection[2] = {0,0};
+ 
+ 
++// Clipboard commands may be dispatched by a native menu timer without a new
++// input event. Obtain an actual server timestamp, and never consume another
++// transfer's events while synchronously querying clipboard metadata.
++struct Fl_Clipboard_Query {
++  Window requestor;
++  Atom property;
++  Time time;
++  unsigned long serial;
++};
++static Bool clipboard_clock_event(Display *, XEvent *event, XPointer data) {
++  const Fl_Clipboard_Query &q = *reinterpret_cast<Fl_Clipboard_Query *>(data);
++  return event->type == PropertyNotify && event->xproperty.window == q.requestor &&
++         event->xproperty.atom == q.property && event->xproperty.state == PropertyNewValue &&
++         event->xproperty.serial >= q.serial;
++}
++static Bool clipboard_targets_event(Display *, XEvent *event, XPointer data) {
++  const Fl_Clipboard_Query &q = *reinterpret_cast<Fl_Clipboard_Query *>(data);
++  return event->type == SelectionNotify && event->xselection.requestor == q.requestor &&
++         event->xselection.selection == CLIPBOARD && event->xselection.target == TARGETS &&
++         event->xselection.time == q.time &&
++         (event->xselection.property == q.property || event->xselection.property == None);
++}
++static bool clipboard_wait_event(XEvent &event, Bool (*matches)(Display *, XEvent *, XPointer),
++                                 Fl_Clipboard_Query &query) {
++  const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(250);
++  XFlush(fl_display);
++  for (;;) {
++    if (XCheckIfEvent(fl_display, &event, matches, reinterpret_cast<XPointer>(&query))) return true;
++    const auto left = std::chrono::duration_cast<std::chrono::microseconds>(
++      deadline - std::chrono::steady_clock::now()).count();
++    if (left <= 0) return false;
++#if USE_POLL
++    pollfd input = {ConnectionNumber(fl_display), POLLIN, 0};
++    int ready = poll(&input, 1, static_cast<int>((left + 999) / 1000));
++    if (ready > 0 && (input.revents & (POLLERR | POLLHUP | POLLNVAL))) return false;
++#else
++    const int fd = ConnectionNumber(fl_display);
++    if (fd < 0 || fd >= FD_SETSIZE) return false;
++    fd_set input; FD_ZERO(&input); FD_SET(fd, &input);
++    timeval timeout; timeout.tv_sec = 0; timeout.tv_usec = static_cast<long>(left);
++    int ready = select(fd + 1, &input, NULL, NULL, &timeout);
++#endif
++    if (ready == 0 || (ready < 0 && errno != EINTR)) return false;
++  }
++}
++static bool clipboard_server_time(Time &time) {
++  if (!fl_display || !fl_message_window) return false;
++  XWindowAttributes attributes;
++  if (!XGetWindowAttributes(fl_display, fl_message_window, &attributes)) return false;
++  XSelectInput(fl_display, fl_message_window, attributes.your_event_mask | PropertyChangeMask);
++  Fl_Clipboard_Query query = {fl_message_window, FLTK_CLIPBOARD_CLOCK, 0, NextRequest(fl_display)};
++  const unsigned char value = 0;
++  XChangeProperty(fl_display, query.requestor, query.property, XA_INTEGER, 8,
++                  PropModeReplace, &value, 1);
++  XEvent event;
++  const bool received = clipboard_wait_event(event, clipboard_clock_event, query);
++  XSelectInput(fl_display, fl_message_window, attributes.your_event_mask);
++  if (received) time = event.xproperty.time;
++  return received;
++}
++
+ // Call this when a "paste" operation happens:
+ void Fl_X11_Screen_Driver::paste(Fl_Widget &receiver, int clipboard, const char *type) {
++  if (fl_i_own_selection[clipboard] &&
++      XGetSelectionOwner(fl_display, clipboard ? CLIPBOARD : XA_PRIMARY) != fl_message_window)
++    fl_i_own_selection[clipboard] = 0;
+   if (fl_i_own_selection[clipboard]) {
+     // We already have it, do it quickly without window server.
+     if (type == Fl::clipboard_plain_text && fl_selection_type[clipboard] == type) {
+@@ -712,45 +783,45 @@
+     return;
+   }
+   // otherwise get the window server to return it:
++  Time time;
++  if (!clipboard_server_time(time)) return;
+   fl_selection_requestor = &receiver;
+   Atom property = clipboard ? CLIPBOARD : XA_PRIMARY;
+   Fl::e_clipboard_type = type;
+   XConvertSelection(fl_display, property, TARGETS, property,
+-                    fl_xid(Fl::first_window()), fl_event_time);
++                    fl_xid(Fl::first_window()), time);
+ }
+ 
+ int Fl_X11_Screen_Driver::clipboard_contains(const char *type) {
+-  if (fl_i_own_selection[1]) {
++  if (!fl_display || !fl_message_window || !Fl::first_window()) return 0;
++  const Window owner = XGetSelectionOwner(fl_display, CLIPBOARD);
++  if (fl_i_own_selection[1] && owner == fl_message_window)
+     return fl_selection_type[1] == type;
+-  }
++  fl_i_own_selection[1] = 0;
++  if (owner == None) return 0;
++  Time time;
++  if (!clipboard_server_time(time)) return 0;
++  Fl_Clipboard_Query query = {fl_message_window, FLTK_CLIPBOARD_QUERY, time, 0};
++  XDeleteProperty(fl_display, query.requestor, query.property);
++  XConvertSelection(fl_display, CLIPBOARD, TARGETS, query.property, query.requestor, query.time);
+   XEvent event;
+-  Atom actual; int format; unsigned long count, remaining, i = 0;
+-  unsigned char* portion = NULL;
+-  Fl_Window *win = Fl::first_window();
+-  if (!win || !fl_xid(win)) return 0;
+-  win->wait_for_expose();
+-  XConvertSelection(fl_display, CLIPBOARD, TARGETS, CLIPBOARD, fl_xid(win), CurrentTime);
+-  XFlush(fl_display);
+-  // FIXME: The following loop may ignore up to 20 events! (AlbrechtS)
+-  do {
+-    XNextEvent(fl_display, &event);
+-    if (event.type == SelectionNotify && event.xselection.property == None) return 0;
+-    i++;
+-  } while (i < 20 && event.type != SelectionNotify);
+-  if (i >= 20) return 0;
+-  XGetWindowProperty(fl_display,
+-                     event.xselection.requestor,
+-                     event.xselection.property,
+-                     0, 4000, 0, 0,
+-                     &actual, &format, &count, &remaining, &portion);
+-  if (actual != XA_ATOM) return 0;
+-  Atom t = (Atom)0;
+-  if (strcmp(type, Fl::clipboard_plain_text) == 0)
+-    t = find_target_text((Atom*)portion, count);
+-  else if (strcmp(type, Fl::clipboard_image) == 0)
+-    t = find_target_image((Atom*)portion, count);
+-  XFree(portion);
+-  return (t ? 1 : 0);
++  if (!clipboard_wait_event(event, clipboard_targets_event, query)) return 0;
++  if (event.xselection.property == None) return 0;
++  Atom actual; int format; unsigned long count, remaining;
++  unsigned char *portion = NULL;
++  const int status = XGetWindowProperty(fl_display, query.requestor, query.property,
++    0, 4000, True, XA_ATOM, &actual, &format, &count, &remaining, &portion);
++  XDeleteProperty(fl_display, query.requestor, query.property);
++  Atom target = None;
++  if (status == Success && actual == XA_ATOM && format == 32 && remaining == 0 &&
++      count <= 4000 && XGetSelectionOwner(fl_display, CLIPBOARD) == owner) {
++    if (strcmp(type, Fl::clipboard_plain_text) == 0)
++      target = find_target_text(reinterpret_cast<Atom *>(portion), count);
++    else if (strcmp(type, Fl::clipboard_image) == 0)
++      target = find_target_image(reinterpret_cast<Atom *>(portion), count);
++  }
++  if (portion) XFree(portion);
++  return target != None;
+ }
+ 
+ static Window fl_dnd_source_window;
+@@ -840,10 +911,12 @@
+   memcpy(fl_selection_buffer[clipboard], stuff, len);
+   fl_selection_buffer[clipboard][len] = 0; // needed for direct paste
+   fl_selection_length[clipboard] = len;
+-  fl_i_own_selection[clipboard] = 1;
+   fl_selection_type[clipboard] = Fl::clipboard_plain_text;
+   Atom property = clipboard ? CLIPBOARD : XA_PRIMARY;
+-  XSetSelectionOwner(fl_display, property, fl_message_window, fl_event_time);
++  Time time;
++  if (clipboard_server_time(time))
++    XSetSelectionOwner(fl_display, property, fl_message_window, time);
++  fl_i_own_selection[clipboard] = XGetSelectionOwner(fl_display, property) == fl_message_window;
+ }
+ 
+ 
+@@ -853,10 +926,12 @@
+   delete[] fl_selection_buffer[clipboard];
+   fl_selection_buffer[clipboard] = (char *) Fl_Unix_System_Driver::create_bmp(data,W,H,&fl_selection_length[clipboard]);
+   fl_selection_buffer_length[clipboard] = fl_selection_length[clipboard];
+-  fl_i_own_selection[clipboard] = 1;
+   fl_selection_type[clipboard] = Fl::clipboard_image;
+   Atom property = clipboard ? CLIPBOARD : XA_PRIMARY;
+-  XSetSelectionOwner(fl_display, property, fl_message_window, fl_event_time);
++  Time time;
++  if (clipboard_server_time(time))
++    XSetSelectionOwner(fl_display, property, fl_message_window, time);
++  fl_i_own_selection[clipboard] = XGetSelectionOwner(fl_display, property) == fl_message_window;
+ }
+ 
+ ////////////////////////////////////////////////////////////////
+@@ -1363,6 +1438,14 @@
+     return 0;
+ 
+   case SelectionNotify: {
++    // A timed-out metadata reply belongs to the private query, never a paste.
++    if (fl_xevent->xselection.requestor == fl_message_window &&
++        fl_xevent->xselection.selection == CLIPBOARD && fl_xevent->xselection.target == TARGETS &&
++        (fl_xevent->xselection.property == FLTK_CLIPBOARD_QUERY || fl_xevent->xselection.property == None)) {
++      if (fl_xevent->xselection.property != None)
++        XDeleteProperty(fl_display, fl_message_window, FLTK_CLIPBOARD_QUERY);
++      return 0;
++    }
+     static unsigned char* sn_buffer = 0;
+     if (sn_buffer) {
+       free(sn_buffer); sn_buffer = 0;
+@@ -1413,8 +1496,8 @@
+ 
+         Atom property = xevent.xselection.property;
+         XConvertSelection(fl_display, property, type, property,
+-              fl_xid(Fl::first_window()),
+-              fl_event_time);
++              xevent.xselection.requestor,
++              xevent.xselection.time);
+         if (type == fl_XaImageBmp) {
+           Fl::e_clipboard_type = Fl::clipboard_image;
+         }
