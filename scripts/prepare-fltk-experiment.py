@@ -34,6 +34,7 @@ patch_names.append('fltk-1.4.5-pen-input.patch')
 patch_names.append('fltk-1.4.5-pcf-fonts.patch')
 patch_names.append('fltk-1.4.5-process-cleanup.patch')
 patch_names.append('fltk-1.4.5-file-picker-viewport.patch')
+patch_names.append('fltk-1.4.5-file-picker-callback-reason.patch')
 patches=[repo/'native/toolkit-hooks'/name for name in patch_names]
 digest=hashlib.sha256(b''.join(p.read_bytes() for p in patches)).hexdigest()
 stamp=source/'.dome-patches.sha256'

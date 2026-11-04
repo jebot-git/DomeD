@@ -1,0 +1,161 @@
+{
+  "state": "partial callback-reason component; full Sculpt SDK adoption not qualified",
+  "base": "981433866309bc0e9e3ab6465f89c897c29985c2",
+  "source_sha256": {
+    "scripts/prepare-fltk-experiment.py": "27f0a227f2733042f13a502fa2b472c82ee24c5fe296fc77377d1e35331f0616",
+    "native/toolkit-hooks/fltk-1.4.5-file-picker-callback-reason.patch": "71b9d4f202177734d91182c54cd404d3eb27d68521c326e1ec679f98d2201f87"
+  },
+  "owned_toolkit_builds": {
+    "release": 0,
+    "sanitize": 0
+  },
+  "canonical_picker_cohorts": [
+    {
+      "state": "terminal",
+      "pid": 764778,
+      "command": [
+        "/home/blux/de-xr/dome-sculpt/artifacts/selection-gui-venv/bin/python",
+        "tests/file-picker/test-wayland.py",
+        "artifacts/callback-test-release/file-picker-test",
+        "artifacts/callback-proof/wayland-release-compact"
+      ],
+      "child_pid": 764918,
+      "exit": 0,
+      "seconds": 56.10063778498443,
+      "inputs": 1508,
+      "drift": []
+    },
+    {
+      "state": "terminal",
+      "pid": 764776,
+      "command": [
+        "/home/blux/de-xr/dome-sculpt/artifacts/selection-gui-venv/bin/python",
+        "tests/file-picker/test-wayland.py",
+        "artifacts/callback-test-release/file-picker-test",
+        "artifacts/callback-proof/wayland-release-normal"
+      ],
+      "child_pid": 764912,
+      "exit": 0,
+      "seconds": 42.61016278798343,
+      "inputs": 1508,
+      "drift": []
+    },
+    {
+      "state": "terminal",
+      "pid": 764780,
+      "command": [
+        "/home/blux/de-xr/dome-sculpt/artifacts/selection-gui-venv/bin/python",
+        "tests/file-picker/test-wayland.py",
+        "artifacts/callback-test-sanitize/file-picker-test",
+        "artifacts/callback-proof/wayland-sanitize-compact"
+      ],
+      "child_pid": 764904,
+      "exit": 0,
+      "seconds": 75.30595782599994,
+      "inputs": 1508,
+      "drift": []
+    },
+    {
+      "state": "terminal",
+      "pid": 764775,
+      "command": [
+        "/home/blux/de-xr/dome-sculpt/artifacts/selection-gui-venv/bin/python",
+        "tests/file-picker/test-wayland.py",
+        "artifacts/callback-test-sanitize/file-picker-test",
+        "artifacts/callback-proof/wayland-sanitize-normal"
+      ],
+      "child_pid": 764913,
+      "exit": 0,
+      "seconds": 60.95532504201401,
+      "inputs": 1508,
+      "drift": []
+    },
+    {
+      "state": "terminal",
+      "pid": 764781,
+      "command": [
+        "dbus-run-session",
+        "--",
+        "python3",
+        "artifacts/callback-proof/run-x11.py",
+        "artifacts/toolkit-callback-release",
+        "artifacts/callback-proof/x11-release-compact",
+        "640x360",
+        "2"
+      ],
+      "child_pid": 764905,
+      "exit": 0,
+      "seconds": 50.12600380901131,
+      "inputs": 1508,
+      "drift": []
+    },
+    {
+      "state": "terminal",
+      "pid": 764774,
+      "command": [
+        "dbus-run-session",
+        "--",
+        "python3",
+        "artifacts/callback-proof/run-x11.py",
+        "artifacts/toolkit-callback-release",
+        "artifacts/callback-proof/x11-release-normal",
+        "1600x1000",
+        "1"
+      ],
+      "child_pid": 764919,
+      "exit": 0,
+      "seconds": 37.58459151699208,
+      "inputs": 1508,
+      "drift": []
+    },
+    {
+      "state": "terminal",
+      "pid": 764777,
+      "command": [
+        "dbus-run-session",
+        "--",
+        "python3",
+        "artifacts/callback-proof/run-x11.py",
+        "artifacts/toolkit-callback-sanitize",
+        "artifacts/callback-proof/x11-sanitize-compact",
+        "640x360",
+        "2"
+      ],
+      "child_pid": 764908,
+      "exit": 0,
+      "seconds": 69.12895601300988,
+      "inputs": 1508,
+      "drift": []
+    },
+    {
+      "state": "terminal",
+      "pid": 764779,
+      "command": [
+        "dbus-run-session",
+        "--",
+        "python3",
+        "artifacts/callback-proof/run-x11.py",
+        "artifacts/toolkit-callback-sanitize",
+        "artifacts/callback-proof/x11-sanitize-normal",
+        "1600x1000",
+        "1"
+      ],
+      "child_pid": 764901,
+      "exit": 0,
+      "seconds": 56.4535652709892,
+      "inputs": 1508,
+      "drift": []
+    }
+  ],
+  "consumer_scope": "Exact copied981 consumer binaries,165 byte-identical public headers; SDK dynamic-runtime delta only. Whole-owned26 toolkit C/C++ built independently.",
+  "sculpt_observations": {
+    "root": "/home/blux/de-xr/dome-sculpt/artifacts/toolkit-viewport25-c092/artifacts/viewport-proof",
+    "callback-release-normal": "15 checks pass29.270s with real directory Return and application-client clipboard ACK; exploratory",
+    "final-release-normal": "fails strict owner transfer at first directory; preserved",
+    "final-release-compact": "fails strict owner transfer at first directory; preserved",
+    "final-sanitize-compact": "fails strict owner transfer; preserved",
+    "final-sanitize-normal": "14 functional checks pass; clean-exit15 fails206B/4 XGetWindowProperty allocations in clipboard_contains",
+    "native-wayland": "Real current app/projection/filename Return11 checks perR/S pass; separate scope"
+  },
+  "production_admission": false
+}
