@@ -721,8 +721,9 @@
     "runtime_base": "c09202fbf092eaa4d9ddf8d9a2249fe7bf013e74",
     "description": "Exact coherent parent app/core/support reused with identical165 SDK headers: SDK-only runtime delta, no fresh Sculpt build claim",
     "actual_ui_checks": 60,
-    "native_wayland_checks": 22,
-    "proof": "artifacts/viewport-proof/poll-* andwayland-poll-*"
+    "native_wayland_checks": 18,
+    "proof": "artifacts/viewport-proof/poll-* andwayland-poll-*",
+    "count_note": "Final native Wayland reports have 9 named assertions per profile; earlier 11/22 progress count was corrected against actual reports. Strict readiness/Return checks also execute."
   },
   "negative_evidence": {
     "stock25": "Prior981 receipt retains acknowledged filename/offscreen960x600 at640x360 and Options/font/protocol negatives",

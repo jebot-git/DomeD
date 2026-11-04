@@ -52,8 +52,8 @@ Twelve final commands pass with 1,523 input hashes unchanged per command:
 
 The matching current Sculpt component additionally passes 15 actual universal
 menu export/Open/Save/Cancel/Close checks per normal/compact R/S run (60 total),
-plus 11 native Wayland projection/filename Return/paint/history/close checks
-per profile (22 total). This reuses exact coherent c092 app/core/support with
+plus 9 native Wayland projection/filename Return/paint/history/close checks
+per profile (18 total). This reuses exact coherent c092 app/core/support with
 identical public headers and actual new-runtime maps. It is an SDK-only delta,
 not a new whole-Sculpt build or full production completion.
 
