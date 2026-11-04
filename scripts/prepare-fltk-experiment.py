@@ -2,6 +2,7 @@
 """Build pinned stable FLTK plus the experiment's reviewed local patches."""
 import argparse
 import hashlib
+import json
 import os
 import shutil
 import tempfile
@@ -54,14 +55,26 @@ env=dict(os.environ)
 sysroot=deps/'sysroot/usr'
 if sysroot.is_dir():
     env['PKG_CONFIG_PATH']=str(sysroot/'lib/x86_64-linux-gnu/pkgconfig')+':'+env.get('PKG_CONFIG_PATH','')
-args=['cmake','-S',str(source),'-B',str(deps/'build'),'-G','Ninja','-DCMAKE_BUILD_TYPE=Release','-DCMAKE_INSTALL_LIBDIR:STRING=lib','-DFLTK_LIBDIR:STRING=lib','-DCMAKE_C_FLAGS_RELEASE=-O3 -DNDEBUG -march=native -mtune=native','-DCMAKE_CXX_FLAGS_RELEASE=-O3 -DNDEBUG -march=native -mtune=native',f'-DCMAKE_INSTALL_PREFIX={prefix}',f'-DCMAKE_PREFIX_PATH={sysroot}','-DFLTK_BACKEND_WAYLAND=ON','-DFLTK_BACKEND_X11=ON','-DFLTK_BUILD_SHARED_LIBS=ON','-DFLTK_BUILD_TEST=OFF','-DFLTK_BUILD_EXAMPLES=OFF','-DFLTK_BUILD_FLUID=OFF','-DFLTK_BUILD_FLTK_OPTIONS=OFF','-DFLTK_BUILD_FORMS=OFF','-DFLTK_BUILD_GL=ON','-DFLTK_USE_DBUS=OFF','-DFLTK_USE_PANGO=OFF','-DFLTK_USE_SYSTEM_LIBDECOR=OFF','-DFLTK_USE_LIBDECOR_GTK=OFF','-DFLTK_OPTION_CAIRO_WINDOW=ON']
+args=['cmake','-S',str(source),'-B',str(deps/'build'),'-G','Ninja','-DCMAKE_BUILD_TYPE=Release','-DCMAKE_INSTALL_LIBDIR:STRING=lib','-DFLTK_LIBDIR:STRING=lib','-DCMAKE_C_FLAGS_RELEASE=-O3 -DNDEBUG -march=native -mtune=native','-DCMAKE_CXX_FLAGS_RELEASE=-O3 -DNDEBUG -march=native -mtune=native',f'-DCMAKE_INSTALL_PREFIX={prefix}',f'-DCMAKE_PREFIX_PATH={sysroot}','-DFLTK_USE_POLL=ON','-DFLTK_BACKEND_WAYLAND=ON','-DFLTK_BACKEND_X11=ON','-DFLTK_BUILD_SHARED_LIBS=ON','-DFLTK_BUILD_TEST=OFF','-DFLTK_BUILD_EXAMPLES=OFF','-DFLTK_BUILD_FLUID=OFF','-DFLTK_BUILD_FLTK_OPTIONS=OFF','-DFLTK_BUILD_FORMS=OFF','-DFLTK_BUILD_GL=ON','-DFLTK_USE_DBUS=OFF','-DFLTK_USE_PANGO=OFF','-DFLTK_USE_SYSTEM_LIBDECOR=OFF','-DFLTK_USE_LIBDECOR_GTK=OFF','-DFLTK_OPTION_CAIRO_WINDOW=ON']
 if a.jobs<1:raise SystemExit('--jobs must be positive')
 if a.sanitize:
     args += ['-DCMAKE_C_FLAGS=-fsanitize=address,undefined -fno-omit-frame-pointer','-DCMAKE_CXX_FLAGS=-fsanitize=address,undefined -fno-omit-frame-pointer','-DCMAKE_C_FLAGS_RELEASE=-O1 -g1','-DCMAKE_CXX_FLAGS_RELEASE=-O1 -g1']
 subprocess.run(args,env=env,check=True)
+# This is actual generated configuration, not a source-version assumption.
+if '#define USE_POLL 1' not in (deps/'build/config.h').read_text():
+    raise SystemExit('The canonical toolkit requires the supported poll backend')
 subprocess.run(['cmake','--build',str(deps/'build'),'--parallel',str(a.jobs)],check=True)
 subprocess.run(['cmake','--install',str(deps/'build')],check=True)
 notices=prefix/'share/fltk-bdf-source'
 notices.mkdir(parents=True,exist_ok=True)
 for item in [archive,source/'COPYING',*patches]:shutil.copy2(item,notices/item.name)
+shutil.copy2(deps/'build/config.h',notices/'private-config.h')
+libraries={str(p.relative_to(prefix)):hashlib.sha256(p.read_bytes()).hexdigest()
+           for p in sorted((prefix/'lib').glob('libfltk*.so*')) if p.is_file()}
+if not libraries:raise SystemExit('Installed canonical toolkit libraries are missing')
+profile={'schema':1,'use_poll':True,'source_patch_sha256':digest,'archive_sha256':expected,
+         'builder_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+         'private_config_sha256':hashlib.sha256((notices/'private-config.h').read_bytes()).hexdigest(),
+         'toolkit_libraries':libraries}
+(notices/'runtime-profile.json').write_text(json.dumps(profile,indent=2)+'\n')
 print('Isolated FLTK 1.4.5:',prefix)

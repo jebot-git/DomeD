@@ -233,3 +233,42 @@
          if (type == fl_XaImageBmp) {
            Fl::e_clipboard_type = Fl::clipboard_image;
          }
+--- a/src/drivers/Unix/Fl_Unix_Screen_Driver.H
++++ b/src/drivers/Unix/Fl_Unix_Screen_Driver.H
+@@ -19,6 +19,11 @@
+ #define FL_UNIX_SCREEN_DRIVER_H
+ 
+ #include <config.h>
++#include <sys/types.h>
++#include <sys/time.h>
++#if HAVE_SYS_SELECT_H
++#include <sys/select.h>
++#endif
+ #include "../../Fl_Screen_Driver.H"
+ 
+ #  if USE_POLL
+@@ -53,9 +58,9 @@
+ public:
+ #  if USE_POLL
+   static pollfd *pollfds;
+-#else
++#  endif
++  // Retain the old exported storage for binary loadability; poll never uses it.
+   static fd_set fdsets[3];
+-#  endif
+   static int maxfd;
+   static int nfds;
+   static struct FD {
+--- a/src/drivers/Unix/Fl_Unix_Screen_Driver.cxx
++++ b/src/drivers/Unix/Fl_Unix_Screen_Driver.cxx
+@@ -20,9 +20,8 @@
+ 
+ #if USE_POLL
+ pollfd *Fl_Unix_Screen_Driver::pollfds = 0;
+-#else
++#endif
+ fd_set Fl_Unix_Screen_Driver::fdsets[3];
+-#endif
+ int Fl_Unix_Screen_Driver::maxfd = 0;
+ int Fl_Unix_Screen_Driver::nfds = 0;
+ Fl_Unix_Screen_Driver::FD *Fl_Unix_Screen_Driver::fd = NULL;
