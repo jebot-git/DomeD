@@ -35,7 +35,7 @@ try:
                 str(wr),
                 "-screen",
                 "0",
-                "1600x1000x24",
+                os.environ.get("DOME_PICKER_VIEWPORT", "1600x1000") + "x24",
                 "-nolisten",
                 "tcp",
             ],
@@ -83,7 +83,7 @@ try:
                     "--backend",
                     "nested",
                 ],
-                env=env,
+                env={**env, "LD_LIBRARY_PATH": os.environ.get("DOME_PICKER_COMPOSITOR_LIBRARY_PATH", env.get("LD_LIBRARY_PATH", ""))},
                 stdout=log,
                 stderr=log,
             )
@@ -99,6 +99,29 @@ try:
                 time.sleep(0.1)
             else:
                 raise AssertionError("Private compositor did not start")
+            if "DOME_PICKER_VIEWPORT" in os.environ:
+                # Resize only the compositor window on this fixture's private X
+                # display. LOGIN_SESSION stays off; no session services run.
+                from Xlib import display as xdisplay
+                xd = xdisplay.Display(display)
+                def locate(parent):
+                    for win in parent.query_tree().children:
+                        title = win.get_wm_name() or ""
+                        if "experimental Wayland compositor" in title:
+                            return win
+                        found = locate(win)
+                        if found is not None:
+                            return found
+                    return None
+                native = locate(xd.screen().root)
+                assert native is not None, "Private nested compositor window not found"
+                width, height = map(int, os.environ["DOME_PICKER_VIEWPORT"].split("x"))
+                native.configure(x=0,y=0,width=width,height=height)
+                xd.sync(); time.sleep(.5)
+                geometry = native.get_geometry()
+                assert (geometry.width,geometry.height)==(width,height), "Nested window did not resize"
+                xd.close()
+                env["DOME_PICKER_MAX_WORK_AREA"] = os.environ["DOME_PICKER_VIEWPORT"]
             env.update(
                 WAYLAND_DISPLAY=match[1], FLTK_BACKEND="wayland", WAYLAND_DEBUG="client"
             )
@@ -107,7 +130,7 @@ try:
                     [str(binary), str(out)], env=env, stdout=capture, stderr=capture
                 )
                 children.append(app)
-                app.wait(timeout=60)
+                app.wait(timeout=180)
             trace = (out / "picker.log").read_text()
             assert app.returncode == 0, trace[-5000:]
             assert "xdg_surface" in trace, "No native Wayland chooser surface"

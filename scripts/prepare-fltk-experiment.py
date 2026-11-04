@@ -13,6 +13,8 @@ import urllib.request
 p=argparse.ArgumentParser(description=__doc__)
 p.add_argument('--deps',type=Path)
 p.add_argument('--prefix',type=Path)
+p.add_argument('--sanitize',action='store_true',help='Build all owned toolkit C/C++ with AddressSanitizer and UndefinedBehaviorSanitizer')
+p.add_argument('--jobs',type=int,default=4)
 a=p.parse_args()
 repo=Path(__file__).resolve().parents[1]
 suite=repo.parent
@@ -31,6 +33,7 @@ patch_names.append('fltk-1.4.5-touch-input.patch')
 patch_names.append('fltk-1.4.5-pen-input.patch')
 patch_names.append('fltk-1.4.5-pcf-fonts.patch')
 patch_names.append('fltk-1.4.5-process-cleanup.patch')
+patch_names.append('fltk-1.4.5-file-picker-viewport.patch')
 patches=[repo/'native/toolkit-hooks'/name for name in patch_names]
 digest=hashlib.sha256(b''.join(p.read_bytes() for p in patches)).hexdigest()
 stamp=source/'.dome-patches.sha256'
@@ -50,8 +53,11 @@ sysroot=deps/'sysroot/usr'
 if sysroot.is_dir():
     env['PKG_CONFIG_PATH']=str(sysroot/'lib/x86_64-linux-gnu/pkgconfig')+':'+env.get('PKG_CONFIG_PATH','')
 args=['cmake','-S',str(source),'-B',str(deps/'build'),'-G','Ninja','-DCMAKE_BUILD_TYPE=Release','-DCMAKE_INSTALL_LIBDIR:STRING=lib','-DFLTK_LIBDIR:STRING=lib','-DCMAKE_C_FLAGS_RELEASE=-O3 -DNDEBUG -march=native -mtune=native','-DCMAKE_CXX_FLAGS_RELEASE=-O3 -DNDEBUG -march=native -mtune=native',f'-DCMAKE_INSTALL_PREFIX={prefix}',f'-DCMAKE_PREFIX_PATH={sysroot}','-DFLTK_BACKEND_WAYLAND=ON','-DFLTK_BACKEND_X11=ON','-DFLTK_BUILD_SHARED_LIBS=ON','-DFLTK_BUILD_TEST=OFF','-DFLTK_BUILD_EXAMPLES=OFF','-DFLTK_BUILD_FLUID=OFF','-DFLTK_BUILD_FLTK_OPTIONS=OFF','-DFLTK_BUILD_FORMS=OFF','-DFLTK_BUILD_GL=ON','-DFLTK_USE_DBUS=OFF','-DFLTK_USE_PANGO=OFF','-DFLTK_USE_SYSTEM_LIBDECOR=OFF','-DFLTK_USE_LIBDECOR_GTK=OFF','-DFLTK_OPTION_CAIRO_WINDOW=ON']
+if a.jobs<1:raise SystemExit('--jobs must be positive')
+if a.sanitize:
+    args += ['-DCMAKE_C_FLAGS=-fsanitize=address,undefined -fno-omit-frame-pointer','-DCMAKE_CXX_FLAGS=-fsanitize=address,undefined -fno-omit-frame-pointer','-DCMAKE_C_FLAGS_RELEASE=-O1 -g1','-DCMAKE_CXX_FLAGS_RELEASE=-O1 -g1']
 subprocess.run(args,env=env,check=True)
-subprocess.run(['cmake','--build',str(deps/'build'),'--parallel','4'],check=True)
+subprocess.run(['cmake','--build',str(deps/'build'),'--parallel',str(a.jobs)],check=True)
 subprocess.run(['cmake','--install',str(deps/'build')],check=True)
 notices=prefix/'share/fltk-bdf-source'
 notices.mkdir(parents=True,exist_ok=True)

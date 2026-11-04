@@ -1,0 +1,417 @@
+{
+  "schema": 1,
+  "component": "canonical-fltk-file-picker-viewport",
+  "base": "53b0fcaf533ad867300d65a4178285d0a2dbef58",
+  "state": "qualified private component; no system installation",
+  "runtime_and_fixture_sha256": {
+    "scripts/prepare-fltk-experiment.py": "3923b87f7ff73b048a4c494d5ec0676b45398def7f609443dbdd44b30bdc1f85",
+    "tests/file-picker/CMakeLists.txt": "0b196aae66ca6e2216dea79edf23ee45f48239d4f8ca3c112f6d1b9450deef4c",
+    "tests/file-picker/file-picker-test.cpp": "4ad6fe71fe09c91e8259f6210121048a3e4e5635ba0ca2eeb284a1bdf59878e9",
+    "tests/file-picker/test-wayland.py": "72feafd5b2cbbf4176133ae0b8ec6535ca655702368bd6e3379016b591553332",
+    "native/toolkit-hooks/fltk-1.4.5-file-picker-viewport.patch": "5fa7b9ae2264019680222fbda5750153eea387cc1cae184e77b1ec4d3504744a"
+  },
+  "upstream": {
+    "version": "FLTK1.4.5",
+    "url": "https://github.com/fltk/fltk/releases/download/release-1.4.5/fltk-1.4.5-source.tar.gz",
+    "sha256": "eede1fb2b8e9c2e581e77082e15252145855c79aad30070ee3b24aabe2f926f1",
+    "patch_count": 25
+  },
+  "builds": {
+    "release": {
+      "terminal_exit": 0,
+      "tool_handle": 17927,
+      "flags": "-O3 -DNDEBUG -march=native -mtune=native",
+      "prefix": "/home/blux/de-xr/DomeD/artifacts/fltk-picker-viewport-53b/artifacts/toolkit-picker-final",
+      "log": "artifacts/picker-proof/build-final-release.log",
+      "log_sha256": "9d0ee63024140574451da08b6f3029eb71468210639a724d28c79a4daafd61bb"
+    },
+    "sanitize": {
+      "terminal_exit": 0,
+      "tool_handle": 65159,
+      "flags": "all owned C/C++ -O1 -g1 -fsanitize=address,undefined -fno-omit-frame-pointer; leak detection; no suppressions",
+      "prefix": "/home/blux/de-xr/DomeD/artifacts/fltk-picker-viewport-53b/artifacts/toolkit-picker-final-sanitize",
+      "log": "artifacts/picker-proof/build-final-sanitize.log",
+      "log_sha256": "81c98bb5c7818b3fd758aa25f362b9c5a0d4ea232ddeafa5515c9747a3b33a15"
+    }
+  },
+  "cohorts": [
+    {
+      "name": "complete-wayland-release-compact",
+      "outer_status": {
+        "state": "terminal",
+        "pid": 583064,
+        "command": [
+          "/home/blux/de-xr/dome-sculpt/artifacts/selection-gui-venv/bin/python",
+          "tests/file-picker/test-wayland.py",
+          "artifacts/picker-test-release/file-picker-test",
+          "artifacts/picker-proof/complete-wayland-release-compact"
+        ],
+        "child_pid": 583151,
+        "exit": 0,
+        "seconds": 55.13110401001177,
+        "inputs": 1503,
+        "drift": []
+      },
+      "native_exit": 0,
+      "native_log": "artifacts/picker-proof/complete-wayland-release-compact/picker.log",
+      "native_log_sha256": "ad85dd7fb81abe61ff1d5aac2fe7716a410c46fe2df446c844e42f4e56f27803",
+      "before": "artifacts/picker-proof/complete-wayland-release-compact-ledger/before.json",
+      "before_sha256": "306c6e3c4d4baf93a1c97b6a3dce5ae857f317cf1bebebf78a10243b86fcad7d",
+      "after": "artifacts/picker-proof/complete-wayland-release-compact-ledger/after.json",
+      "after_sha256": "306c6e3c4d4baf93a1c97b6a3dce5ae857f317cf1bebebf78a10243b86fcad7d"
+    },
+    {
+      "name": "complete-wayland-release-normal",
+      "outer_status": {
+        "state": "terminal",
+        "pid": 583063,
+        "command": [
+          "/home/blux/de-xr/dome-sculpt/artifacts/selection-gui-venv/bin/python",
+          "tests/file-picker/test-wayland.py",
+          "artifacts/picker-test-release/file-picker-test",
+          "artifacts/picker-proof/complete-wayland-release-normal"
+        ],
+        "child_pid": 583173,
+        "exit": 0,
+        "seconds": 41.17654276199755,
+        "inputs": 1503,
+        "drift": []
+      },
+      "native_exit": 0,
+      "native_log": "artifacts/picker-proof/complete-wayland-release-normal/picker.log",
+      "native_log_sha256": "1f50b0c545cccdd6a33e00e0f9a2ef59882a7adcd00b0fcec1578cfc93cc7ad0",
+      "before": "artifacts/picker-proof/complete-wayland-release-normal-ledger/before.json",
+      "before_sha256": "306c6e3c4d4baf93a1c97b6a3dce5ae857f317cf1bebebf78a10243b86fcad7d",
+      "after": "artifacts/picker-proof/complete-wayland-release-normal-ledger/after.json",
+      "after_sha256": "306c6e3c4d4baf93a1c97b6a3dce5ae857f317cf1bebebf78a10243b86fcad7d"
+    },
+    {
+      "name": "complete-wayland-sanitize-compact",
+      "outer_status": {
+        "state": "terminal",
+        "pid": 583065,
+        "command": [
+          "/home/blux/de-xr/dome-sculpt/artifacts/selection-gui-venv/bin/python",
+          "tests/file-picker/test-wayland.py",
+          "artifacts/picker-test-sanitize/file-picker-test",
+          "artifacts/picker-proof/complete-wayland-sanitize-compact"
+        ],
+        "child_pid": 583146,
+        "exit": 0,
+        "seconds": 73.6796792850073,
+        "inputs": 1503,
+        "drift": []
+      },
+      "native_exit": 0,
+      "native_log": "artifacts/picker-proof/complete-wayland-sanitize-compact/picker.log",
+      "native_log_sha256": "90b75ced80e53b33629055508e5cdf63fda91d5eba4a80c6fedc76e09efd055e",
+      "before": "artifacts/picker-proof/complete-wayland-sanitize-compact-ledger/before.json",
+      "before_sha256": "306c6e3c4d4baf93a1c97b6a3dce5ae857f317cf1bebebf78a10243b86fcad7d",
+      "after": "artifacts/picker-proof/complete-wayland-sanitize-compact-ledger/after.json",
+      "after_sha256": "306c6e3c4d4baf93a1c97b6a3dce5ae857f317cf1bebebf78a10243b86fcad7d"
+    },
+    {
+      "name": "complete-wayland-sanitize-normal",
+      "outer_status": {
+        "state": "terminal",
+        "pid": 583068,
+        "command": [
+          "/home/blux/de-xr/dome-sculpt/artifacts/selection-gui-venv/bin/python",
+          "tests/file-picker/test-wayland.py",
+          "artifacts/picker-test-sanitize/file-picker-test",
+          "artifacts/picker-proof/complete-wayland-sanitize-normal"
+        ],
+        "child_pid": 583152,
+        "exit": 0,
+        "seconds": 57.66822475500521,
+        "inputs": 1503,
+        "drift": []
+      },
+      "native_exit": 0,
+      "native_log": "artifacts/picker-proof/complete-wayland-sanitize-normal/picker.log",
+      "native_log_sha256": "ea85c2bf6138577e326701ff71d213512974a1d635bc57df988419b9efd74529",
+      "before": "artifacts/picker-proof/complete-wayland-sanitize-normal-ledger/before.json",
+      "before_sha256": "306c6e3c4d4baf93a1c97b6a3dce5ae857f317cf1bebebf78a10243b86fcad7d",
+      "after": "artifacts/picker-proof/complete-wayland-sanitize-normal-ledger/after.json",
+      "after_sha256": "306c6e3c4d4baf93a1c97b6a3dce5ae857f317cf1bebebf78a10243b86fcad7d"
+    },
+    {
+      "name": "complete-x11-release-compact",
+      "outer_status": {
+        "state": "terminal",
+        "pid": 583066,
+        "command": [
+          "dbus-run-session",
+          "--",
+          "python3",
+          "artifacts/picker-proof/run-x11.py",
+          "artifacts/toolkit-picker-final",
+          "artifacts/picker-proof/complete-x11-release-compact",
+          "640x360",
+          "2"
+        ],
+        "child_pid": 583163,
+        "exit": 0,
+        "seconds": 48.44575862400234,
+        "inputs": 1503,
+        "drift": []
+      },
+      "native_exit": 0,
+      "native_log": "artifacts/picker-proof/complete-x11-release-compact/run.log",
+      "native_log_sha256": "90d777ef738cead450c555145c584a5f579c2445ce6e172e6186656c49539f7e",
+      "before": "artifacts/picker-proof/complete-x11-release-compact-ledger/before.json",
+      "before_sha256": "306c6e3c4d4baf93a1c97b6a3dce5ae857f317cf1bebebf78a10243b86fcad7d",
+      "after": "artifacts/picker-proof/complete-x11-release-compact-ledger/after.json",
+      "after_sha256": "306c6e3c4d4baf93a1c97b6a3dce5ae857f317cf1bebebf78a10243b86fcad7d"
+    },
+    {
+      "name": "complete-x11-release-normal",
+      "outer_status": {
+        "state": "terminal",
+        "pid": 583070,
+        "command": [
+          "dbus-run-session",
+          "--",
+          "python3",
+          "artifacts/picker-proof/run-x11.py",
+          "artifacts/toolkit-picker-final",
+          "artifacts/picker-proof/complete-x11-release-normal",
+          "1600x1000",
+          "1"
+        ],
+        "child_pid": 583154,
+        "exit": 0,
+        "seconds": 35.87780151100014,
+        "inputs": 1503,
+        "drift": []
+      },
+      "native_exit": 0,
+      "native_log": "artifacts/picker-proof/complete-x11-release-normal/run.log",
+      "native_log_sha256": "62a99ac514857ac489dd6a7dfdb1b9a5dd37ee8a7dbe72f348e92d9ed528ba7a",
+      "before": "artifacts/picker-proof/complete-x11-release-normal-ledger/before.json",
+      "before_sha256": "306c6e3c4d4baf93a1c97b6a3dce5ae857f317cf1bebebf78a10243b86fcad7d",
+      "after": "artifacts/picker-proof/complete-x11-release-normal-ledger/after.json",
+      "after_sha256": "306c6e3c4d4baf93a1c97b6a3dce5ae857f317cf1bebebf78a10243b86fcad7d"
+    },
+    {
+      "name": "complete-x11-sanitize-compact",
+      "outer_status": {
+        "state": "terminal",
+        "pid": 583069,
+        "command": [
+          "dbus-run-session",
+          "--",
+          "python3",
+          "artifacts/picker-proof/run-x11.py",
+          "artifacts/toolkit-picker-final-sanitize",
+          "artifacts/picker-proof/complete-x11-sanitize-compact",
+          "640x360",
+          "2"
+        ],
+        "child_pid": 583174,
+        "exit": 0,
+        "seconds": 65.9763704900106,
+        "inputs": 1503,
+        "drift": []
+      },
+      "native_exit": 0,
+      "native_log": "artifacts/picker-proof/complete-x11-sanitize-compact/run.log",
+      "native_log_sha256": "4c5041e63d90f06fc217d1c188cfcaf9cdc9235554f1888942d1ac190b92019b",
+      "before": "artifacts/picker-proof/complete-x11-sanitize-compact-ledger/before.json",
+      "before_sha256": "306c6e3c4d4baf93a1c97b6a3dce5ae857f317cf1bebebf78a10243b86fcad7d",
+      "after": "artifacts/picker-proof/complete-x11-sanitize-compact-ledger/after.json",
+      "after_sha256": "306c6e3c4d4baf93a1c97b6a3dce5ae857f317cf1bebebf78a10243b86fcad7d"
+    },
+    {
+      "name": "complete-x11-sanitize-normal",
+      "outer_status": {
+        "state": "terminal",
+        "pid": 583067,
+        "command": [
+          "dbus-run-session",
+          "--",
+          "python3",
+          "artifacts/picker-proof/run-x11.py",
+          "artifacts/toolkit-picker-final-sanitize",
+          "artifacts/picker-proof/complete-x11-sanitize-normal",
+          "1600x1000",
+          "1"
+        ],
+        "child_pid": 583162,
+        "exit": 0,
+        "seconds": 52.89817619798123,
+        "inputs": 1503,
+        "drift": []
+      },
+      "native_exit": 0,
+      "native_log": "artifacts/picker-proof/complete-x11-sanitize-normal/run.log",
+      "native_log_sha256": "daff8f1a12064c3e59db474ce8aba8a2f1d7708f962befcef1289a3c198b42c0",
+      "before": "artifacts/picker-proof/complete-x11-sanitize-normal-ledger/before.json",
+      "before_sha256": "306c6e3c4d4baf93a1c97b6a3dce5ae857f317cf1bebebf78a10243b86fcad7d",
+      "after": "artifacts/picker-proof/complete-x11-sanitize-normal-ledger/after.json",
+      "after_sha256": "306c6e3c4d4baf93a1c97b6a3dce5ae857f317cf1bebebf78a10243b86fcad7d"
+    }
+  ],
+  "negative_cohorts": [
+    {
+      "name": "stock-compact",
+      "reason": "Old 24-patch geometry after actual filename clipboard acknowledgment",
+      "log": "artifacts/picker-proof/stock-compact/run.log",
+      "sha256": "7c636dde82c88e1fbb2ac2417270d211c3aec0b5ecbcedc59e0af9c13bbf9196",
+      "status": {
+        "state": "terminal",
+        "pid": 431582,
+        "viewport": [
+          640,
+          360
+        ],
+        "font_scale": 2,
+        "prefix": "/home/blux/de-xr/dome-sculpt/artifacts/domed-cairo-cleanup-b2f23ce/artifacts/toolkit",
+        "binary_sha256": "3837eac3e7e158c6a4216bc1b59062f919384ea2479d16040e4b023c11f8f169",
+        "child_pid": 431605,
+        "exit": 1,
+        "seconds": 12.921179019991541,
+        "inputs": 16,
+        "drift": []
+      }
+    },
+    {
+      "name": "v2-compact",
+      "reason": "Intermediate repeated Options Locations origin failure",
+      "log": "artifacts/picker-proof/v2-compact/run.log",
+      "sha256": "bae9d107b77c081857042e680ba810d44b7172bbd748fea41f2c537bda7457d0",
+      "status": {
+        "state": "terminal",
+        "pid": 436041,
+        "viewport": [
+          640,
+          360
+        ],
+        "font_scale": 2,
+        "prefix": "/home/blux/de-xr/DomeD/artifacts/fltk-picker-viewport-53b/artifacts/toolkit-picker-release",
+        "binary_sha256": "3837eac3e7e158c6a4216bc1b59062f919384ea2479d16040e4b023c11f8f169",
+        "child_pid": 436055,
+        "exit": 1,
+        "seconds": 14.274892799992813,
+        "inputs": 16,
+        "drift": []
+      }
+    },
+    {
+      "name": "v3-full-compact",
+      "reason": "Intermediate real shared input height failure at 32px",
+      "log": "artifacts/picker-proof/v3-full-compact/run.log",
+      "sha256": "9490b3ca44e99e9fc83c789f93517f50aa110715671bfe4232b66fa4aa818b33",
+      "status": {
+        "state": "terminal",
+        "pid": 502862,
+        "viewport": [
+          640,
+          360
+        ],
+        "font_scale": 2,
+        "prefix": "/home/blux/de-xr/DomeD/artifacts/fltk-picker-viewport-53b/artifacts/toolkit-picker-v3",
+        "binary_sha256": "bd5f87cbf1c66b91e8e19be2632c3ba49ef55d3a323bbc042bdcc4f6f969b8a5",
+        "child_pid": 502884,
+        "exit": 1,
+        "seconds": 32.53399066699785,
+        "inputs": 16,
+        "drift": []
+      }
+    },
+    {
+      "name": "v4-font-change-negative",
+      "reason": "Intermediate live font reflow footer failure",
+      "log": "artifacts/picker-proof/v4-font-change-negative/run.log",
+      "sha256": "80b56417e70e3296a840b219a71ea8250a651ca78cc9c5ec54ca3019602f55ef",
+      "status": {
+        "state": "terminal",
+        "pid": 536604,
+        "viewport": [
+          640,
+          360
+        ],
+        "font_scale": 2,
+        "prefix": "/home/blux/de-xr/DomeD/artifacts/fltk-picker-viewport-53b/artifacts/toolkit-picker-v4",
+        "binary_sha256": "5b91131915e1a8a9811ad4f965827dda5077c1ac59fd992b47a2ce287529146d",
+        "child_pid": 536622,
+        "exit": 1,
+        "seconds": 26.612324799993075,
+        "inputs": 16,
+        "drift": []
+      }
+    },
+    {
+      "name": "v4-wayland-compact",
+      "reason": "Intermediate xdg_toplevel parent-cycle protocol refusal",
+      "log": "artifacts/picker-proof/v4-wayland-compact/picker.log",
+      "sha256": "b2d1dc8beae6f4477cb8a05a241297051f7ee86a2a038d3b97f7aa071f99e26c"
+    },
+    {
+      "name": "complete-stock-negative",
+      "native_exit": 1,
+      "capture_wrapper_exit": 0,
+      "reason": "Same final fixture, old24 runtime: acknowledged filename, 960x600 outside 640x360; strict viewport assertion",
+      "status": {
+        "state": "terminal",
+        "pid": 597181,
+        "viewport": [
+          640,
+          360
+        ],
+        "font_scale": 2,
+        "prefix": "/home/blux/de-xr/dome-sculpt/artifacts/domed-cairo-cleanup-b2f23ce/artifacts/toolkit",
+        "binary_sha256": "0732df61e9641386bfdf3f426fdd1a3f2fc52bf5ec86cc7bbe17b2062119cbb4",
+        "child_pid": 597195,
+        "exit": 1,
+        "seconds": 9.562208538001869,
+        "inputs": 16,
+        "drift": []
+      },
+      "log_sha256": "74f8d172f625b9dcc73d25ca69c98f870ae439fa01c2a3ad6fda82671adf5f20"
+    }
+  ],
+  "abi": {
+    "public_include_files_exact": 165,
+    "old_symbols_missing": [],
+    "private_symbols_added": 6,
+    "class_size": 6328,
+    "complete_manifest": "artifacts/picker-proof/final-abi.json",
+    "complete_manifest_sha256": "7428d9c92087dda6ad2de4684b6d8889ab49ab9bb0347d7507e95e9d56513f5e",
+    "old_header_consumer": {
+      "state": "terminal",
+      "pid": 550863,
+      "viewport": [
+        640,
+        360
+      ],
+      "font_scale": 2,
+      "prefix": "/home/blux/de-xr/DomeD/artifacts/fltk-picker-viewport-53b/artifacts/toolkit-picker-final",
+      "binary_sha256": "be2d9e99f032adc9d0ea94ff40cc154a951739b9a2a0aa798f878c795a8b7fc6",
+      "child_pid": 550891,
+      "exit": 0,
+      "seconds": 45.15661033600918,
+      "inputs": 16,
+      "drift": []
+    }
+  },
+  "external": {
+    "bitmap_runtime": "/home/blux/de-xr/DomeD/artifacts/cairo-shm-drain-f797/artifacts/bitmap-runtime",
+    "compositor": "/home/blux/de-xr/dome-sculpt/artifacts/domed-f797e0f-target/release/dome-compositor",
+    "compositor_sha256": "e68db516568be90ef085af9089cf0db1991ce8e727d354407a20adf538594943",
+    "private_Xvfb": "/home/blux/de-xr/dome-sculpt/artifacts/retained-key-ui-9050/artifacts/private-xvfb/bin/Xvfb",
+    "private_rpm_manifest": "/home/blux/de-xr/dome-sculpt/artifacts/retained-key-ui-9050/artifacts/private-xvfb/rpms.json",
+    "private_rpm_manifest_sha256": "8769208f1e5c64d52fe74171c04be374d105ff72a21f1c287b17ab45ec24873d",
+    "scope": "Signed extracted RPMs in private bwrap namespace; canonical bitmap dependency remains external to toolkit sanitizer instrumentation; software GL nested compositor."
+  },
+  "unchanged_main": {
+    "head": "a5c444ccde9b04722e04e027bec67400c34209f5",
+    "status": "clean observed before/after"
+  },
+  "limits": [
+    "No physical desktop, headset, hardware GPU, system install or session changes.",
+    "No general arbitrary-tiny-workarea claim: full final matrix qualifies1600x1000/font16 and640x360/font32, with live16/32 font reflow.",
+    "No Dome Sculpt export policy/renderer/state change; canonical dialog component only."
+  ],
+  "worktree": "/home/blux/de-xr/DomeD/artifacts/fltk-picker-viewport-53b"
+}

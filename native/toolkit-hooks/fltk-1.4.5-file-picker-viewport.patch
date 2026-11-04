@@ -1,0 +1,470 @@
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -52,6 +52,7 @@
+   Fl_File_Chooser.cxx
+   Fl_File_Chooser2.cxx
+   Fl_File_Chooser_Details.cxx
++  Fl_File_Chooser_Viewport.cxx
+   Fl_File_Chooser_Places.cxx
+   Fl_File_Icon.cxx
+   Fl_File_Input.cxx
+--- a/src/Fl_File_Chooser.cxx
++++ b/src/Fl_File_Chooser.cxx
+@@ -317,6 +317,8 @@
+   window->size_range(window->w(), window->h());
+   fl_file_chooser_details_init(fileList, this, window, prefs_);
+   fl_file_chooser_details_places_init(fileList, favoritesButton, errorBox, fileName, okButton);
++  window = fl_file_chooser_viewport_init(window, fileList, showChoice, favoritesButton, newButton, previewBox, previewButton, showHiddenButton, fileName, okButton, cancelButton);
++  favWindow = fl_file_chooser_favorites_viewport(favWindow, favList, favUpButton, favDeleteButton, favDownButton, favCancelButton, favOkButton);
+   type(type_val);
+   filter(pattern);
+   update_favorites();
+--- a/src/Fl_File_Chooser.fl
++++ b/src/Fl_File_Chooser.fl
+@@ -248,6 +248,8 @@
+ window->size_range(window->w(), window->h());
+ fl_file_chooser_details_init(fileList, this, window, prefs_);
+   fl_file_chooser_details_places_init(fileList, favoritesButton, errorBox, fileName, okButton);
++  window = fl_file_chooser_viewport_init(window, fileList, showChoice, favoritesButton, newButton, previewBox, previewButton, showHiddenButton, fileName, okButton, cancelButton);
++  favWindow = fl_file_chooser_favorites_viewport(favWindow, favList, favUpButton, favDeleteButton, favDownButton, favCancelButton, favOkButton);
+ type(type_val);
+ filter(pattern);
+ update_favorites();
+--- a/src/Fl_File_Chooser_Details.H
++++ b/src/Fl_File_Chooser_Details.H
+@@ -5,6 +5,10 @@
+ class Fl_File_Browser;
+ class Fl_File_Chooser;
+ class Fl_Window;
++class Fl_Double_Window;
++class Fl_Choice;
++class Fl_Button;
++class Fl_Check_Button;
+ class Fl_Preferences;
+ class Fl_Menu_Button;
+ class Fl_Box;
+@@ -17,4 +21,6 @@
+                                          Fl_File_Input *, Fl_Return_Button *);
+ void fl_file_chooser_details_refresh(Fl_File_Browser *, const char *);
+ void fl_file_chooser_details_places_refresh(Fl_File_Browser *);
++Fl_Double_Window *fl_file_chooser_viewport_init(Fl_Double_Window *,Fl_File_Browser *,Fl_Choice *,Fl_Menu_Button *,Fl_Button *,Fl_Box *,Fl_Check_Button *,Fl_Check_Button *,Fl_File_Input *,Fl_Return_Button *,Fl_Button *);
++Fl_Double_Window *fl_file_chooser_favorites_viewport(Fl_Double_Window *,Fl_File_Browser *,Fl_Button *,Fl_Button *,Fl_Button *,Fl_Button *,Fl_Return_Button *);
+ #endif
+--- a/src/Fl_File_Chooser_Details.cxx
++++ b/src/Fl_File_Chooser_Details.cxx
+@@ -1,5 +1,6 @@
+ // Sortable native file chooser, distributed under FLTK's COPYING terms.
+ #include "Fl_File_Chooser_Details.H"
++#include "Fl_File_Chooser_Viewport.H"
+ #include "Fl_File_Chooser_Places.H"
+ #include <FL/Fl.H>
+ #include <FL/Fl_Button.H>
+@@ -71,6 +72,7 @@
+ public:
+   DetailsBrowser *browser;
+   Fl_Button *headers[4];
++  Fl_Group *headings;
+   Fl_Chooser_Places *places;
+   Fl_Box *error = 0;
+   DetailsPanel(int, int, int, int);
+@@ -101,15 +103,20 @@
+     refresh.shortcut(FL_F + 5);
+     refresh.tooltip("Reload this directory (F5)");
+   }
+-  void resize(int X, int Y, int W, int H) FL_OVERRIDE {
+-    Fl_Group::resize(X, Y, W, H);
+-    key.resize(X + 65, Y, 110, 30);
+-    direction.resize(X + 185, Y, 110, 30);
+-    folders.resize(X + 305, Y, 125, 30);
+-    details.resize(X + 435, Y, 80, 30);
+-    places.resize(X + 520, Y, 85, 30);
+-    refresh.resize(X + W - 85, Y, 85, 30);
+-  }
++  int widths(int out[6],int &label) {
++    Fl_Font saved=fl_font();Fl_Fontsize size=fl_size();int gap=std::max(6,int(key.labelsize())/4);
++    fl_font(key.labelfont(),key.labelsize());label=int(fl_width(key.label()))+gap;out[0]=int(fl_width("Modified"))+32;
++    fl_font(direction.textfont(),direction.textsize());out[1]=int(fl_width("Descending"))+32;
++    Fl_Widget *items[]={&folders,&details,&places,&refresh};
++    for(int i=0;i<4;++i){fl_font(items[i]->labelfont(),items[i]->labelsize());out[i+2]=int(fl_width(items[i]->label()))+(i<3?items[i]->labelsize()+14:28);}
++    fl_font(saved,size);return gap;
++  }
++  int natural_width(){int out[6],label;int gap=widths(out,label),width=label+5*gap;for(int i=0;i<6;++i)width+=out[i];return width;}
++  void resize(int X,int Y,int W,int H) FL_OVERRIDE {
++    Fl_Group::resize(X,Y,W,H);int out[6],label;int gap=widths(out,label);Fl_Widget *items[]={&key,&direction,&folders,&details,&places,&refresh};
++    int x=X+label;for(int i=0;i<6;++i){items[i]->resize(x,Y,out[i],H);x+=out[i]+gap;}
++  }
++
+ };
+ class DetailsBrowser : public Fl_File_Browser {
+ public:
+@@ -122,16 +129,11 @@
+   std::map<std::string, File> files;
+   DetailsBrowser(int X, int Y, int W, int H, DetailsPanel *p)
+       : Fl_File_Browser(X, Y, W, H), panel(p) {
+-    has_scrollbar(VERTICAL_ALWAYS);
+-  }
+-  void widths(int W, int out[4]) const {
+-    int date = details && W >= 410 ? textsize() * 9 + 10 : 0;
+-    int size = details && W >= 280 ? textsize() * 5 + 12 : 0;
+-    int type = details && W >= 620 ? textsize() * 6 + 12 : 0;
+-    out[0] = std::max(40, W - size - type - date);
+-    out[1] = size;
+-    out[2] = type;
+-    out[3] = date;
++    has_scrollbar(BOTH);
++  }
++  void widths(int W,int out[4]) const {
++    int size=details?textsize()*5+12:0,type=details?textsize()*6+12:0,date=details?textsize()*9+10:0;
++    out[0]=std::max(details?int(textsize())*8:40,W-size-type-date);out[1]=size;out[2]=type;out[3]=date;
+   }
+   void sortRows() {
+     std::vector<File> rows;
+@@ -313,11 +315,12 @@
+     fl_font(textfont(), textsize());
+     return std::max(fl_height() + 4, Fl_File_Icon::first() ? int(iconsize()) + 4 : 0);
+   }
+-  int item_width(void *) const FL_OVERRIDE { return 0; }
++  int item_width(void *) const FL_OVERRIDE {int columns[4];widths(w()-Fl::box_dw(box())-Fl::scrollbar_size(),columns);return columns[0]+columns[1]+columns[2]+columns[3];}
+ };
+ DetailsPanel::DetailsPanel(int X, int Y, int W, int H) : Fl_Group(X, Y, W, H) {
+   places = new Fl_Chooser_Places(X,Y,180,H);
+   browser = new DetailsBrowser(X, Y + 26, W, H - 26, this);
++  headings=new Fl_Group(X,Y,W,26);headings->clip_children(1);
+   const char *labels[] = {"Name", "Size", "Type", "Modified"};
+   for (int i = 0; i < 4; ++i) {
+     headers[i] = new Fl_Button(X, Y, 60, 26, labels[i]);
+@@ -325,6 +328,7 @@
+     headers[i]->callback(DetailsBrowser::header, browser);
+     headers[i]->tooltip("Click to sort; click again to reverse");
+   }
++  headings->end();
+   end();
+   resizable(browser);
+   layout();
+@@ -332,18 +336,22 @@
+ void DetailsPanel::layout() {
+   const char *labels[] = {"Name", "Size", "Type", "Modified"};
+   int widths[4];
+-  int sidebar = browser->places && w() >= 340 ? std::min(200,std::max(140,w()/4)) : 0;
++  int sidebar = browser->places && places->parent()==this ? fl_file_chooser_sidebar_width(browser,w()) : 0;
++  if(h()<3*(browser->textsize()+12)+8)sidebar=0;
+   if (sidebar) { places->show(); places->resize(x(),y(),sidebar,h()); }
+-  else places->hide();
++  else if(places->parent()==this)places->hide();
+   int offset = sidebar ? sidebar + 6 : 0;
+-  browser->resize(x()+offset,y()+26,std::max(1,w()-offset),std::max(1,h()-26));
++  int header=std::max(26,int(browser->textsize())+12);bool heading=h()>=2*header;
++  browser->resize(x()+offset,y()+(heading?header:0),std::max(1,w()-offset),std::max(1,h()-(heading?header:0)));
+   if (error) error->resize(browser->x(),browser->y(),browser->w(),browser->h());
+   browser->widths(browser->w() - Fl::box_dw(browser->box()) - Fl::scrollbar_size(), widths);
+-  int X = browser->x() + Fl::box_dx(browser->box());
++  headings->resize(browser->x(),y(),std::max(1,browser->w()-Fl::scrollbar_size()),header);
++  if(heading)headings->show();else headings->hide();
++  int X = browser->x() + Fl::box_dx(browser->box())-browser->hposition();
+   for (int i = 0; i < 4; ++i) {
+-    if (widths[i]) {
++    if (widths[i] && heading) {
+       headers[i]->show();
+-      headers[i]->resize(X, y(), widths[i], 26);
++      headers[i]->resize(X,y(),widths[i],header);
+       std::string label = labels[i];
+       if (browser->key == i)
+         label += browser->descending ? " ↓" : " ↑";
+@@ -421,7 +429,7 @@
+   b->toolbar->details.value(b->details);
+   b->toolbar->places.value(b->places);
+   window->init_sizes();
+-  window->size_range(720, 420);
++  // The private viewport root sets dynamic work-area limits before first show.
+   window->size(960, 600);
+ }
+ void fl_file_chooser_details_refresh(Fl_File_Browser *file, const char *directory) {
+@@ -441,3 +449,13 @@
+   b->panel->error = error;
+   b->panel->layout();
+ }
++
++Fl_Double_Window *fl_file_chooser_viewport_init(Fl_Double_Window *window,Fl_File_Browser *file,Fl_Choice *filter,Fl_Menu_Button *favorites,Fl_Button *new_directory,Fl_Box *preview,Fl_Check_Button *preview_toggle,Fl_Check_Button *hidden,Fl_File_Input *filename,Fl_Return_Button *okay,Fl_Button *cancel) {
++  DetailsBrowser *b=static_cast<DetailsBrowser *>(file);
++  Fl_Chooser_Viewport_Controls c={};c.filter=filter;c.favorites=favorites;c.new_directory=new_directory;
++  c.toolbar=b->toolbar;c.panel=b->panel;c.places=b->panel->places;c.files=file;c.preview=preview;c.preview_toggle=preview_toggle;c.hidden=hidden;c.filename=filename;c.okay=okay;c.cancel=cancel;
++  c.tools[0]=&b->toolbar->key;c.tools[1]=&b->toolbar->direction;c.tools[2]=&b->toolbar->folders;c.tools[3]=&b->toolbar->details;c.tools[4]=&b->toolbar->places;c.tools[5]=&b->toolbar->refresh;
++  return fl_file_chooser_make_viewport(window,c);
++}
++
++int fl_file_chooser_toolbar_width(Fl_Group *toolbar){return static_cast<DetailsToolbar *>(toolbar)->natural_width();}
+--- a/src/Fl_File_Chooser_Places.cxx
++++ b/src/Fl_File_Chooser_Places.cxx
+@@ -1,5 +1,6 @@
+ // Shared file chooser Places, distributed under FLTK's COPYING terms.
+ #include "Fl_File_Chooser_Places.H"
++#include "Fl_File_Chooser_Viewport.H"
+ #include <FL/Fl.H>
+ #include <FL/Fl_Button.H>
+ #include <FL/Fl_File_Browser.H>
+@@ -283,6 +284,7 @@
+     if (!chooser || row<0 || row>=int(list->rows.size())) return;
+     Place p=list->rows[row];
+     if (p.section) { refresh(); return; }
++    fl_file_chooser_finish_places_navigation(list);
+     // Only the chosen target is inspected. Offline bookmarks never stall the
+     // sidebar refresh, and no share is mounted or authenticated implicitly.
+     if (!fl_filename_isdir(p.path.c_str())) {
+@@ -315,8 +317,9 @@
+ void Fl_Chooser_Places::resize(int X,int Y,int W,int H) {
+   Fl_Group::resize(X,Y,W,H);
+   Impl &s=*impl_;
+-  s.list->resize(X,Y+26,W,std::max(1,H-62));
+-  s.add->resize(X,Y+H-28,W/2-2,28); s.manage->resize(X+W/2+2,Y+H-28,W-W/2-2,28);
++  int row=std::max(28,int(s.files?s.files->textsize():s.list->textsize())+12);
++  s.list->resize(X,Y+row,W,std::max(1,H-2*row-8));
++  s.add->resize(X,Y+H-row,W/2-2,row); s.manage->resize(X+W/2+2,Y+H-row,W-W/2-2,row);
+   if (s.files) {
+     if (s.list->textfont()!=s.files->textfont()) s.list->textfont(s.files->textfont());
+     if (s.list->textsize()!=s.files->textsize()) s.list->textsize(s.files->textsize());
+--- /dev/null
++++ b/src/Fl_File_Chooser_Viewport.H
+@@ -0,0 +1,26 @@
++// Shared chooser implementation only; distributed under FLTK's COPYING terms.
++#ifndef Fl_File_Chooser_Viewport_H
++#define Fl_File_Chooser_Viewport_H
++#include <FL/Fl_Double_Window.H>
++class Fl_Group; class Fl_Widget; class Fl_Choice; class Fl_Menu_Button;
++class Fl_Button; class Fl_Check_Button; class Fl_File_Browser;
++class Fl_File_Input; class Fl_Return_Button; class Fl_Box;
++struct Fl_Chooser_Viewport_Controls {
++  Fl_Choice *filter;
++  Fl_Menu_Button *favorites;
++  Fl_Button *new_directory;
++  Fl_Group *toolbar, *panel, *places;
++  Fl_Widget *tools[6];
++  Fl_File_Browser *files;
++  Fl_Box *preview;
++  Fl_Check_Button *preview_toggle, *hidden;
++  Fl_File_Input *filename;
++  Fl_Return_Button *okay;
++  Fl_Button *cancel;
++};
++Fl_Double_Window *fl_file_chooser_make_viewport(Fl_Double_Window *,const Fl_Chooser_Viewport_Controls &);
++Fl_Double_Window *fl_file_chooser_favorites_viewport(Fl_Double_Window *,Fl_File_Browser *,Fl_Button *,Fl_Button *,Fl_Button *,Fl_Button *,Fl_Return_Button *);
++void fl_file_chooser_finish_places_navigation(Fl_Widget *);
++int fl_file_chooser_toolbar_width(Fl_Group *);
++int fl_file_chooser_sidebar_width(Fl_File_Browser *,int);
++#endif
+--- /dev/null
++++ b/src/Fl_File_Chooser_Viewport.cxx
+@@ -0,0 +1,189 @@
++// Responsive shared chooser; distributed under FLTK's COPYING terms.
++#include "Fl_File_Chooser_Viewport.H"
++#include <FL/Fl.H>
++#include <FL/Fl_Button.H>
++#include <FL/Fl_Check_Button.H>
++#include <FL/Fl_Choice.H>
++#include <FL/Fl_File_Browser.H>
++#include <FL/Fl_File_Input.H>
++#include <FL/Fl_Menu_Button.H>
++#include <FL/Fl_Return_Button.H>
++#include <FL/Fl_Box.H>
++#include <FL/Fl_Scroll.H>
++#include <FL/fl_draw.H>
++#include <algorithm>
++#include <memory>
++#include <stdexcept>
++#include <string>
++#include <vector>
++namespace {
++int text_width(Fl_Widget *w,const char *text) {
++  Fl_Font saved=fl_font();Fl_Fontsize size=fl_size();
++  fl_font(w->labelfont(),w->labelsize());int n=int(fl_width(text?text:""));fl_font(saved,size);return n;
++}
++int button_width(Fl_Widget *w){return text_width(w,w->label())+28;}
++void style(Fl_Widget *to,Fl_Widget *from) {
++  to->labelfont(from->labelfont());to->labelsize(from->labelsize());
++  to->labelcolor(from->labelcolor());to->color(from->color());to->selection_color(from->selection_color());
++  if(Fl_Menu_ *menu=dynamic_cast<Fl_Menu_ *>(to)){menu->textfont(from->labelfont());menu->textsize(from->labelsize());menu->textcolor(from->labelcolor());}
++}
++struct Area {int x,y,w,h;};
++Area work_area(Fl_Window *w) {
++  Area a;int screen=Fl::screen_num(w->x(),w->y(),std::max(1,w->w()),std::max(1,w->h()));
++  Fl::screen_work_area(a.x,a.y,a.w,a.h,screen);
++  // Reserve native title decoration as well as a small outer margin. FLTK uses
++  // logical client coordinates, including on scaled Wayland outputs.
++  int inset=std::min(8,std::max(0,std::min(a.w,a.h)/20));
++  a.x+=inset;a.y+=inset+std::min(32,std::max(0,a.h/8));
++  a.w=std::max(1,a.w-2*inset);a.h=std::max(1,a.h-2*inset-std::min(32,std::max(0,a.h/8)));
++  return a;
++}
++class ViewWindow:public Fl_Double_Window {
++  bool initial_;
++protected:
++  bool laying_;
++  void constrain(bool initial=false) {
++    Area a=work_area(this);int W=std::min(w(),a.w),H=std::min(h(),a.h);
++    int X=std::max(a.x,std::min(x(),a.x+a.w-W)),Y=std::max(a.y,std::min(y(),a.y+a.h-H));
++    if(initial){X=a.x+(a.w-W)/2;Y=a.y+(a.h-H)/2;}
++    size_range(std::min(320,a.w),std::min(220,a.h),a.w,a.h);
++    if(X!=x()||Y!=y()||W!=w()||H!=h())resize(X,Y,W,H);
++  }
++public:
++  ViewWindow(int X,int Y,int W,int H,const char *name):Fl_Double_Window(X,Y,W,H,name),initial_(true),laying_(false){end();}
++  void show() FL_OVERRIDE {constrain(initial_);initial_=false;Fl_Double_Window::show();}
++  void resize(int X,int Y,int W,int H) FL_OVERRIDE {Area a=work_area(this);W=std::min(W,a.w);H=std::min(H,a.h);X=std::max(a.x,std::min(X,a.x+a.w-W));Y=std::max(a.y,std::min(Y,a.y+a.h-H));Fl_Double_Window::resize(X,Y,std::max(1,W),std::max(1,H));}
++};
++class PlacesWindow:public ViewWindow {
++  Fl_Group *places_,*home_;Fl_Window *owner_;Fl_Widget *font_;Fl_Button close_;
++public:
++  PlacesWindow(Fl_Group *places,Fl_Group *home,Fl_Widget *font,Fl_Window *owner):ViewWindow(0,0,560,480,"Locations"),places_(places),home_(home),owner_(owner),font_(font),close_(0,0,100,30,"Close"){
++    add(close_);style(&close_,font);close_.callback([](Fl_Widget *,void *data){static_cast<PlacesWindow *>(data)->hide();},this);
++    callback([](Fl_Widget *w,void *){w->hide();});set_modal();end();
++  }
++  ~PlacesWindow(){if(places_->parent()==this){remove(places_);home_->add(places_);places_->hide();}}
++  void show() FL_OVERRIDE {add(places_);places_->show();layout();ViewWindow::show();}
++  void hide() FL_OVERRIDE {Fl_Double_Window::hide();if(places_->parent()==this){remove(places_);home_->add(places_);places_->hide();}if(home_->window())home_->window()->redraw();}
++  void finish_navigation(){hide();if(owner_&&owner_->shown())owner_->hide();}
++  void layout(){style(&close_,font_);int g=8,h=std::max(28,close_.labelsize()+14);places_->resize(g,g,std::max(1,w()-2*g),std::max(1,this->h()-h-3*g));close_.resize(w()-button_width(&close_)-g,this->h()-h-g,button_width(&close_),h);}
++  void resize(int X,int Y,int W,int H) FL_OVERRIDE {ViewWindow::resize(X,Y,W,H);if(!laying_){laying_=true;layout();laying_=false;}}
++  void draw() FL_OVERRIDE {layout();Fl_Double_Window::draw();}
++};
++class OptionsWindow:public ViewWindow {
++  struct Link {Fl_Widget *original,*proxy;OptionsWindow *owner;};
++  std::vector<std::unique_ptr<Link> > links_;
++  Fl_Scroll scroll_;Fl_Button locations_,close_;
++  Fl_Chooser_Viewport_Controls c_;
++  std::unique_ptr<PlacesWindow> places_;
++  static void changed(Fl_Widget *,void *data) {
++    Link &l=*static_cast<Link *>(data);
++    if(Fl_Choice *choice=dynamic_cast<Fl_Choice *>(l.original))choice->value(static_cast<Fl_Choice *>(l.proxy)->value());
++    else if(Fl_Check_Button *check=dynamic_cast<Fl_Check_Button *>(l.original))check->value(static_cast<Fl_Check_Button *>(l.proxy)->value());
++    else if(Fl_Menu_Button *menu=dynamic_cast<Fl_Menu_Button *>(l.original))menu->value(static_cast<Fl_Menu_Button *>(l.proxy)->value());
++    l.original->do_callback();l.owner->sync();if(l.original->window())l.original->window()->redraw();
++  }
++public:
++  OptionsWindow(const Fl_Chooser_Viewport_Controls &c):ViewWindow(0,0,620,520,"File chooser options"),scroll_(8,8,604,450),locations_(0,0,200,30,"Locations…"),close_(0,0,100,30,"Close"),c_(c){
++    scroll_.end();add(scroll_);scroll_.add(locations_);scroll_.type(Fl_Scroll::VERTICAL_ALWAYS);
++    locations_.callback([](Fl_Widget *,void *data){OptionsWindow *p=static_cast<OptionsWindow *>(data);if(!p->places_)p->places_.reset(new PlacesWindow(p->c_.places,p->c_.panel,p->c_.files,p));p->places_->show();},this);
++    style(&locations_,c.files);add(close_);style(&close_,c.files);close_.callback([](Fl_Widget *,void *data){static_cast<OptionsWindow *>(data)->hide();},this);
++    callback([](Fl_Widget *w,void *){w->hide();});set_modal();
++    Fl_Widget *items[11];for(int i=0;i<6;++i)items[i]=c.tools[i];items[6]=c.preview_toggle;items[7]=c.hidden;items[8]=c.filter;items[9]=c.favorites;items[10]=c.new_directory;
++    for(int i=0;i<11;++i){
++      Fl_Widget *original=items[i],*proxy;
++      if(Fl_Choice *choice=dynamic_cast<Fl_Choice *>(original)){Fl_Choice *p=new Fl_Choice(0,0,200,30);p->copy(choice->menu());proxy=p;}
++      else if(Fl_Menu_Button *menu=dynamic_cast<Fl_Menu_Button *>(original)){Fl_Menu_Button *p=new Fl_Menu_Button(0,0,200,30);p->copy(menu->menu());proxy=p;}
++      else if(dynamic_cast<Fl_Check_Button *>(original))proxy=new Fl_Check_Button(0,0,200,30);
++      else proxy=new Fl_Button(0,0,200,30);
++      proxy->copy_label(i==0?"Sort by:":(i==10?"New folder…":(original->label()?original->label():"")));proxy->tooltip(original->tooltip());style(proxy,original);scroll_.add(proxy);
++      std::unique_ptr<Link> link(new Link{original,proxy,this});proxy->callback(changed,link.get());links_.push_back(std::move(link));
++    }
++    end();sync();
++  }
++  ~OptionsWindow(){places_.reset();}
++  void sync(){for(size_t i=0;i<links_.size();++i){Link &l=*links_[i];style(l.proxy,l.original);if(l.original->active())l.proxy->activate();else l.proxy->deactivate();if(Fl_Menu_Button *o=dynamic_cast<Fl_Menu_Button *>(l.original)){static_cast<Fl_Menu_Button *>(l.proxy)->copy(o->menu());static_cast<Fl_Menu_Button *>(l.proxy)->value(o->value());}if(Fl_Choice *o=dynamic_cast<Fl_Choice *>(l.original)){static_cast<Fl_Choice *>(l.proxy)->copy(o->menu());static_cast<Fl_Choice *>(l.proxy)->value(o->value());}else if(Fl_Check_Button *o=dynamic_cast<Fl_Check_Button *>(l.original))static_cast<Fl_Check_Button *>(l.proxy)->value(o->value());}layout();}
++  void layout(){style(&locations_,c_.files);style(&close_,c_.files);int g=8,h=std::max(28,c_.files->textsize()+14),W=std::max(1,w()-2*g);close_.resize(w()-button_width(&close_)-g,this->h()-h-g,button_width(&close_),h);scroll_.resize(g,g,W,std::max(1,this->h()-h-3*g));int X=scroll_.x()-scroll_.xposition(),Y=scroll_.y()-scroll_.yposition();int rowW=std::max(1,W-Fl::scrollbar_size());locations_.resize(X,Y,rowW,h);Y+=h+g;
++    for(size_t i=0;i<links_.size();++i){Link &l=*links_[i];if(dynamic_cast<Fl_Choice *>(l.proxy)){int label=std::min(button_width(l.proxy),std::max(0,rowW-100));l.proxy->resize(X+label,Y,std::max(40,rowW-label),h);}else l.proxy->resize(X,Y,rowW,h);Y+=h+g;}
++  }
++  void show() FL_OVERRIDE {scroll_.scroll_to(0,0);sync();ViewWindow::show();}
++  void hide() FL_OVERRIDE {if(places_&&places_->shown())places_->hide();Fl_Double_Window::hide();}
++  void resize(int X,int Y,int W,int H) FL_OVERRIDE {ViewWindow::resize(X,Y,W,H);if(!laying_){laying_=true;layout();laying_=false;}}
++  void draw() FL_OVERRIDE {layout();Fl_Double_Window::draw();}
++};
++class ChooserWindow:public ViewWindow {
++  Fl_Chooser_Viewport_Controls c_;Fl_Button options_button_;
++  std::unique_ptr<OptionsWindow> options_;
++  int last_w_,last_h_,last_font_,last_size_,pane_width_;double preview_fraction_;bool preview_state_;
++public:
++  ChooserWindow(Fl_Double_Window *old,const Fl_Chooser_Viewport_Controls &c):ViewWindow(old->x(),old->y(),old->w(),old->h(),old->label()),c_(c),options_button_(0,0,100,30,"Options…"),last_w_(0),last_h_(0),last_font_(-1),last_size_(0),pane_width_(0),preview_fraction_(.4),preview_state_(false){
++    add(options_button_);options_button_.shortcut(FL_ALT|'o');options_button_.tooltip("Sorting, details, preview, hidden files and Locations");options_button_.callback([](Fl_Widget *,void *data){ChooserWindow *p=static_cast<ChooserWindow *>(data);if(!p->options_)p->options_.reset(new OptionsWindow(p->c_));p->options_->show();},this);end();
++  }
++  ~ChooserWindow(){options_.reset();}
++  void layout(){
++    if(laying_)return;laying_=true;
++    int size=std::max(8,int(c_.files->textsize())),h=std::max(28,size+12),g=std::max(6,size/4),pad=8;
++    style(&options_button_,c_.files);int W=std::max(1,w()-2*pad),tool_width=fl_file_chooser_toolbar_width(c_.toolbar);bool compact=W<tool_width;
++    Fl_Group *top=c_.filter->parent(),*bottom=c_.filename->parent(),*checks=c_.preview_toggle->parent(),*buttons=c_.okay->parent(),*tile=c_.panel->parent();
++    top->resize(pad,pad,W,h);int label=button_width(c_.filter),favorite=button_width(c_.favorites),newdir=h,options=button_width(&options_button_);
++    bool collapsed=W<label+favorite+newdir+options+3*g+40;
++    bool short_area=this->h()<5*h+10+3*g+2*pad;
++    if(collapsed||short_area)compact=true;
++    options=button_width(&options_button_);
++    if(collapsed||short_area){top->hide();options_button_.show();}
++    else top->show();
++    int filter=std::max(40,W-label-favorite-newdir-options-3*g);
++    c_.filter->resize(pad+label,pad,filter,h);c_.favorites->resize(pad+label+filter+g,pad,favorite,h);c_.new_directory->resize(pad+W-newdir-options-g,pad,newdir,h);
++    options_button_.show();options_button_.resize(w()-pad-options,pad,options,h);
++    if(compact){c_.toolbar->hide();checks->hide();}
++    else {c_.toolbar->show();checks->show();}
++    int y=pad+(short_area?0:h+g);if(!compact){c_.toolbar->resize(pad,y,W,h);y+=h+g;}
++    int input_h=h+10,footer=2*h+input_h+2*g;if(compact)footer=h+input_h+g;
++    int footer_y=this->h()-pad-footer;
++    bottom->resize(pad,footer_y,W,footer);
++    int row=footer_y;if(!compact){checks->resize(pad,row,W,h);c_.preview_toggle->resize(pad,row,button_width(c_.preview_toggle),h);int x=c_.preview_toggle->x()+c_.preview_toggle->w()+g;c_.hidden->resize(x,row,std::max(1,W-(x-pad)),h);row+=h+g;}
++    int filename_label=0;Fl_Widget *label_widget=0;for(int i=0;i<bottom->children();++i){Fl_Widget *p=bottom->child(i);if(dynamic_cast<Fl_Box *>(p)&&!dynamic_cast<Fl_Group *>(p)){label_widget=p;filename_label=button_width(p);break;}}
++    filename_label=std::min(filename_label,std::max(0,W-100));if(label_widget)label_widget->resize(pad,row,filename_label,input_h);
++    c_.filename->resize(pad+filename_label,row,std::max(1,W-filename_label),input_h);row+=input_h+g;
++    buttons->resize(pad,row,W,h);int cancel=button_width(c_.cancel),okay=button_width(c_.okay);
++    c_.cancel->resize(w()-pad-cancel,row,cancel,h);c_.okay->resize(c_.cancel->x()-g-okay,row,okay,h);
++    if(short_area){options_button_.resize(pad,row,std::min(button_width(&options_button_),std::max(h,c_.okay->x()-pad-g)),h);if(options_button_.w()<button_width(&options_button_))options_button_.label("…");}
++    else options_button_.label("Options…");
++    Area a=work_area(this);size_range(std::min(320,a.w),std::min(5*h+10+3*g+2*pad,a.h),a.w,a.h);
++    int H=std::max(1,footer_y-y-g);tile->resize(pad,y,W,H);
++    bool preview=c_.preview_toggle->value()!=0;
++    if(preview&&preview_state_&&last_w_==w()&&pane_width_>0&&c_.panel->w()!=pane_width_)preview_fraction_=std::max(.15,std::min(.65,double(W-c_.panel->w())/W));
++    int preview_w=preview?std::min(W*2/3,std::max(80,int(W*preview_fraction_))):0;
++    c_.panel->resize(pad,y,std::max(1,W-preview_w),H);c_.preview->resize(pad+W-preview_w,y,preview_w,H);
++    if(preview)c_.preview->show();else c_.preview->hide();
++    last_w_=w();last_h_=this->h();last_font_=int(c_.files->textfont());last_size_=size;pane_width_=c_.panel->w();preview_state_=preview;laying_=false;
++  }
++  void show() FL_OVERRIDE {ViewWindow::show();layout();}
++  void hide() FL_OVERRIDE {if(options_&&options_->shown())options_->hide();Fl_Double_Window::hide();}
++  void resize(int X,int Y,int W,int H) FL_OVERRIDE {ViewWindow::resize(X,Y,W,H);layout();}
++  void draw() FL_OVERRIDE {layout();Fl_Double_Window::draw();}
++};
++class FavoritesWindow:public ViewWindow {
++  Fl_File_Browser *list_;Fl_Button *up_,*del_,*down_,*cancel_;Fl_Return_Button *save_;
++public:
++  FavoritesWindow(Fl_Double_Window *old,Fl_File_Browser *list,Fl_Button *up,Fl_Button *del,Fl_Button *down,Fl_Button *cancel,Fl_Return_Button *save):ViewWindow(old->x(),old->y(),560,420,old->label()),list_(list),up_(up),del_(del),down_(down),cancel_(cancel),save_(save){}
++  void layout(){if(laying_)return;laying_=true;int h=std::max(28,list_->textsize()+12),g=8,W=std::max(1,w()-2*g),H=std::max(1,this->h()-h-3*g);list_->resize(g,g,std::max(1,W-h-g),H);Fl_Button *buttons[]={up_,del_,down_};for(int i=0;i<3;++i)buttons[i]->resize(w()-g-h,g+i*(h+g),h,h);int cancel=button_width(cancel_),save=button_width(save_);cancel_->resize(w()-g-cancel,this->h()-g-h,cancel,h);save_->resize(cancel_->x()-g-save,this->h()-g-h,save,h);laying_=false;}
++  void resize(int X,int Y,int W,int H) FL_OVERRIDE {ViewWindow::resize(X,Y,W,H);layout();}
++  void draw() FL_OVERRIDE {layout();Fl_Double_Window::draw();}
++};
++template<class Window> Fl_Double_Window *replace(Fl_Double_Window *old,Window *replacement) {
++  if(old->shown()){delete replacement;throw std::logic_error("File chooser root replacement must precede first show");}
++  Fl_Group *current=Fl_Group::current(),*parent=old->parent();if(parent){parent->remove(old);parent->add(replacement);}
++  replacement->copy_label(old->label());replacement->xclass(old->xclass());replacement->callback(old->callback(),old->user_data());replacement->when(old->when());replacement->color(old->color());replacement->border(old->border());if(old->modal())replacement->set_modal();else if(old->non_modal())replacement->set_non_modal();
++  while(old->children())replacement->add(old->child(0));
++  delete old;Fl_Group::current(current==old?0:current);replacement->init_sizes();return replacement;
++}
++} // namespace
++void fl_file_chooser_finish_places_navigation(Fl_Widget *child){
++  // A chosen location returns to the chooser before its existing navigation
++  // callback focuses the file pane. Keep modal descendants out of that focus
++  // handoff: Wayland must never try to parent an ancestor to its descendant.
++  if(PlacesWindow *places=dynamic_cast<PlacesWindow *>(child->window()))places->finish_navigation();
++}
++int fl_file_chooser_sidebar_width(Fl_File_Browser *file,int width){int size=std::max(8,int(file->textsize()));int sidebar=std::max(180,2*(size*3+20)),browser=std::max(120,size*6);return width>=sidebar+browser+8?sidebar:0;}
++Fl_Double_Window *fl_file_chooser_make_viewport(Fl_Double_Window *old,const Fl_Chooser_Viewport_Controls &c){return replace(old,new ChooserWindow(old,c));}
++Fl_Double_Window *fl_file_chooser_favorites_viewport(Fl_Double_Window *old,Fl_File_Browser *list,Fl_Button *up,Fl_Button *del,Fl_Button *down,Fl_Button *cancel,Fl_Return_Button *save){return replace(old,new FavoritesWindow(old,list,up,del,down,cancel,save));}
+--- a/src/Fl_Message.cxx
++++ b/src/Fl_Message.cxx
+@@ -248,8 +248,12 @@
+         max_h = button_h[i];
+     }
+ 
++  // Keep the historical minimum, but fit the actual selected input glyphs.
++  fl_font(input_->textfont(), input_->textsize());
++  int input_height = input_->textsize() > fl_height() ? input_->textsize() : fl_height();
++  input_height = input_height + 10 > 25 ? input_height + 10 : 25;
+   if (input_->visible())
+-    text_height = message_h + 25;
++    text_height = message_h + input_height;
+   else
+     text_height = message_h;
+ 
+@@ -278,7 +282,7 @@
+   message_->resize(20 + icon_size, 10, message_w, message_h);
+   icon_->resize(10, 10, icon_size, icon_size);
+   icon_->labelsize(icon_size - 10);
+-  input_->resize(20 + icon_size, 10 + message_h, message_w, 25);
++  input_->resize(20 + icon_size, 10 + message_h, message_w, input_height);
+ 
+   for (x = w, i = 0; i < 3; i++) {
+     if (button_w[i]) {
