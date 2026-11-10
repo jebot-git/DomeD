@@ -57,12 +57,9 @@ fn preview_size(width: i32, height: i32) -> Option<((i32, i32), f64)> {
 }
 impl crate::Dome {
     pub fn update_task_previews(&mut self, renderer: &mut GlesRenderer) {
-        let ids: Vec<_> = self
-            .task_popup
-            .filter(|_| !self.task_context)
+        let ids: Vec<_> = self.task_popup.filter(|_| !self.task_context)
             .and_then(|index| self.task_list().get(index).cloned())
-            .map(|task| task.windows.into_iter().take(4).collect())
-            .unwrap_or_default();
+            .map(|task| task.windows.into_iter().take(4).collect()).unwrap_or_default();
         // Bound memory to the visible group; closing the popup stops all preview work.
         self.task_previews.frames.retain(|id, _| ids.contains(id));
         if ids.is_empty()

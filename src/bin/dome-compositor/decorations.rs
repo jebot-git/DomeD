@@ -18,6 +18,7 @@ impl Dome {
             let id = self.id_for(window.toplevel().unwrap().wl_surface())?;
             if self.selection_tooltips.contains_key(&id) {continue;}
             let w = scene.window(id)?;
+            if dome::looking_glass::angle(&scene,id).abs()>0.01 {continue;}
             if w.maximized {
                 continue;
             }

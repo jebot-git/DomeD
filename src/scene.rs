@@ -438,6 +438,8 @@ pub struct RayHit {
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Scene {
+    #[serde(default)]
+    pub looking_glass: crate::looking_glass::State,
     #[serde(skip)]
     pub native_xr: crate::native_xr::Coordinator,
     /// Controlled by the compositor session authority, never by scene actions.
@@ -465,6 +467,10 @@ pub struct Scene {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Action {
+    LookingGlass { enabled: bool },
+    GlassOverview { open: bool },
+    GlassPage { page: usize },
+    GlassWindow { id: WindowId, yaw_deg: Option<f32>, parked: Option<bool>, back: Option<bool>, note: Option<String> },
     SendToRealm { id: WindowId, realm: Realm },
     WindowVisibility { id: WindowId, desktop: bool, xr: bool },
     XrPresentation {
@@ -512,6 +518,7 @@ pub enum Action {
         workspace: usize,
     },
     Reorder { id: WindowId, delta: i32 },
+    RotateLane { workspace:usize, lane:usize, delta_deg:f32 },
     RotateLanes { workspace:usize, delta_deg:f32 },
     Swap {
         a: WindowId,
@@ -586,6 +593,7 @@ impl Scene {
             focus_order: vec![],
             pullout_anchor: None,
             native_xr: Default::default(),
+            looking_glass: Default::default(),
         }
     }
     pub fn demo() -> Self {
@@ -761,6 +769,14 @@ impl Scene {
         }
         self.remember_focus();
         match action {
+            Action::LookingGlass { enabled } | Action::GlassOverview { open: enabled } => {
+                if self.locked { return Err("Session is locked".into()); }
+                self.looking_glass.enabled = enabled;
+                self.looking_glass.focus_candidate = None;
+                self.looking_glass.settle_at_ms = None;
+            }
+            Action::GlassPage { .. } => { return Err("Looking Glass v2 uses natural placement, not pages".into()); }
+            Action::GlassWindow {id,yaw_deg,parked,back,note} => self.glass_edit(id,yaw_deg,parked,back,note)?,
             Action::SendToRealm { id, realm } => {
                 return self.apply(Action::WindowVisibility {
                     id, desktop: realm == Realm::Desktop, xr: realm == Realm::Xr,
@@ -921,6 +937,12 @@ impl Scene {
                 {
                     self.choose_focus();
                 }
+            }
+            Action::RotateLane { workspace,lane,delta_deg } => {
+                if !delta_deg.is_finite(){return Err("Invalid lane rotation".into());}
+                let band=self.workspaces.get_mut(workspace)
+                    .and_then(|space| space.lanes.get_mut(lane)).ok_or("Invalid lane or workspace")?;
+                band.rotation_deg=wrap(band.rotation_deg+delta_deg);
             }
             Action::RotateLanes { workspace,delta_deg } => {
                 if !delta_deg.is_finite(){return Err("Invalid lane rotation".into());}
@@ -1255,7 +1277,7 @@ impl Scene {
                         width_deg: width,
                         radius_m: radius,
                         opacity: if rank == 0 {
-                            1.
+                            crate::looking_glass::opacity(self,w.id)
                         } else {
                             0.16 / (rank as f32).sqrt()
                         },

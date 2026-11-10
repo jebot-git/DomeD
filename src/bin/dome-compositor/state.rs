@@ -513,6 +513,18 @@ impl Dome {
         if let Some((_, surface, origin)) = self.popup_under(pos) {
             return Some((surface, origin));
         }
+        let glass=self.scene.lock().unwrap().looking_glass.enabled;
+        if glass {
+            let (window, location) = self.glass_element_under(pos)?;
+            let id = self.id_for(window.toplevel().unwrap().wl_surface())?;
+            if dome::looking_glass::angle(&self.scene.lock().unwrap(), id).abs() > 0.01 {
+                return None;
+            }
+            return window.surface_under(
+                pos - location.to_f64(),
+                WindowSurfaceType::TOPLEVEL | WindowSurfaceType::SUBSURFACE,
+            ).map(|(surface, point)| (surface, (point + location).to_f64()));
+        }
         self.space
             .element_under(pos)
             .and_then(|(window, location)| {

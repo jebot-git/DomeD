@@ -56,6 +56,12 @@ impl Dome {
             }
         }
         if let Action::Focus { id } = &a {
+            {
+                let mut scene=self.scene.lock().unwrap();
+                if scene.looking_glass.enabled && scene.popup(*id).is_none() && !(scene.looking_glass.focus_candidate==Some(*id)&&scene.looking_glass.settle_at_ms.is_some()) {
+                    let _=scene.glass_edit(*id,Some(0.),None,None,None);
+                }
+            }
             self.pending_raise = Some(*id);
             self.no_raise_focus = None;
         }

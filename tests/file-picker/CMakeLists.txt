@@ -1,6 +1,12 @@
 cmake_minimum_required(VERSION 3.21)
 project(dome-file-picker-tests LANGUAGES CXX)
 find_package(FLTK 1.4.5 EXACT CONFIG REQUIRED)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(PICKER_FONTS REQUIRED IMPORTED_TARGET fontconfig freetype2 zlib)
 add_executable(file-picker-test file-picker-test.cpp)
 target_compile_features(file-picker-test PRIVATE cxx_std_17)
-target_link_libraries(file-picker-test PRIVATE fltk::fltk-shared fltk::images-shared)
+target_link_libraries(file-picker-test PRIVATE fltk::fltk-shared fltk::images-shared PkgConfig::PICKER_FONTS)
+
+add_executable(clipboard-test clipboard-test.cpp)
+target_compile_features(clipboard-test PRIVATE cxx_std_17)
+target_link_libraries(clipboard-test PRIVATE fltk::fltk-shared PkgConfig::PICKER_FONTS)

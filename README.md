@@ -26,6 +26,12 @@ The optional [DomeD Translator](docs/TRANSLATOR.md) provides a native FLTK tray
 translator for configured input languages, using DeepL API Free and local script
 transcription. Build it with `scripts/build-translator.sh`.
 
+The opt-in [Looking Glass prototype](docs/LOOKING-GLASS.rst) tilts full-resolution
+windows at their existing desktop/dome positions, with the classic taskbar
+and shared desktop/XR tilt state. Super+scroll controls tilt up to 80 degrees;
+Alt+Tab settles the final focused window flat after a 900 ms pause.
+Use Window > Looking Glass Prototype or Super+G to try it.
+
 ## Build and toolkit selection
 
 FLTK is the default Cargo feature. Native compositor builds require the patched
@@ -272,8 +278,11 @@ resolution, using the selected display's width for X and height for Y. Changing
 resolution updates nonzero manual offsets to the new width or height.
 **Super + middle-button drag** moves a desktop window from anywhere in its
 content and snaps at monitor edges/corners without Shift. In XR, the same gesture
-rotates all dome lanes in the active workspace together, preserving focus, window
-order and other workspaces. Drag horizontally to rotate; release MMB to finish,
+rotates only the lane under the pointer; the lane is selected when the drag starts.
+Popups select their owning window's lane. Gaps, shell controls and detached panels
+do not select a lane. **Super + Shift + middle-button drag** rotates all three lanes
+in the active workspace together. Both gestures preserve focus, window order and
+other workspaces. Drag horizontally to rotate; release MMB to finish,
 even if Super was released first. Ordinary middle-click remains application input.
 
 Hold **Shift** while dragging either a client titlebar or a DomeD titlebar to tile

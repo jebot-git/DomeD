@@ -150,8 +150,8 @@ normally after installing the shared release; never restart the desktop session.
 provides natural name, size, extension/type and modified-date ordering, ascending
 or descending, and an independent folders-first toggle. Click a column heading
 to select it; click again to reverse. Parent navigation stays first and missing
-metadata stays last. Details show size, type and local modification time; narrow
-windows hide secondary columns. The Details toggle provides a compact name list.
+metadata stays last. Details show size, type and local modification time; compact
+windows provide horizontal scrolling for secondary columns. The Details toggle provides a compact name list.
 Refresh/F5 reloads the current directory. Existing filtering, hidden files,
 favorites, previews and folder creation remain available.
 
@@ -211,3 +211,33 @@ and native single-file, multiple-file, save-file and directory return values.
 They also cover Places sources, Unicode and escaped bookmarks, duplicate and
 malformed entries, Favorites add/remove synchronization, save-name preservation
 across Places, error recovery and persistent sidebar visibility.
+
+
+## Compact shared picker
+
+`fltk-1.4.5-file-picker-viewport.patch`, the 25th canonical FLTK 1.4.5 patch,
+keeps the chooser and its Favorites manager within the current work area.
+Filename, accept and Cancel stay in a font-sized fixed footer. Compact layouts
+move sorting, filtering, Favorites, New folder, preview and hidden-file controls
+into a scrollable **Options…** dialog (Alt+O). **Locations…** provides the same
+Places/Favorites actions when the sidebar cannot fit. Closing either owned dialog
+returns without changing navigation, filenames, selection or preferences.
+Choosing a location closes both modal descendants before focusing the chooser.
+The existing shared New Directory and Custom Filter prompts also size their
+input height from actual selected glyph metrics, retaining the 25px minimum.
+
+Public FLTK headers and `Fl_File_Chooser` layout remain unchanged; dynamically
+linked clients compiled against the previous 24-patch toolkit are supported.
+The builder preserves old source trees and installs only to the requested private
+prefix. `--sanitize` instruments all owned toolkit C/C++ with ASan/UBSan;
+`--jobs` controls build parallelism. Existing prefixes and active sessions need
+not be changed. Read [the qualification](../../docs/FILE-PICKER-VIEWPORT.md).
+
+
+The canonical builder now also applies26 filename callback authority and27 X11
+clipboard ownership/query cleanup, and requires the official poll backend. It
+retains private-config.h and runtime-profile.json with actual source, builder,
+configuration and installed-library hashes. This preserves high-descriptor
+clipboard operation without public header/layout changes; old static fdsets
+export storage remains available. Read [X11-CLIPBOARD-POLL.md](../../docs/X11-CLIPBOARD-POLL.md)
+for the final picker/clipboard/SDK qualification and preserved negatives.

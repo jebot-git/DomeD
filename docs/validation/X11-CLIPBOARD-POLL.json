@@ -1,0 +1,741 @@
+{
+  "schema": 1,
+  "state": "qualified canonical poll/clipboard component",
+  "runtime_source_commit": "6fa2624f89ddb105e482326995daec0bdbfd6643",
+  "worktree": "/home/blux/de-xr/DomeD/artifacts/fltk-poll-final",
+  "source_sha256": {
+    "scripts/prepare-fltk-experiment.py": "85cc04718523dbebfe0ac6c4384fa341641dabdb5022fff98998e18d2e783011",
+    "native/toolkit-hooks/fltk-1.4.5-x11-clipboard-ownership.patch": "db6ca24a101c50c4c106a15fc8129a55ca73713a100c15e572b1dda98c248a57",
+    "tests/file-picker/CMakeLists.txt": "0443bba59d9fd9da1dea5fb685dd26375a64fcdee52417dfb492025ea4900b7f",
+    "tests/file-picker/clipboard-test.cpp": "6f3210b011e8a136b69583887106065f474d7be328057cbdac776f0a158c479d",
+    "tests/file-picker/test-clipboard.py": "4281356df9a8d2bc52750fc9f4784989e2bea7404d830ea3977a66f566494df2"
+  },
+  "builds": {
+    "release": {
+      "exit": 0,
+      "handle": 25598,
+      "log": "artifacts/poll-proof/build-final-release.log",
+      "log_sha256": "e0cafb41df2f6496634cdf824049d4181c7f747dbaf39ccdd5920dde45a2f9bd",
+      "scope": "Fresh owned poll-enabled base plus coherent source-triggered ABI-storage continuation; optimizedO3 native, no foreign objects"
+    },
+    "sanitize": {
+      "exit": 0,
+      "handle": 36704,
+      "log": "artifacts/poll-proof/build-final-sanitize.log",
+      "log_sha256": "b29b700b81a983b1fb787b9c5639d341618ab73319c8ba95858d413154c60bab",
+      "scope": "All owned toolkit/vendored-libdecor C/C++ O1g1 ASan/UBSan in same coherent build; no suppression; canonical external bitmap runtime remains separately scoped"
+    }
+  },
+  "sdk": {
+    "release": {
+      "prefix": "/home/blux/de-xr/DomeD/artifacts/fltk-poll-final/artifacts/toolkit-poll-final-release",
+      "profile": {
+        "schema": 1,
+        "use_poll": true,
+        "source_patch_sha256": "34091d15335d695f3bb328f3ccdcb4f68110f47a75271c563ba909c3682815b2",
+        "archive_sha256": "eede1fb2b8e9c2e581e77082e15252145855c79aad30070ee3b24aabe2f926f1",
+        "builder_sha256": "85cc04718523dbebfe0ac6c4384fa341641dabdb5022fff98998e18d2e783011",
+        "private_config_sha256": "4ca821fe37dfc7b8a65c9a17671bea43df3f9d97647017a867a11b7410ea9585",
+        "toolkit_libraries": {
+          "lib/libfltk.so": "095b5435a80e3df959a5ac7559036785f9c39ac87c32ef3658b0fdad96c41066",
+          "lib/libfltk.so.1.4": "095b5435a80e3df959a5ac7559036785f9c39ac87c32ef3658b0fdad96c41066",
+          "lib/libfltk.so.1.4.5": "095b5435a80e3df959a5ac7559036785f9c39ac87c32ef3658b0fdad96c41066",
+          "lib/libfltk_cairo.so": "9f595566ef8a8b12993e4e0e1b1f25051f66692bc6e58e56b97d9705a65e014c",
+          "lib/libfltk_cairo.so.1.4": "9f595566ef8a8b12993e4e0e1b1f25051f66692bc6e58e56b97d9705a65e014c",
+          "lib/libfltk_cairo.so.1.4.5": "9f595566ef8a8b12993e4e0e1b1f25051f66692bc6e58e56b97d9705a65e014c",
+          "lib/libfltk_gl.so": "9291feb964ab547ca6c26f23e47aa6f428450e5db2fead4df24000af555cf846",
+          "lib/libfltk_gl.so.1.4": "9291feb964ab547ca6c26f23e47aa6f428450e5db2fead4df24000af555cf846",
+          "lib/libfltk_gl.so.1.4.5": "9291feb964ab547ca6c26f23e47aa6f428450e5db2fead4df24000af555cf846",
+          "lib/libfltk_images.so": "8975bed2f2000fa1be94cba95b60c3e6fc5a296de7a85acd7cd598f50419298a",
+          "lib/libfltk_images.so.1.4": "8975bed2f2000fa1be94cba95b60c3e6fc5a296de7a85acd7cd598f50419298a",
+          "lib/libfltk_images.so.1.4.5": "8975bed2f2000fa1be94cba95b60c3e6fc5a296de7a85acd7cd598f50419298a"
+        }
+      },
+      "profile_sha256": "a4e17b9f50ed86f6ddcd906ada3399cf1b95d9fc9740cd6526944eda319a1ffc"
+    },
+    "sanitize": {
+      "prefix": "/home/blux/de-xr/DomeD/artifacts/fltk-poll-final/artifacts/toolkit-poll-final-sanitize",
+      "profile": {
+        "schema": 1,
+        "use_poll": true,
+        "source_patch_sha256": "34091d15335d695f3bb328f3ccdcb4f68110f47a75271c563ba909c3682815b2",
+        "archive_sha256": "eede1fb2b8e9c2e581e77082e15252145855c79aad30070ee3b24aabe2f926f1",
+        "builder_sha256": "85cc04718523dbebfe0ac6c4384fa341641dabdb5022fff98998e18d2e783011",
+        "private_config_sha256": "04b324fcfd2acb41bd92bf7d0c80c29d4ed0923cefef9266dc9826204561765b",
+        "toolkit_libraries": {
+          "lib/libfltk.so": "fbb0b153988bdd461943d56b6a685f9247cd3035601596a5ac4793f7722362cf",
+          "lib/libfltk.so.1.4": "fbb0b153988bdd461943d56b6a685f9247cd3035601596a5ac4793f7722362cf",
+          "lib/libfltk.so.1.4.5": "fbb0b153988bdd461943d56b6a685f9247cd3035601596a5ac4793f7722362cf",
+          "lib/libfltk_cairo.so": "9ab675b4cfce2616845d25207f149d0ffca8bd19a9c3a660d31ff18bfe05ce65",
+          "lib/libfltk_cairo.so.1.4": "9ab675b4cfce2616845d25207f149d0ffca8bd19a9c3a660d31ff18bfe05ce65",
+          "lib/libfltk_cairo.so.1.4.5": "9ab675b4cfce2616845d25207f149d0ffca8bd19a9c3a660d31ff18bfe05ce65",
+          "lib/libfltk_gl.so": "670603234f367801593c8500051aa6bf61923c689892a4c32585555adb7975b9",
+          "lib/libfltk_gl.so.1.4": "670603234f367801593c8500051aa6bf61923c689892a4c32585555adb7975b9",
+          "lib/libfltk_gl.so.1.4.5": "670603234f367801593c8500051aa6bf61923c689892a4c32585555adb7975b9",
+          "lib/libfltk_images.so": "66165a34be996ac7d29bd496fa059fce5b61af349fb49793f5d7ac4175da5915",
+          "lib/libfltk_images.so.1.4": "66165a34be996ac7d29bd496fa059fce5b61af349fb49793f5d7ac4175da5915",
+          "lib/libfltk_images.so.1.4.5": "66165a34be996ac7d29bd496fa059fce5b61af349fb49793f5d7ac4175da5915"
+        }
+      },
+      "profile_sha256": "802ca3d363653a45b37aa3cd1eb2681fb72629bb14959c45023860afb1187029"
+    }
+  },
+  "abi": {
+    "public_files_exact_per_profile": 165,
+    "old_exports_missing": [],
+    "class_size": 6328,
+    "manifest": "artifacts/poll-proof/final-abi.json",
+    "manifest_sha256": "cd0d07e31260b1e426b88be20ecee4a6ac86a197de5f98f4f86014f8750620aa",
+    "compatibility": "Private obsolete fdsets symbol storage retained; actual dispatcher uses official poll"
+  },
+  "cohorts": [
+    {
+      "name": "final-highfd-release",
+      "status": {
+        "state": "terminal",
+        "pid": 1136694,
+        "command": [
+          "/home/blux/de-xr/dome-sculpt/artifacts/selection-gui-venv/bin/python",
+          "artifacts/poll-proof/test-high-fd.py",
+          "artifacts/poll-test-release/clipboard-test",
+          "artifacts/poll-proof/final-highfd-release"
+        ],
+        "child_pid": 1136870,
+        "exit": 0,
+        "seconds": 30.369019504025346,
+        "inputs": 1523,
+        "drift": []
+      },
+      "before": "artifacts/poll-proof/final-highfd-release-ledger/before.json",
+      "before_sha256": "d3269dad0d636a20720b65dcf3f08253c9659192cc91ad70739de7a9b311fa0b",
+      "after": "artifacts/poll-proof/final-highfd-release-ledger/after.json",
+      "after_sha256": "d3269dad0d636a20720b65dcf3f08253c9659192cc91ad70739de7a9b311fa0b"
+    },
+    {
+      "name": "final-highfd-sanitize",
+      "status": {
+        "state": "terminal",
+        "pid": 1136695,
+        "command": [
+          "/home/blux/de-xr/dome-sculpt/artifacts/selection-gui-venv/bin/python",
+          "artifacts/poll-proof/test-high-fd.py",
+          "artifacts/poll-test-sanitize/clipboard-test",
+          "artifacts/poll-proof/final-highfd-sanitize"
+        ],
+        "child_pid": 1136892,
+        "exit": 0,
+        "seconds": 46.776969528000336,
+        "inputs": 1523,
+        "drift": []
+      },
+      "before": "artifacts/poll-proof/final-highfd-sanitize-ledger/before.json",
+      "before_sha256": "d3269dad0d636a20720b65dcf3f08253c9659192cc91ad70739de7a9b311fa0b",
+      "after": "artifacts/poll-proof/final-highfd-sanitize-ledger/after.json",
+      "after_sha256": "d3269dad0d636a20720b65dcf3f08253c9659192cc91ad70739de7a9b311fa0b"
+    },
+    {
+      "name": "final-protocol-release",
+      "status": {
+        "state": "terminal",
+        "pid": 1136700,
+        "command": [
+          "/home/blux/de-xr/dome-sculpt/artifacts/selection-gui-venv/bin/python",
+          "tests/file-picker/test-clipboard.py",
+          "artifacts/poll-test-release/clipboard-test",
+          "artifacts/poll-proof/final-protocol-release"
+        ],
+        "child_pid": 1136871,
+        "exit": 0,
+        "seconds": 99.29666769198957,
+        "inputs": 1523,
+        "drift": []
+      },
+      "before": "artifacts/poll-proof/final-protocol-release-ledger/before.json",
+      "before_sha256": "d3269dad0d636a20720b65dcf3f08253c9659192cc91ad70739de7a9b311fa0b",
+      "after": "artifacts/poll-proof/final-protocol-release-ledger/after.json",
+      "after_sha256": "d3269dad0d636a20720b65dcf3f08253c9659192cc91ad70739de7a9b311fa0b"
+    },
+    {
+      "name": "final-protocol-sanitize",
+      "status": {
+        "state": "terminal",
+        "pid": 1136692,
+        "command": [
+          "/home/blux/de-xr/dome-sculpt/artifacts/selection-gui-venv/bin/python",
+          "tests/file-picker/test-clipboard.py",
+          "artifacts/poll-test-sanitize/clipboard-test",
+          "artifacts/poll-proof/final-protocol-sanitize"
+        ],
+        "child_pid": 1136889,
+        "exit": 0,
+        "seconds": 168.9089301439817,
+        "inputs": 1523,
+        "drift": []
+      },
+      "before": "artifacts/poll-proof/final-protocol-sanitize-ledger/before.json",
+      "before_sha256": "d3269dad0d636a20720b65dcf3f08253c9659192cc91ad70739de7a9b311fa0b",
+      "after": "artifacts/poll-proof/final-protocol-sanitize-ledger/after.json",
+      "after_sha256": "d3269dad0d636a20720b65dcf3f08253c9659192cc91ad70739de7a9b311fa0b"
+    },
+    {
+      "name": "final-wayland-release-compact",
+      "status": {
+        "state": "terminal",
+        "pid": 1136690,
+        "command": [
+          "/home/blux/de-xr/dome-sculpt/artifacts/selection-gui-venv/bin/python",
+          "tests/file-picker/test-wayland.py",
+          "artifacts/poll-test-release/file-picker-test",
+          "artifacts/poll-proof/final-wayland-release-compact"
+        ],
+        "child_pid": 1136853,
+        "exit": 0,
+        "seconds": 70.77383638001629,
+        "inputs": 1523,
+        "drift": []
+      },
+      "before": "artifacts/poll-proof/final-wayland-release-compact-ledger/before.json",
+      "before_sha256": "d3269dad0d636a20720b65dcf3f08253c9659192cc91ad70739de7a9b311fa0b",
+      "after": "artifacts/poll-proof/final-wayland-release-compact-ledger/after.json",
+      "after_sha256": "d3269dad0d636a20720b65dcf3f08253c9659192cc91ad70739de7a9b311fa0b"
+    },
+    {
+      "name": "final-wayland-release-normal",
+      "status": {
+        "state": "terminal",
+        "pid": 1136688,
+        "command": [
+          "/home/blux/de-xr/dome-sculpt/artifacts/selection-gui-venv/bin/python",
+          "tests/file-picker/test-wayland.py",
+          "artifacts/poll-test-release/file-picker-test",
+          "artifacts/poll-proof/final-wayland-release-normal"
+        ],
+        "child_pid": 1136862,
+        "exit": 0,
+        "seconds": 52.8943434029934,
+        "inputs": 1523,
+        "drift": []
+      },
+      "before": "artifacts/poll-proof/final-wayland-release-normal-ledger/before.json",
+      "before_sha256": "d3269dad0d636a20720b65dcf3f08253c9659192cc91ad70739de7a9b311fa0b",
+      "after": "artifacts/poll-proof/final-wayland-release-normal-ledger/after.json",
+      "after_sha256": "d3269dad0d636a20720b65dcf3f08253c9659192cc91ad70739de7a9b311fa0b"
+    },
+    {
+      "name": "final-wayland-sanitize-compact",
+      "status": {
+        "state": "terminal",
+        "pid": 1136704,
+        "command": [
+          "/home/blux/de-xr/dome-sculpt/artifacts/selection-gui-venv/bin/python",
+          "tests/file-picker/test-wayland.py",
+          "artifacts/poll-test-sanitize/file-picker-test",
+          "artifacts/poll-proof/final-wayland-sanitize-compact"
+        ],
+        "child_pid": 1136880,
+        "exit": 0,
+        "seconds": 103.31080029500299,
+        "inputs": 1523,
+        "drift": []
+      },
+      "before": "artifacts/poll-proof/final-wayland-sanitize-compact-ledger/before.json",
+      "before_sha256": "d3269dad0d636a20720b65dcf3f08253c9659192cc91ad70739de7a9b311fa0b",
+      "after": "artifacts/poll-proof/final-wayland-sanitize-compact-ledger/after.json",
+      "after_sha256": "d3269dad0d636a20720b65dcf3f08253c9659192cc91ad70739de7a9b311fa0b"
+    },
+    {
+      "name": "final-wayland-sanitize-normal",
+      "status": {
+        "state": "terminal",
+        "pid": 1136701,
+        "command": [
+          "/home/blux/de-xr/dome-sculpt/artifacts/selection-gui-venv/bin/python",
+          "tests/file-picker/test-wayland.py",
+          "artifacts/poll-test-sanitize/file-picker-test",
+          "artifacts/poll-proof/final-wayland-sanitize-normal"
+        ],
+        "child_pid": 1136878,
+        "exit": 0,
+        "seconds": 90.65333348800777,
+        "inputs": 1523,
+        "drift": []
+      },
+      "before": "artifacts/poll-proof/final-wayland-sanitize-normal-ledger/before.json",
+      "before_sha256": "d3269dad0d636a20720b65dcf3f08253c9659192cc91ad70739de7a9b311fa0b",
+      "after": "artifacts/poll-proof/final-wayland-sanitize-normal-ledger/after.json",
+      "after_sha256": "d3269dad0d636a20720b65dcf3f08253c9659192cc91ad70739de7a9b311fa0b"
+    },
+    {
+      "name": "final-x11-release-compact",
+      "status": {
+        "state": "terminal",
+        "pid": 1136689,
+        "command": [
+          "dbus-run-session",
+          "--",
+          "python3",
+          "artifacts/poll-proof/run-x11.py",
+          "artifacts/toolkit-poll-final-release",
+          "artifacts/poll-proof/final-x11-release-compact",
+          "640x360",
+          "2"
+        ],
+        "child_pid": 1136901,
+        "exit": 0,
+        "seconds": 56.764917370979674,
+        "inputs": 1523,
+        "drift": []
+      },
+      "before": "artifacts/poll-proof/final-x11-release-compact-ledger/before.json",
+      "before_sha256": "d3269dad0d636a20720b65dcf3f08253c9659192cc91ad70739de7a9b311fa0b",
+      "after": "artifacts/poll-proof/final-x11-release-compact-ledger/after.json",
+      "after_sha256": "d3269dad0d636a20720b65dcf3f08253c9659192cc91ad70739de7a9b311fa0b"
+    },
+    {
+      "name": "final-x11-release-normal",
+      "status": {
+        "state": "terminal",
+        "pid": 1136682,
+        "command": [
+          "dbus-run-session",
+          "--",
+          "python3",
+          "artifacts/poll-proof/run-x11.py",
+          "artifacts/toolkit-poll-final-release",
+          "artifacts/poll-proof/final-x11-release-normal",
+          "1600x1000",
+          "1"
+        ],
+        "child_pid": 1136854,
+        "exit": 0,
+        "seconds": 44.427163157000905,
+        "inputs": 1523,
+        "drift": []
+      },
+      "before": "artifacts/poll-proof/final-x11-release-normal-ledger/before.json",
+      "before_sha256": "d3269dad0d636a20720b65dcf3f08253c9659192cc91ad70739de7a9b311fa0b",
+      "after": "artifacts/poll-proof/final-x11-release-normal-ledger/after.json",
+      "after_sha256": "d3269dad0d636a20720b65dcf3f08253c9659192cc91ad70739de7a9b311fa0b"
+    },
+    {
+      "name": "final-x11-sanitize-compact",
+      "status": {
+        "state": "terminal",
+        "pid": 1136705,
+        "command": [
+          "dbus-run-session",
+          "--",
+          "python3",
+          "artifacts/poll-proof/run-x11.py",
+          "artifacts/toolkit-poll-final-sanitize",
+          "artifacts/poll-proof/final-x11-sanitize-compact",
+          "640x360",
+          "2"
+        ],
+        "child_pid": 1136883,
+        "exit": 0,
+        "seconds": 88.92612338101026,
+        "inputs": 1523,
+        "drift": []
+      },
+      "before": "artifacts/poll-proof/final-x11-sanitize-compact-ledger/before.json",
+      "before_sha256": "d3269dad0d636a20720b65dcf3f08253c9659192cc91ad70739de7a9b311fa0b",
+      "after": "artifacts/poll-proof/final-x11-sanitize-compact-ledger/after.json",
+      "after_sha256": "d3269dad0d636a20720b65dcf3f08253c9659192cc91ad70739de7a9b311fa0b"
+    },
+    {
+      "name": "final-x11-sanitize-normal",
+      "status": {
+        "state": "terminal",
+        "pid": 1136691,
+        "command": [
+          "dbus-run-session",
+          "--",
+          "python3",
+          "artifacts/poll-proof/run-x11.py",
+          "artifacts/toolkit-poll-final-sanitize",
+          "artifacts/poll-proof/final-x11-sanitize-normal",
+          "1600x1000",
+          "1"
+        ],
+        "child_pid": 1136863,
+        "exit": 0,
+        "seconds": 80.31888929399429,
+        "inputs": 1523,
+        "drift": []
+      },
+      "before": "artifacts/poll-proof/final-x11-sanitize-normal-ledger/before.json",
+      "before_sha256": "d3269dad0d636a20720b65dcf3f08253c9659192cc91ad70739de7a9b311fa0b",
+      "after": "artifacts/poll-proof/final-x11-sanitize-normal-ledger/after.json",
+      "after_sha256": "d3269dad0d636a20720b65dcf3f08253c9659192cc91ad70739de7a9b311fa0b"
+    }
+  ],
+  "independent_protocol": {
+    "release": {
+      "five_modes": [
+        {
+          "mode": "normal",
+          "exit": 0,
+          "seconds": 19.58441359200515,
+          "requests": [
+            {
+              "target": "TARGETS",
+              "requestor": 4194305,
+              "time": 221545459
+            },
+            {
+              "target": "TARGETS",
+              "requestor": 4194307,
+              "time": 221545461
+            },
+            {
+              "target": "TARGETS",
+              "requestor": 4194305,
+              "time": 221545461
+            },
+            {
+              "target": "UTF8_STRING",
+              "requestor": 4194307,
+              "time": 221545461
+            }
+          ]
+        },
+        {
+          "mode": "malformed",
+          "exit": 0,
+          "seconds": 20.00131016699015,
+          "requests": [
+            {
+              "target": "TARGETS",
+              "requestor": 4194305,
+              "time": 221565369
+            },
+            {
+              "target": "TARGETS",
+              "requestor": 4194305,
+              "time": 221565376
+            },
+            {
+              "target": "TARGETS",
+              "requestor": 4194305,
+              "time": 221565381
+            },
+            {
+              "target": "TARGETS",
+              "requestor": 4194305,
+              "time": 221565385
+            },
+            {
+              "target": "TARGETS",
+              "requestor": 4194305,
+              "time": 221565391
+            },
+            {
+              "target": "TARGETS",
+              "requestor": 4194305,
+              "time": 221565396
+            },
+            {
+              "target": "TARGETS",
+              "requestor": 4194305,
+              "time": 221565400
+            },
+            {
+              "target": "TARGETS",
+              "requestor": 4194305,
+              "time": 221565407
+            },
+            {
+              "target": "TARGETS",
+              "requestor": 4194305,
+              "time": 221565412
+            },
+            {
+              "target": "TARGETS",
+              "requestor": 4194305,
+              "time": 221565419
+            },
+            {
+              "target": "TARGETS",
+              "requestor": 4194305,
+              "time": 221565425
+            },
+            {
+              "target": "TARGETS",
+              "requestor": 4194305,
+              "time": 221565426
+            },
+            {
+              "target": "TARGETS",
+              "requestor": 4194305,
+              "time": 221565433
+            },
+            {
+              "target": "TARGETS",
+              "requestor": 4194305,
+              "time": 221565439
+            },
+            {
+              "target": "TARGETS",
+              "requestor": 4194305,
+              "time": 221565445
+            },
+            {
+              "target": "TARGETS",
+              "requestor": 4194305,
+              "time": 221565451
+            },
+            {
+              "target": "TARGETS",
+              "requestor": 4194305,
+              "time": 221565454
+            },
+            {
+              "target": "TARGETS",
+              "requestor": 4194305,
+              "time": 221565458
+            },
+            {
+              "target": "TARGETS",
+              "requestor": 4194305,
+              "time": 221565462
+            },
+            {
+              "target": "TARGETS",
+              "requestor": 4194305,
+              "time": 221565464
+            }
+          ]
+        },
+        {
+          "mode": "refuse",
+          "exit": 0,
+          "seconds": 18.412807039014297,
+          "requests": [
+            {
+              "target": "TARGETS",
+              "requestor": 4194305,
+              "time": 221583869
+            }
+          ]
+        },
+        {
+          "mode": "late",
+          "exit": 0,
+          "seconds": 22.31390369599103,
+          "requests": [
+            {
+              "target": "TARGETS",
+              "requestor": 4194305,
+              "time": 221605335
+            }
+          ]
+        },
+        {
+          "mode": "ownership",
+          "exit": 0,
+          "seconds": 17.256167540006572,
+          "requests": []
+        }
+      ],
+      "checks": 49,
+      "high_descriptor_checks": 7,
+      "high_descriptor": 1101,
+      "high_log_sha256": "9bb81225275572c29e9e65e6e5bc789f767572fd8d903406d7a90d47d2c08a94"
+    },
+    "sanitize": {
+      "five_modes": [
+        {
+          "mode": "normal",
+          "exit": 0,
+          "seconds": 48.291238343023,
+          "requests": [
+            {
+              "target": "TARGETS",
+              "requestor": 4194305,
+              "time": 221573302
+            },
+            {
+              "target": "TARGETS",
+              "requestor": 4194307,
+              "time": 221573303
+            },
+            {
+              "target": "TARGETS",
+              "requestor": 4194305,
+              "time": 221573303
+            },
+            {
+              "target": "UTF8_STRING",
+              "requestor": 4194307,
+              "time": 221573303
+            }
+          ]
+        },
+        {
+          "mode": "malformed",
+          "exit": 0,
+          "seconds": 38.819467533990974,
+          "requests": [
+            {
+              "target": "TARGETS",
+              "requestor": 4194305,
+              "time": 221612145
+            },
+            {
+              "target": "TARGETS",
+              "requestor": 4194305,
+              "time": 221612145
+            },
+            {
+              "target": "TARGETS",
+              "requestor": 4194305,
+              "time": 221612146
+            },
+            {
+              "target": "TARGETS",
+              "requestor": 4194305,
+              "time": 221612146
+            },
+            {
+              "target": "TARGETS",
+              "requestor": 4194305,
+              "time": 221612147
+            },
+            {
+              "target": "TARGETS",
+              "requestor": 4194305,
+              "time": 221612147
+            },
+            {
+              "target": "TARGETS",
+              "requestor": 4194305,
+              "time": 221612147
+            },
+            {
+              "target": "TARGETS",
+              "requestor": 4194305,
+              "time": 221612147
+            },
+            {
+              "target": "TARGETS",
+              "requestor": 4194305,
+              "time": 221612148
+            },
+            {
+              "target": "TARGETS",
+              "requestor": 4194305,
+              "time": 221612148
+            },
+            {
+              "target": "TARGETS",
+              "requestor": 4194305,
+              "time": 221612148
+            },
+            {
+              "target": "TARGETS",
+              "requestor": 4194305,
+              "time": 221612148
+            },
+            {
+              "target": "TARGETS",
+              "requestor": 4194305,
+              "time": 221612149
+            },
+            {
+              "target": "TARGETS",
+              "requestor": 4194305,
+              "time": 221612149
+            },
+            {
+              "target": "TARGETS",
+              "requestor": 4194305,
+              "time": 221612149
+            },
+            {
+              "target": "TARGETS",
+              "requestor": 4194305,
+              "time": 221612149
+            },
+            {
+              "target": "TARGETS",
+              "requestor": 4194305,
+              "time": 221612150
+            },
+            {
+              "target": "TARGETS",
+              "requestor": 4194305,
+              "time": 221612150
+            },
+            {
+              "target": "TARGETS",
+              "requestor": 4194305,
+              "time": 221612150
+            },
+            {
+              "target": "TARGETS",
+              "requestor": 4194305,
+              "time": 221612150
+            }
+          ]
+        },
+        {
+          "mode": "refuse",
+          "exit": 0,
+          "seconds": 33.81937903500511,
+          "requests": [
+            {
+              "target": "TARGETS",
+              "requestor": 4194305,
+              "time": 221646331
+            }
+          ]
+        },
+        {
+          "mode": "late",
+          "exit": 0,
+          "seconds": 25.06080097000813,
+          "requests": [
+            {
+              "target": "TARGETS",
+              "requestor": 4194305,
+              "time": 221670662
+            }
+          ]
+        },
+        {
+          "mode": "ownership",
+          "exit": 0,
+          "seconds": 21.81150142700062,
+          "requests": []
+        }
+      ],
+      "checks": 49,
+      "high_descriptor_checks": 7,
+      "high_descriptor": 1101,
+      "high_log_sha256": "9bb81225275572c29e9e65e6e5bc789f767572fd8d903406d7a90d47d2c08a94"
+    }
+  },
+  "sculpt_scope": {
+    "tree": "/home/blux/de-xr/dome-sculpt/artifacts/toolkit-viewport25-c092",
+    "runtime_base": "c09202fbf092eaa4d9ddf8d9a2249fe7bf013e74",
+    "description": "Exact coherent parent app/core/support reused with identical165 SDK headers: SDK-only runtime delta, no fresh Sculpt build claim",
+    "actual_ui_checks": 60,
+    "native_wayland_checks": 18,
+    "proof": "artifacts/viewport-proof/poll-* andwayland-poll-*",
+    "count_note": "Final native Wayland reports have 9 named assertions per profile; earlier 11/22 progress count was corrected against actual reports. Strict readiness/Return checks also execute."
+  },
+  "negative_evidence": {
+    "stock25": "Prior981 receipt retains acknowledged filename/offscreen960x600 at640x360 and Options/font/protocol negatives",
+    "callback26": "Prior8cc receipt retains staleEnter/falseACK/strictowner failures and206-byte4-allocation property leak",
+    "highfd_v2": "/home/blux/de-xr/DomeD/artifacts/fltk-clipboard-8cc/artifacts/clipboard-proof/high-fd-v2-negative/late/app.log",
+    "highfd_v3": "/home/blux/de-xr/DomeD/artifacts/fltk-clipboard-8cc/artifacts/clipboard-proof/high-fd-v3-sanitize/late/app.log",
+    "fixture_font_uaf": "/home/blux/de-xr/DomeD/artifacts/fltk-clipboard-8cc/artifacts/clipboard-proof/protocol-v2-sanitize/normal/app.log",
+    "scope": "Probe font lifetime and source-generation duplicate-patch setup negatives are fixture/staging issues, not attributed to the final runtime"
+  },
+  "primary_reference": "https://x.org/releases/current/doc/libX11/libX11/libX11.pdf",
+  "limits": [
+    "No system install, display/session restart, physical desktop/headset or hardware GPU action",
+    "Full Dome Sculpt production remains separate; this component does not fix source/geometry or other full-goal gaps"
+  ]
+}
