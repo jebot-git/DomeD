@@ -916,6 +916,20 @@ user-installed files are inspected normally. Run
 to verify the bundle, native sizes, checksums and Unicode sample coverage.
 `scripts/test-bdf-fonts.cpp` verifies exact doubled glyph masks and advances;
 `scripts/test-fltk-bdf.cpp` checks actual FLTK CPU and OpenGL pixels at both scales.
+`scripts/test-bdf-fontconfig.cpp` checks bitmap-only selection and reusable caches:
+
+```sh
+c++ -O2 -std=c++17 scripts/test-bdf-fontconfig.cpp \
+  $(pkg-config --cflags --libs fontconfig freetype2 zlib) -o /tmp/test-bdf-fontconfig
+cache_dir=$(mktemp -d)
+/tmp/test-bdf-fontconfig "$cache_dir"
+/tmp/test-bdf-fontconfig "$cache_dir"
+rm -r -- "$cache_dir"
+```
+
+Exported client configurations include a writable cache under
+`$XDG_CACHE_HOME/de-xr/fontconfig/cache` (default `~/.cache/de-xr/fontconfig/cache`),
+so libass can reuse font scans without including the system's outline fonts.
 Sample coverage does not imply complete language coverage; Arabic shaping and
 Thai mark positioning also depend on the application’s text engine.
 

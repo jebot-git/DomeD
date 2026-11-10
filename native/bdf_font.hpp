@@ -375,11 +375,14 @@ inline std::string export_config() {
     std::string out; for(char c:value) { if(c=='&')out+="&amp;";else if(c=='<')out+="&lt;";else if(c=='>')out+="&gt;";else out+=c; } return out;
   };
   std::set<std::string> directories;
-  for (const auto &face : discover()) directories.insert(std::filesystem::path(face.file).parent_path().string());
+  for (const auto &face : discover())
+    directories.insert(std::filesystem::absolute(face.file).lexically_normal().parent_path().string());
   const char *base = getenv("XDG_CACHE_HOME"), *home = getenv("HOME");
   std::filesystem::path cache = base && *base ? base : home ? std::string(home)+"/.cache" : "/tmp";
-  cache /= "de-xr";
+  cache = std::filesystem::absolute(cache/"de-xr").lexically_normal();
   std::filesystem::create_directories(cache/"fontconfig");
+  auto font_cache = cache/"fontconfig"/"cache";
+  std::filesystem::create_directories(font_cache);
   std::filesystem::create_directories(cache/"bdf2x-v1");
   directories.insert((cache/"bdf2x-v1").string());
   std::filesystem::create_directories(cache/"bdf-media-v1");
@@ -387,6 +390,9 @@ inline std::string export_config() {
   std::filesystem::create_directories(cache/"bdf-media-v2");
   directories.insert((cache/"bdf-media-v2").string());
   std::string xml = "<?xml version=\"1.0\"?><!DOCTYPE fontconfig SYSTEM \"urn:fontconfig:fonts.dtd\"><fontconfig>";
+  // Bitmap-only exports do not include the system config or its cache dirs.
+  // Without our own cache, every libass renderer rescans every font directory.
+  xml += "<cachedir>"+escape(font_cache.string())+"</cachedir>";
 #ifdef DOME_OUTLINE_FONTS
   xml += "<include ignore_missing=\"yes\">"+escape(inherited)+"</include>";
 #endif
