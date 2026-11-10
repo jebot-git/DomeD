@@ -26,6 +26,12 @@ The optional [DomeD Translator](docs/TRANSLATOR.md) provides a native FLTK tray
 translator for configured input languages, using DeepL API Free and local script
 transcription. Build it with `scripts/build-translator.sh`.
 
+The opt-in [Looking Glass prototype](docs/LOOKING-GLASS.rst) tilts full-resolution
+windows at their existing desktop/dome positions, with the classic taskbar
+and shared desktop/XR tilt state. Super+scroll controls tilt up to 80 degrees;
+Alt+Tab settles the final focused window flat after a 900 ms pause.
+Use Window > Looking Glass Prototype or Super+G to try it.
+
 ## Build and toolkit selection
 
 FLTK is the default Cargo feature. Native compositor builds require the patched

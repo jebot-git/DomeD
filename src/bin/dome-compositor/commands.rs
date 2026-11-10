@@ -112,6 +112,8 @@ impl Dome {
                 ("Select All", "⌘A", SelectAll),
             ],
             4 => vec![
+                ("Looking Glass Prototype (experimental)", "", LookingGlass),
+                ("Toggle Looking Glass", "⌘G", LookingGlassOverview),
                 ("Increase XR Window Size", "⌘+", Scale(1.1)),
                 ("Decrease XR Window Size", "⌘−", Scale(1. / 1.1)),
                 ("Pull Window Out / Return to Dome", "⌘P", PullOut),
@@ -209,6 +211,12 @@ impl Dome {
         let id = s.focused;
         use Command::*;
         match c {
+            LookingGlass => self.action(Action::LookingGlass{enabled:!s.looking_glass.enabled}),
+            LookingGlassOverview => {
+                if !s.looking_glass.enabled {self.action(Action::LookingGlass{enabled:true});}
+                else {self.action(Action::LookingGlass{enabled:false});}
+            }
+
             Screenshot => self.start_screenshot(),
             SwitchInputRealm => {
                 self.input_focus_xr = Some(!self.input_xr_active);
@@ -370,8 +378,9 @@ impl Dome {
                     } else {
                         (i + 1) % ids.len()
                     };
+                    self.scene.lock().unwrap().glass_cycle(ids[next],self.start_time.elapsed().as_millis() as u64);
                     self.action(Action::Focus { id: ids[next] });
-                    if self.input_realm == dome::Realm::Xr {
+                    if self.input_realm == dome::Realm::Xr && !s.looking_glass.enabled {
                         self.action(Action::Recenter { id: ids[next] });
                     }
                 }

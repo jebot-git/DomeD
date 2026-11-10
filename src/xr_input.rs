@@ -314,6 +314,7 @@ fn window_quads(scene: &Scene, head: Pose, backgrounds: bool, viewport: Option<[
             }
         }
     }
+    for panel in &mut panels {crate::looking_glass::tilt_quad(scene,panel);}
     panels.sort_by_key(|q| window_order(scene, q.id));
     crate::spatial_popup::append_quads_with_policy(scene, &mut panels, head, viewport, centered, flat_rollouts);
     panels

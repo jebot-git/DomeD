@@ -352,7 +352,9 @@ impl Native {
         let _ = self.write_report();
     }
     fn resume(&mut self, state: &mut Dome) -> Result<(), Error> {
-        self.drm.activate(false)?;
+        // The greeter may leave a hardware cursor or other planes enabled.
+        // Clear inherited KMS state before restoring our software-cursor scanout.
+        self.drm.activate(true)?;
         for output in &mut self.outputs {
             if let Some(scanout) = &mut output.scanout {
                 scanout.reset_buffers();

@@ -507,6 +507,7 @@ impl Dome {
                     horizontal,
                     vertical,
                 } => {
+                    if self.glass_scroll(vertical) {continue;}
                     if let Some([x, y]) = self.xr_shell_pos {
                         let size = self.xr_bridge.lock().unwrap().shell.clone();
                         if self.menu_scroll(x, y, vertical * 3., size.width as i32, size.height as i32) { continue; }

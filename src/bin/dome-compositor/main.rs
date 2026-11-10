@@ -51,6 +51,7 @@ mod spatial_popups;
 mod state;
 mod tasks;
 mod task_previews;
+mod looking_glass;
 mod toolkit_appearance;
 mod tray;
 mod wivrn;
@@ -199,6 +200,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     event_loop.handle().insert_source(
         smithay::reexports::calloop::timer::Timer::from_duration(std::time::Duration::from_millis(20)),
         |_, _, data| {
+            data.state.glass_tick();
             data.state.validate_touches();
             data.state.validate_tablets();
             data.state.poll_wivrn();

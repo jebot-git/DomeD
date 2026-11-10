@@ -1,5 +1,6 @@
 //! Shared desktop/XR rendering used by nested and direct DRM backends.
 use crate::Dome;
+#[path="desktop_glass.rs"] mod glass;
 use smithay::{
     backend::renderer::{
         damage::OutputDamageTracker,
@@ -21,10 +22,12 @@ smithay::backend::renderer::element::render_elements! {
     Surface=WaylandSurfaceRenderElement<GlesRenderer>,
     Preview=SolidColorRenderElement,
     Chrome=MemoryRenderBufferRenderElement<GlesRenderer>,
+    Glass=glass::GlassElement,
 }
 #[derive(Default)]
 pub struct DesktopRenderer {
     last_error: String,
+    glass: glass::GlassRenderer,
     decoration_buffers: std::collections::HashMap<u64, (String, MemoryRenderBuffer)>,
     shell_buffer: Option<(String, MemoryRenderBuffer)>,
     backdrop_buffers: std::collections::HashMap<(i32,i32),(bool,MemoryRenderBuffer)>,
@@ -259,6 +262,7 @@ impl DesktopRenderer {
                                     renderer, &surface, (rect.x.round() as i32 - geo.loc.x, rect.y.round() as i32 - geo.loc.y), 1.0, 1., Kind::Unspecified));
             }
         }
+        self.glass.retain(&scene.windows.iter().filter(|w|dome::looking_glass::angle(&scene,w.id).abs()>0.01).map(|w|w.id).collect::<Vec<_>>());
         for window in state.space.elements().rev() {
             let Some(id) = state.id_for(window.toplevel().unwrap().wl_surface()) else {
                 continue;
@@ -272,6 +276,13 @@ impl DesktopRenderer {
             let Some(pos) = state.space.element_location(window) else {
                 continue;
             };
+            let tilt=dome::looking_glass::angle(&scene,id);
+            if tilt.abs()>0.01 {
+                match self.glass.element(renderer,state,id,w,window,pos,tilt) {
+                    Ok(element)=>{elements.push(element.into());continue;}
+                    Err(error)=>{eprintln!("Full-resolution Looking Glass rendering: {error}");}
+                }
+            }
             let geo = window.geometry();
             if scene.focused == Some(id) && geo.size.w >= 4 && geo.size.h >= 4 {
                 let color = dome::visual_feedback::accent(&state.appearance.accent);

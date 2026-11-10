@@ -1,0 +1,47 @@
+{
+  "passed": true,
+  "checks": [
+    "Prototype starts disabled",
+    "Super+G enables natural-placement mode without opening a grid",
+    "Looking Glass preserves the classic taskbar without changing its controls or application groups",
+    "Enabling and tilting preserves every window position and resolution",
+    "Native desktop uses full-resolution GPU tilt textures without renderer fallback",
+    "Tilted window opacity is reduced in the shared scene",
+    "All four content corners remain visible through positive and negative tilt up to eighty degrees",
+    "Super+scroll changes tilt and is consumed by the window manager",
+    "Wheel tilt clamps at eighty degrees without a back side",
+    "Clicking a tilted window opens that window without clicking through",
+    "Alt-Tab keeps the selected window tilted for longer than half a second before restoring full view",
+    "Alt-Tab previews lean toward view; only the final focus settles flat after the pause",
+    "Classic application group popup opens a window and removes its tilt",
+    "Window captures retain native resolution independently of low-resolution dock previews",
+    "XR Super+wheel rotates at the original dome anchor with unchanged extent",
+    "XR tilting does not resize the application or its texture",
+    "GPU XR composition renders naturally placed full-resolution tilted windows",
+    "Disabling restores the original layout without changing client resolutions",
+    "Native compositor and clients remain alive"
+  ],
+  "headset_tested": false,
+  "window_capture_size": [
+    1080,
+    690
+  ],
+  "iteration": 2,
+  "upstream": "f797e0f1d43e7be5a06128ca7b0b0b0259fefabd",
+  "unit_tests": {
+    "passed": 193,
+    "failed": 0
+  },
+  "max_tilt_deg": 80,
+  "settle_delay_ms": 900,
+  "taskbar": "Classic DomeD",
+  "regression_reproduced_on": "74e7036",
+  "installation": "Verified experimental binaries; running session left active",
+  "gpu_capture": {
+    "frames": 17,
+    "width": 960,
+    "height": 636,
+    "transport": "DMA-BUF \u2192 EGL eye render \u2192 DRM PRIME \u2192 VA-API (no pixel readback)",
+    "video_encoder": "h264_vaapi"
+  }
+}
