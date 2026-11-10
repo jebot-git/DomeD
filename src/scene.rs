@@ -518,6 +518,7 @@ pub enum Action {
         workspace: usize,
     },
     Reorder { id: WindowId, delta: i32 },
+    RotateLane { workspace:usize, lane:usize, delta_deg:f32 },
     RotateLanes { workspace:usize, delta_deg:f32 },
     Swap {
         a: WindowId,
@@ -936,6 +937,12 @@ impl Scene {
                 {
                     self.choose_focus();
                 }
+            }
+            Action::RotateLane { workspace,lane,delta_deg } => {
+                if !delta_deg.is_finite(){return Err("Invalid lane rotation".into());}
+                let band=self.workspaces.get_mut(workspace)
+                    .and_then(|space| space.lanes.get_mut(lane)).ok_or("Invalid lane or workspace")?;
+                band.rotation_deg=wrap(band.rotation_deg+delta_deg);
             }
             Action::RotateLanes { workspace,delta_deg } => {
                 if !delta_deg.is_finite(){return Err("Invalid lane rotation".into());}

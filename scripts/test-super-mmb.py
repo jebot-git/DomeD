@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Super-MMB desktop snap and XR lane rotation through real XTest input."""
-import json, os, re, signal, socket, subprocess, sys, tempfile, threading, time, urllib.request
+import json, math, os, re, signal, socket, subprocess, sys, tempfile, threading, time, urllib.request
 from pathlib import Path
 from PIL import Image
 from Xlib import X, XK, display
@@ -79,18 +79,60 @@ try:
         thread=threading.Thread(target=heartbeat,daemon=True);thread.start()
         wait(lambda:read('/api/xr-control')['input_realm']=='xr')
         request('/api/action',{'op':'focus','id':wid}).close();time.sleep(.2)
-        original=state();workspace=original['active_workspace'];focus=original['focused'];before=original['workspaces']
-        g=host.get_geometry();move(g.width/2,g.height/2);key('Super_L',True);button(True);move(g.width/2+100,g.height/2+30)
-        rotated=wait(lambda:(s if abs((s:=state())['workspaces'][workspace]['lanes'][0]['rotation_deg']-before[workspace]['lanes'][0]['rotation_deg'])>5 else None))
+        def action(**value):request('/api/action',value).close()
+        def aim(id):
+            # Aim the physical mouse at the actual curved/tilted panel centre.
+            quad=next(q for q in read('/api/xr-layout')['quads'] if q['id']==id)
+            dome=quad['dome']
+            if dome:
+                frame=dome['frame'];point=[0,dome['radius']*(dome['top']+dome['bottom'])/2,-dome['radius']]
+                qx,qy,qz,qw=frame['orientation_xyzw'];x,y,z=point
+                tx,ty,tz=2*(qy*z-qz*y),2*(qz*x-qx*z),2*(qx*y-qy*x)
+                point=[x+qw*tx+qy*tz-qz*ty,y+qw*ty+qz*tx-qx*tz,z+qw*tz+qx*ty-qy*tx]
+                point=[a+b for a,b in zip(point,frame['position_m'])]
+            else:point=quad['pose']['position_m']
+            x,y,z=point;y-=1.6
+            desired=[math.atan2(x,-z),math.atan2(y,math.hypot(x,z))]
+            for _ in range(3):
+                current=read('/api/xr-control')['mouse_angles'] or [0,0]
+                g=host.get_geometry();pointer=xd.screen().root.query_pointer()
+                move(pointer.root_x-g.x+round((desired[0]-current[0])/.0025),
+                     pointer.root_y-g.y-round((desired[1]-current[1])/.0025))
+            wait(lambda:(read('/api/xr-control')['cursor'] or {}).get('id')==id)
+        def drag(dx,dy):
+            g=host.get_geometry();pointer=xd.screen().root.query_pointer()
+            move(pointer.root_x-g.x+dx,pointer.root_y-g.y+dy)
+        def delta(new,old):return (new-old+180)%360-180
+        workspace=state()['active_workspace']
+        for selected in range(3):
+            action(op='move',id=wid,lane=selected,workspace=workspace)
+            aim(wid)
+            original=state();before=original['workspaces']
+            key('Super_L',True);button(True);drag(100,150)
+            rotated=wait(lambda:(s if abs(delta((s:=state())['workspaces'][workspace]['lanes'][selected]['rotation_deg'],before[workspace]['lanes'][selected]['rotation_deg']))>5 else None))
+            for lane in range(3):
+                change=delta(rotated['workspaces'][workspace]['lanes'][lane]['rotation_deg'],before[workspace]['lanes'][lane]['rotation_deg'])
+                check(abs(change-(14.323945 if lane==selected else 0))<.3,'XR lane '+str(selected)+' drag changes only lane '+str(lane))
+                check(rotated['workspaces'][workspace]['lanes'][lane]['windows']==before[workspace]['lanes'][lane]['windows'],'Single-lane drag preserves window order')
+            # Cross lane heights while held: the lane captured on press stays selected.
+            drag(20,-150)
+            moved=state()
+            check(abs(delta(moved['workspaces'][workspace]['lanes'][selected]['rotation_deg'],before[workspace]['lanes'][selected]['rotation_deg'])-17.188734)<.3,'Captured lane remains selected across vertical pointer motion')
+            check(moved['focused']==original['focused'] and all(moved['workspaces'][i]==w for i,w in enumerate(before) if i!=workspace),'Single-lane drag preserves focus and inactive workspaces')
+            key('Super_L',False);button(False)
+            settled=state()['workspaces'][workspace]['lanes'];drag(20,0)
+            check(state()['workspaces'][workspace]['lanes']==settled,'Releasing MMB ends single-lane drag after Super was released first')
+        before=state()['workspaces'];focus=state()['focused']
+        key('Super_L',True);key('Shift_L',True);button(True);drag(100,0)
+        rotated=wait(lambda:(s if abs(delta((s:=state())['workspaces'][workspace]['lanes'][0]['rotation_deg'],before[workspace]['lanes'][0]['rotation_deg']))>5 else None))
         for lane in range(3):
-            delta=(rotated['workspaces'][workspace]['lanes'][lane]['rotation_deg']-before[workspace]['lanes'][lane]['rotation_deg']+180)%360-180
-            check(abs(delta-14.323945)<.3,'XR drag rotates lane '+str(lane)+' at pointer angular speed')
-            check(rotated['workspaces'][workspace]['lanes'][lane]['windows']==before[workspace]['lanes'][lane]['windows'],'XR drag preserves lane '+str(lane)+' window order')
-        check(rotated['focused']==focus and all(rotated['workspaces'][i]==w for i,w in enumerate(before) if i!=workspace),'XR rotation preserves focus and inactive workspaces')
-        key('Super_L',False);button(False)
-        settled=state()['workspaces'][workspace]['lanes'];move(g.width/2+140,g.height/2+30)
-        check(state()['workspaces'][workspace]['lanes']==settled,'Releasing MMB ends rotation after Super was released first')
-        check(marker.read_text().splitlines()==['press','release'],'XR reserved gesture does not leak middle-clicks')
+            change=delta(rotated['workspaces'][workspace]['lanes'][lane]['rotation_deg'],before[workspace]['lanes'][lane]['rotation_deg'])
+            check(abs(change-14.323945)<.3,'Super-Shift-MMB rotates lane '+str(lane)+' at pointer angular speed')
+        check(rotated['focused']==focus and all(rotated['workspaces'][i]==w for i,w in enumerate(before) if i!=workspace),'All-lane rotation preserves focus and inactive workspaces')
+        key('Super_L',False);key('Shift_L',False);button(False)
+        settled=state()['workspaces'][workspace]['lanes'];drag(20,0)
+        check(state()['workspaces'][workspace]['lanes']==settled,'Releasing MMB ends all-lane rotation after modifiers were released first')
+        check(marker.read_text().splitlines()==['press','release'],'XR reserved gestures do not leak middle-clicks')
         xd.close();(out/'checks.json').write_text(json.dumps(checks,indent=2)+'\n')
 finally:
     stop.set()

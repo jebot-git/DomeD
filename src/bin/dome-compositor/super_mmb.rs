@@ -1,7 +1,7 @@
 use crate::Dome;
 use dome::{Action, Realm, shortcuts::Mods, super_mmb::MIDDLE};
 #[derive(Clone,Copy)]
-pub enum Gesture { Desktop { id:u64 }, Xr { workspace:usize } }
+pub enum Gesture { Desktop { id:u64 }, Xr { workspace:usize, lane:Option<usize> } }
 impl Dome {
     pub fn cancel_super_mmb(&mut self) {
         if let Some(gesture)=self.super_mmb.take() {
@@ -24,14 +24,24 @@ impl Dome {
             return true;
         }
         let m=self.seat.get_keyboard().unwrap().modifier_state();
-        if !pressed || !dome::super_mmb::starts(button,Mods{logo:m.logo,ctrl:m.ctrl,alt:m.alt,shift:m.shift}) {return false;}
+        if !pressed || !dome::super_mmb::starts(button,Mods{logo:m.logo,ctrl:m.ctrl,alt:m.alt,shift:m.shift},xr) {return false;}
+        if xr {self.xr_mouse_motion(0.,0.);}
+        let popup_target=xr && self.popup_grab.is_some()
+            && self.xr_target.is_some_and(|id| self.scene.lock().unwrap().popup(id).is_some());
         let pointer=self.seat.get_pointer().unwrap();
-        if pointer.is_grabbed() || self.chrome_drag.is_some() || self.chrome_button.is_some()
+        if (pointer.is_grabbed() && !popup_target) || self.chrome_drag.is_some() || self.chrome_button.is_some()
             || self.shell_modal_open() || self.launcher || self.menu.is_some() || self.desktop_manager
             || self.task_context || self.tray.state().menu.is_some() {return false;}
         if xr {
-            let workspace=self.scene.lock().unwrap().active_workspace;
-            self.super_mmb=Some(Gesture::Xr{workspace});
+            let (workspace,lane)={
+                let scene=self.scene.lock().unwrap();
+                let lane=if m.shift {None} else {
+                    let Some(lane)=dome::super_mmb::xr_lane(&scene,self.xr_target) else {return false;};
+                    Some(lane)
+                };
+                (scene.active_workspace,lane)
+            };
+            self.super_mmb=Some(Gesture::Xr{workspace,lane});
             self.xr_bridge.lock().unwrap().mouse_buttons.insert(MIDDLE);
             self.dispatch_xr(dome::xr_input::Packet{events:vec![dome::xr_input::SeatEvent::Leave],actions:vec![]});
             self.mouse_cursor=None;
@@ -66,11 +76,16 @@ impl Dome {
         true
     }
     pub fn super_mmb_motion(&mut self,dx:f64)->bool {
-        let Some(Gesture::Xr{workspace})=self.super_mmb else{return false;};
+        let Some(Gesture::Xr{workspace,lane})=self.super_mmb else{return false;};
         let current=self.scene.lock().unwrap().active_workspace;
         if workspace!=current {self.cancel_super_mmb();self.ignored_buttons.insert(MIDDLE);return true;}
         if let Some(delta)=dome::super_mmb::lane_delta(dx) {
-            if delta!=0. {self.action(Action::RotateLanes{workspace,delta_deg:delta});}
+            if delta!=0. {
+                self.action(match lane {
+                    Some(lane)=>Action::RotateLane{workspace,lane,delta_deg:delta},
+                    None=>Action::RotateLanes{workspace,delta_deg:delta},
+                });
+            }
         }
         true
     }
