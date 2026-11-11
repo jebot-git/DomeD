@@ -1,0 +1,34 @@
+{
+  "version": 2,
+  "office": [
+    "org.domed.WordCraft.desktop",
+    "org.domed.GridCraft.desktop",
+    "org.domed.DeckCraft.desktop"
+  ],
+  "art": [
+    "org.domed.PhotoCraft.desktop"
+  ],
+  "future": [
+    "SoundCraft",
+    "DesignCraft",
+    "LightCraft"
+  ],
+  "retired": [
+    "calligra-xr"
+  ],
+  "defaults": {
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "org.domed.WordCraft.desktop",
+    "application/vnd.oasis.opendocument.text": "org.domed.WordCraft.desktop",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "org.domed.GridCraft.desktop",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": "org.domed.DeckCraft.desktop"
+  },
+  "unassigned": {
+    "application/vnd.oasis.opendocument.spreadsheet": "Upstream GridCraft advertises data import; round-trip ODS editing is not established.",
+    "application/vnd.oasis.opendocument.presentation": "Upstream DeckCraft does not advertise ODP support."
+  },
+  "activation": "Office associations prepared for WordCraft/GridCraft/DeckCraft; PhotoCraft is separately staged without changing image-viewer defaults.",
+  "excluded": [
+    "VectorCraft"
+  ],
+  "font_policy": "Office: domed-bdf-v1 for native UI and engine text. PhotoCraft: BDF native UI with upstream image/type raster content. No font assets bundled."
+}

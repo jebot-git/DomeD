@@ -1600,3 +1600,11 @@ OpenVR/OpenXR, independently of Dome window presentation.
 The native XR session can use the original **L.A.2097 – Precipice** city as a room-anchored stereo backdrop. See [local import, fullscreen suspension and settings](docs/XR_BACKDROP.md).
 
 Appearance provides independent Desktop and XR backdrop toggles: a theme-aware LinuXR vector desktop and the native Precipice XR environment.
+
+## Native Craft applications
+
+WordCraft, GridCraft and DeckCraft are the native office replacement targets
+for the retired Calligra fork. PhotoCraft is a separate image editor. See
+[the suite implementation and policy](docs/CRAFT_SUITE.md) for the independent
+application forks, shared DomeD base, bitmap font policy and validation limits.
+The policy does not install applications or change live MIME defaults.
